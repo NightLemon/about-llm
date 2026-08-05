@@ -1,0 +1,157 @@
+site_name: About LLM
+site_description: 从基础原理到生产实践的大语言模型中文学习手册
+repo_name: about-llm
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+  - javascripts/mermaid.js
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+
+nav:
+  - 首页: index.md
+  - 使用指南:
+      - 如何使用: guide/how-to-use.md
+      - 学习路径: guide/learning-paths.md
+      - 完整知识地图: guide/knowledge-map.md
+      - 仓库地图与实现契约: guide/repo-map.md
+      - 环境与硬件矩阵: guide/environment.md
+  - 模型家族:
+      - 模型谱系与选型: models/landscape.md
+      - GPT: models/gpt.md
+      - Llama: models/llama.md
+      - Qwen: models/qwen.md
+      - DeepSeek: models/deepseek.md
+      - Claude: models/claude.md
+      - Gemini: models/gemini.md
+      - 云 API 契约: models/cloud-api-contracts.md
+  - 基础:
+      - 数学基础: foundations/math.md
+      - 机器学习与深度学习: foundations/ml-dl.md
+      - NLP 与语言建模: foundations/nlp.md
+  - 核心原理:
+      - Tokenization: core/tokenization.md
+      - Transformer: core/transformer.md
+      - 生成与解码: core/generation.md
+      - 规模化规律: core/scaling.md
+      - 架构谱系与可解释性: core/architectures-interpretability.md
+  - 数据与训练:
+      - 数据工程: training/data.md
+      - 预训练: training/pretraining.md
+      - 微调与 PEFT:
+          - 总览: training/finetuning.md
+          - SFT 数据、模板与闭环: training/sft-data-pipeline.md
+          - LoRA、QLoRA 与单卡工程: training/peft-qlora-engineering.md
+      - 对齐与偏好优化: training/alignment.md
+      - 持续学习与模型合并: training/continual-learning.md
+  - 推理与系统:
+      - 推理:
+          - 推理基础: systems/inference.md
+          - 算子、KV Cache 与量化优化: systems/inference-optimization.md
+          - vLLM 与单卡服务: systems/vllm-serving.md
+      - 高效与分布式训练: systems/distributed-training.md
+      - 服务与可观测性: systems/serving.md
+      - 硬件与端侧部署: systems/hardware-edge.md
+  - 应用:
+      - Prompt 工程: applications/prompting.md
+      - RAG:
+          - 总览: applications/rag.md
+          - 数据摄取与索引生命周期: applications/rag-ingestion.md
+          - 召回、混合检索与重排: applications/rag-retrieval.md
+          - 上下文、引用与忠实度: applications/rag-generation.md
+          - 生产架构与运维: applications/rag-production.md
+      - Agent:
+          - 总览: applications/agents.md
+          - 架构、规划与记忆: applications/agent-architecture.md
+          - 工具协议与故障恢复: applications/agent-runtime.md
+      - 代码、对话与 LLMOps: applications/code-conversation-llmops.md
+  - 质量与责任:
+      - 评测:
+          - 总览: quality/evaluation.md
+          - 方法、统计与发布决策: quality/evaluation-methodology.md
+          - Agent 仿真与红队: quality/agent-evaluation.md
+      - 安全、隐私与治理: quality/safety.md
+      - 法规与社会影响: quality/governance-impact.md
+  - 前沿:
+      - 多模态: frontier/multimodal.md
+      - 推理、长上下文与 MoE: frontier/reasoning-long-context-moe.md
+      - 具身、计算机使用与小模型: frontier/embodied-small-models.md
+  - 实践:
+      - 实验与项目: practice/labs.md
+      - 工程项目索引: practice/project-index.md
+      - 生产检查表: practice/production-checklist.md
+  - 求职:
+      - 岗位路线: career/roadmap.md
+      - 面试题与回答方法: career/interview-questions.md
+      - LLM 系统设计: career/system-design.md
+      - 简历项目与作品集: career/resume-projects.md
+  - 参考:
+      - 术语表: reference/glossary.md
+      - 公式速查: reference/formulas.md
+      - 常见问题: reference/faq.md
+      - 资料与论文: reference/resources.md
+      - 内容准确性与核验台账: reference/accuracy.md
+
+exclude_docs: |
+  _templates/

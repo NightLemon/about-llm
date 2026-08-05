@@ -1,0 +1,2 @@
+{"case_id":"definition-rag","input":"RAG 是什么？","expected":"检索增强生成","slices":["zh","definition"],"metadata":{"risk":"low"}}
+{"case_id":"definition-kv","input":"KV Cache 缓存什么？","expected":"每层历史 token 的 key 和 value","slices":["zh","inference"],"metadata":{"risk":"low"}}

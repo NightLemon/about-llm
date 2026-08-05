@@ -1,0 +1,2 @@
+{"messages":[{"role":"system","content":"输出简洁的技术定义。"},{"role":"user","content":"什么是 RAG？"},{"role":"assistant","content":"RAG 是检索增强生成：先从外部知识源检索证据，再基于证据生成回答。"}],"task":"definition"}
+{"messages":[{"role":"system","content":"输出简洁的技术定义。"},{"role":"user","content":"什么是 KV Cache？"},{"role":"assistant","content":"KV Cache 保存历史 token 在各层注意力中的 key 和 value，避免解码时重复计算。"}],"task":"definition"}

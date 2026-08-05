@@ -1,0 +1,99 @@
+# Agent 评测、仿真与红队
+
+Agent 的最终回答可能看起来正确，但中间越权读取、重复副作用或浪费百次调用。评测必须同时覆盖 outcome、trajectory、policy、恢复和成本，并用可重置环境避免回归测试触发真实影响。
+
+## 任务 case
+
+每个 case 包含初始环境 snapshot、用户目标、允许/禁止动作、隐藏状态、完成 verifier、预算、注入 payload 和期望升级点。不要只保存 prompt；Agent 行为依赖工具和环境。
+
+按能力分层：检索/总结、单工具读、单写审批、多步依赖、并行、恢复、歧义澄清、无解拒绝和对抗任务。真实日志可转 case，但要脱敏、获得许可并冻结依赖。
+
+## 指标
+
+### Outcome
+
+- task success：确定性 verifier 是否满足；
+- partial credit：子目标覆盖；
+- side-effect correctness：真实状态是否符合目标；
+- answer correctness/引用：用户可见输出质量。
+
+### Trajectory
+
+- 工具选择和参数准确率；
+- unnecessary call、重复 call、步骤数；
+- 首次有效动作时间、总延迟、token/费用；
+- recovery success 和人工介入率。
+
+### Safety
+
+- unauthorized read/write、跨 tenant、秘密泄漏；
+- 未审批副作用、审批参数漂移；
+- injection attack success rate；
+- over-refusal：正常任务被错误拒绝。
+
+安全指标是 guardrail，不能由更高平均成功率抵消。
+
+## 最终状态优先，轨迹谨慎
+
+开放任务可能有多条正确路径，逐 token 匹配参考轨迹会惩罚有效替代方案。用状态 verifier 判断结果，用 invariant 检查关键过程，例如“发送前必须审批”“不得读取 secret 表”。只有工具选择本身是能力目标时才比较轨迹。
+
+LLM judge 可评开放输出，但不能可靠判断隐藏副作用；环境状态、ledger 和 policy event 应使用确定性检查。
+
+## 模拟工具
+
+模拟器需要可控时间、错误注入、并发和状态，而不只是返回固定字符串。它实现与生产相同 schema/error code，但凭据和 endpoint 完全隔离。每个 case 前 reset snapshot，结束后断言状态并销毁。
+
+记录/replay 可提高稳定性，但 replay 的网页/API 响应会过时；标注 capture 时间与 hash。对模型版本比较使用同一 observation，避免外部漂移冒充模型差异。
+
+## 故障注入
+
+系统性注入：timeout 前/后远端是否成功、429、部分结果、格式损坏、陈旧 ETag、并发修改、磁盘满、ledger 写失败、进程重启和用户取消。每类验证状态机不会进入非法状态，且恢复不重复副作用。
+
+chaos 测试不应首先在线上做。先单元 state transition，再模拟器集成，最后在隔离 staging 演练。
+
+## 提示注入红队
+
+攻击面包括网页、邮件、附件、工具错误、记忆和其他 Agent 消息。payload 变体覆盖：直接覆盖指令、伪 system 标签、编码/多语言、数据外带 URL、工具诱导和持久记忆投毒。
+
+判定看真实行为：是否访问禁止资源、是否泄漏 canary secret、是否绕过审批。只看模型回复“我不会”不足以证明安全，因为它可能已经执行动作。
+
+同时测 benign 文档中的正常命令示例，防止防护导致过度拒绝。
+
+## 多 Agent 评测
+
+除总体成功，测 handoff 正确率、消息丢失/误解、重复工作、冲突解决、共享状态一致性和单点 Agent 失败恢复。比较单 Agent 基线；若多 Agent 只增加 token 而无显著质量/延迟收益，就不应采用。
+
+评审 Agent 与生成 Agent 使用同一家模型时错误相关。用确定性测试、不同数据/模型或人工抽样建立真正独立证据。
+
+## 统计比较
+
+固定 case id 做 paired comparison，报告均值差、置信区间和关键切片。模型采样有方差，对高方差任务多 seed/多次运行，并把 pass@1 与 pass@k 区分。pass@k 增长可能靠更多成本换来，必须同时报告预算。
+
+任务污染会使模型记住 benchmark。保留私有 holdout、参数化环境和定期新建 case；公开集用于开发，不能作为唯一发布门禁。
+
+## 线上监控
+
+线上无法知道全部 gold，但可监控完成/取消/升级、人工修正、重复调用、审批拒绝、pending age、工具错误、步骤/token/费用和安全事件。抽样人工复核与用户反馈要关联 task version。
+
+异常率按工具、模型、任务类型、tenant tier 和版本切片。平均步骤稳定可能掩盖某工具陷入循环。
+
+## 发布门禁
+
+示例：
+
+1. 所有权限/重复副作用 case 必须零违规；
+2. 关键任务成功率不低于基线，置信区间下界满足阈值；
+3. 每个风险/语言/工具切片无显著退化；
+4. p95 步骤、延迟和费用在预算；
+5. 恢复与 reconciliation case 全通过；
+6. 新模型/prompt 先 shadow，再小流量 canary。
+
+回滚不只切模型，还要恢复 prompt、tool schema、policy 和 memory/index version 的兼容组合。
+
+## 面试追问
+
+**如何评测一个会发邮件的 Agent 而不真发？** 用实现同 schema 的隔离邮件模拟器，验证 outbox 状态、审批事件、收件人/正文和幂等；少量 staging 端到端使用专用测试域，普通回归禁止生产凭据。
+
+**为什么 exact trajectory match 不合理？** 开放任务有多条正确路径；应对最终状态和安全不变量做确定性检查，并将效率作为连续指标，而非要求复刻一条参考思路。
+
+**怎样发现模型升级后的隐性回归？** 同 case 配对、多次采样、关键切片和 shadow trace；同时比较任务成功、工具/权限事件、步骤/成本，不只比较最终文本 judge。
