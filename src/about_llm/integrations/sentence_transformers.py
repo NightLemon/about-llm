@@ -28,7 +28,7 @@ class SentenceTransformerEmbedder:
         if not model_name_or_path.strip():
             raise ValueError("model_name_or_path cannot be empty")
         try:
-            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+            from sentence_transformers import SentenceTransformer
         except ImportError as error:
             raise ImportError("dense model adapter requires: pip install -e '.[rag]'") from error
         self.model: Any = SentenceTransformer(

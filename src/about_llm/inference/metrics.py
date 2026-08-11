@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
+from numpy.typing import NDArray
 
 
 @dataclass(frozen=True)
@@ -311,7 +312,7 @@ def summarize_measurements(
     prompt_tokens = sum(item.prompt_tokens for item in measurements)
     output_tokens = sum(item.output_tokens for item in measurements)
 
-    def percentile(values: np.ndarray, q: float) -> float:
+    def percentile(values: NDArray[np.float64], q: float) -> float:
         return float(np.percentile(values, q))
 
     return InferenceSummary(

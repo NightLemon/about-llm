@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 RandomizationAlternative = Literal["two-sided", "greater", "less"]
 ClusterWeighting = Literal["case", "equal"]
@@ -20,7 +20,7 @@ _MAX_BOOTSTRAP_MATRIX_ELEMENTS = 1_000_000
 
 def _paired_score_arrays(
     baseline: ArrayLike, candidate: ArrayLike
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     baseline_array = np.asarray(baseline, dtype=np.float64)
     candidate_array = np.asarray(candidate, dtype=np.float64)
     if baseline_array.ndim != 1 or candidate_array.ndim != 1:
@@ -155,12 +155,12 @@ def _validated_cluster_positions(
 
 
 def _cluster_bootstrap_statistics(
-    difference_sums: np.ndarray,
-    cluster_sizes: np.ndarray,
-    difference_means: np.ndarray,
-    sampled_clusters: np.ndarray,
+    difference_sums: NDArray[np.float64],
+    cluster_sizes: NDArray[np.int64],
+    difference_means: NDArray[np.float64],
+    sampled_clusters: NDArray[np.int64],
     cluster_weighting: ClusterWeighting,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     if cluster_weighting == "case":
         numerators = difference_sums[sampled_clusters].sum(axis=1)
         denominators = cluster_sizes[sampled_clusters].sum(axis=1)
@@ -361,7 +361,7 @@ class PairedRandomizationResult:
 
 
 def _extreme_count(
-    statistics: np.ndarray,
+    statistics: NDArray[np.float64],
     observed: float,
     alternative: RandomizationAlternative,
 ) -> int:
@@ -386,7 +386,7 @@ class _SignFlipOutcome:
 
 
 def _sign_flip_outcome(
-    nonzero_contributions: np.ndarray,
+    nonzero_contributions: NDArray[np.float64],
     *,
     denominator: float,
     observed: float,

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 BeamFinishReason = Literal["eos", "length"]
 
@@ -149,10 +149,10 @@ def _validated_probability_table(
     vocabulary_size: int,
     eos_token_id: int,
     max_new_tokens: int,
-) -> dict[tuple[int, ...], np.ndarray]:
+) -> dict[tuple[int, ...], NDArray[np.float64]]:
     if not isinstance(probability_table, Mapping) or not probability_table:
         raise ValueError("probability_table must be a non-empty mapping")
-    validated: dict[tuple[int, ...], np.ndarray] = {}
+    validated: dict[tuple[int, ...], NDArray[np.float64]] = {}
     for prefix, probabilities in probability_table.items():
         if not isinstance(prefix, tuple) or any(
             isinstance(token_id, bool)

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
+from numpy.typing import NDArray
 
 
-def _frozen_copy(value: np.ndarray, *, dtype: np.dtype, name: str) -> np.ndarray:
-    array = cast(np.ndarray, np.asarray(value, dtype=dtype).copy())
+def _frozen_copy(
+    value: NDArray[Any], *, dtype: np.dtype[Any], name: str
+) -> NDArray[Any]:
+    array = cast(NDArray[Any], np.asarray(value, dtype=dtype).copy())
     if array.dtype.kind == "f" and not np.all(np.isfinite(array)):
         raise ValueError(f"{name} must contain only finite values")
     array.setflags(write=False)
@@ -26,12 +29,12 @@ class MoERoutingResult:
     top-k rank as deterministic tie-breakers.
     """
 
-    probabilities: np.ndarray
-    active_token_mask: np.ndarray
-    selected_expert_indices: np.ndarray
-    selected_probabilities: np.ndarray
-    kept_mask: np.ndarray
-    combine_weights: np.ndarray
+    probabilities: NDArray[np.float64]
+    active_token_mask: NDArray[np.bool_]
+    selected_expert_indices: NDArray[np.int64]
+    selected_probabilities: NDArray[np.float64]
+    kept_mask: NDArray[np.bool_]
+    combine_weights: NDArray[np.float64]
     expert_capacity: int
     assignments_before_capacity: int
     kept_assignments: int
@@ -213,11 +216,11 @@ class MoERoutingResult:
 
 
 def route_topk_capacity(
-    router_logits: np.ndarray,
+    router_logits: NDArray[np.float64],
     *,
     top_k: int,
     capacity_factor: float = 1.0,
-    token_mask: np.ndarray | None = None,
+    token_mask: NDArray[np.bool_] | None = None,
     renormalize_after_capacity: bool = True,
 ) -> MoERoutingResult:
     """Route active tokens with an explicit score-priority capacity policy.
@@ -254,7 +257,7 @@ def route_topk_capacity(
         raw_mask = np.asarray(token_mask)
         if raw_mask.dtype != np.bool_ or raw_mask.shape != (tokens,):
             raise ValueError("token_mask must be a boolean vector with one value per token")
-        active = raw_mask.copy()
+        active = cast(NDArray[np.bool_], raw_mask.copy())
     if not np.any(active):
         raise ValueError("token_mask must select at least one active token")
 
@@ -359,10 +362,10 @@ def route_topk_capacity(
 
 
 def routed_linear_expert_forward(
-    hidden_states: np.ndarray,
-    expert_weights: np.ndarray,
+    hidden_states: NDArray[np.float64],
+    expert_weights: NDArray[np.float64],
     routing: MoERoutingResult,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Execute kept sparse assignments for bias-free linear toy experts."""
 
     hidden = np.asarray(hidden_states, dtype=np.float64)
