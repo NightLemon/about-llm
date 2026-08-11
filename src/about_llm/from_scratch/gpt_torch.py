@@ -170,6 +170,7 @@ class MiniGPT(nn.Module):
         *,
         temperature: float = 1.0,
         top_k: int | None = None,
+        top_p: float | None = None,
         generator: torch.Generator | None = None,
     ) -> Tensor:
         if max_new_tokens < 0:
@@ -178,6 +179,8 @@ class MiniGPT(nn.Module):
             raise ValueError("temperature must be non-negative")
         if top_k is not None and top_k <= 0:
             raise ValueError("top_k must be positive")
+        if top_p is not None and not 0 < top_p <= 1:
+            raise ValueError("top_p must be in (0, 1]")
 
         output = input_ids
         for _ in range(max_new_tokens):
@@ -192,6 +195,20 @@ class MiniGPT(nn.Module):
                     k = min(top_k, next_logits.shape[-1])
                     threshold = torch.topk(next_logits, k).values[:, [-1]]
                     next_logits = next_logits.masked_fill(next_logits < threshold, -torch.inf)
+                if top_p is not None and top_p < 1:
+                    sorted_logits, sorted_indices = torch.sort(
+                        next_logits, descending=True, dim=-1
+                    )
+                    sorted_probabilities = F.softmax(sorted_logits, dim=-1)
+                    cumulative_probabilities = sorted_probabilities.cumsum(dim=-1)
+                    sorted_remove = cumulative_probabilities > top_p
+                    # Keep the first token whose inclusion reaches the threshold.
+                    sorted_remove[:, 1:] = sorted_remove[:, :-1].clone()
+                    sorted_remove[:, 0] = False
+                    remove = torch.zeros_like(sorted_remove).scatter(
+                        dim=-1, index=sorted_indices, src=sorted_remove
+                    )
+                    next_logits = next_logits.masked_fill(remove, -torch.inf)
                 probabilities = F.softmax(next_logits, dim=-1)
                 next_token = torch.multinomial(probabilities, num_samples=1, generator=generator)
             output = torch.cat((output, next_token), dim=1)

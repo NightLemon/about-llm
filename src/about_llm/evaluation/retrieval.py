@@ -42,6 +42,52 @@ def mean_reciprocal_rank(
     return sum(values) / len(values)
 
 
+def precision_at_k(
+    retrieved: Mapping[str, Sequence[str]],
+    relevant: Mapping[str, Set[str]],
+    *,
+    k: int,
+) -> float:
+    """Macro-average relevant distinct ids over the number actually returned.
+
+    The denominator is the number of inspected result slots, up to ``k``. A
+    query with no returned result has precision zero. Repeated relevant ids do
+    not receive repeated credit, so duplicate slots lower precision.
+    """
+    _validate_queries(retrieved, relevant, k)
+    values: list[float] = []
+    for query_id, relevant_ids in relevant.items():
+        if not relevant_ids:
+            raise ValueError(f"query {query_id!r} has no relevant documents")
+        inspected = retrieved[query_id][:k]
+        if not inspected:
+            values.append(0.0)
+            continue
+        credited: set[str] = set()
+        for document_id in inspected:
+            if document_id in relevant_ids:
+                credited.add(document_id)
+        values.append(len(credited) / len(inspected))
+    return sum(values) / len(values)
+
+
+def all_evidence_recall_at_k(
+    retrieved: Mapping[str, Sequence[str]],
+    required: Mapping[str, Set[str]],
+    *,
+    k: int,
+) -> float:
+    """Return the share of queries whose complete required set appears by k."""
+    _validate_queries(retrieved, required, k)
+    values: list[float] = []
+    for query_id, required_ids in required.items():
+        if not required_ids:
+            raise ValueError(f"query {query_id!r} has no required evidence")
+        found = set(retrieved[query_id][:k])
+        values.append(float(required_ids <= found))
+    return sum(values) / len(values)
+
+
 def normalized_discounted_cumulative_gain(
     retrieved: Mapping[str, Sequence[str]],
     relevance: Mapping[str, Mapping[str, float]],

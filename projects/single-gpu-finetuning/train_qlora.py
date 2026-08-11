@@ -5,9 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from importlib.metadata import version
 from pathlib import Path
 
-from about_llm.finetuning import estimate_qlora_memory, oom_degradation_order
+from about_llm.finetuning import (
+    audit_assistant_masks,
+    estimate_qlora_memory,
+    load_sft_records,
+    load_sft_training_readiness,
+    oom_degradation_order,
+    validate_sft_training_readiness,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -15,7 +23,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--revision", required=True, help="Commit hash, not a moving branch")
     parser.add_argument("--train-jsonl", type=Path)
+    parser.add_argument("--readiness-json", type=Path)
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--chat-template-path", type=Path)
+    parser.add_argument("--data-preflight-only", action="store_true")
     parser.add_argument("--num-parameters", type=int, required=True)
     parser.add_argument("--num-layers", type=int, required=True)
     parser.add_argument("--hidden-size", type=int, required=True)
@@ -45,8 +56,14 @@ def parse_args() -> argparse.Namespace:
     )
     if any(value <= 0 for value in numeric):
         parser.error("all numeric arguments must be positive")
-    if not args.estimate_only and (args.train_jsonl is None or args.output_dir is None):
-        parser.error("training requires --train-jsonl and --output-dir")
+    if not args.estimate_only and (
+        args.train_jsonl is None
+        or args.readiness_json is None
+        or args.output_dir is None
+    ):
+        parser.error(
+            "training requires --train-jsonl, --readiness-json, and --output-dir"
+        )
     return args
 
 
@@ -68,8 +85,31 @@ def main() -> None:
             print(f"{index}. {action}")
         return
 
+    if (
+        args.train_jsonl is None
+        or args.readiness_json is None
+        or args.output_dir is None
+    ):
+        raise RuntimeError("training arguments were not validated")
+    records = load_sft_records(args.train_jsonl)
+    readiness = load_sft_training_readiness(args.readiness_json)
+    audit = validate_sft_training_readiness(records, readiness)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "sft-data-audit.json").write_text(
+        json.dumps(audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (args.output_dir / "sft-training-readiness.json").write_text(
+        json.dumps(readiness.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    if args.data_preflight_only:
+        return
+
     import torch
-    from datasets import load_dataset
+    from datasets import Dataset
     from peft import LoraConfig, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from trl import SFTConfig, SFTTrainer
@@ -86,10 +126,43 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id, revision=args.revision, trust_remote_code=False
     )
+    if args.chat_template_path is not None:
+        chat_template = args.chat_template_path.read_text(encoding="utf-8")
+        if not chat_template.strip():
+            raise ValueError("chat-template-path must not be empty")
+        tokenizer.chat_template = chat_template
     if not tokenizer.chat_template:
         raise ValueError("checkpoint tokenizer has no chat template")
     if tokenizer.pad_token_id is None:
+        if tokenizer.eos_token_id is None:
+            raise ValueError("tokenizer needs a PAD or EOS token")
         tokenizer.pad_token = tokenizer.eos_token
+    mask_audit = audit_assistant_masks(
+        records,
+        render=lambda messages: tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            return_dict=True,
+            return_assistant_tokens_mask=True,
+            add_generation_prompt=False,
+        ),
+        renderer_identity={
+            "model_id": args.model_id,
+            "revision": args.revision,
+            "transformers_version": version("transformers"),
+            "tokenizer_class": type(tokenizer).__name__,
+            "chat_template": tokenizer.chat_template,
+            "bos_token_id": tokenizer.bos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+            "pad_token_id": tokenizer.pad_token_id,
+        },
+        max_length=args.max_length,
+    )
+    (args.output_dir / "sft-template-mask-audit.json").write_text(
+        json.dumps(mask_audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         revision=args.revision,
@@ -108,7 +181,7 @@ def main() -> None:
         target_modules=targets,
         task_type="CAUSAL_LM",
     )
-    dataset = load_dataset("json", data_files=str(args.train_jsonl), split="train")
+    dataset = Dataset.from_list([record.to_training_row() for record in records])
     config = SFTConfig(
         output_dir=str(args.output_dir),
         max_length=args.max_length,

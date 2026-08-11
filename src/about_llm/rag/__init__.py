@@ -1,5 +1,13 @@
 """Framework-independent RAG building blocks."""
 
+from about_llm.rag.answer_eval import (
+    AnswerAction,
+    ClaimVerdict,
+    RecordedAnswer,
+    RecordedClaim,
+    evaluate_recorded_answers,
+    load_recorded_answers,
+)
 from about_llm.rag.bm25 import BM25Index
 from about_llm.rag.citations import (
     CitationAudit,
@@ -7,7 +15,25 @@ from about_llm.rag.citations import (
     audit_citations,
     build_citation_context,
 )
+from about_llm.rag.context_packing import (
+    ContextCost,
+    PackedCitationContext,
+    PackingDecision,
+    PackingReason,
+    make_rag_chat_prompt_cost,
+    pack_citation_context,
+    utf8_byte_length,
+)
 from about_llm.rag.dense import DenseIndex, EmbeddingModel
+from about_llm.rag.extractive import (
+    EXACT_SPAN_JUDGMENT,
+    EXTRACTIVE_ARTIFACT_VERSION,
+    ExtractiveAnswerArtifact,
+    ExtractiveAnswerConfig,
+    ExtractiveSource,
+    ExtractiveSpan,
+    generate_extractive_answer,
+)
 from about_llm.rag.ingestion import (
     IngestionPlan,
     SourceChunk,
@@ -17,21 +43,93 @@ from about_llm.rag.ingestion import (
 )
 from about_llm.rag.models import Document, SearchResult
 from about_llm.rag.rank_fusion import reciprocal_rank_fusion
+from about_llm.rag.reranking import (
+    RecordedRerankScore,
+    RecordedRerankScorer,
+    RerankCandidateTrace,
+    RerankReport,
+    RerankScorer,
+    rerank_authorized_candidates,
+)
+from about_llm.rag.sqlite_backup import (
+    SQLITE_BACKUP_MANIFEST_VERSION,
+    SQLITE_LOGICAL_FINGERPRINT_REVISION,
+    SQLiteChunkBackupManifest,
+    create_sqlite_chunk_backup,
+    load_sqlite_chunk_backup_manifest,
+    restore_sqlite_chunk_backup,
+    verify_sqlite_chunk_backup,
+)
+from about_llm.rag.sqlite_store import SQLiteChunkStore
+from about_llm.rag.trace import (
+    RAG_GENERATION_TRACE_AUDIT_VERSION,
+    RAG_GENERATION_TRACE_VERSION,
+    RAGGenerationTrace,
+    RAGTraceAuditReport,
+    RAGTraceCaseBinding,
+    RAGTraceFinding,
+    RAGTraceSource,
+    audit_rag_generation_traces,
+    load_rag_generation_traces,
+)
 
 __all__ = [
+    "EXACT_SPAN_JUDGMENT",
+    "EXTRACTIVE_ARTIFACT_VERSION",
+    "RAG_GENERATION_TRACE_AUDIT_VERSION",
+    "RAG_GENERATION_TRACE_VERSION",
+    "SQLITE_BACKUP_MANIFEST_VERSION",
+    "SQLITE_LOGICAL_FINGERPRINT_REVISION",
+    "AnswerAction",
     "BM25Index",
     "CitationAudit",
     "CitationContext",
+    "ClaimVerdict",
+    "ContextCost",
     "DenseIndex",
     "Document",
     "EmbeddingModel",
+    "ExtractiveAnswerArtifact",
+    "ExtractiveAnswerConfig",
+    "ExtractiveSource",
+    "ExtractiveSpan",
     "IngestionPlan",
+    "PackedCitationContext",
+    "PackingDecision",
+    "PackingReason",
+    "RAGGenerationTrace",
+    "RAGTraceAuditReport",
+    "RAGTraceCaseBinding",
+    "RAGTraceFinding",
+    "RAGTraceSource",
+    "RecordedAnswer",
+    "RecordedClaim",
+    "RecordedRerankScore",
+    "RecordedRerankScorer",
+    "RerankCandidateTrace",
+    "RerankReport",
+    "RerankScorer",
+    "SQLiteChunkBackupManifest",
+    "SQLiteChunkStore",
     "SearchResult",
     "SourceChunk",
     "SourceDocument",
     "audit_citations",
+    "audit_rag_generation_traces",
     "build_citation_context",
+    "create_sqlite_chunk_backup",
+    "evaluate_recorded_answers",
+    "generate_extractive_answer",
+    "load_rag_generation_traces",
+    "load_recorded_answers",
+    "load_sqlite_chunk_backup_manifest",
+    "make_rag_chat_prompt_cost",
+    "pack_citation_context",
     "plan_incremental_update",
     "reciprocal_rank_fusion",
+    "rerank_authorized_candidates",
+    "restore_sqlite_chunk_backup",
     "split_markdown",
+    "utf8_byte_length",
+    "verify_sqlite_chunk_backup",
 ]

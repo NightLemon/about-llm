@@ -11,8 +11,20 @@ requires-python = ">=3.10"
 license = { text = "CC-BY-4.0" }
 authors = [{ name = "about-llm contributors" }]
 dependencies = [
-  "numpy>=1.26,<3",
+  # NumPy 2.5 stubs use Python 3.12-only type statements. Keep the core
+  # dependency compatible with this project's Python 3.10 mypy target.
+  "numpy>=1.26,<2.5",
 ]
+
+[project.scripts]
+about-llm-agent = "about_llm.agents.cli:main"
+about-llm-cloud-contract = "about_llm.integrations.cloud_api_cli:main"
+about-llm-eval = "about_llm.evaluation.cli:main"
+about-llm-sft-data = "about_llm.finetuning_cli:main"
+about-llm-inference-analyze = "about_llm.inference_analysis_cli:main"
+about-llm-preference-data = "about_llm.preference_cli:main"
+about-llm-rag = "about_llm.rag.cli:main"
+about-llm-synthetic-audit = "about_llm.synthetic_data_cli:main"
 
 [project.optional-dependencies]
 docs = ["mkdocs-material>=9.5,<10"]
@@ -33,7 +45,7 @@ transformers = [
   "accelerate>=1,<2",
   "sentencepiece>=0.2,<1",
 ]
-finetune = ["peft>=0.14,<1", "trl>=0.13,<1"]
+finetune = ["peft>=0.14,<1", "trl>=0.29,<0.30", "safetensors>=0.4,<1"]
 qlora = ["bitsandbytes>=0.45,<1"]
 rag = [
   "sentence-transformers>=3.3,<6",
@@ -42,8 +54,18 @@ rag = [
 ]
 langchain = ["langchain>=0.3,<2", "langchain-community>=0.3,<2"]
 llamaindex = ["llama-index-core>=0.12,<1"]
-api = ["httpx>=0.28,<1", "pydantic>=2.10,<3", "python-dotenv>=1,<2"]
+api = [
+  "httpx>=0.28,<1",
+  "pydantic>=2.10,<3",
+  "python-dotenv>=1,<2",
+  # Keep the ASGI stack inside the compatibility family exercised by the
+  # service tests; early FastAPI 0.115 and Starlette 1.x are incompatible.
+  "fastapi>=0.115.6,<0.116",
+  "starlette>=0.40,<0.42",
+  "uvicorn>=0.30,<0.31",
+]
 evaluation = ["jsonschema>=4.23,<5"]
+agents = ["jsonschema>=4.23,<5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

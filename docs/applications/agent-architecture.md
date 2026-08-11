@@ -36,7 +36,9 @@ stateDiagram-v2
   AwaitingApproval --> Cancelled: denied/expired
   Executing --> Ready: observation
   Executing --> Reconciling: uncertain side effect
-  Deciding --> Completed: finish with evidence
+  Deciding --> Verifying: finish proposal
+  Verifying --> Completed: deterministic verifier passed
+  Verifying --> Ready: failed/indeterminate
   Ready --> Failed: budget/no progress
   Reconciling --> Completed: externally confirmed
   Reconciling --> Failed: abandoned/compensated
@@ -121,11 +123,64 @@ Agent context 通常包括 system policy、工具 schema、任务状态、相关
 
 停止后返回已完成内容、未完成原因、待用户选择和可恢复 task id。不能用“继续尝试”无限消耗预算。
 
+预算的计数边界必须可审计。step 计 planner decision，不等于 handler attempt；cache、policy 拒绝和审批暂停仍消耗一次 decision。模型 token/费用通常只能在一次模型响应返回后取得，因此某次响应可能让累计值越过上限：控制面应记录这次 supplied/provider usage，但拒绝执行随响应产生的 action。wall-time 是本地 monotonic deadline；同步 provider/tool 已经开始后通常不能保证硬抢占，返回后仍要检查 deadline，远端副作用则按 pending/reconciliation 协议处理。
+
+循环检测也不是一个布尔量：连续相同 action fingerprint、最近四步的 `A/B/A/B`、以及相同 error key 连续出现是不同终止原因。相同失败动作同时满足多个条件时，本仓库 reference 先报告 repeated action；它只检查有限窗口和字节级 fingerprint，不能发现任意长周期、状态无进展或语义等价但写法不同的动作。
+
 ## Verifier 与完成判定
 
 模型说“完成”不是完成。根据任务使用确定性 verifier：测试通过、文件存在、JSON Schema、数据库状态、引用覆盖。开放任务可用 rubric judge，但要在人工集校准。完成条件在执行前定义，并与用户目标绑定。
 
 代码 Agent 的证据链例如：改动 diff → 静态检查 → 目标测试 → 全量相关测试 → 尚未验证项。测试下载成功不等于功能正确，生成文件存在不等于内容符合要求。
+
+本仓库 typed loop 把 `finish` 视为 proposal：只有 `CompletionVerifier` 返回 `PASSED` 才产生 `completed=true` 和 `final_answer`；`FAILED/INDETERMINATE` 回到 planner，verifier 异常或错误返回类型则 fail closed。`escalated`、预算耗尽、循环停止、runtime error 和 `needs_approval` 都不是任务成功。
+
+审批暂停会生成严格 JSON checkpoint，绑定 task/subject/tenant、原 loop 预算、累计 model token/cost/active wall time、handler/runtime 计数与原 `max_tool_calls`、历史 action、pending decision 与 execution fingerprint。恢复先用当前 capability/policy 重新授权并执行原 pending decision，不再次请求 planner，也不重复累计该 decision 的 token/cost；旧 subject/task/tenant、未恢复/扩大的 runtime counter 或 cap、过期或漂移的 approval 都 fail closed。恢复后的状态把同一步 `needs_approval` 转为实际 outcome，而不是把一次 decision 伪计为两步。
+
+这仍不是持久化工作流服务：checkpoint 的 SHA-256 只检测 canonical 内容漂移，不提供签名/MAC；JSON 文件与 SQLite ledger 没有原子事务；CLI 将等待审批的 downtime 排除在 active monotonic wall time 之外；未来 planner/provider 会话状态、一次性审批消费、并发 lease、checkpoint 机密性和 retention 仍需外部控制面负责。生产系统还应有独立的绝对 task deadline，不能靠 active-time budget 限制用户等待时间。
+
+### 副作用投递与 workflow 恢复不是同一层
+
+Checkpoint 回答“planner 恢复到哪一步”，transactional outbox 回答“已在本地批准的 effect 怎样可靠投递”。生产设计通常先在一个业务事务中写 task state 与 outbox row，再由独立 worker 用 lease 投递；worker restart 不应重新调用 planner。provider 成功但本地 ack 前崩溃会导致 at-least-once redelivery，因此稳定 `effect_id` 必须穿透为 provider idempotency key。lease 防并发领取，不提供远端 exactly-once；provider receipt 也是 supplied artifact，不自动等于 effect verifier。dead letter 必须进入 operator/runbook，而不是让模型决定无限重试。
+
+仓库 SQLite reference 可验证单机事务、并发 claim、lease expiry、stale ack 拒绝和模拟幂等 provider 去重；不验证分布式 broker、跨数据库原子性、真实网络/provider 或跨区域恢复。
+
+可运行的 `ScriptedPlanner` 只读取冻结 JSONL decision，不调用模型；精确 verifier 只验证答案、evidence call id 与本地 completed/cached observation：
+
+~~~powershell
+python -m about_llm.agents.cli loop `
+  --cases projects/safe-agent/loop.example.jsonl
+~~~
+
+fixture 覆盖 verified completion、重复 cached action、`A/B/A/B`、不同动作的重复 policy error 与 approval pause。decision 中的 token/cost 是 supplied fixture 数字，不是 provider usage 或账单；固定 monotonic clock 也不是线上延迟测量。本地 exact rule 证明控制流按该规则运行，不证明开放任务语义正确。
+
+仓库另提供 `StrictJSONModelPlanner`，把 normalized model text 转成 `ToolProposal / FinishProposal / EscalationProposal`。Request identity 绑定 prompt revision、task/剩余预算、tool schema/schema revision/validator revision、最近完整 event 和预期 model revision；response 必须带精确 model revision、provider request id、usage/cost 与允许的 finish reason。Closed parser 拒绝 duplicate key、non-finite number、Markdown fence、未知字段/工具，响应声明的 output usage 也不能越过 request cap。接受后 decision id 同时绑定 request、完整 response metadata/raw text 与 typed action。
+
+`JSONSchemaToolContract` 可从同一冻结 Draft 2020-12 schema 派生 Planner contract 和 runtime Tool。当前 profile 要求 closed root object，只解析 local reference，限制 schema/instance bytes，并把 format enforcement mode 与 `jsonschema` 版本写进 validator identity；schema violation 不回显 rejected value。它不 coercion、不填 default，也不替代 resource resolver、policy、approval 或 handler semantic check。手写 Planner contract 与 callback 没有自动一致性保证。
+
+~~~powershell
+python projects/safe-agent/model_planner_control.py
+~~~
+
+这个 control 真正执行上述 parser、标准 Draft validator、typed loop、runtime policy、只读 handler 和 completion verifier；另证明一个 parser 可接受但违反 `const` 的参数在 resolver/policy/handler 前停止。固定恶意 tool observation 仍只是下一轮 prompt 中的不可信数据。输入的两条“provider response”、request id、token 与 cost 全是 authored recorded fixture，没有网络或模型调用。因此它证明严格边界在固定字节上按设计运行，不证明目标模型遵循率、真实 provider usage/账单、生产 IAM、安全性或开放语义完成。
+
+审批恢复实验用同一 SQLite ledger 和新 runtime 分两条命令运行，checkpoint 文件拒绝覆盖：
+
+~~~powershell
+python -m about_llm.agents.cli pause-loop `
+  --cases projects/safe-agent/loop.example.jsonl `
+  --case-id approval-pause `
+  --ledger artifacts/agent/loop-001.db `
+  --checkpoint artifacts/agent/loop-001.checkpoint.json
+
+python -m about_llm.agents.cli resume-loop `
+  --cases projects/safe-agent/loop.example.jsonl `
+  --case-id approval-pause `
+  --ledger artifacts/agent/loop-001.db `
+  --checkpoint artifacts/agent/loop-001.checkpoint.json
+~~~
+
+第二条命令只构造标记为 unsigned 的离线 grant，并执行模拟发送；它不是审批服务或真实外部动作。
 
 ## Human-in-the-loop
 
@@ -136,7 +191,7 @@ Agent context 通常包括 system policy、工具 schema、任务状态、相关
 - review：质量或政策需要判断；
 - takeover：系统无法安全继续。
 
-确认卡片展示动作、资源、参数差异、影响、费用、可撤销性和过期时间。approval token 绑定用户、task、call id、fingerprint、scope 和 expiry；参数变化后旧审批失效。
+确认卡片展示动作、资源、参数差异、影响、费用、可撤销性和过期时间。approval token 绑定用户、task、call id、tool/policy/resource revision、execution fingerprint、scope 和 expiry；参数、主体或版本变化后旧审批失效。Cache replay 也要先按当前身份和 policy 重新授权。
 
 ## 设计练习
 

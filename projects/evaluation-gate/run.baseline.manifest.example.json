@@ -1,0 +1,19 @@
+{
+  "cases_fingerprint": "sha256:2684a3b77ed523f16bf0bf1e3021df1d7c14b0f3f07b902c14344412e54af075",
+  "manifest_fingerprint": "sha256:bd47be321044a321effefd7ded047e68bc9842e05e1593bfc59fcb8f901fdeb9",
+  "manifest_version": "about-llm.evaluation-run-manifest.v1",
+  "metadata": {
+    "scorer_revision": "about-llm.evaluation-cli.score.v1"
+  },
+  "metric_revisions": {
+    "exact_match": "about-llm.normalized-exact-match.v1",
+    "token_f1": "about-llm.token-f1.v1"
+  },
+  "ordered_case_ids": [
+    "definition-rag",
+    "definition-kv"
+  ],
+  "recorded_answers_fingerprint": "sha256:0b568ceac832e5d8b7aa40cfed39a47aee0303b8410d9426cfefeb24a0667cf4",
+  "results_fingerprint": "sha256:397999d8aad096690cec6c06b56364d62dd3df2c5b550c56fdef064f6bdf1089",
+  "system_id": "authored-fixture-baseline@v1"
+}

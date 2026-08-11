@@ -33,9 +33,52 @@ vllm serve MODEL_ID \
 
 调度 token/sequence 上限控制一次迭代容纳多少 prefill/decode。优化吞吐会影响 TTFT/TPOT，必须画 Pareto curve。
 
+### Continuous batching 要先固定调度语义
+
+“动态把请求放进 batch”还不足以定义可复现实验。至少要说明 arrival/admission boundary、sequence cap、每轮 token budget、prefill chunk、decode 与 prefill 的优先级、preemption，以及 prefill 完成后首 token 在哪个 boundary 可见。仓库的 `simulate_continuous_batching` 固定一份 decode-first CPU 教学策略：FCFS admission；每个 decode-ready request 每轮一个位置；每个 resident prefill 至少一个位置；剩余 prefill budget 再按 FCFS 分配，并要求 `max_batch_tokens >= max_running_sequences` 保证进展。
+
+若请求 \(i\) 有 \(P_i\) 个 prompt token、恰好发出 \(O_i\ge1\) 个输出 token，且无 prefix reuse、speculative verification 或 beam，那么该 oracle 的 causal forward positions 是
+
+\[
+W=\sum_i(P_i+O_i-1).
+\]
+
+减一是因为 prefill 的最后一个 prompt position 已给出首个输出 token 的分布；后续 \(O_i-1\) 个 token 才各需一个 decode position。不能把 `prompt_tokens + completion_tokens` 直接叫作模型执行 token，也不能反过来用 forward work 改写 API 计费/输出 token。Toy 的 3 个请求有 prompt/output 7/6、实际调度 work 10，逐轮 used slots 为 `3,3,2,2`。
+
+离散 step 不是秒；toy 的 token-slot utilization 不是 GPU utilization，FCFS/decode-first 也不证明 vLLM scheduler equivalence。真实 runtime 还受 KV admission、prefix cache、preemption、priority、padding/kernel shape 和版本策略影响，必须保存 server trace 并在目标硬件测量。
+
+### 抢占后必须把重计算另记一笔
+
+仓库另提供 `simulate_kv_preemption_batching`，把调度 boundary 与 metadata-only `PagedKVAllocator` 接在一起。每处理一个 causal position 就 append 一个 KV position；当新 block 不足时，固定策略只允许抢占本轮尚未工作且 stable-FCFS 优先级更低的 resident，并从中选择最近 admission 者。严格单向的抢占关系防止两个 rebuild 请求互相驱逐。被抢占请求释放全部 block，按 FCFS 再 admission 后先重建已完成的 logical context；rebuild 只恢复 KV，不重复发出已经返回给用户的 token。已经在本轮选中 work 的请求受保护，完成请求到 boundary 才释放 block，避免把同一 interval 内尚未完成的 KV 提前借给别人。
+
+因此逻辑模型工作与实际执行工作要分开：
+
+\[
+W_{\text{logical}}=\sum_i(P_i+O_i-1),\qquad
+W_{\text{executed}}=W_{\text{logical}}+R,
+\]
+
+其中 (R) 是抢占后重复 prefill/recompute 的 position 数。固定 fixture 有 3 个、每块 2 token 的物理 block；A/B 的 logical work 分别为 6/3。A 增长时抢占已缓存 2 positions 的 B，B 恢复后重算 2 positions，所以逻辑 work=9、实际 work=11、overhead=2/9；逐轮 used slots 为 `3,3,1,1,2,1`。B 的 token emission 仍只有 boundary 2 和 6 两次。足够 KV 的对照保持 logical=executed=9、preemption=0。
+
+这份策略不是 vLLM scheduler 的复刻。它没有 K/V 数值、swap、prefix reuse、priority aging、distributed worker、CUDA kernel 或墙钟；block 数也不是目标 GPU 的真实 VRAM。它证明的是在这份明确 policy 下，admission、释放、抢占、重建、token emission 与 work ledger 彼此一致。
+
+### Paged KV 的容量不能只看 token 总数
+
+每条序列有自己的 logical block table；多个表可通过 refcount 共享 prefix physical block。共享的 full block append 不需复制，shared partial tail append 必须 COW，否则会改坏其他序列。容量 admission 要预留完成本次 append 所需的全部新块，再修改 tail/length；只看“当前 tail 还有一个空位”会漏掉同一 append 后续还需新块，造成半更新。
+
+仓库 `PagedKVAllocator` 用 CPU metadata 回归 block partition、occupancy/refcount、prefix fork、partial COW、释放复用、物理碎片和 no-capacity atomic failure。`logical_tokens` 按序列重复共享 prefix，不能拿它直接计算 physical fragmentation；后者用 allocated slots 减 physical materialized positions。它只证明 metadata 状态机：不保存 K/V、未执行 PagedAttention kernel，也没有 vLLM eviction/preemption/swap 或真实 VRAM 证据。
+
+### Prefix cache identity 是安全边界
+
+Prefix reuse 还需要独立于 block allocator 的 identity：可信 tenant/visibility domain、authorization 与 policy revision、model/tokenizer/chat template/adapter revision、RoPE/position config、KV dtype 和 exact token ids。Raw text hash 不包含这些语义；SHA-256 也只能作索引提示，不能替代 full comparison、授权或保密。仓库 `PrefixCache` 用 injected collision、longest exact-prefix、lease-pinned LRU 和全 leased 原子失败测试这些规则，但不声称模拟某版 vLLM 的 block hash、eviction policy、timing 或 GPU storage。部署参数和 cache 行为必须按实际安装版本核对并压测。
+
 ## 模型与 tokenizer
 
 固定 model、tokenizer revision、chat template 和 generation defaults。OpenAI-compatible `messages` 由 server template 渲染；客户端若又手工套模板会重复 role token。上线前用 token ids 或 echo 工具核对。
+
+部署前把 tokenizer、model config、generation config 的 BOS/EOS/PAD/decoder-start ID 三方对账，但不要要求机械相等：generation EOS 可以是 tokenizer EOS 的有意 superset，PAD 与 EOS 也可能重合。真正危险的信号是未解释的 disjoint、越过 tokenizer/model vocab 上界，或客户端、server 与离线基线采用不同 stop 集。仓库 generation-protocol inspector 只比较 normalized snapshots；vLLM CLI/request override、server fallback、stop strings/tokenization 与实际 finish reason 仍必须在目标版本做 token-level 契约测试。
+
+仓库的 Transformers generation runtime control 已证明在当前依赖版本和强制 token plan 下 call-level EOS/max-new-token override 的三条路径；它不运行 vLLM，不能外推 vLLM 的 CLI/server/request precedence。跨 runtime 对照应发送完全相同的 prompt token IDs，显式设置 EOS/length/sampling，保存逐 token 输出与服务端 finish reason，并把“token 序列一致”和“停止原因字段一致”分开判定。
 
 adapter/LoRA serving 要限制允许的 adapter、来源和每请求切换；动态加载是代码/权重供应链边界。多 adapter batching 的性能与显存单独测。
 
@@ -51,11 +94,14 @@ OpenAI-compatible 并不保证所有扩展完全相同。契约测试覆盖：mo
 
 流式客户端要处理：一个 TCP chunk 多个 event、一个 event 跨 chunk、空 keepalive、多行 data、UTF-8 分片、错误事件和提前断开。仓库 `about_llm.inference.sse` 用增量 parser 验证这些边界。
 
+SSE framing 与 stop matching 仍是两层：前者还原 event，后者在 decoded output text 上匹配可能跨 event/token 的 stop。仓库 `IncrementalStopMatcher` 通过 longest partial-prefix withholding 避免提前泄露 stop 前缀，并固定 first-completion/配置顺序 overlap 语义；它不是 vLLM stop 实现，也不能从客户端截断推断服务端 finish reason、usage、KV release 或计费停止。目标版本必须用 token/event trace 单独做契约测试。
+
 客户端取消后服务端应尽快停止 decode 并释放 KV；监控 disconnect-to-release 延迟。代理层必须关闭会破坏 SSE 的缓冲。
 
 ## 指标定义
 
-- TTFT：发送请求到收到首个内容 token；包含排队、prefill 和网络。
+- Dispatch TTFT：真正开始 HTTP attempt 到收到首个内容 token，包含网关/服务端排队、prefill 和网络，但不含负载生成器本地 semaphore 前等待。
+- Offered TTFT：请求按 workload arrival process 进入客户端到首 token；它等于该请求的 client queue 加 dispatch TTFT，但 **p95 不能由两个 p95 相加得到**。
 - TPOT：首 token 后相邻输出 token 的平均时间，通常 `(last-first)/(n-1)`。
 - ITL：每个 token 间隔的分布，比单一 TPOT 更细。
 - E2E latency：完整请求时间。
@@ -65,6 +111,22 @@ OpenAI-compatible 并不保证所有扩展完全相同。契约测试覆盖：mo
 流式 chunk 不等于 token，一个 chunk 可能含多个 token或只有 role/usage。优先用 server usage/tokenizer 计数；不能把 SSE event 数当 token 数。
 
 仓库基准脚本在缺少 `completion_tokens` 时会明确失败。若目标服务不返回流式 usage，应使用与服务端完全相同 revision 的 tokenizer 对完整输出重新计数，并把计数来源写入结果；不能静默退化为 chunk 计数。
+
+### 成功延迟是条件统计
+
+若只对成功请求计算 p95 TTFT，就得到 \(P(TTFT\mid success)\)，不是所有用户尝试的体验。失败请求没有完整 TTFT/TPOT 时不能填 0，也不能从行集中删除后只报漂亮 percentile。至少联合报告：
+
+\[
+success\ rate=\frac{N_{success}}{N_{attempted}},
+\qquad
+successful\ RPS=\frac{N_{success}}{wall\ time}.
+\]
+
+Attempted RPS、successful RPS 与 offered arrival rate 是不同量。429 可能表示 admission control 正常保护系统，也可能表示容量不足；必须结合租户配额、offered load 和 `Retry-After` 判断。
+
+客户端也可能制造 client-side coordinated omission。若 N 个任务先等待本地 concurrency semaphore，取得槽位后才开始计时，则最慢时请求只是更晚发出，TTFT 样本里看不到此前等待。Trace 应同时保存 `offered_at` 和 HTTP dispatch `started_at`，分别报告 client queue、成功请求的 offered TTFT，以及全 attempt 的 offered-to-terminal time。后者会把快速失败也当作快速终态，不能替代 success rate。
+
+没有成功样本时 percentile 应为 unavailable/null，而不是 0。只有一个输出 token 时没有 post-first-token interval，TPOT 同样未定义。
 
 ## 压测方法
 
@@ -79,7 +141,39 @@ OpenAI-compatible 并不保证所有扩展完全相同。契约测试覆盖：mo
 
 Closed-loop 每个 worker 完成后再发，系统变慢时自动降低到达率，可能掩盖过载；open-loop 按固定速率发，更适合找饱和点，但要限制队列和总成本。
 
+仓库在线脚本支持三种有限 arrival schedule：默认 `burst`、`--arrival-process constant --request-rate λ`，以及 `--arrival-process poisson --request-rate λ --arrival-seed s`。constant 在 (i/\lambda) 到达；Poisson 把第一条请求锚定为 0，后续使用 seeded exponential inter-arrival。两者都预先确定到达时刻，不等待 completion；`--concurrency` 只限制 HTTP dispatch，过载会表现为 client queue 增长。
+
+这里的 open-loop 只描述“到达时刻不由被测服务完成速度反馈控制”，不等于负载生成器无误差。输出将 scheduled offset 加到 benchmark start 作为 `offered_at`，所以 event-loop 唤醒迟到也进入 client queue；但 scheduled timestamp 不证明事件循环按时执行。脚本一次性物化有限 `--requests`，没有无限流、bounded pending queue、分布式同步或独立 generator-lag SLO。应监控负载机 CPU/lag，并且不能从 client timestamp 单独分解 gateway queue 与 vLLM queue。
+
+~~~powershell
+python projects/inference-serving/benchmark_openai.py `
+  --model MODEL_ID --requests 100 --concurrency 8 `
+  --arrival-process constant --request-rate 4
+~~~
+
 报告 p50/p90/p95/p99，不只平均。逐步增加 offered QPS，找到队列延迟陡增的 knee；生产容量留余量并考虑故障少一副本。
+
+### Trace artifact 与删失
+
+每个 offered request 保存 request id、到达/开始/首 token/结束时间、terminal outcome、已知 token usage、取消和错误分类。Timeout 是 right-censored experience：我们只知道用户至少等到了 timeout，不知道若继续等待何时完成；不能把 timeout 当作等于成功 latency，也不能忽略。工程容量报告通常直接联合展示 success/timeout curve 与成功 latency；更正式的生存分析需另行定义 estimand。
+
+Client-visible `server_error` 不能证明根因是 OOM；需要与网关、scheduler、engine 和 GPU trace 关联。反之，client timeout 后 server 可能继续 decode，因此还要测 disconnect-to-release 和 wasted tokens。
+
+仓库离线 CLI 可验证 attempt 聚合与 gate：
+
+~~~powershell
+python -m about_llm.inference_analysis_cli `
+  --attempts projects/inference-serving/attempts.example.jsonl `
+  --benchmark-started-at 0 `
+  --benchmark-completed-at 2 `
+  --minimum-success-rate 0.75 `
+  --maximum-ttft-p95 0.5 `
+  --maximum-client-queue-p95 0.2 `
+  --maximum-successful-offered-ttft-p95 0.6 `
+  --maximum-offered-to-terminal-p95 1.5
+~~~
+
+该 fixture 是合成 client trace，只证明统计口径，不证明任何 GPU、vLLM 配置或生产 SLO。
 
 ## Admission control
 
@@ -126,6 +220,8 @@ OpenAI-compatible 只是数据协议，不提供自动安全和多租户隔离�
 - 模型加载失败：保留旧副本，检查 revision/磁盘/格式。
 - 延迟升高：拆 queue、prefill、decode、网络和 tokenizer；看长度分布是否漂移。
 - 输出乱码/模板错：比较 tokenizer/template revision 与客户端渲染。
+
+压测工具自身也会失败。已知网络/HTTP/protocol error 可记录为 attempt；未知代码异常应让基准失败，不要一律捕获后归类为服务故障。错误消息和 response body 可能含 secret/输入，artifact 需脱敏。
 
 ## 单卡验收清单
 

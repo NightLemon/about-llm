@@ -85,6 +85,27 @@ bi-encoder 独立编码，适合大规模召回；cross-encoder 联合读取 que
 
 生成式 reranker/LLM 选择器适合复杂约束，但输出不稳定、昂贵且易受文档提示注入。它应在授权、清洗后的候选上运行，输出固定 ID/schema，并与 cross-encoder 基线比较。
 
+### 可执行的 authorization-first rerank 契约
+
+`rerank_authorized_candidates` 不信任上游候选：先要求 document id 唯一、输入顺序与 one-based rank 连续，再按当前 tenant/principals 二次过滤。跨租户或 ACL-blocked 文本不会传给 scorer；只有授权候选才检查首阶段分数、组成 query–passage 输入。Scorer 必须返回一一对应的有限实数，少分、多分、`NaN/Infinity` 或布尔值全部失败。重排按 score 降序，平分时保留原 candidate rank，再以 document id 稳定兜底。
+
+报告保存 query SHA-256、scorer identity、候选 content SHA-256、首阶段/重排 rank 与 score、授权结论和最终 top-k。Hash 只绑定本次显式 bytes；不认证模型来源，也不证明 scorer 实际来自所称 checkpoint。目标 tokenizer、最大长度和 truncation 仍由 adapter/模型负责，reference 报告明确标为未验证，不能因 score 有限就假设答案段没被截断。
+
+无需下载模型即可重放 authored score fixture：
+
+~~~powershell
+python -m about_llm.rag.cli rerank-recorded `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --scores projects/rag-foundations/reranker-scores.example.jsonl `
+  --query "RAG 为什么要先做 ACL 权限过滤" `
+  --tenant tenant-a `
+  --principal engineering `
+  --candidate-k 3 `
+  --top-k 2
+~~~
+
+每条 recorded score 精确绑定 query hash、chunk id、chunk content hash 和统一 scorer identity；候选缺分、余分、query/content 漂移都会拒绝。Fixture 会真实改变排序并验证控制流，但分数由作者构造，没有运行 learned model，也没有 gold qrels 对比，所以不能声称 reranker 提高了相关性。`CrossEncoderReranker` adapter 复用同一 authorization-first core；对目标 checkpoint 的有效结论仍需固定 revision、记录 tokenizer/truncation，并在 held-out qrels 上比较排序质量、延迟和成本。
+
 ## 多跳与查询改写
 
 单次相似检索很难回答“项目 A 的负责人所在部门采用什么值班规则”。可用：
@@ -121,7 +142,43 @@ top-k 不是最终上下文。候选还要去重、合并相邻 chunk、控制�
 
 MRR 关注第一个相关结果，nDCG 支持分级相关性，Precision@k 反映上下文污染。多跳任务还要测 all-evidence recall：所有必要证据是否同时出现。报告总体均值之外的 query 类型、语言、权限、时间和长尾实体切片。
 
-若 gold 不完备，未标注文档不等于不相关。可对系统新增 top 结果做 pooling 后补标，或使用 judged@k 覆盖率提示指标可信程度。
+这些名字仍不足以唯一确定数学口径。必须在报告中固定以下约定：
+
+\[
+\operatorname{Precision@k}(q)=
+\frac{|G_q\cap R_q^k|}{|R_q^k|}
+\]
+
+本仓库将 Precision@k 分母定义为实际返回且被检查的前 k 个 source 槽位；零结果为 0。固定除以 k 是另一种常见定义，在结果数不足 k 时会不同，不能混报。仓库的 source-level CLI 先去重 source，所以重复 chunk 不会获得多次相关 credit；若评估原始 chunk ranking，重复槽位应保留并被污染指标惩罚。
+
+all-evidence recall@k 不是普通 recall 的别名，而是每 query 的指示量：
+
+\[
+\operatorname{AllEvidence@k}(q)=
+\mathbf{1}[H_q\subseteq R_q^k]
+\]
+
+其中 \(H_q\) 是缺一不可的 required evidence。宏平均 0.8 表示 80% query 在 top-k 同时拿全证据；它不能说明剩余 query 平均只缺多少证据，因此应与普通 Recall@k 一起报告。对于多个来源任选其一即可回答的情况，应把等价证据组建模为 alternatives，而不是错误地把所有来源都列为 required；当前样例 schema 只支持一个 conjunctive required 集合，更复杂的 alternatives 需要上层评测器显式展开。
+
+### 分级 qrels 与无答案分母
+
+`relevance[source_id]` 可以用 3/2/1/0 表示 usable answer-bearing、部分支持、仅主题相关和明确不相关，但等级语义必须在标注指南中固定。nDCG 使用这些 gain，binary Recall/MRR/Precision 只把大于 0 的 label 当相关。不要把模型相似度分数当人工 relevance label。
+
+答案型 query 和无答案 query 不应混进同一个 Recall 分母：空 gold 集合使 Recall 的分母为零。无答案 query 应显式标记 `answerable=false`；zero-result accuracy 只是一条检索层信号。如果检索返回了主题相近但不含答案的文档，零结果指标会判失败，但这不等于系统一定会错误回答；反过来零结果也不证明最终生成器正确拒答。端到端还要测拒答/澄清决策及缺口说明。
+
+若 gold 不完备，未标注文档不自动等于不相关。可对系统新增 top 结果做 pooling 后补标，或使用 judged@k 覆盖率提示指标可信程度。报告应称其为 unjudged，而不是 false positive。
+
+### 可执行诊断契约
+
+`projects/rag-foundations` 的评测 fixture 同时包含 graded、multi-evidence、no-answer 和 ACL context。每条 case 输出 found/missing relevant、found/missing required、judged/unjudged result，以及 gold source 的 `visible / acl_blocked / missing_from_tenant_corpus` 状态。这能把失败先分成：
+
+1. `missing_from_tenant_corpus`：语料/摄取 miss，换 reranker 无效；
+2. `acl_blocked`：标注的 caller context 与证据权限不一致，不能靠检索后放宽权限；
+3. visible 但未进入大候选集：retrieval miss；
+4. 大候选中存在、最终上下文缺失：rerank/packing miss；
+5. 上下文含完整证据但答案错误：generation/grounding failure。
+
+当前 CLI 能直接证明前 3 类中的语料、权限和 BM25 source-level 结果；`rerank-recorded` 证明授权优先、候选/分数 identity 与稳定重排控制流，`pack`/`pack-tokenized` 则证明该候选序列在给定 quota、模板与 byte/token budget 下的选择结果。仓库 authored fixture 仍没有执行 learned reranker 或 LLM，不能把 packing 决策写成“生成已使用证据”，也不能从 BM25、recorded score 或 greedy packing 声称目标语料上的最优排序。
 
 ## 在线与诊断
 

@@ -36,6 +36,63 @@ L_{system}+L_{history}+L_{query}+L_{evidence}+L_{output}\le L_{context}
 
 必须先为输出、system 和必要 history 预留，再分配 evidence。不能先塞满检索结果，再把输出上限压到无法完整回答。
 
+上式是容量账本，不意味着各组件分别 tokenize 后的长度能精确相加。BPE/Unigram 边界、chat template control token 和 special token 会改变实际序列；插入文本后，边界 token merge 甚至可能让总 token 数小幅下降，因此也不能强制 `base_cost <= used_cost`。最可靠的做法是每次候选加入后重新渲染**完整 prospective prompt**，用目标 tokenizer/revision 计数，并把预留输出 token 一并计入 cost。
+
+### 可执行的预算与决策账本
+
+仓库的 `pack_citation_context` 接受 `cost_fn(rendered_context) -> int`。cost closure 可以捕获 system、history、query、chat template 和 reserved output，然后对完整 prompt 计数；packer 不假设单位一定是 token，也不把组件成本当作可加量。每个候选都在 budget/quota 判断前重新检查 tenant/principal ACL，因此不能用“最终会被预算丢掉”掩盖上游越权结果。
+
+`make_rag_chat_prompt_cost` 把 system prompt、query、带唯一 `{query}`/`{context}` 槽位的用户模板、chat tokenizer 和输出预留组合成 cost closure。替换只解释原始模板槽位，不会把 query/context 中碰巧出现的 `{context}` 或 `{query}` 再次展开。
+
+```python
+from about_llm.rag import pack_citation_context
+
+reserved_output_tokens = 512
+
+def full_prompt_tokens(context: str) -> int:
+    messages = [
+        {"role": "system", "content": "只能依据授权证据回答。"},
+        {"role": "user", "content": f"证据：\n{context}\n\n问题：{question}"},
+    ]
+    prompt_ids = tokenizer.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+    )
+    return len(prompt_ids) + reserved_output_tokens
+
+packed = pack_citation_context(
+    ranked_results,
+    tenant_id=tenant_id,
+    principals=principals,
+    budget_units=model_context_limit,
+    cost_fn=full_prompt_tokens,
+    cost_unit="tokens:model-and-tokenizer@revision",
+    max_chunks_per_source=2,
+)
+```
+
+算法按已给定 rank greedy 扫描：document id 去重，限制每个稳定 source 的 chunk 数；某个超预算候选被跳过后仍尝试更短的后续候选。每个候选记录 `selected / duplicate_document / source_quota / budget` 与加入后的 prospective cost。这样能够解释“为什么某段没进上下文”，也能验证最终 `used_cost_units <= budget_units`。
+
+CLI 的 `pack`/`--budget-bytes` 只计算 UTF-8 serialized bytes，不是 token 数，也不能用于承诺模型窗口。`pack-tokenized` 则加载明确 tokenizer revision，运行 checkpoint 或本地 override chat template，对每个候选重算完整 prompt，并将 reserved output 一起与 `max-total-tokens` 比较；报告模板/prompt hash、最终 prompt token IDs 和逐候选决策。
+
+~~~powershell
+python -m about_llm.rag.cli pack-tokenized `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --query "ACL 为什么必须在检索前执行" `
+  --tenant tenant-a `
+  --principal engineering `
+  --max-total-tokens 4096 `
+  --reserved-output-tokens 512 `
+  --tokenizer C:\path\to\target-tokenizer `
+  --tokenizer-revision exact-revision `
+  --local-files-only `
+  --system-prompt-file projects/rag-foundations/system-prompt.example.txt `
+  --user-prompt-template-file projects/rag-foundations/user-prompt-template.example.txt
+~~~
+
+该报告中的 `model_context_window_verified=false` 很重要：成功 tokenize 只证明“这组文件按这个模板产生这些 token IDs”，不证明 tokenizer 与部署权重匹配、用户给出的 4096 是 runtime 真正可用窗口、模型能生成预留长度，或回答会忠实使用证据。Tokenizer revision/hash 也不是来源认证。当前 packer 是透明 CPU reference：它不做相邻 chunk 合并、knapsack/集合覆盖、required-evidence 预留或语义压缩，并为准确计数反复渲染 prospective context，候选很大时不是高吞吐实现。生产优化必须与该 reference 在选择、授权和最终 tokenizer 计数上做 differential test。
+
 ### 去重、合并与压缩
 
 - exact/near duplicate：优先保留更新、权威或位置更完整的版本。
@@ -92,6 +149,19 @@ L_{system}+L_{history}+L_{query}+L_{evidence}+L_{output}\le L_{context}
 
 阈值要用 coverage-risk 曲线选择：阈值越严格，错误回答减少但拒答增加。输出应说明缺少的证据和可行下一步，而不是泛化的“作为 AI 我不知道”。
 
+### 把检索信号与拒答决策分开
+
+检索零结果正确不证明最终拒答正确。系统可能在零结果时依靠参数记忆猜答，也可能在召回若干主题相关文档后仍正确识别“没有所问事实”。评测至少区分四格：
+
+| Gold 可回答 | 最终系统回答 | 解释 |
+|---|---|---|
+| 是 | 有支持答案 | true answer；再检查 correctness/citation |
+| 是 | 拒答 | false refusal；定位 corpus/retrieval/packing/generation |
+| 否 | 拒答或澄清 | true refusal；检查缺口说明是否正确 |
+| 否 | 给出事实答案 | unsupported answer；即使引用 ID 合法也算失败 |
+
+再把 retrieval trace 叠加到四格上：`zero_results`、required evidence 是否齐全、gold 是否被 ACL 阻断、最终 context 是否保留证据。这样才能区分“没有证据所以拒答”和“有证据但模型没用”。阈值选择用独立校准集；不能在同一测试集上调到最好再报告准确率。
+
 ## 冲突证据
 
 两个来源冲突时，不要让模型按相似度多数表决。将权威级别、发布日期、生效区间和文档状态作为显式 metadata。若规则不能确定，应呈现冲突、分别引用并请求用户选择适用范围。
@@ -118,6 +188,60 @@ API 场景推荐结构化输出：
 ## 评测设计
 
 一条 case 至少含 query、允许来源、gold evidence、reference answer/claims、时间与权限上下文、切片。组件指标包括 retrieval recall、context precision、引用 validity/coverage/correctness、answer correctness、拒答准确性和延迟。
+
+无答案 case 不应伪造一个空字符串 reference answer 后与普通答案共同算字符串指标。它需要显式 `answerable`/expected action 标签，并分别统计 answerable-case quality、no-answer refusal、总体 coverage 和被接受答案的 risk。检索层的 zero-result accuracy 可以作为诊断列，但不能替代这些端到端分母。
+
+### 可运行的 extractive oracle baseline
+
+在接 LLM 前，先建立一个“只能复制已授权证据”的弱基线很有价值。仓库的 `answer-extractive` 依次执行 authorization-first BM25、复用 context packer、在 packed chunk 中按精确字符偏移切句/分句、greedy lexical set coverage 和 answer/abstain。答案只由 `原文 span [Sx]` 组成；artifact 会验证 offset slice、short/stable source、content hash、覆盖 token ledger 和 packing decision 一致。未进最终 context 的 chunk 无法被引用。
+
+`evaluate-extractive` 先完成生成，再把 artifact 转成统一 `RecordedAnswer` 做离线评测。生成函数的参数没有 qrels、`answerable`、relevance 或 required source；测试把同一在线请求从 answerable 改标为 no-answer 时，生成 artifact 完全不变，只有事后 action accuracy 改变。这样可防止把 gold 答案泄漏进在线决策，但不能防止语料本身被评测集污染。
+
+Exact copy 使“claim 是该 source 的逐字陈述”可由程序证明，所以机械 judgment provenance 是 `deterministic-exact-source-span-v1`。不要把它扩大成 semantic entailment judge：词面 overlap 可能选错句，来源本身可能错误，多个正确 span 也可能遗漏限制或冲突。默认 0.55 coverage 是 authored fixture threshold，必须在独立 calibration split 上画 coverage-risk 曲线后才能用于目标域。该路径使用 UTF-8 byte budget，仅用于无 tokenizer 的透明控制实验。
+
+~~~powershell
+python -m about_llm.rag.cli evaluate-extractive `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --cases projects/rag-foundations/sample_eval.jsonl
+~~~
+
+### 可执行的 recorded-answer gate
+
+仓库的 `about-llm-rag evaluate-answers` 读取三份可版本化 artifact：带 answerability/权限上下文的 case、版本化 corpus，以及录制的 answer/abstain/error。recorded answer 把最终 context 的稳定 source id、atomic claims、claim citations、verdict 和 `judgment_source` 分开保存。真实系统应先保存模型原始输出，再由独立人工或经过校准的 judge 附加 verdict；不能把模型自述“supported”直接当标签。
+
+每条 claim verdict 由工件显式提供，枚举为 `supported / contradicted / insufficient / unjudged`。本地评测器**不执行语义蕴含**，只做以下确定性工作：
+
+1. case 与 output 必须 exact join，不能丢掉超时或解析失败；
+2. error 是一等终态，进入 case 分母且不算 coverage；
+3. 根据 corpus、tenant 和 principals 重新检查 recorded context；
+4. claim 必须有引用，引用必须位于可见 context；
+5. judged claim 必须记录 judgment provenance，unjudged 不得伪装成已判断；
+6. answerable case 只有 action=answer 且所有 claim 都有合法引用、supplied verdict 都为 supported 才过 recorded gate；no-answer case 只有 abstain 且 context 未越权才过 gate。
+
+报告的 action accuracy 只比较 answer/abstain/error 动作；citation validity 只检查 source id 与授权 context；supported-claim rate 只聚合已有判断；claim-judgment coverage 提示还有多少 claim 未判断。`grounded_answer_pass_rate` 的分母是实际回答的 case，`recorded_gate_pass_rate` 的分母是全部 case，二者不能互换。
+
+这个 gate 刻意保守，但仍不证明 answer completeness、source quality 或 verdict 正确。一个 answerable case 只输出一条真实但不完整的 claim 仍可能通过；要验证 completeness，需为 case 建 reference claims/rubric 并逐项对齐。fixture 的手写标签只验证协议和聚合数学，不是独立人工评测，更不是某个 LLM 的实测质量。
+
+~~~powershell
+python -m about_llm.rag.cli evaluate-answers `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --cases projects/rag-foundations/sample_eval.jsonl `
+  --answers projects/rag-foundations/sample_answers.jsonl
+~~~
+
+### 把 packing、原始输出与评测工件连成一条证据链
+
+只保存 `context_source_ids` 无法回答“模型当时究竟看到了哪一版 chunk”。仓库的 `audit-traces` 要求每个 case 恰好对应一个 trace 和一个 recorded answer，并绑定 query SHA-256、tenant/principals、按 `S1..Sn` 排序的 document/stable-source/version/content SHA-256、规范化 rendered context、prompt token IDs 与 tokenizer/template/prompt identity、输出预留、generator revision、raw output bytes 和 recorded-answer canonical fingerprint。同一稳定来源可以贡献多个不同 chunk；answer 的稳定来源顺序按首次出现去重后核对。
+
+~~~powershell
+python -m about_llm.rag.cli audit-traces `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --cases projects/rag-foundations/sample_eval.jsonl `
+  --answers projects/rag-foundations/sample_answers.jsonl `
+  --traces projects/rag-foundations/generation-traces.example.jsonl
+~~~
+
+审计从**当前** corpus 重建 chunk 和 ACL，所以能发现 query/security context、chunk id/version/bytes、source order、rendered context 或 answer fingerprint 不一致；它不能证明历史时刻也能取回相同 corpus。prompt fields 与 raw output 被纳入 trace fingerprint，但该命令不重新 tokenize、不向可信 registry 核验 revision，也不做 raw-output→claim 的解析或语义蕴含。fixture 是手写协议样例，不是模型执行证据；unsigned hash 若没有外部可信 manifest/签名，也不能阻止攻击者协同重写所有文件。
 
 建立以下对抗集：
 

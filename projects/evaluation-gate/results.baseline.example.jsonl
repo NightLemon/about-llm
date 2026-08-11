@@ -1,0 +1,2 @@
+{"case_id": "definition-rag", "error": null, "latency_seconds": 0.1, "output": "一种参数高效微调方法", "scores": {"exact_match": 0.0, "token_f1": 0.0}}
+{"case_id": "definition-kv", "error": null, "latency_seconds": 0.12, "output": "模型的全部权重", "scores": {"exact_match": 0.0, "token_f1": 0.125}}

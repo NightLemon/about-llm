@@ -49,3 +49,27 @@ def test_greedy_generation_is_deterministic_and_respects_length() -> None:
     second = model.generate(prompt, max_new_tokens=3, temperature=0)
     assert first.shape == (1, 5)
     torch.testing.assert_close(first, second)
+
+
+def test_top_p_tiny_threshold_keeps_argmax_token() -> None:
+    model = tiny_model()
+    prompt = torch.tensor([[1, 2]])
+    greedy = model.generate(prompt, max_new_tokens=4, temperature=0)
+    sampled = model.generate(
+        prompt,
+        max_new_tokens=4,
+        temperature=1,
+        top_p=1e-8,
+        generator=torch.Generator().manual_seed(99),
+    )
+    torch.testing.assert_close(sampled, greedy)
+
+
+@pytest.mark.parametrize("top_p", [0.0, -0.1, 1.1])
+def test_top_p_rejects_invalid_threshold(top_p: float) -> None:
+    with pytest.raises(ValueError, match="top_p must be in"):
+        tiny_model().generate(
+            torch.tensor([[1, 2]]),
+            max_new_tokens=1,
+            top_p=top_p,
+        )

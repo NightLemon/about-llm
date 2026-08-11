@@ -1,0 +1,18 @@
+{
+  "policy_version": "about-llm.sft-governance-policy.v1",
+  "policy_id": "about-llm-authored-fixture-v1",
+  "owner": "about-llm maintainers",
+  "reviewed_at": "2026-08-06T00:00:00Z",
+  "source_rules": [
+    {
+      "source": "about-llm-authored-fixture",
+      "license": "CC-BY-4.0",
+      "decision": "allow",
+      "allowed_purposes": ["training", "evaluation"],
+      "evidence_ref": "repo://LICENSE",
+      "expires_at": null
+    }
+  ],
+  "allowed_risk_labels": ["normal"],
+  "candidate_exceptions": []
+}

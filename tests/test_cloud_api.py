@@ -4,6 +4,8 @@ import pytest
 
 from about_llm.integrations.cloud_api import (
     ChatMessage,
+    ChatResponse,
+    RequestSpec,
     build_anthropic_request,
     build_gemini_request,
     build_openai_compatible_request,
@@ -104,3 +106,70 @@ def test_gemini_maps_assistant_role_and_usage_names() -> None:
     )
     assert response.text == "part one part two"
     assert response.input_tokens == 3 and response.output_tokens == 4
+
+
+def test_cloud_contracts_reject_ambiguous_coercions_and_invalid_endpoints() -> None:
+    with pytest.raises(ValueError, match="absolute HTTP"):
+        build_anthropic_request(
+            base_url="anthropic.example",
+            api_key="secret",
+            api_version="2023-06-01",
+            model="model",
+            messages=MESSAGES,
+            max_tokens=8,
+        )
+    with pytest.raises(ValueError, match="non-negative integers"):
+        parse_openai_compatible_response(
+            {
+                "choices": [{"message": {"content": "answer"}}],
+                "usage": {"prompt_tokens": True},
+            }
+        )
+    with pytest.raises(ValueError, match="non-empty string"):
+        parse_anthropic_response(
+            {"content": [{"type": "text", "text": 7}], "usage": {}}
+        )
+    with pytest.raises(ValueError, match="usageMetadata must be an object"):
+        parse_gemini_response(
+            {
+                "candidates": [{"content": {"parts": [{"text": "answer"}]}}],
+                "usageMetadata": [],
+            }
+        )
+    with pytest.raises(ValueError, match="positive integer"):
+        build_openai_compatible_request(
+            base_url="https://provider.example",
+            api_key="secret",
+            model="model",
+            messages=MESSAGES,
+            max_tokens=True,
+        )
+    with pytest.raises(ValueError, match="finite non-negative"):
+        build_gemini_request(
+            base_url="https://provider.example",
+            api_key="secret",
+            model="model",
+            messages=MESSAGES,
+            max_tokens=8,
+            temperature=float("nan"),
+        )
+
+
+def test_direct_contract_objects_reject_boolean_usage_and_nonfinite_json() -> None:
+    with pytest.raises(ValueError, match="non-negative integer"):
+        ChatResponse("answer", None, True, None, None)
+    with pytest.raises(ValueError, match="JSON serializable"):
+        RequestSpec(
+            "https://provider.example/v1/chat/completions",
+            {"temperature": float("inf")},
+            {},
+        )
+
+
+def test_request_spec_rejects_case_insensitive_duplicate_header_names() -> None:
+    with pytest.raises(ValueError, match="unique case-insensitively"):
+        RequestSpec(
+            "https://provider.example/v1/chat/completions",
+            {},
+            {"Authorization": "first", "authorization": "second"},
+        )

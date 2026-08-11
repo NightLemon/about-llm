@@ -1,0 +1,8 @@
+{"case_id":"extract-001","label":1,"probability":0.95}
+{"case_id":"extract-002","label":1,"probability":0.85}
+{"case_id":"extract-003","label":0,"probability":0.75}
+{"case_id":"extract-004","label":1,"probability":0.65}
+{"case_id":"extract-005","label":1,"probability":0.55}
+{"case_id":"extract-006","label":0,"probability":0.45}
+{"case_id":"extract-007","label":0,"probability":0.35}
+{"case_id":"extract-008","label":0,"probability":0.10}

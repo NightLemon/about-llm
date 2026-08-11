@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
+import optax  # type: ignore[import-untyped]
 from jax import Array
 
 PyTree = dict[str, Any]
+TrainStep = Callable[
+    [PyTree, optax.OptState, Array, Array],
+    tuple[PyTree, optax.OptState, Array, Array],
+]
 
 
 @dataclass(frozen=True)
@@ -126,3 +132,53 @@ def cross_entropy_loss(logits: Array, targets: Array, ignore_index: int = -100) 
     token_loss = -jnp.take_along_axis(log_probs, safe_targets[..., None], axis=-1).squeeze(-1)
     denominator = jnp.maximum(visible.sum(), 1)
     return (token_loss * visible).sum() / denominator
+
+
+def adamw_optimizer(
+    *,
+    learning_rate: float,
+    weight_decay: float = 0.0,
+    max_grad_norm: float = 1.0,
+) -> optax.GradientTransformation:
+    """Create the explicit optimizer chain used by the tiny JAX experiment.
+
+    The reported gradient norm in ``make_train_step`` is measured before
+    clipping. This simple global weight decay is pedagogical; production LLM
+    training commonly excludes norm and bias-like parameters with a mask.
+    """
+    if learning_rate <= 0:
+        raise ValueError("learning_rate must be positive")
+    if weight_decay < 0:
+        raise ValueError("weight_decay must be non-negative")
+    if max_grad_norm <= 0:
+        raise ValueError("max_grad_norm must be positive")
+    return optax.chain(
+        optax.clip_by_global_norm(max_grad_norm),
+        optax.adamw(learning_rate=learning_rate, weight_decay=weight_decay),
+    )
+
+
+def make_train_step(
+    config: JAXGPTConfig,
+    optimizer: optax.GradientTransformation,
+) -> TrainStep:
+    """Return one JIT-compiled next-token update with explicit optimizer state."""
+
+    def step(
+        params: PyTree,
+        optimizer_state: optax.OptState,
+        input_ids: Array,
+        targets: Array,
+    ) -> tuple[PyTree, optax.OptState, Array, Array]:
+        def loss_function(current_params: PyTree) -> Array:
+            return cross_entropy_loss(forward(current_params, input_ids, config), targets)
+
+        loss, gradients = jax.value_and_grad(loss_function)(params)
+        gradient_norm = optax.tree.norm(gradients)
+        updates, new_optimizer_state = optimizer.update(
+            gradients, optimizer_state, params
+        )
+        new_params = optax.apply_updates(params, updates)
+        return cast(PyTree, new_params), new_optimizer_state, loss, gradient_norm
+
+    return cast(TrainStep, jax.jit(step))

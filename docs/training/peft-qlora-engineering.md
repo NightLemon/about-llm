@@ -91,6 +91,16 @@ weight decay 通常不作用 bias/LayerNorm；对 LoRA A/B 的最佳设置需要
 
 合并测试：固定输入，比较 unmerged 与 merged logits；保存/重载再比较；重新跑任务、安全和性能评测。量化部署也重新评测。
 
+仓库 `smoke_peft.py` 已把这条链路落实为随机 tiny GPT-2 CPU control：保存 exact base 与 adapter safetensors，从独立 base 重载 adapter，`safe_merge` 后保存 full weights，再从磁盘重载 merged model。它同时保存 WordLevel tokenizer、special tokens 与 chat template；8-step fixture 的 adapter/merged reload logit error 都是 0，merge error 约 $8.94\times10^{-8}$，chat-template token IDs 在重载前后均为 `[5,7,2,9,2]`，frozen base 参数未变。
+
+仓库 strict verifier 覆盖目录内全部 13 个文件，而非只列三个 weight：canonical manifest 绑定 identity、base/adapter/merged/tokenizer contract、path-sorted file size/SHA-256 和 descriptor-set digest；加载前要求三个 safetensors 可解析、base/merged 完整 config 与 tensor key/dtype/shape signature 一致、每个 target 有 LoRA A/B tensor，并拒绝额外、缺失、symlink、路径穿越、duplicate/non-canonical JSON、资源超限和语义漂移。结构一致仍不证明权重数值正确。PEFT 自身不会自动强制仓库 manifest，base path 或 identity string 也不认证内容；必须把 `verify_peft_export_directory` 放在任何 published-artifact load 之前。Unkeyed digest 可被协同重算，exclusive-create + file `fsync` 不证明目录原子发布；verify 后再由框架按路径打开文件还存在并发替换 TOCTOU，需由不可变发布目录、ACL/lease 或内容寻址句柄补足。Fixture 仍没有训练恢复状态、量化 merge、目标 checkpoint 或 CUDA，所以它证明当前标准 artifact plumbing、完整文件集校验和数值等价，不证明来源、license、目标质量或跨版本/runtime 兼容。
+
+## 训练恢复不是 adapter 保存
+
+adapter 目录通常只面向推理或后续加载，不自动包含 optimizer、scheduler、scaler、RNG、sampler/data cursor 和未完成 accumulation window。要声称训练可恢复，先定义一致性边界，再做两条同起点实验：一条不中断运行到第 `N` 步，另一条在第 `K` 步写盘、终止进程、重载后运行到 `N`；逐步比较 sample identity、LR、loss，并在终点比较 adapter/base 可训练参数、optimizer state 与所有消费过的 RNG。只比较最终 loss 接近不够。
+
+仓库 `minigpt_resume_toy.py` 已在 CPU FP32 MiniGPT + 单组 AdamW 上给出这种 bit-exact control，并验证 loader 构造随机模型不会污染调用进程的 Torch RNG。它没有 LoRA/QLoRA、AMP、accumulation、worker、CUDA 或 shard，因此不能替代目标 PEFT 训练的恢复演练。目标单卡路径至少还应覆盖 adapter 与 `modules_to_save`、bitsandbytes optimizer state、GradScaler（若使用 FP16）、CUDA RNG、sampler/data cursor、scheduler step 和 accumulation 边界；量化基座的 identity 也必须绑定，不能只保存 adapter。
+
 ## 多 Adapter
 
 为租户/任务各训 adapter 可隔离更新，但 adapter 数过多会造成运维碎片。避免用 adapter 存频繁变化事实。组合多个 LoRA（加权、串联、融合）不保证线性组合行为，必须测相互干扰。
@@ -110,13 +120,21 @@ weight decay 通常不作用 bias/LayerNorm；对 LoRA A/B 的最佳设置需要
 ## 仓库实验路线
 
 1. `LoRALinear`：验证冻结、零初始化和 merge 代数。
-2. `smoke_peft.py`：随机 tiny GPT 实际训练 PEFT，无网络下载。
-3. `train_trl_sft.py`：固定 revision、assistant-only loss 的 LoRA SFT。
-4. `train_qlora.py --estimate-only`：CPU 上做容量计划。
-5. 目标 CUDA：NF4 QLoRA dry-run，记录版本、峰值与 token/s。
-6. 完整 run：与 base/prompt/RAG 基线做统一 test。
+2. `about-llm-sft-data audit`：严格 schema、exact/group 泄漏门禁与 manifest identity。
+3. `smoke_peft.py`：随机 tiny GPT 实际训练 PEFT，无网络下载。
+4. `smoke_trl_sft.py`：离线贯通真实 template mask、collator assistant-only labels 与 tiny-batch overfit。
+5. `about-llm-sft-data prepare-training`：在可读 held-out 的审计进程执行 exact/binding/lexical 与 source-policy/有限敏感候选 gate，生成不含 held-out 原文的 readiness。
+6. `train_trl_sft.py --data-preflight-only`：train-only 进程严格重载 readiness 并绑定当前 train，再运行固定 revision、assistant-only loss 的 LoRA SFT。
+7. `about-llm-preference-data prepare-training`：把 binary train-only pair 按顺序绑定到完整 preference split artifact，执行 prompt/candidate lexical 与 source/sensitive gate，不把 tie/invalid 强制成 winner。
+8. `train_trl_dpo.py --data-preflight-only`：无下载地验证 preference readiness；正式运行在模型权重加载前用目标 tokenizer 阻断 prefix mismatch、空/同 token completion 和截断。
+9. `train_qlora.py --estimate-only`：CPU 上做容量计划。
+10. `minigpt_resume_toy.py`：CPU FP32、单 AdamW group 的严格 checkpoint 与 bit-exact split-run control。
+11. 目标 CUDA：NF4 SFT/偏好 QLoRA dry-run，记录版本、峰值与 token/s，并演练真实 LoRA/QLoRA restart。
+12. 完整 run：与 base/prompt/RAG 基线做统一 test。
 
-真实运行先 8 条样本/10 step，再 100 step，再完整数据。每阶段验证 mask、梯度、checkpoint 和生成。
+两个训练入口只把 `messages` 交给 dataset adapter，治理字段留在 audit manifest；这避免随意 metadata schema 干扰 Arrow/trainer 输入。审计侧的 `sft-data-audit.json`、`sft-split-audit.json`、`sft-data-binding.json` 与 `sft-governance-audit.json` 分别绑定训练集、combined split gate、有序精确关系和当时 policy/candidate 决策；trainer 侧只需要当前 train 和最小 `sft-training-readiness.json`，不需要 validation/test 文件权限。readiness 的无密钥 hash 可检出意外漂移但不可认证签发者，governance pass 也不等于法律许可或敏感信息不存在。`sft-template-mask-audit.json` 证明实际目标 tokenizer 返回对齐、非空、二值且未截断的 assistant mask；它仍依赖模板自己的 generation 标注，不独立证明语义边界或最终 collator labels 正确。真实运行先 8 条样本/10 step，再 100 step，再完整数据。每阶段抽样可视化 token/mask/label，并验证梯度、checkpoint 和生成。
+
+DPO 路线使用另一套 `preference-training-readiness.json`，把 binary train 身份、exact/group split、prompt/candidate lexical policy 与 source/sensitive governance 绑定到 combined artifact。它复用同一 source policy，但使用 preference 自己的 dataset/detector/audit 版本；pass 仍不是许可、consent、无敏感信息或语义无重复证明。`preference-tokenization-audit.json` 复现 TRL 0.29 的 prompt 与两侧完整对话 tokenization，并把其 prefix warning 升级为阻断；因为长度超过 `max_length` 时 TRL 会按 `keep_start/keep_end` 截断 tensor，入口选择训练前拒绝而不是静默改变学习信号。LoRA 时 `ref_model=None + peft_config` 让 TRL 通过禁用当前 adapter 回到冻结基座 reference，避免再复制一套基座；QLoRA 仍必须在目标 CUDA/bitsandbytes 组合实测。
 
 ## 实验比较
 

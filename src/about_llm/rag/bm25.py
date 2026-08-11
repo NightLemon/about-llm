@@ -47,17 +47,29 @@ class BM25Index:
             for term, frequency in document_frequency.items()
         }
 
-    def search(self, query: str, *, tenant_id: str, top_k: int = 5) -> list[SearchResult]:
-        """Rank only documents visible to tenant_id.
+    def search(
+        self,
+        query: str,
+        *,
+        tenant_id: str,
+        principals: Iterable[str] = (),
+        top_k: int = 5,
+    ) -> list[SearchResult]:
+        """Rank only documents visible to tenant_id and caller principals.
 
         Filtering after retrieval can leak document existence through scores,
         timing, caches, or generated answers. The baseline therefore applies
-        the tenant boundary while scoring candidates.
+        tenant and principal boundaries while scoring candidates. An empty
+        document ACL means public inside the tenant; a non-empty ACL requires
+        at least one matching caller principal.
         """
         if not tenant_id.strip():
             raise ValueError("tenant_id cannot be empty")
         if top_k <= 0:
             raise ValueError("top_k must be positive")
+        principal_set = set(principals)
+        if any(not principal.strip() for principal in principal_set):
+            raise ValueError("principals cannot contain an empty value")
         query_terms = lexical_tokens(query)
         if not query_terms:
             return []
@@ -67,6 +79,8 @@ class BM25Index:
             self.documents, self.term_frequencies, self.lengths, strict=True
         ):
             if document.tenant_id != tenant_id:
+                continue
+            if document.acl and principal_set.isdisjoint(document.acl):
                 continue
             score = self._score(query_terms, frequencies, length)
             if score > 0:

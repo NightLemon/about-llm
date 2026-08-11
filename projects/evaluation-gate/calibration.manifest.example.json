@@ -1,0 +1,21 @@
+{
+  "artifact_type": "binary_calibration_fixture",
+  "artifact_version": "fixture-v1",
+  "fixture_only": true,
+  "input": {
+    "path": "calibration.example.jsonl",
+    "sha256": "87c9840189cf437a3a0c0f74aec70071b51c3db6b906612a49d4a671c3604951",
+    "case_count": 8
+  },
+  "event": {
+    "name": "recorded_answer_is_fully_correct",
+    "label_protocol": "synthetic labels embedded in the fixture",
+    "positive_label": 1
+  },
+  "predictor": {
+    "name": "synthetic-confidence-fixture",
+    "revision": "fixture-v1",
+    "probability_timing": "fixture assumption only; not observed production timing"
+  },
+  "evidence_boundary": "This fixture tests metric and CLI conventions only. It does not prove that any model or verifier is calibrated."
+}

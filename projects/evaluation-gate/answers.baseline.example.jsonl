@@ -1,0 +1,2 @@
+{"case_id":"definition-rag","output":"一种参数高效微调方法","latency_seconds":0.10}
+{"case_id":"definition-kv","output":"模型的全部权重","latency_seconds":0.12}

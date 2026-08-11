@@ -98,6 +98,7 @@ nav:
       - 架构谱系与可解释性: core/architectures-interpretability.md
   - 数据与训练:
       - 数据工程: training/data.md
+      - 合成数据、蒸馏与反馈环: training/synthetic-data.md
       - 预训练: training/pretraining.md
       - 微调与 PEFT:
           - 总览: training/finetuning.md
@@ -105,6 +106,7 @@ nav:
           - LoRA、QLoRA 与单卡工程: training/peft-qlora-engineering.md
       - 对齐与偏好优化: training/alignment.md
       - 持续学习与模型合并: training/continual-learning.md
+      - JAX、Optax 与函数式训练: training/jax-optax.md
   - 推理与系统:
       - 推理:
           - 推理基础: systems/inference.md
@@ -126,6 +128,7 @@ nav:
           - 架构、规划与记忆: applications/agent-architecture.md
           - 工具协议与故障恢复: applications/agent-runtime.md
       - 代码、对话与 LLMOps: applications/code-conversation-llmops.md
+      - AI 产品设计与人机协作: applications/product-design.md
   - 质量与责任:
       - 评测:
           - 总览: quality/evaluation.md
@@ -133,6 +136,7 @@ nav:
           - Agent 仿真与红队: quality/agent-evaluation.md
       - 安全、隐私与治理: quality/safety.md
       - 法规与社会影响: quality/governance-impact.md
+      - 治理工件模板: quality/governance-templates.md
   - 前沿:
       - 多模态: frontier/multimodal.md
       - 推理、长上下文与 MoE: frontier/reasoning-long-context-moe.md

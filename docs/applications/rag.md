@@ -73,6 +73,12 @@ RRF 常用：
 
 端到端错误应归因到“知识库无资料、解析错、检索漏、排序错、模型没使用、模型越界生成”之一，再决定改哪里。
 
+仓库的 RAG CLI 可分别重放 source-level 检索 qrels 和 recorded answer/abstain/error artifact。后者会复查上下文权限并聚合外部提供的 atomic-claim verdict，但不会自行判断语义蕴含；fixture 通过只证明离线协议和分母正确，不证明真实模型忠实度。
+
+CLI 另有 `answer-extractive` / `evaluate-extractive` 非 LLM 基线：先做 tenant/principal 授权检索和 context packing，再从 packed chunk 逐字复制 span；distinct lexical coverage 不足时即使召回到主题相关文档也拒答。它让 retrieval→packing→answer/abstain→artifact/evaluation 的控制路径可运行，并证明输出 claim 是授权原文的 exact substring；它不证明语义相关、来源真实、答案完整、阈值校准或 LLM 生成质量，byte budget 也不是模型 token budget。
+
+同一 CLI 既提供 UTF-8 byte-budget 演示，也提供 `pack-tokenized`：加载明确 tokenizer/revision 与 chat template，对每个 prospective 完整 prompt 重计数、预留输出并记录最终 token IDs。它仍不自动验证 tokenizer 与部署权重匹配、模型实际 context window、生成忠实度或目标硬件吞吐；本地 WordLevel 测试只证明控制路径。
+
 ## 高级模式
 
 - HyDE：先生成假想答案/文档再检索，可能提高语义匹配，也可能带偏。

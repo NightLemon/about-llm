@@ -5,8 +5,10 @@ import math
 import pytest
 
 from about_llm.evaluation import (
+    all_evidence_recall_at_k,
     mean_reciprocal_rank,
     normalized_discounted_cumulative_gain,
+    precision_at_k,
     recall_at_k,
 )
 from about_llm.rag import BM25Index, Document, SearchResult, reciprocal_rank_fusion
@@ -30,6 +32,21 @@ def test_bm25_retrieves_exact_terms_and_enforces_tenant_before_ranking(
 
     assert [result.document.document_id for result in tenant_a] == ["a-rag"]
     assert [result.document.document_id for result in tenant_b] == ["b-secret"]
+
+
+def test_bm25_filters_principal_acl_before_ranking() -> None:
+    index = BM25Index(
+        [
+            Document("public", "RAG ACL baseline", "tenant-a"),
+            Document("restricted", "RAG ACL private details", "tenant-a", acl=("eng",)),
+        ]
+    )
+
+    anonymous = index.search("RAG ACL private", tenant_id="tenant-a")
+    engineer = index.search("RAG ACL private", tenant_id="tenant-a", principals=("eng",))
+
+    assert [result.document.document_id for result in anonymous] == ["public"]
+    assert [result.document.document_id for result in engineer] == ["restricted", "public"]
 
 
 def test_rrf_ignores_duplicate_document_within_one_ranking(
@@ -59,3 +76,17 @@ def test_ndcg_supports_graded_relevance_and_ignores_duplicate_results() -> None:
     score = normalized_discounted_cumulative_gain(retrieved, relevance, k=2)
     expected = (1 + 7 / math.log2(3)) / (7 + 1 / math.log2(3))
     assert score == pytest.approx(expected)
+
+
+def test_precision_uses_returned_slots_and_duplicates_receive_no_extra_credit() -> None:
+    retrieved = {"q1": ["gold", "gold", "noise"], "q2": []}
+    relevant = {"q1": {"gold"}, "q2": {"other"}}
+
+    assert precision_at_k(retrieved, relevant, k=3) == pytest.approx(1 / 6)
+
+
+def test_all_evidence_recall_is_query_level_complete_set_rate() -> None:
+    retrieved = {"q1": ["a", "b"], "q2": ["a", "noise"]}
+    required = {"q1": {"a", "b"}, "q2": {"a", "b"}}
+
+    assert all_evidence_recall_at_k(retrieved, required, k=2) == pytest.approx(0.5)

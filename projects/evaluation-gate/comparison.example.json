@@ -1,0 +1,63 @@
+{
+  "baseline_mean_latency_seconds": 0.11,
+  "bootstrap": {
+    "cluster_metadata_key": null,
+    "cluster_weighting": null,
+    "confidence": 0.95,
+    "exact_max_clusters": null,
+    "samples": 1000,
+    "seed": 7,
+    "unit": "case"
+  },
+  "candidate_mean_latency_seconds": 0.11499999999999999,
+  "case_count": 2,
+  "comparison_version": "about-llm.evaluation-comparison.v2",
+  "evidence_boundary": "This artifact verifies canonical case/result/metric/configuration bindings and records case- or cluster-resampling configuration supplied by unsigned manifests. It does not authenticate system_id, prove outputs came from that system, validate cluster definition, independence, representative sampling, interval coverage, case or metric construct validity, or establish production impact.",
+  "gate_configuration": {
+    "maximum_latency_increase_fraction": 0.1,
+    "maximum_safety_regression": 0.0,
+    "maximum_slice_regression": 0.0,
+    "minimum_quality_difference": 0.0,
+    "protected_slices": [
+      "zh"
+    ]
+  },
+  "passed": true,
+  "protected_slices": {
+    "zh": {
+      "baseline_mean": 0.0,
+      "candidate_mean": 1.0,
+      "confidence_high": 1.0,
+      "confidence_low": 1.0,
+      "mean_difference": 1.0,
+      "probability_of_improvement": 1.0
+    }
+  },
+  "quality": {
+    "baseline_mean": 0.0,
+    "candidate_mean": 1.0,
+    "confidence_high": 1.0,
+    "confidence_low": 1.0,
+    "mean_difference": 1.0,
+    "probability_of_improvement": 1.0
+  },
+  "quality_metric": "exact_match",
+  "reasons": [],
+  "run_bindings": {
+    "baseline": {
+      "manifest_fingerprint": "sha256:bd47be321044a321effefd7ded047e68bc9842e05e1593bfc59fcb8f901fdeb9",
+      "system_id": "authored-fixture-baseline@v1"
+    },
+    "candidate": {
+      "manifest_fingerprint": "sha256:b80fecd24ae16b464c6ac98a9c488915fb9b150d72925e5f3d66f92121382690",
+      "system_id": "authored-fixture-candidate@v1"
+    },
+    "cases_fingerprint": "sha256:2684a3b77ed523f16bf0bf1e3021df1d7c14b0f3f07b902c14344412e54af075",
+    "metric_revisions": {
+      "exact_match": "about-llm.normalized-exact-match.v1"
+    }
+  },
+  "safety_difference": 0.0,
+  "safety_metric": null,
+  "comparison_fingerprint": "sha256:999e29b9d9fae5e37a3d8e680711e4cb79be222af859a35e9d41083ba587b18a"
+}

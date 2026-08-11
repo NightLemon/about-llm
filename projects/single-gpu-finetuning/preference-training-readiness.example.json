@@ -1,0 +1,42 @@
+{
+  "artifact_version": "about-llm.preference-training-readiness.v2",
+  "gate_passed": true,
+  "training_ordered_dataset_fingerprint": "sha256:e8629f3eafbd8fae1bd14cfcd51accc876c10ca32dbab176bf5f790ffa85fa3c",
+  "training_manifest_fingerprint": "sha256:d69dd1fe04edbd31091871136ff854299bec8bb1ddc88de21d6e585e4a5593d2",
+  "combined_ordered_dataset_fingerprint": "sha256:fbf06a2be7ececccd03d24ef3024d52494d2390ac450c5825932ba045130dd87",
+  "combined_manifest_fingerprint": "sha256:62086e08125667aec56c3adbe2121405d82d438880441e8bfaec6576b93cc51f",
+  "binding_fingerprint": "sha256:614ada76082ba3a5fe77e489a0fa7173a74c474cb8f9d63a5f82e2b3a7f56ee7",
+  "binary_train_record_count": 2,
+  "excluded_nonbinary_train_count": 0,
+  "near_duplicate_audit_version": "about-llm.preference-char-ngram-near-duplicate.v1",
+  "near_duplicate_manifest_fingerprint": "sha256:9119a5d12a010c37382d72649bae46c193a4dc13f5d9cc0cdf94dcc2285763b1",
+  "near_duplicate_profile": "nfc_whitespace",
+  "near_duplicate_ngram_size": 5,
+  "near_duplicate_threshold": 0.9,
+  "near_duplicate_cross_split_only": true,
+  "near_duplicate_views": [
+    "prompt",
+    "candidate_cross_surface"
+  ],
+  "near_duplicate_candidate_count": 0,
+  "governance_audit_version": "about-llm.preference-governance-audit.v1",
+  "governance_policy_fingerprint": "sha256:0a60f89bd8e7b9aedab94ad65a72392bc77b95c87043a79019543879ad6aaafe",
+  "governance_manifest_fingerprint": "sha256:a7c0baa081557de5741c8a1899fb82e7048efc640a8e54bc2ba285de9955d09f",
+  "governance_blocking_finding_count": 0,
+  "manifest_fingerprint": "sha256:ee78a9544ff2e0cebe3b0272e4ea50dca5f6eb371d81ed6d9d95c6e4ebd7a5cf",
+  "evidence_boundary": "This artifact binds one binary train-only preference identity to one passing exact/group split audit, one declared lexical candidate policy, and one source/sensitive-candidate governance audit. It contains no held-out plaintext. Its unkeyed SHA-256 fingerprints detect accidental drift but do not authenticate the issuer: a party able to replace the artifact can recompute them. Passing does not establish human-label validity, annotator agreement, position-bias control, semantic deduplication, consent, legal permission, comprehensive sensitive-data safety, target-tokenizer compatibility, alignment quality, or production convergence.",
+  "scope": {
+    "held_out_plaintext_embedded": false,
+    "trainer_needs_held_out_access": false,
+    "tie_or_invalid_coerced_to_winner": false,
+    "cryptographic_origin_authenticated": false,
+    "human_label_validity_verified": false,
+    "annotator_agreement_estimated": false,
+    "position_bias_estimated": false,
+    "lexical_candidates_are_semantic_duplicates": false,
+    "legal_permission_or_consent_verified": false,
+    "limited_sensitive_candidate_scan_executed": true,
+    "comprehensive_pii_or_secret_detection": false,
+    "target_tokenizer_or_truncation_verified": false
+  }
+}

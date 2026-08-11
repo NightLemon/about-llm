@@ -1,0 +1,19 @@
+{
+  "cases_fingerprint": "sha256:2684a3b77ed523f16bf0bf1e3021df1d7c14b0f3f07b902c14344412e54af075",
+  "manifest_fingerprint": "sha256:b80fecd24ae16b464c6ac98a9c488915fb9b150d72925e5f3d66f92121382690",
+  "manifest_version": "about-llm.evaluation-run-manifest.v1",
+  "metadata": {
+    "scorer_revision": "about-llm.evaluation-cli.score.v1"
+  },
+  "metric_revisions": {
+    "exact_match": "about-llm.normalized-exact-match.v1",
+    "token_f1": "about-llm.token-f1.v1"
+  },
+  "ordered_case_ids": [
+    "definition-rag",
+    "definition-kv"
+  ],
+  "recorded_answers_fingerprint": "sha256:b562d5687656b9a9bd531d27171ff5bd0418b0de9cd3a8dc38940a06150e123e",
+  "results_fingerprint": "sha256:e51c535e5b3c3e15965d8248dd7da98f2abcbdf2f0d749e4741704d0513b9e01",
+  "system_id": "authored-fixture-candidate@v1"
+}

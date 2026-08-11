@@ -33,13 +33,20 @@ class CitationAudit:
 
 
 def build_citation_context(
-    results: Iterable[SearchResult], *, tenant_id: str, prefix: str = "S"
+    results: Iterable[SearchResult],
+    *,
+    tenant_id: str,
+    principals: Iterable[str] = (),
+    prefix: str = "S",
 ) -> CitationContext:
     """Render only authorized results and assign compact canonical source ids."""
     if not tenant_id.strip():
         raise ValueError("tenant_id cannot be empty")
     if not prefix.isalpha() or not prefix.isupper():
         raise ValueError("prefix must contain uppercase letters only")
+    principal_set = set(principals)
+    if any(not principal.strip() for principal in principal_set):
+        raise ValueError("principals cannot contain an empty value")
 
     sources: dict[str, Document] = {}
     seen_documents: set[str] = set()
@@ -49,6 +56,10 @@ def build_citation_context(
         if document.tenant_id != tenant_id:
             raise PermissionError(
                 f"result {document.document_id!r} belongs to tenant {document.tenant_id!r}"
+            )
+        if document.acl and principal_set.isdisjoint(document.acl):
+            raise PermissionError(
+                f"result {document.document_id!r} is not visible to caller principals"
             )
         if document.document_id in seen_documents:
             continue

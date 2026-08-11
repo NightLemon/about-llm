@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,7 +15,9 @@ from about_llm.agents.runtime import (
     IdempotencyConflict,
     LedgerEntry,
     LedgerState,
+    freeze_json_value,
 )
+from about_llm.llmops import canonical_json_bytes
 
 
 @dataclass(frozen=True)
@@ -73,10 +77,15 @@ class SQLiteLedger:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=self.timeout_seconds)
         connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def lookup(self, call_id: str) -> LedgerEntry | None:
         with self._connect() as connection:
@@ -152,9 +161,9 @@ class SQLiteLedger:
         if not note.strip():
             raise ValueError("a reconciliation note is required")
         try:
-            value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            value_json = canonical_json_bytes(value).decode("utf-8")
         except (TypeError, ValueError) as error:
-            raise ValueError("reconciled result must be JSON serializable") from error
+            raise ValueError(f"reconciled result must be strict JSON: {error}") from error
         resolved_at = time.time()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -235,9 +244,11 @@ class SQLiteLedger:
 
     def complete(self, call_id: str, fingerprint: str, value: Any) -> None:
         try:
-            value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            value_json = canonical_json_bytes(value).decode("utf-8")
         except (TypeError, ValueError) as error:
-            raise ValueError("tool result must be JSON serializable for SQLite ledger") from error
+            raise ValueError(
+                f"tool result must be strict JSON for SQLite ledger: {error}"
+            ) from error
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
@@ -261,5 +272,9 @@ class SQLiteLedger:
     @staticmethod
     def _to_entry(row: sqlite3.Row) -> LedgerEntry:
         state = LedgerState(row["state"])
-        value = json.loads(row["value_json"]) if row["value_json"] is not None else None
+        value = (
+            freeze_json_value(json.loads(row["value_json"]))
+            if row["value_json"] is not None
+            else None
+        )
         return LedgerEntry(fingerprint=row["fingerprint"], state=state, value=value)

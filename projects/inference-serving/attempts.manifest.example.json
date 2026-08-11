@@ -1,0 +1,22 @@
+{
+  "artifact_type": "inference_attempt_fixture",
+  "artifact_version": "fixture-v2",
+  "fixture_only": true,
+  "input": {
+    "path": "attempts.example.jsonl",
+    "sha256": "9e3f067628916e044ea597bf50d6620a11a78d506e643a3c104387c72649efd1",
+    "attempt_count": 4
+  },
+  "benchmark_interval": {
+    "started_at": 0.0,
+    "completed_at": 2.0,
+    "clock": "synthetic relative monotonic seconds"
+  },
+  "workload": {
+    "model": null,
+    "runtime": null,
+    "hardware": null,
+    "arrival_process": "synthetic fixture with offered and dispatch timestamps"
+  },
+  "evidence_boundary": "This fixture tests attempt aggregation and SLO conventions only. It is not a GPU benchmark, server trace, capacity report, or production SLO measurement."
+}

@@ -1,0 +1,2 @@
+{"case_id":"definition-rag","output":"检索增强生成","latency_seconds":0.105}
+{"case_id":"definition-kv","output":"每层历史 token 的 key 和 value","latency_seconds":0.125}

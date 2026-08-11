@@ -70,3 +70,30 @@ def test_load_cases_rejects_duplicate_ids(tmp_path: Path) -> None:
     path.write_text(value + "\n" + value, encoding="utf-8")
     with pytest.raises(ValueError, match="duplicate case_id"):
         load_cases(path)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            '{"case_id":"q","case_id":"changed","input":"x","expected":"y"}',
+            "duplicate JSON object key",
+        ),
+        (
+            '{"case_id":"q","input":"x","expected":"y","metadata":{"x":NaN}}',
+            "non-standard JSON constant",
+        ),
+        (
+            '{"case_id":"q","input":"x","expected":"y","typo":true}',
+            r"unknown=\['typo'\]",
+        ),
+    ],
+)
+def test_case_loader_rejects_nonstandard_or_drifting_json(
+    tmp_path: Path, payload: str, message: str
+) -> None:
+    path = tmp_path / "bad.jsonl"
+    path.write_text(payload + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        load_cases(path)

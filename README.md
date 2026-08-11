@@ -80,7 +80,7 @@ mkdocs build --strict
 
 ## 当前状态
 
-首版教材、三本 Notebook、八个重点工程项目和求职材料已经形成可运行闭环，状态与本地/外部验证边界见[实现矩阵](docs/guide/repo-map.md#实现矩阵)。真实 CUDA/vLLM/QLoRA 峰值和付费云 API 仍需在目标环境执行，仓库不会把离线协议测试表述为线上验证。变更见 [CHANGELOG.md](CHANGELOG.md)。
+首版教材、三本 Notebook、十个重点工程项目和求职材料已经形成可运行闭环，状态与本地/外部验证边界见[实现矩阵](docs/guide/repo-map.md#实现矩阵)。真实 CUDA/vLLM/QLoRA 峰值和付费云 API 仍需在目标环境执行，仓库不会把离线协议测试表述为线上验证。变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License
 

@@ -33,3 +33,18 @@ def test_release_gate_reports_every_failed_constraint() -> None:
     )
     assert not passed
     assert len(reasons) == 3
+
+
+@pytest.mark.parametrize(
+    "gate",
+    [
+        {"minimum_quality_difference": float("nan")},
+        {"maximum_safety_regression": -0.01},
+        {"maximum_latency_increase_fraction": -1.0},
+    ],
+)
+def test_release_gate_rejects_semantically_invalid_configuration(
+    gate: dict[str, float]
+) -> None:
+    with pytest.raises(ValueError):
+        ReleaseGate(**gate)  # type: ignore[arg-type]

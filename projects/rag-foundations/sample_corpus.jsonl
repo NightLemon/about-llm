@@ -1,0 +1,4 @@
+{"source_id":"rag-security","tenant_id":"tenant-a","version":"1","acl":["engineering"],"metadata":{"uri":"kb://tenant-a/rag-security"},"text":"# RAG 安全\n\n检索必须先执行租户隔离和 ACL 权限过滤，再进行排序与上下文构建。\n\n## 引用\n\n生成器只能看到已授权证据；引用编号不能证明语义蕴含。"}
+{"source_id":"rag-evaluation","tenant_id":"tenant-a","version":"1","acl":[],"metadata":{"uri":"kb://tenant-a/rag-evaluation"},"text":"# RAG 评测\n\n召回阶段使用 Recall@k、MRR 和 nDCG，并按查询类型切片。\n\n## 生成评测\n\n答案还需要检查引用覆盖、事实忠实度和拒答行为。"}
+{"source_id":"finetuning-basics","tenant_id":"tenant-a","version":"1","acl":["ml"],"metadata":{"uri":"kb://tenant-a/finetuning"},"text":"# 微调\n\nSFT 训练需要检查 chat template、labels mask、验证集泄漏和基座许可证。"}
+{"source_id":"tenant-b-secret","tenant_id":"tenant-b","version":"7","acl":[],"metadata":{"uri":"kb://tenant-b/secret"},"text":"# 另一租户的 RAG 机密\n\n本段故意包含 ACL、Recall 和引用等高相关词，但 tenant-a 永远不应检索到它。"}

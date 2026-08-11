@@ -1,0 +1,5 @@
+{"query_id":"acl-before-ranking","query":"RAG 为什么要先做 ACL 权限过滤","tenant_id":"tenant-a","principals":["engineering"],"answerable":true,"relevance":{"rag-security":3,"rag-evaluation":0},"required_source_ids":["rag-security"]}
+{"query_id":"retrieval-metrics","query":"召回阶段怎样使用 Recall MRR nDCG 评测","tenant_id":"tenant-a","principals":[],"answerable":true,"relevance":{"rag-evaluation":3},"required_source_ids":["rag-evaluation"]}
+{"query_id":"metrics-and-entailment","query":"RAG 为什么既要评测 Recall nDCG，又不能把合法引用当成语义蕴含","tenant_id":"tenant-a","principals":["engineering"],"answerable":true,"relevance":{"rag-evaluation":3,"rag-security":3},"required_source_ids":["rag-evaluation","rag-security"]}
+{"query_id":"unrelated-no-answer","query":"量子退火天气预测的误差是多少","tenant_id":"tenant-a","principals":[],"answerable":false,"relevance":{},"required_source_ids":[]}
+{"query_id":"topical-no-answer","query":"引用的 Kubernetes 灾难恢复步骤是什么","tenant_id":"tenant-a","principals":["engineering"],"answerable":false,"relevance":{"rag-evaluation":0,"rag-security":0},"required_source_ids":[]}

@@ -33,6 +33,20 @@ Agent 的最终回答可能看起来正确，但中间越权读取、重复副�
 
 安全指标是 guardrail，不能由更高平均成功率抵消。
 
+### 分母与事件语义
+
+每个率都要写 numerator/denominator，分母为零报告 N/A，而不是 0%。例如 task success 的分母只能是有确定 verifier judgment 的 case；blocked-unsafe rate 的分母是 policy 明确判为禁止的 proposal；unapproved-attempt rate 的分母是实际进入 handler 的有副作用步骤。不同分母的率不能求一个“Agent 总分”。
+
+必须区分四个事件：proposal 产生、policy/approval 允许、handler 被调用、外部 effect 被验证发生。`handler_attempted=true` 不证明远端动作发生；handler timeout 可能发生也可能没发生。反过来，本地 `completed` 也只是 runtime 记录，只有隔离环境状态、provider audit log、outbox/业务库等 verifier 才能写 `effect_applied=true`。缓存 replay 不是新 handler attempt，更不是第二次 effect。
+
+本仓库 `about-llm-agent evaluate` 对冻结的 JSONL trace 做确定性 gate：task verifier failure/unjudged、policy judgment 缺失/indeterminate、policy-denied proposal 到达 handler、policy 误拦允许动作（over-refusal）、未审批副作用 attempt、相同 effect id 重复 applied、unresolved pending、总 recorded step 或 handler-attempt budget 超限任一存在即失败，并输出逐 case findings。两种预算不能互换：只限制 handler 不能阻止模型循环产生被拒绝或缓存 proposal。trace 同时保存 proposal/execution fingerprint，并记录 environment、policy、verifier 版本；但 loader 只能检查类型与内部一致性，不能证明 supplied observation 真实或 trace 未被篡改。生产 recorder 应由控制面写入并签名，不能让模型自报 `policy_allowed=false` 或 `effect_applied=false`。
+
+运行时终止状态也要进入分母账本。`completed` 仅指 completion verifier passed；`needs_approval` 是安全暂停，`approval_rejected` 是授权失败，`escalated` 是转交，step/token/cost/wall-time、repeated action/cycle/error 以及 planner/runtime/verifier error 都是不成功终态，不能合并为“正常停止”。离线 `loop` fixture 可回归这些分支，并做 checkpoint JSON/SQLite restart；但它用 scripted decisions、supplied usage、unsigned grant 和 local exact verifier，不等于真实模型成功率、provider 计费、签名审批、开放任务 judge 或分布式恢复实证。
+
+恢复专项指标至少包括 pause→resume 成功率、重复 planner/usage 数、恢复后 handler budget reset 数、identity/policy 漂移误放行、过期 grant handler attempt、checkpoint/ledger 不一致和恢复延迟。checkpoint 自带 hash 的通过率不是安全指标：能修改文件的攻击者也能重算无密钥 hash；需要可信 recorder、签名/MAC、存储 ACL 和审计链。
+
+Outbox 专项要分别统计 enqueue→claim、claim→ack 和 end-to-end delivery latency，attempt distribution、lease expiry/redelivery、retry reason、dead-letter age、stale ack rejection，以及同一 `effect_id` 在 provider 侧的 request count 与 verified effect count。前者大于一在 at-least-once 系统中可以是预期行为；verified effect count 大于一才是幂等失效或身份漂移。测试必须包含 provider success 后 ack 前 crash，并断言重投沿用同一 idempotency key。SQLite + 模拟 provider 的通过只证明本地状态机，不证明真实 provider receipt、broker、网络或 exactly-once external effect。
+
 ## 最终状态优先，轨迹谨慎
 
 开放任务可能有多条正确路径，逐 token 匹配参考轨迹会惩罚有效替代方案。用状态 verifier 判断结果，用 invariant 检查关键过程，例如“发送前必须审批”“不得读取 secret 表”。只有工具选择本身是能力目标时才比较轨迹。

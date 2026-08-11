@@ -1,0 +1,25 @@
+{
+  "contract_id": "authored-drift-out-of-range@v1",
+  "generation_config": {
+    "bos_token_id": 4,
+    "do_sample": true,
+    "eos_token_id": 5,
+    "max_new_tokens": 32,
+    "pad_token_id": 9,
+    "temperature": 0.8
+  },
+  "model_config": {
+    "bos_token_id": 1,
+    "eos_token_id": 2,
+    "pad_token_id": 0,
+    "vocab_size": 8
+  },
+  "model_vocab_size": 8,
+  "tokenizer": {
+    "bos_token_id": 1,
+    "chat_template_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "eos_token_id": 2,
+    "pad_token_id": 0
+  },
+  "tokenizer_size": 8
+}

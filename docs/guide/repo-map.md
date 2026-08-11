@@ -22,11 +22,12 @@
 
 | 方向 | 从零/原生基线 | 主流框架 | 生产项目 | 关键验收 |
 |---|---|---|---|---|
-| Transformer | NumPy/PyTorch/JAX | Transformers | 微型 GPT | 前向/梯度等价、可过拟合小批次 |
+| Tokenizer | UTF-8 byte、确定性 byte-level BPE | checkpoint tokenizer/chat template | tokenizer 机制与契约实验 | round-trip、document boundary、merge rank、special token/offset/版本边界 |
+| Transformer/MoE | NumPy RMSNorm/RoPE/GQA/cache 与 top-k/capacity/sparse-linear oracle、PyTorch/JAX MiniGPT | Transformers | 微型 GPT/路由实验 | 局部代数/因果/cache 等价、MoE assignment/drop/combine、模型前向与小批次 overfit；不声称三框架、具体 MoE 或 GPU kernel 等价 |
 | 微调 | loss mask、LoRA | PEFT/TRL | 单卡领域 SFT | 格式率、领域质量、通用回归、显存 |
-| RAG | BM25/dense/hybrid/RRF | LangChain/LlamaIndex adapter | 带 ACL 与引用问答 | Recall@k、nDCG、忠实度、权限 |
+| RAG | BM25/dense/hybrid/RRF | LangChain/LlamaIndex ACL-bound Retriever/Prompt adapter | SQLite + persistent extractive ASGI API | framework/API 前授权、closed body schema、readiness、queue/deadline、ordered result/metadata/Prompt/artifact identity、Recall@k、nDCG、忠实度、权限；当前服务和 framework control 的生成端仍是 non-LLM extractive baseline |
 | Agent | 显式状态机 | 可选框架 adapter | 可恢复工具执行 | 幂等、确认、预算、注入测试 |
-| 推理 | KV Cache、采样、量化实验 | Transformers/vLLM | OpenAI-compatible 服务 | TTFT、TPOT、吞吐、显存、质量 |
+| 推理 | 单步 sampling、UTF-8 stop matcher、continuous batching、KV Cache、量化实验、repo-native MiniGPT checkpoint | Transformers/vLLM | OpenAI-compatible 服务 | processor/top-k/top-p/CDF、partial stop/overlap、admission/work conservation、严格 tokenizer/config/全参数 reload、TTFT、TPOT、吞吐、显存、质量；tiny CPU checkpoint 不冒充通用格式、目标模型或 GPU 性能 |
 | 评测 | 指标与 bootstrap | dataset/runner adapter | 发布门禁 | 可复现、分层、置信区间、回归 |
 
 ## 质量等级

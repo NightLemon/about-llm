@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from about_llm.evaluation.runner import EvaluationCase
+from about_llm.llmops import canonical_json_bytes
 from about_llm.rag.citations import audit_citations
 
 
@@ -15,15 +16,16 @@ def json_schema_metric(case: EvaluationCase, output: str) -> float:
     schema = case.metadata.get("output_schema")
     if not isinstance(schema, Mapping):
         raise ValueError(f"case {case.case_id!r} needs an output_schema mapping")
+    plain_schema = json.loads(canonical_json_bytes(schema))
     try:
         import jsonschema  # type: ignore[import-untyped]
     except ImportError as error:
         raise RuntimeError("install the 'evaluation' extra for JSON Schema metrics") from error
     try:
         instance: Any = json.loads(output)
-        validator = jsonschema.validators.validator_for(schema)
-        validator.check_schema(schema)
-        validator(schema).validate(instance)
+        validator = jsonschema.validators.validator_for(plain_schema)
+        validator.check_schema(plain_schema)
+        validator(plain_schema).validate(instance)
     except (json.JSONDecodeError, jsonschema.ValidationError, jsonschema.SchemaError):
         return 0.0
     return 1.0
@@ -32,7 +34,11 @@ def json_schema_metric(case: EvaluationCase, output: str) -> float:
 def citation_syntax_metric(case: EvaluationCase, output: str) -> float:
     """Score known citation ids and paragraph coverage; not semantic entailment."""
     raw_ids = case.metadata.get("valid_source_ids")
-    if not isinstance(raw_ids, list) or not all(isinstance(value, str) for value in raw_ids):
+    if (
+        not isinstance(raw_ids, Sequence)
+        or isinstance(raw_ids, str)
+        or not all(isinstance(value, str) for value in raw_ids)
+    ):
         raise ValueError(f"case {case.case_id!r} needs a string-list valid_source_ids")
     audit = audit_citations(output, raw_ids)
     known_count = len(audit.cited_source_ids) - len(audit.unknown_source_ids)

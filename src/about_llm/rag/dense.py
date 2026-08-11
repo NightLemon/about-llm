@@ -58,13 +58,23 @@ class DenseIndex:
             )
         self.embeddings = _normalize_rows(embeddings, label="document")
 
-    def search(self, query: str, *, tenant_id: str, top_k: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        query: str,
+        *,
+        tenant_id: str,
+        principals: Iterable[str] = (),
+        top_k: int = 5,
+    ) -> list[SearchResult]:
         if not query.strip():
             return []
         if not tenant_id.strip():
             raise ValueError("tenant_id cannot be empty")
         if top_k <= 0:
             raise ValueError("top_k must be positive")
+        principal_set = set(principals)
+        if any(not principal.strip() for principal in principal_set):
+            raise ValueError("principals cannot contain an empty value")
 
         query_embedding = np.asarray(self.embedding_model.encode([query]), dtype=np.float32)
         query_embedding = _normalize_rows(query_embedding, label="query")
@@ -78,6 +88,7 @@ class DenseIndex:
             index
             for index, document in enumerate(self.documents)
             if document.tenant_id == tenant_id
+            and (not document.acl or not principal_set.isdisjoint(document.acl))
         ]
         if not visible_indices:
             return []

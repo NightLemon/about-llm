@@ -50,3 +50,23 @@ def test_dense_index_rejects_zero_and_mismatched_embeddings() -> None:
     index = DenseIndex([document], ControlledEmbedder({"doc": (1, 0), "q": (1, 0, 0)}))
     with pytest.raises(ValueError, match="does not match"):
         index.search("q", tenant_id="a")
+
+
+def test_dense_index_filters_principal_acl_before_ranking() -> None:
+    documents = [
+        Document("public", "public", "a"),
+        Document("restricted", "restricted", "a", acl=("eng",)),
+    ]
+    embedder = ControlledEmbedder(
+        {"public": (1, 0), "restricted": (2, 0), "query": (1, 0)}
+    )
+    index = DenseIndex(documents, embedder)
+
+    anonymous = index.search("query", tenant_id="a")
+    engineer = index.search("query", tenant_id="a", principals=("eng",))
+
+    assert [result.document.document_id for result in anonymous] == ["public"]
+    assert {result.document.document_id for result in engineer} == {
+        "public",
+        "restricted",
+    }

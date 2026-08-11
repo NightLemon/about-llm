@@ -1,20 +1,97 @@
-"""Offline PEFT smoke test using a randomly initialized tiny GPT-2."""
+"""Offline PEFT save/reload/merge export with a strict complete-file verifier."""
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
+import tempfile
+from pathlib import Path
+from typing import Any, cast
 
 import torch
-from peft import LoraConfig, TaskType, get_peft_model, get_peft_model_state_dict
-from transformers import GPT2Config, GPT2LMHeadModel
+from peft import (
+    LoraConfig,
+    PeftModel,
+    TaskType,
+    get_peft_model,
+    get_peft_model_state_dict,
+)
+from tokenizers import Tokenizer  # type: ignore[import-untyped]
+from tokenizers.models import WordLevel  # type: ignore[import-untyped]
+from tokenizers.pre_tokenizers import Whitespace  # type: ignore[import-untyped]
+from transformers import (
+    AutoTokenizer,
+    GPT2Config,
+    GPT2LMHeadModel,
+    PreTrainedTokenizerFast,
+)
 
-from about_llm.integrations.transformers_tools import parameter_report
+from about_llm.finetuning.peft_export import (
+    PEFTExportIdentity,
+    write_peft_export_manifest_new,
+)
+from about_llm.integrations.transformers_tools import (
+    parameter_report,
+)
+from about_llm.llmops import canonical_json_bytes
+
+_BASE_MODEL_ID = "authored-random-gpt2"
+_BASE_REVISION = "fixture-seed-31"
+_TOKENIZER_REVISION = "authored-wordlevel-v1"
 
 
-def run_smoke(steps: int = 10) -> dict[str, object]:
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return "sha256:" + digest.hexdigest()
+
+
+def _maximum_error(left: torch.Tensor, right: torch.Tensor) -> float:
+    return float((left - right).abs().max())
+
+
+def _tokenizer() -> PreTrainedTokenizerFast:
+    vocab = {
+        "<pad>": 0,
+        "<bos>": 1,
+        "<eos>": 2,
+        "<unk>": 3,
+        **{f"tok{index}": index for index in range(4, 32)},
+    }
+    backend = Tokenizer(WordLevel(vocab=vocab, unk_token="<unk>"))
+    backend.pre_tokenizer = Whitespace()
+    tokenizer = PreTrainedTokenizerFast(  # type: ignore[no-untyped-call]
+        tokenizer_object=backend,
+        bos_token="<bos>",
+        eos_token="<eos>",
+        pad_token="<pad>",
+        unk_token="<unk>",
+        model_max_length=16,
+    )
+    tokenizer.chat_template = (
+        "{% for message in messages %}"
+        "{{ message['content'] }} {{ eos_token }}"
+        "{% endfor %}"
+    )
+    return tokenizer
+
+
+def _load_base(path: Path) -> GPT2LMHeadModel:
+    model = cast(
+        GPT2LMHeadModel,
+        GPT2LMHeadModel.from_pretrained(path, local_files_only=True),
+    )
+    model.loss_type = "ForCausalLM"
+    return model
+
+
+def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
     torch.manual_seed(31)
-    base = GPT2LMHeadModel(
-        GPT2Config(
+    base = GPT2LMHeadModel(  # type: ignore[no-untyped-call]
+        GPT2Config(  # type: ignore[no-untyped-call]
             vocab_size=32,
             n_positions=16,
             n_embd=32,
@@ -23,8 +100,17 @@ def run_smoke(steps: int = 10) -> dict[str, object]:
             bos_token_id=1,
             eos_token_id=2,
             pad_token_id=0,
+            loss_type="ForCausalLM",
         )
     )
+    base.loss_type = "ForCausalLM"
+    base_dir = root / "base"
+    adapter_dir = root / "adapter"
+    merged_dir = root / "merged"
+    tokenizer_dir = root / "tokenizer"
+    base.save_pretrained(base_dir, safe_serialization=True)
+    base_weight_path = base_dir / "model.safetensors"
+
     model = get_peft_model(
         base,
         LoraConfig(
@@ -36,13 +122,19 @@ def run_smoke(steps: int = 10) -> dict[str, object]:
             fan_in_fan_out=True,
         ),
     )
-    report = parameter_report(model)
+    model.peft_config["default"].base_model_name_or_path = str(base_dir.resolve())
+    parameters = parameter_report(model)
+    frozen_before = {
+        name: parameter.detach().clone()
+        for name, parameter in model.named_parameters()
+        if not parameter.requires_grad
+    }
     input_ids = torch.tensor([[1, 5, 7, 9, 2], [1, 4, 6, 8, 2]])
     optimizer = torch.optim.AdamW(
         [parameter for parameter in model.parameters() if parameter.requires_grad],
         lr=1e-2,
     )
-    losses = []
+    losses: list[float] = []
     model.train()
     for _ in range(steps):
         optimizer.zero_grad()
@@ -51,23 +143,206 @@ def run_smoke(steps: int = 10) -> dict[str, object]:
         optimizer.step()
         losses.append(float(output.loss.detach()))
 
+    base_parameters_unchanged = all(
+        torch.equal(parameter, frozen_before[name])
+        for name, parameter in model.named_parameters()
+        if name in frozen_before
+    )
     model.eval()
     with torch.no_grad():
-        adapter_logits = model(input_ids).logits
+        trained_adapter_logits = model(input_ids).logits
     adapter_keys = sorted(get_peft_model_state_dict(model, save_embedding_layers=False))
-    merged = model.merge_and_unload().eval()
+    model.save_pretrained(str(adapter_dir), safe_serialization=True)
+    adapter_weight_path = adapter_dir / "adapter_model.safetensors"
+    adapter_config_path = adapter_dir / "adapter_config.json"
+    adapter_config: dict[str, Any] = json.loads(
+        adapter_config_path.read_text(encoding="utf-8")
+    )
+    adapter_config["base_model_name_or_path"] = _BASE_MODEL_ID
+    adapter_config_path.write_bytes(canonical_json_bytes(adapter_config))
+
+    builder_base = _load_base(base_dir)
+    builder_adapter = PeftModel.from_pretrained(
+        builder_base,
+        adapter_dir,
+        is_trainable=False,
+        local_files_only=True,
+    ).eval()
+    with torch.no_grad():
+        builder_adapter_logits = builder_adapter(input_ids).logits
+    merged = builder_adapter.merge_and_unload(safe_merge=True).eval()
     with torch.no_grad():
         merged_logits = merged(input_ids).logits
-    maximum_merge_error = float((adapter_logits - merged_logits).abs().max())
+    merge_error = _maximum_error(builder_adapter_logits, merged_logits)
+    merged.save_pretrained(merged_dir, safe_serialization=True)
+    merged_weight_path = merged_dir / "model.safetensors"
 
+    tokenizer = _tokenizer()
+    tokenizer.save_pretrained(tokenizer_dir)
+    messages = [
+        {"role": "user", "content": "tok5 tok7"},
+        {"role": "assistant", "content": "tok9"},
+    ]
+    expected_chat_ids = tokenizer.apply_chat_template(
+        messages, tokenize=True, add_generation_prompt=False
+    )
+    identity = PEFTExportIdentity(
+        artifact_id="authored-peft-export-control",
+        architecture="GPT2LMHeadModel",
+        base_model_id=_BASE_MODEL_ID,
+        base_revision=_BASE_REVISION,
+        tokenizer_revision=_TOKENIZER_REVISION,
+    )
+    verification = write_peft_export_manifest_new(
+        root,
+        identity=identity,
+        target_modules=("c_attn",),
+    )
+
+    verified_base = _load_base(base_dir)
+    verified_adapter = PeftModel.from_pretrained(
+        verified_base,
+        adapter_dir,
+        is_trainable=False,
+        local_files_only=True,
+    ).eval()
+    with torch.no_grad():
+        verified_adapter_logits = verified_adapter(input_ids).logits
+    adapter_reload_error = _maximum_error(
+        trained_adapter_logits, verified_adapter_logits
+    )
+    reloaded_merged = _load_base(merged_dir)
+    reloaded_merged.eval()  # type: ignore[no-untyped-call]
+    with torch.no_grad():
+        reloaded_merged_logits = reloaded_merged(input_ids).logits
+    merged_reload_error = _maximum_error(merged_logits, reloaded_merged_logits)
+    reloaded_tokenizer: Any = AutoTokenizer.from_pretrained(  # type: ignore[no-untyped-call]
+        tokenizer_dir, local_files_only=True
+    )
+    reloaded_chat_ids = reloaded_tokenizer.apply_chat_template(
+        messages, tokenize=True, add_generation_prompt=False
+    )
+
+    weights = {
+        "base": {
+            "relative_path": "base/model.safetensors",
+            "bytes": base_weight_path.stat().st_size,
+            "sha256": _sha256_file(base_weight_path),
+        },
+        "adapter": {
+            "relative_path": "adapter/adapter_model.safetensors",
+            "bytes": adapter_weight_path.stat().st_size,
+            "sha256": _sha256_file(adapter_weight_path),
+        },
+        "merged": {
+            "relative_path": "merged/model.safetensors",
+            "bytes": merged_weight_path.stat().st_size,
+            "sha256": _sha256_file(merged_weight_path),
+        },
+    }
+    pickle_weight_files = sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.suffix in {".bin", ".pt", ".pth"}
+    )
     return {
-        "parameter_report": report,
-        "initial_loss": losses[0],
-        "final_loss": losses[-1],
-        "adapter_tensor_count": len(adapter_keys),
-        "maximum_merge_error": maximum_merge_error,
+        "schema_version": 2,
+        "fixture": {
+            "seed": 31,
+            "steps": steps,
+            "input_ids": input_ids.tolist(),
+        },
+        "parameter_report": parameters,
+        "training": {
+            "initial_loss": losses[0],
+            "final_loss": losses[-1],
+            "base_parameters_unchanged": base_parameters_unchanged,
+            "adapter_tensor_count": len(adapter_keys),
+            "adapter_tensor_keys": adapter_keys,
+        },
+        "round_trip": {
+            "builder_adapter_matches_trained_maximum_logit_error": _maximum_error(
+                trained_adapter_logits, builder_adapter_logits
+            ),
+            "verified_adapter_reload_maximum_logit_error": adapter_reload_error,
+            "merge_maximum_logit_error": merge_error,
+            "verified_merged_reload_maximum_logit_error": merged_reload_error,
+            "tokenizer_chat_template_token_ids": list(expected_chat_ids),
+            "verified_tokenizer_chat_template_token_ids": list(reloaded_chat_ids),
+            "tokenizer_chat_template_exact": reloaded_chat_ids == expected_chat_ids,
+        },
+        "artifacts": {
+            "persisted": persisted,
+            "root": str(root) if persisted else None,
+            "weights": weights,
+            "strict_verification": verification.to_dict(),
+            "adapter_config_base_reference_kind": "immutable-id-string",
+            "adapter_config_base_model_id": adapter_config[
+                "base_model_name_or_path"
+            ],
+            "pickle_weight_files": pickle_weight_files,
+        },
+        "scope": {
+            "network_used": False,
+            "cpu_random_tiny_gpt2_peft_training_executed": True,
+            "frozen_base_unchanged": base_parameters_unchanged,
+            "base_full_safetensors_saved": True,
+            "adapter_safetensors_saved_and_reloaded": True,
+            "merge_and_unload_executed": True,
+            "merged_full_safetensors_saved_and_reloaded": True,
+            "strict_manifest_enforced_before_published_artifact_reload": True,
+            "complete_directory_file_set_size_and_hash_bound": True,
+            "safetensors_payloads_parsed_before_reload": True,
+            "base_merged_config_payload_and_tensor_signature_match": True,
+            "lora_target_a_b_tensor_coverage_validated": True,
+            "tokenizer_and_chat_template_included_and_reloaded": True,
+            "peft_loader_itself_enforces_repo_manifest": False,
+            "adapter_config_path_or_id_authenticates_base_content": False,
+            "optimizer_scheduler_rng_or_training_resume_state_included": False,
+            "quantized_base_or_qlora_merge_executed": False,
+            "target_checkpoint_or_cuda_executed": False,
+            "task_quality_or_production_compatibility_proved": False,
+            "cryptographic_origin_authenticated": False,
+            "atomic_or_power_loss_safe_publication_proved": False,
+            "concurrent_mutation_or_verify_load_toctou_prevented": False,
+        },
     }
 
 
+def run_smoke(
+    steps: int = 10, *, artifact_root: Path | None = None
+) -> dict[str, Any]:
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
+        raise ValueError("steps must be a positive integer")
+    if artifact_root is None:
+        with tempfile.TemporaryDirectory(prefix="about-llm-peft-export-") as directory:
+            return _run_smoke(steps=steps, root=Path(directory), persisted=False)
+    root = Path(artifact_root)
+    root.mkdir(parents=True, exist_ok=False)
+    return _run_smoke(steps=steps, root=root, persisted=True)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--steps", type=int, default=10)
+    parser.add_argument(
+        "--artifact-root",
+        type=Path,
+        help="optional new output directory; an existing target is rejected",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    print(
+        json.dumps(
+            run_smoke(args.steps, artifact_root=args.artifact_root),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 if __name__ == "__main__":
-    print(json.dumps(run_smoke(), indent=2))
+    main()

@@ -16,6 +16,7 @@ class Document:
     text: str
     tenant_id: str
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    acl: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.document_id.strip():
@@ -24,6 +25,10 @@ class Document:
             raise ValueError("text cannot be empty")
         if not self.tenant_id.strip():
             raise ValueError("tenant_id cannot be empty")
+        if any(not principal.strip() for principal in self.acl):
+            raise ValueError("acl principals cannot be empty")
+        if len(self.acl) != len(set(self.acl)):
+            raise ValueError("acl contains duplicate principals")
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 

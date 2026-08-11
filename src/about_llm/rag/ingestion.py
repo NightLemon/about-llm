@@ -36,6 +36,8 @@ class SourceDocument:
         for name in ("source_id", "tenant_id", "version", "text"):
             if not getattr(self, name).strip():
                 raise ValueError(f"{name} cannot be empty")
+        if any(not principal.strip() for principal in self.acl):
+            raise ValueError("acl principals cannot be empty")
         if len(self.acl) != len(set(self.acl)):
             raise ValueError("acl contains duplicate principals")
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))

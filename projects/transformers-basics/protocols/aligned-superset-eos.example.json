@@ -1,0 +1,30 @@
+{
+  "contract_id": "authored-aligned-superset-eos@v1",
+  "generation_config": {
+    "bos_token_id": 1,
+    "do_sample": false,
+    "eos_token_id": [
+      2,
+      3
+    ],
+    "max_length": 2048,
+    "max_new_tokens": 128,
+    "pad_token_id": 0,
+    "temperature": 0.7,
+    "top_p": 0.9
+  },
+  "model_config": {
+    "bos_token_id": 1,
+    "eos_token_id": 2,
+    "pad_token_id": 0,
+    "vocab_size": 16
+  },
+  "model_vocab_size": 16,
+  "tokenizer": {
+    "bos_token_id": 1,
+    "chat_template_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "eos_token_id": 2,
+    "pad_token_id": 0
+  },
+  "tokenizer_size": 16
+}

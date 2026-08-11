@@ -30,6 +30,27 @@ def test_context_rejects_cross_tenant_evidence() -> None:
         raise AssertionError("cross-tenant evidence should be rejected")
 
 
+def test_context_rechecks_principal_acl() -> None:
+    restricted = SearchResult(
+        Document("restricted", "Evidence.", "t1", acl=("eng",)),
+        score=1,
+        rank=1,
+        source="bm25",
+    )
+
+    try:
+        build_citation_context([restricted], tenant_id="t1")
+    except PermissionError as error:
+        assert "not visible" in str(error)
+    else:
+        raise AssertionError("restricted evidence should be rejected")
+
+    context = build_citation_context(
+        [restricted], tenant_id="t1", principals=("eng",)
+    )
+    assert set(context.sources) == {"S1"}
+
+
 def test_audit_reports_unknown_and_uncited_paragraphs() -> None:
     audit = audit_citations(
         "First supported claim. [S1]\n\nUnsupported syntax. [S9]\n\nNo citation here.",

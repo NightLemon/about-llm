@@ -3,30 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import json
+from importlib.metadata import version
 from pathlib import Path
-from typing import Any
 
-from datasets import load_dataset
-from peft import LoraConfig, TaskType
-from transformers import AutoTokenizer
-from trl import SFTConfig, SFTTrainer
-
-
-def validate_row(row: dict[str, Any], index: int) -> None:
-    messages = row.get("messages")
-    if not isinstance(messages, list) or not messages:
-        raise ValueError(f"row {index} must contain a non-empty messages list")
-    for message_index, message in enumerate(messages):
-        if not isinstance(message, dict) or set(message) != {"role", "content"}:
-            raise ValueError(
-                f"row {index} message {message_index} must contain exactly role and content"
-            )
-        if message["role"] not in {"system", "user", "assistant", "tool"}:
-            raise ValueError(f"row {index} message {message_index} has unsupported role")
-        if not isinstance(message["content"], str) or not message["content"]:
-            raise ValueError(f"row {index} message {message_index} content must be non-empty")
-    if not any(message["role"] == "assistant" for message in messages):
-        raise ValueError(f"row {index} has no assistant message to supervise")
+from about_llm.finetuning import (
+    audit_assistant_masks,
+    load_sft_records,
+    load_sft_training_readiness,
+    validate_sft_training_readiness,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,7 +20,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--train-jsonl", type=Path, required=True)
+    parser.add_argument("--readiness-json", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--chat-template-path", type=Path)
+    parser.add_argument("--data-preflight-only", action="store_true")
     parser.add_argument("--target-modules", default="q_proj,k_proj,v_proj,o_proj")
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--alpha", type=int, default=32)
@@ -62,21 +51,72 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    dataset = load_dataset("json", data_files=str(args.train_jsonl), split="train")
-    for index, row in enumerate(dataset):
-        validate_row(row, index)
+    records = load_sft_records(args.train_jsonl)
+    readiness = load_sft_training_readiness(args.readiness_json)
+    audit = validate_sft_training_readiness(records, readiness)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "sft-data-audit.json").write_text(
+        json.dumps(audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (args.output_dir / "sft-training-readiness.json").write_text(
+        json.dumps(readiness.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    if args.data_preflight_only:
+        return
+
+    from datasets import Dataset
+    from peft import LoraConfig, TaskType
+    from transformers import AutoTokenizer
+    from trl import SFTConfig, SFTTrainer
+
+    dataset = Dataset.from_list([record.to_training_row() for record in records])
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id,
         revision=args.revision,
         trust_remote_code=False,
     )
+    if args.chat_template_path is not None:
+        chat_template = args.chat_template_path.read_text(encoding="utf-8")
+        if not chat_template.strip():
+            raise ValueError("chat-template-path must not be empty")
+        tokenizer.chat_template = chat_template
     if not tokenizer.chat_template:
         raise ValueError("checkpoint tokenizer has no chat template")
     if tokenizer.pad_token_id is None:
         if tokenizer.eos_token_id is None:
             raise ValueError("tokenizer needs a PAD or EOS token")
         tokenizer.pad_token = tokenizer.eos_token
+    mask_audit = audit_assistant_masks(
+        records,
+        render=lambda messages: tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            return_dict=True,
+            return_assistant_tokens_mask=True,
+            add_generation_prompt=False,
+        ),
+        renderer_identity={
+            "model_id": args.model_id,
+            "revision": args.revision,
+            "transformers_version": version("transformers"),
+            "tokenizer_class": type(tokenizer).__name__,
+            "chat_template": tokenizer.chat_template,
+            "bos_token_id": tokenizer.bos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+            "pad_token_id": tokenizer.pad_token_id,
+        },
+        max_length=args.max_length,
+    )
+    (args.output_dir / "sft-template-mask-audit.json").write_text(
+        json.dumps(mask_audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
     target_modules = [item.strip() for item in args.target_modules.split(",") if item.strip()]
     if not target_modules:

@@ -12,6 +12,10 @@
 
 质量通常比数量重要。数据应覆盖正常请求、边界条件、澄清、拒答、工具失败和格式修复。近重复模板会虚增样本量。划分测试集时按来源/任务/用户隔离。
 
+本仓库的 SFT reference core 用严格 JSONL、exact/group 跨 split gate、有序 train/combined binding、显式 normalization/view/n-gram/threshold 的 lexical Jaccard candidate gate，以及默认拒绝的 source/license/purpose/expiry registry 与有限敏感候选扫描，把这部分变成可执行基线。独立审计进程把结果收敛为不含 held-out 原文的严格 readiness artifact，trainer 只重读 train 并核对 ordered identity；这减少了测试集暴露面，但未签名 hash 不是来源认证。lexical candidate 不等于语义重复，registry allow 不是法律意见，有限扫描未命中也不证明无 PII/secret；它仍不覆盖 consent、完整许可审查、embedding/翻译级污染或真实域 detector calibration。两个训练入口另有目标 tokenizer-reported assistant-mask 与截断 preflight，但它也不等于独立 mask 语义或最终 labels 验证。运行方法和证据边界见[SFT 数据、模板与训练闭环](sft-data-pipeline.md)。
+
+偏好训练采用独立 artifact：combined 文件保留 A/B presentation、tie/invalid 和 held-out split，DPO trainer 文件必须逐记录等于其中有序的 binary train subset。审计进程另绑定字符 n-gram candidate policy、source registry 和有限敏感候选扫描；这些是待复核 gate，不是语义无污染、法律许可或无敏感信息证明。严格 readiness 不含 held-out 原文；目标 tokenizer 加载后，preflight 要求 prompt token IDs 同时是 prompt+chosen/rejected 的精确前缀，并拒绝空/同 token completion 与会触发 `max_length` 的 pair。这个 tokenization gate 防止模板切片和静默截断改变 DPO loss 边界，但不验证标注者、position bias 或对齐效果；具体入口在 `projects/single-gpu-finetuning/`，项目状态见[工程项目索引](../practice/project-index.md)。
+
 ## 全参数微调
 
 更新全部权重，容量最大，适合数据足、预算高或需要显著领域迁移的场景。代价是显存大、每任务保存完整模型，并有灾难性遗忘风险。优化器状态常比权重本身占更多显存。
@@ -44,6 +48,14 @@ W'=W+\Delta W=W+\frac{\alpha}{r}BA
 ## 超参数与训练
 
 微调通常比预训练用更小学习率和更少步骤。监控训练/验证 loss、任务指标、格式合法率、通用能力和安全回归。按有效 token 数加权 loss，避免大量短样本或 padding 扭曲结果。sequence packing 可提效，但要正确隔离样本边界。
+
+## Checkpoint 与精确恢复
+
+“能重新加载权重”不等于“能从中断处继续同一条训练轨迹”。可恢复训练 checkpoint 至少要把模型参数、optimizer state、scheduler/global step、混合精度 scaler、所有实际使用的 RNG、sampler/shuffle 状态、数据 cursor 与数据身份放在同一个一致性边界；gradient accumulation 还要保存窗口内梯度与 accumulation position，DataLoader worker/prefetch、分布式 sampler、FSDP/ZeRO shard 也各有额外状态。若某项未使用，可以明确省略；若使用了却没保存，便不能声称 exact resume。
+
+仓库的 `minigpt_training_checkpoint.py` 提供一个范围刻意收紧的 CPU control：pickle-free strict artifact 保存 FP32 MiniGPT 全部参数、单 param-group AdamW 的 per-parameter step/一阶/二阶矩、线性 LR 进度、Byte-BPE/config/tied-weight contract、数据 shape+content fingerprint、shuffle permutation/cursor/epoch、独立 data-generator RNG 与 dropout 使用的 Torch CPU RNG。它只允许在梯度已清空的 optimizer-step boundary 保存。7×5 token 数据、batch 2、dropout 0.2 的固定实验中，6 次更新在第 3 次后保存/恢复；恢复段的 batch、epoch、LR、loss 以及最终模型/optimizer/stream/RNG 与不中断运行逐位一致。
+
+这个结论只覆盖当前 CPU、PyTorch、FP32、MiniGPT architecture revision 和训练契约。当前 AdamW step 是 FP32 tensor，所以 reference 把总 update 限制在 $2^{24}$ 以内，确保整数仍可精确表示。artifact 不嵌入数据 payload，只用 fingerprint 拒绝数据漂移；也没有保存 Python、NumPy 或 CUDA RNG，因为该 control 没有使用它们。它不支持 AMP scaler、gradient accumulation、DataLoader worker/prefetch、distributed/sharded state、目标 Llama/Qwen checkpoint 或 CUDA。无密钥 SHA-256 不认证来源，exclusive-create + file `fsync` 不证明断电原子发布；固定 loss 也不单调下降，因此实验不证明收敛或模型质量。
 
 ## 何时不要微调
 
