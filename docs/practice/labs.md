@@ -167,6 +167,12 @@ python -m pytest tests/test_model_planner.py tests/test_model_planner_control.py
 
 验收：没有未经授权副作用；模型 JSON 只产生 proposal；Planner 与 runtime schema 由同一 contract 派生；每次 request/response/decision/action/effect 可分层审计；只有 verifier 通过才完成；失败安全降级。报告必须写明 schema 只验证 JSON 约束、不做 coercion/default/授权，recorded response/request id/usage/cost 由作者冻结，没有真实模型、网络、账单、生产 IAM 或开放任务语义证据。
 
+### 实验 6A：MCP/A2A 契约设计（文档与 fixture）
+
+阅读 [Agent 互操作](../applications/agent-interoperability.md)，为实验 6 的 Agent 设计两份不联网 fixture：一份 MCP server capability/tool manifest，一份 A2A Agent Card + task/status/artifact trace。固定协议版本和内部规范化类型，逐项标出哪些字段来自外部声明、哪些 identity/tenant/capability 只能来自可信控制面。
+
+至少加入以下负例：未知 capability、tool schema 漂移、跨 tenant resource、恶意 tool result、Agent Card endpoint 漂移、重复/乱序 task update、远端 `completed` 但本地 verifier 拒绝，以及超时后 outcome unknown。交付 adapter mapping、信任边界图、fixture 和预期拒绝原因；在真实 SDK/client/server 落地前，不得声称协议 conformance 或跨厂商互操作已验证。
+
 ## 实验 7：量化与服务基准
 
 先运行 `projects/inference-serving/continuous_batching_toy.py`，手工复算每个 boundary 的 admission、prefill、首 token、decode、completion 与 slots；解释为什么固定 fixture 的 7 prompt + 6 output 只对应 10 个 causal forward positions。再进入真实服务基准，避免把 API token、离散 work、padded slots 和 GPU utilization 混成同一指标。

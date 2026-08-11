@@ -1,6 +1,6 @@
 # Agent 与工具使用
 
-本章是全局概览。工程深入阅读[Agent 架构、规划与记忆](agent-architecture.md)、[工具协议、幂等与故障恢复](agent-runtime.md)以及[Agent 评测、仿真与红队](../quality/agent-evaluation.md)。
+本章是全局概览。工程深入阅读[Agent 架构、规划与记忆](agent-architecture.md)、[工具协议、幂等与故障恢复](agent-runtime.md)、[MCP、A2A 与内部契约](agent-interoperability.md)以及[Agent 评测、仿真与红队](../quality/agent-evaluation.md)。
 
 ## 定义
 
@@ -53,6 +53,10 @@ stateDiagram-v2
 ## 安全
 
 工具输出、网页、邮件和文档都可能包含提示注入。使用最小权限、网络/文件沙箱、域名 allowlist、秘密隔离、输出净化和审批。高权限凭证不进入模型上下文；工具代理代表用户验证授权。
+
+## 互操作
+
+MCP 主要连接 AI 应用与 tools/resources/prompts，A2A 主要连接独立 Agent 的发现、任务和 artifact。协议提高可组合性，不建立业务信任：发现到的工具、Agent Card、远端状态和 artifact 都是待验证声明，仍须经过本地 identity、ACL、policy、approval、budget 和 verifier。
 
 ## 评测
 

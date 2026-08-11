@@ -41,6 +41,18 @@
 - Yao et al., [ReAct](https://arxiv.org/abs/2210.03629), 2022。
 - Schick et al., [Toolformer](https://arxiv.org/abs/2302.04761), 2023。
 
+## 持续更新：API 与互操作标准
+
+本节只列需要按版本和访问日期持续复核的官方入口，不把当前产品状态写成永久事实。
+
+- Model Context Protocol，[Introduction](https://modelcontextprotocol.io/docs/getting-started/intro) 与 [Specification](https://modelcontextprotocol.io/specification/)：tools/resources/prompts、transport、capability 与安全边界。
+- A2A Protocol，[Specification](https://a2a-protocol.org/latest/specification/)：Agent Card、message/task/artifact、长任务和跨 Agent 协作。
+- Google Gemini，[Interactions API](https://ai.google.dev/gemini-api/docs/interactions) 与 [GenerateContent API](https://ai.google.dev/api/generate-content)：分别核对状态、steps、工具、流式事件与迁移边界。
+- Anthropic，[Messages API](https://platform.claude.com/docs/en/api/messages)：核对顶层 `system`、content blocks、usage 与 stop reason。
+- OpenAI，[API documentation](https://developers.openai.com/api/docs/)：按所用 endpoint、model snapshot 与功能版本核对请求、工具、stream 和 usage。
+
+协议/产品文档变化快。项目接入时把 URL、访问日期、API/协议版本和 SDK 版本写入 manifest，并用目标账号与网络环境另做 smoke test。
+
 ## 推理与服务
 
 - Kwon et al., [Efficient Memory Management for LLM Serving with PagedAttention](https://arxiv.org/abs/2309.06180), 2023。

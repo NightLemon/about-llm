@@ -42,6 +42,8 @@
 | Gemini Interactions | 2026-08-06 时已 GA 且推荐新项目使用；可选服务端状态、steps、后台执行和存储选择必须独立建模 | [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) |
 | Gemini GenerateContent | `contents`/`parts`、`systemInstruction`、candidates、finish reason 与 usage 属于该接口；仍受支持但已标为 legacy | [GenerateContent reference](https://ai.google.dev/api/generate-content) |
 | Gemini 文本生成 | 当前文本生成入口推荐 Interactions API；不能把它与本仓库 `generateContent` adapter 的字段或事件混写 | [Gemini text generation](https://ai.google.dev/gemini-api/docs/text-generation) |
+| MCP | host/client/server、tools/resources/prompts 与 capability negotiation 属于互操作协议；发现能力不等于业务授权 | [MCP Introduction](https://modelcontextprotocol.io/docs/getting-started/intro)、[MCP Specification](https://modelcontextprotocol.io/specification/)；核对日期 2026-08-11 |
+| A2A | Agent Card、message/task/artifact 用于 Agent 间发现与协作；远端 completed 不能替代本地 verifier | [A2A Specification](https://a2a-protocol.org/latest/specification/)；核对日期 2026-08-11 |
 | TRL `SFTTrainer` | `assistant_only_loss` 依赖模板返回 assistant/generation mask；模板需支持 generation 标注，仍需检查实际 mask/labels | [SFT Trainer](https://huggingface.co/docs/trl/en/sft_trainer) |
 | vLLM CLI | `vllm serve` 提供 OpenAI-compatible server；参数和支持矩阵应按安装版本与 stable 文档核对 | [vLLM stable CLI](https://docs.vllm.ai/en/stable/cli/) |
 | Transformers chat template | 模板序列化 role/control tokens；训练与生成格式、generation prompt 和 assistant mask 要按 tokenizer 模板验证 | [Chat templates](https://huggingface.co/docs/transformers/en/chat_templating) |
@@ -115,6 +117,7 @@
 
 - 当前机器没有完成真实 CUDA/vLLM/QLoRA 的目标硬件验证；文档中的命令是运行路线，不是成功声明。
 - 离线 adapter 测试没有访问 OpenAI、Anthropic、Gemini、DeepSeek 或 Qwen 的真实付费端点，也不证明账号配额、区域或最新产品行为。
+- 本仓库没有实现或执行真实 MCP/A2A client/server；互操作章节是协议建模与测试路线，不是 conformance、网络兼容、安全或生产可用性证明。
 - 任何吞吐、TTFT、TPOT、显存与费用结果都需要在目标环境保存 workload manifest 后才能成为可比较证据。
 - 闭源模型未公开的内部架构与训练配方不在可核验范围内。
 

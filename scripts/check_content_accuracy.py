@@ -22,6 +22,9 @@ OFFICIAL_URLS = {
     "https://ai.google.dev/gemini-api/docs/interactions",
     "https://ai.google.dev/api/generate-content",
     "https://ai.google.dev/gemini-api/docs/text-generation",
+    "https://modelcontextprotocol.io/docs/getting-started/intro",
+    "https://modelcontextprotocol.io/specification/",
+    "https://a2a-protocol.org/latest/specification/",
     "https://huggingface.co/docs/trl/en/sft_trainer",
     "https://docs.vllm.ai/en/stable/cli/",
     "https://huggingface.co/docs/transformers/en/chat_templating",
@@ -386,6 +389,13 @@ FRONTIER_BOUNDARIES = {
 }
 
 APPLICATION_BOUNDARIES = {
+    "agent-interoperability.md": (
+        "Tool discovery 不等于 tool authorization",
+        "Agent Card 当作可验证的声明",
+        "远端返回 `completed` 只代表协议状态",
+        "没有实现 MCP/A2A client/server",
+        "核对日期 2026-08-11",
+    ),
     "agent-architecture.md": (
         "typed loop 把 `finish` 视为 proposal",
         "supplied fixture 数字",

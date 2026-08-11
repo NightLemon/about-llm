@@ -59,6 +59,7 @@ readiness 未签名 hash 不认证来源；registry 不是法律结论，敏感�
 - ✅ Prompt：任务契约、真实 chat template、few-shot/分解、结构化输出、版本化、评测与安全边界
 - ✅ RAG：摄取、切分、Embedding、向量/关键词检索、重排、目标-tokenizer packing、生成、引用，以及 packing→output→evaluation trace identity gate；另有 canonical-first LangChain/LlamaIndex parity 与 persistent extractive ASGI service，但两者生成仍是 deterministic extractive non-LLM baseline
 - ✅ Agent：typed planner loop、strict model-text→proposal boundary、同源版本化 Draft 2020-12 Planner/runtime schema、request/response/decision identity、verifier 完成判定、step/token/cost/time 预算、循环/错误停止、工具调用、状态、记忆、权限、审批暂停与工作流；recorded-response control 不是真实模型实测，schema 也不是授权/业务验证。另有 local SQLite transactional outbox 的原子 enqueue、lease、崩溃重投、dead letter 与模拟 provider 幂等实验，准确边界是 at-least-once delivery，不是远端 exactly-once
+- 🟡 Agent 互操作：已覆盖 provider API、MCP 与 A2A 的分层，tools/resources/prompts、Agent Card、task/message/artifact、版本协商、信任与 verifier 边界；尚无真实 MCP/A2A client/server、SDK conformance、网络认证或跨厂商互操作实验
 - ✅ 代码模型：补全/FIM、仓库检索、补丁、执行反馈、沙箱、测试、pass@k 与成本边界
 - ✅ 对话系统：typed state、来源/TTL/consent、修正/撤回、摘要边界、上下文压缩与租户隔离 reference core
 - ✅ LLMOps：artifact graph、canonical identity、trace、离线门禁、发布、A/B、漂移与成本管理
