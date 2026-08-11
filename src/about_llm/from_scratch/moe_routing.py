@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 def _frozen_copy(
     value: NDArray[Any], *, dtype: np.dtype[Any], name: str
 ) -> NDArray[Any]:
-    array = cast(NDArray[Any], np.asarray(value, dtype=dtype).copy())
+    array: NDArray[Any] = np.asarray(value, dtype=dtype).copy()
     if array.dtype.kind == "f" and not np.all(np.isfinite(array)):
         raise ValueError(f"{name} must contain only finite values")
     array.setflags(write=False)
@@ -251,13 +251,14 @@ def route_topk_capacity(
         raise ValueError("capacity_factor must be finite and positive")
     if not isinstance(renormalize_after_capacity, bool):
         raise TypeError("renormalize_after_capacity must be boolean")
+    active: NDArray[np.bool_]
     if token_mask is None:
         active = np.ones(tokens, dtype=np.bool_)
     else:
         raw_mask = np.asarray(token_mask)
         if raw_mask.dtype != np.bool_ or raw_mask.shape != (tokens,):
             raise ValueError("token_mask must be a boolean vector with one value per token")
-        active = cast(NDArray[np.bool_], raw_mask.copy())
+        active = raw_mask.copy()
     if not np.any(active):
         raise ValueError("token_mask must select at least one active token")
 
