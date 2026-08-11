@@ -203,7 +203,7 @@ async def execute_json_request(
             )
         except asyncio.CancelledError:
             raise
-        except (TimeoutError, httpx.HTTPError) as error:
+        except (TimeoutError, asyncio.TimeoutError, httpx.HTTPError) as error:
             ended = _finite_monotonic(monotonic())
             duration = _elapsed(ended, attempt_started)
             error_category, failure_kind, outcome_uncertain = _classify_transport_error(
@@ -362,7 +362,7 @@ async def execute_sse_request(
             )
         except asyncio.CancelledError:
             raise
-        except (TimeoutError, httpx.HTTPError) as error:
+        except (TimeoutError, asyncio.TimeoutError, httpx.HTTPError) as error:
             ended = _finite_monotonic(monotonic())
             category, kind, uncertain = _classify_transport_error(error)
             decision = decide_retry(
@@ -512,7 +512,7 @@ async def execute_sse_request(
             )
         )
         raise CloudCallError("invalid_response", attempts) from error
-    except (TimeoutError, httpx.HTTPError) as error:
+    except (TimeoutError, asyncio.TimeoutError, httpx.HTTPError) as error:
         ended = _finite_monotonic(monotonic())
         category, kind, _ = _classify_transport_error(error)
         decision = decide_retry(
@@ -657,7 +657,7 @@ def _classify_transport_error(
         return "timeout", "timeout", False
     if isinstance(error, httpx.ConnectError):
         return "transport", "transport", False
-    if isinstance(error, (TimeoutError, httpx.TimeoutException)):
+    if isinstance(error, (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException)):
         return "timeout", "timeout", True
     return "transport", "transport", True
 
