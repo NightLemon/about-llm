@@ -20,6 +20,8 @@
 
 `models/`、`foundations/`、`core/`、`training/`、`systems/`、`applications/`、`quality/` 和 `frontier/` 下的每篇教学正文必须且只能包含一个 `<!-- learning-contract -->`。`python scripts/check_docs.py` 会验证标记、五个字段、链接和锚点。
 
+同一检查还执行可读性棘轮：新教学页默认不得出现超过 200 字符的 prose 行，不得超过 45 个小节或 600 行。现有超标页记录在 `docs/reference/readability-baseline.json`；指标只能下降，改善正文时必须同步收紧对应 baseline。`docs/evidence/` 允许保存高密度台账，但开头必须把第一次阅读者引回教学入口。
+
 ## 状态标记
 
 - `✅`：已有可独立学习的正文
@@ -41,6 +43,7 @@
 ```powershell
 mkdocs build --strict
 python scripts/check_docs.py
+python scripts/check_content_accuracy.py
 python -m pytest tests/test_check_docs.py -q
 ```
 

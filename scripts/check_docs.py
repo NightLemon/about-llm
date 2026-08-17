@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -14,6 +15,14 @@ import markdown
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
+READABILITY_BASELINE = DOCS / "reference" / "readability-baseline.json"
+READABILITY_DEFAULTS = {
+    "line_count": 600,
+    "heading_count": 45,
+    "overlong_prose_line_count": 0,
+    "max_prose_line_length": 200,
+}
+NON_READER_DIRECTORIES = {"assets", "evidence", "papers", "reference"}
 CURRICULUM_DIRECTORIES = (
     "models",
     "foundations",
@@ -103,6 +112,14 @@ def curriculum_markdown_files(docs: Path = DOCS) -> list[Path]:
         path
         for directory in CURRICULUM_DIRECTORIES
         for path in (docs / directory).glob("*.md")
+    )
+
+
+def reader_markdown_files(docs: Path = DOCS) -> list[Path]:
+    return sorted(
+        path
+        for path in docs.rglob("*.md")
+        if path.relative_to(docs).parts[0] not in NON_READER_DIRECTORIES
     )
 
 
@@ -238,12 +255,95 @@ def check_learning_contracts(files: list[Path], *, root: Path = ROOT) -> list[st
     return errors
 
 
+def _readability_metrics(text: str) -> dict[str, int]:
+    prose_lengths = [len(line) for _, line in _prose_lines(text)]
+    return {
+        "line_count": len(text.splitlines()),
+        "heading_count": len(HEADING_RE.findall(text)) - 1,
+        "overlong_prose_line_count": sum(
+            length > READABILITY_DEFAULTS["max_prose_line_length"]
+            for length in prose_lengths
+        ),
+        "max_prose_line_length": max(prose_lengths, default=0),
+    }
+
+
+def check_readability(
+    files: list[Path],
+    *,
+    baseline_path: Path = READABILITY_BASELINE,
+    root: Path = ROOT,
+) -> list[str]:
+    """Enforce strict defaults while ratcheting down explicitly recorded debt."""
+
+    try:
+        payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"{baseline_path}: invalid readability baseline: {error}"]
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        return [f"{baseline_path}: expected schema_version 1 object"]
+    if payload.get("defaults") != READABILITY_DEFAULTS:
+        return [f"{baseline_path}: defaults drifted from the checker contract"]
+    pages = payload.get("pages")
+    if not isinstance(pages, dict):
+        return [f"{baseline_path}: pages must be an object"]
+
+    errors: list[str] = []
+    seen: set[str] = set()
+    for source in files:
+        relative = source.relative_to(root).as_posix()
+        seen.add(relative)
+        overrides = pages.get(relative, {})
+        if not isinstance(overrides, dict) or any(
+            key not in READABILITY_DEFAULTS
+            or isinstance(value, bool)
+            or not isinstance(value, int)
+            for key, value in overrides.items()
+        ):
+            errors.append(f"{relative}: invalid readability baseline entry")
+            continue
+        metrics = _readability_metrics(source.read_text(encoding="utf-8"))
+        for key, actual in metrics.items():
+            default = READABILITY_DEFAULTS[key]
+            budget = overrides.get(key, default)
+            if budget < default:
+                errors.append(f"{relative}: {key} baseline cannot be below strict default")
+            elif actual > budget:
+                errors.append(f"{relative}: {key} {actual} exceeds budget {budget}")
+            elif key in overrides and actual < budget:
+                errors.append(
+                    f"{relative}: {key} improved to {actual}; tighten stale budget {budget}"
+                )
+        if overrides and not any(
+            value > READABILITY_DEFAULTS[key] for key, value in overrides.items()
+        ):
+            errors.append(f"{relative}: baseline entry records no readability debt")
+
+    for stale in sorted(set(pages) - seen):
+        errors.append(f"{baseline_path}: stale readability page: {stale}")
+    return errors
+
+
+def check_evidence_entrypoints(docs: Path = DOCS, *, root: Path = ROOT) -> list[str]:
+    errors: list[str] = []
+    for source in sorted((docs / "evidence").glob("*.md")):
+        introduction = source.read_text(encoding="utf-8")[:1200]
+        relative = source.relative_to(root)
+        if "第一次" not in introduction:
+            errors.append(f"{relative}: evidence ledger must redirect first-time readers")
+        targets = parse_document(introduction).targets
+        if not any("../" in target and "../evidence/" not in target for target in targets):
+            errors.append(f"{relative}: evidence ledger needs a reader-facing entry link")
+    return errors
+
+
 def main() -> int:
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="backslashreplace")
     files = markdown_files()
     curriculum_files = curriculum_markdown_files()
+    reader_files = reader_markdown_files()
     reference_files = sorted({*files, *project_markdown_files()})
     errors = (
         check_basics(files)
@@ -251,6 +351,8 @@ def main() -> int:
         + check_math_delimiters(files)
         + check_test_references(reference_files)
         + check_learning_contracts(curriculum_files)
+        + check_readability(reader_files)
+        + check_evidence_entrypoints()
     )
     if errors:
         print("Documentation checks failed:")

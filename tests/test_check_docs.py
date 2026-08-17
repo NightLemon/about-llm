@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from scripts.check_docs import (
+    READABILITY_DEFAULTS,
+    check_evidence_entrypoints,
     check_internal_links,
     check_learning_contracts,
     check_math_delimiters,
+    check_readability,
     check_test_references,
     parse_document,
 )
+
+
+def _write_readability_baseline(path: Path, pages: dict[str, dict[str, int]]) -> None:
+    path.write_text(
+        json.dumps(
+            {"schema_version": 1, "defaults": READABILITY_DEFAULTS, "pages": pages}
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_parser_extracts_inline_reference_and_image_targets() -> None:
@@ -131,3 +144,52 @@ def test_test_references_reject_missing_files(tmp_path: Path) -> None:
     assert check_test_references([page], root=tmp_path) == [
         f"{page.relative_to(tmp_path)}: missing test file: tests/test_missing.py"
     ]
+
+
+def test_readability_uses_strict_defaults_for_new_pages(tmp_path: Path) -> None:
+    page = tmp_path / "docs" / "core" / "page.md"
+    baseline = tmp_path / "baseline.json"
+    page.parent.mkdir(parents=True)
+    page.write_text("# Page\n\n" + "x" * 201 + "\n", encoding="utf-8")
+    _write_readability_baseline(baseline, {})
+
+    errors = check_readability([page], baseline_path=baseline, root=tmp_path)
+
+    assert any("overlong_prose_line_count 1 exceeds budget 0" in error for error in errors)
+    assert any("max_prose_line_length 201 exceeds budget 200" in error for error in errors)
+
+
+def test_readability_debt_is_an_exact_downward_ratchet(tmp_path: Path) -> None:
+    page = tmp_path / "docs" / "models" / "legacy.md"
+    baseline = tmp_path / "baseline.json"
+    page.parent.mkdir(parents=True)
+    page.write_text("# Legacy\n\n" + "x" * 220 + "\n", encoding="utf-8")
+    relative = page.relative_to(tmp_path).as_posix()
+    _write_readability_baseline(
+        baseline,
+        {relative: {"overlong_prose_line_count": 1, "max_prose_line_length": 220}},
+    )
+    assert check_readability([page], baseline_path=baseline, root=tmp_path) == []
+
+    page.write_text("# Legacy\n\nshort\n", encoding="utf-8")
+    errors = check_readability([page], baseline_path=baseline, root=tmp_path)
+
+    assert any("improved" in error and "tighten stale budget" in error for error in errors)
+
+
+def test_evidence_ledgers_must_redirect_first_time_readers(tmp_path: Path) -> None:
+    evidence = tmp_path / "docs" / "evidence"
+    evidence.mkdir(parents=True)
+    good = evidence / "good.md"
+    bad = evidence / "bad.md"
+    good.write_text(
+        "# Ledger\n\n第一次学习请从[教程](../guide/start.md)开始。\n",
+        encoding="utf-8",
+    )
+    bad.write_text("# Ledger\n\nOnly internal fixtures.\n", encoding="utf-8")
+
+    errors = check_evidence_entrypoints(tmp_path / "docs", root=tmp_path)
+
+    assert not any("good.md" in error for error in errors)
+    assert any("bad.md" in error and "first-time readers" in error for error in errors)
+    assert any("bad.md" in error and "reader-facing entry link" in error for error in errors)

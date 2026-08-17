@@ -1,0 +1,258 @@
+{
+  "defaults": {
+    "heading_count": 45,
+    "line_count": 600,
+    "max_prose_line_length": 200,
+    "overlong_prose_line_count": 0
+  },
+  "pages": {
+    "docs/applications/agent-architecture.md": {
+      "max_prose_line_length": 421,
+      "overlong_prose_line_count": 8
+    },
+    "docs/applications/agent-interoperability.md": {
+      "max_prose_line_length": 774,
+      "overlong_prose_line_count": 22
+    },
+    "docs/applications/agent-runtime.md": {
+      "max_prose_line_length": 409,
+      "overlong_prose_line_count": 15
+    },
+    "docs/applications/code-conversation-llmops.md": {
+      "heading_count": 47,
+      "max_prose_line_length": 304,
+      "overlong_prose_line_count": 1
+    },
+    "docs/applications/prompting.md": {
+      "max_prose_line_length": 419,
+      "overlong_prose_line_count": 2
+    },
+    "docs/applications/rag-generation.md": {
+      "max_prose_line_length": 370,
+      "overlong_prose_line_count": 19
+    },
+    "docs/applications/rag-production.md": {
+      "max_prose_line_length": 470,
+      "overlong_prose_line_count": 13
+    },
+    "docs/applications/rag-retrieval.md": {
+      "max_prose_line_length": 331,
+      "overlong_prose_line_count": 5
+    },
+    "docs/career/system-design.md": {
+      "max_prose_line_length": 408,
+      "overlong_prose_line_count": 8
+    },
+    "docs/core/architectures-interpretability.md": {
+      "max_prose_line_length": 731,
+      "overlong_prose_line_count": 11
+    },
+    "docs/core/generation.md": {
+      "max_prose_line_length": 391,
+      "overlong_prose_line_count": 9
+    },
+    "docs/core/tokenization.md": {
+      "max_prose_line_length": 222,
+      "overlong_prose_line_count": 4
+    },
+    "docs/core/transformer.md": {
+      "max_prose_line_length": 409,
+      "overlong_prose_line_count": 4
+    },
+    "docs/foundations/math.md": {
+      "heading_count": 54,
+      "max_prose_line_length": 292,
+      "overlong_prose_line_count": 3
+    },
+    "docs/foundations/ml-dl.md": {
+      "max_prose_line_length": 438,
+      "overlong_prose_line_count": 7
+    },
+    "docs/frontier/embodied-small-models.md": {
+      "max_prose_line_length": 233,
+      "overlong_prose_line_count": 2
+    },
+    "docs/frontier/multimodal.md": {
+      "heading_count": 50
+    },
+    "docs/frontier/reasoning-long-context-moe.md": {
+      "heading_count": 52,
+      "max_prose_line_length": 672,
+      "overlong_prose_line_count": 25
+    },
+    "docs/guide/environment.md": {
+      "max_prose_line_length": 250,
+      "overlong_prose_line_count": 1
+    },
+    "docs/guide/repo-map.md": {
+      "max_prose_line_length": 1215,
+      "overlong_prose_line_count": 9
+    },
+    "docs/models/claude.md": {
+      "heading_count": 59,
+      "line_count": 779,
+      "max_prose_line_length": 370,
+      "overlong_prose_line_count": 5
+    },
+    "docs/models/cloud-api-contracts.md": {
+      "heading_count": 51,
+      "line_count": 605,
+      "max_prose_line_length": 262,
+      "overlong_prose_line_count": 1
+    },
+    "docs/models/deepseek.md": {
+      "heading_count": 49,
+      "line_count": 823,
+      "max_prose_line_length": 659,
+      "overlong_prose_line_count": 11
+    },
+    "docs/models/gpt.md": {
+      "max_prose_line_length": 274,
+      "overlong_prose_line_count": 5
+    },
+    "docs/models/landscape.md": {
+      "max_prose_line_length": 254,
+      "overlong_prose_line_count": 4
+    },
+    "docs/models/llama.md": {
+      "heading_count": 49,
+      "line_count": 710,
+      "max_prose_line_length": 307,
+      "overlong_prose_line_count": 6
+    },
+    "docs/models/qwen.md": {
+      "heading_count": 57,
+      "line_count": 886,
+      "max_prose_line_length": 692,
+      "overlong_prose_line_count": 22
+    },
+    "docs/practice/labs/lab-0c-cloud-budget.md": {
+      "max_prose_line_length": 244,
+      "overlong_prose_line_count": 2
+    },
+    "docs/practice/production-checklist.md": {
+      "max_prose_line_length": 1108,
+      "overlong_prose_line_count": 5
+    },
+    "docs/practice/projects/cloud-api-contracts.md": {
+      "max_prose_line_length": 586,
+      "overlong_prose_line_count": 10
+    },
+    "docs/practice/projects/evaluation-gate.md": {
+      "max_prose_line_length": 383,
+      "overlong_prose_line_count": 9
+    },
+    "docs/practice/projects/inference-serving.md": {
+      "max_prose_line_length": 414,
+      "overlong_prose_line_count": 9
+    },
+    "docs/practice/projects/jax-minigpt.md": {
+      "max_prose_line_length": 283,
+      "overlong_prose_line_count": 7
+    },
+    "docs/practice/projects/rag-foundations.md": {
+      "max_prose_line_length": 412,
+      "overlong_prose_line_count": 14
+    },
+    "docs/practice/projects/rag-framework-adapters.md": {
+      "max_prose_line_length": 273,
+      "overlong_prose_line_count": 4
+    },
+    "docs/practice/projects/safe-agent.md": {
+      "max_prose_line_length": 363,
+      "overlong_prose_line_count": 17
+    },
+    "docs/practice/projects/single-gpu-finetuning.md": {
+      "max_prose_line_length": 1065,
+      "overlong_prose_line_count": 22
+    },
+    "docs/practice/projects/synthetic-data-audit.md": {
+      "max_prose_line_length": 233,
+      "overlong_prose_line_count": 2
+    },
+    "docs/practice/projects/transformers-basics.md": {
+      "heading_count": 50,
+      "max_prose_line_length": 318,
+      "overlong_prose_line_count": 13
+    },
+    "docs/quality/agent-evaluation.md": {
+      "max_prose_line_length": 508,
+      "overlong_prose_line_count": 6
+    },
+    "docs/quality/evaluation-methodology.md": {
+      "max_prose_line_length": 493,
+      "overlong_prose_line_count": 28
+    },
+    "docs/quality/evaluation.md": {
+      "max_prose_line_length": 832,
+      "overlong_prose_line_count": 6
+    },
+    "docs/quality/governance-impact.md": {
+      "max_prose_line_length": 245,
+      "overlong_prose_line_count": 1
+    },
+    "docs/quality/reasoning-artifact-security.md": {
+      "max_prose_line_length": 269,
+      "overlong_prose_line_count": 5
+    },
+    "docs/quality/safety.md": {
+      "max_prose_line_length": 378,
+      "overlong_prose_line_count": 6
+    },
+    "docs/systems/distributed-training.md": {
+      "max_prose_line_length": 750,
+      "overlong_prose_line_count": 29
+    },
+    "docs/systems/inference-optimization.md": {
+      "max_prose_line_length": 443,
+      "overlong_prose_line_count": 30
+    },
+    "docs/systems/inference.md": {
+      "max_prose_line_length": 401,
+      "overlong_prose_line_count": 10
+    },
+    "docs/systems/serving.md": {
+      "max_prose_line_length": 351,
+      "overlong_prose_line_count": 17
+    },
+    "docs/systems/vllm-serving.md": {
+      "max_prose_line_length": 445,
+      "overlong_prose_line_count": 19
+    },
+    "docs/training/alignment.md": {
+      "line_count": 632,
+      "max_prose_line_length": 1224,
+      "overlong_prose_line_count": 31
+    },
+    "docs/training/continual-learning.md": {
+      "max_prose_line_length": 331,
+      "overlong_prose_line_count": 5
+    },
+    "docs/training/data.md": {
+      "heading_count": 47,
+      "max_prose_line_length": 292,
+      "overlong_prose_line_count": 4
+    },
+    "docs/training/jax-optax.md": {
+      "max_prose_line_length": 362,
+      "overlong_prose_line_count": 8
+    },
+    "docs/training/peft-qlora-engineering.md": {
+      "max_prose_line_length": 701,
+      "overlong_prose_line_count": 16
+    },
+    "docs/training/pretraining.md": {
+      "max_prose_line_length": 568,
+      "overlong_prose_line_count": 12
+    },
+    "docs/training/sft-data-pipeline.md": {
+      "max_prose_line_length": 516,
+      "overlong_prose_line_count": 22
+    },
+    "docs/training/synthetic-data.md": {
+      "max_prose_line_length": 307,
+      "overlong_prose_line_count": 6
+    }
+  },
+  "schema_version": 1
+}
