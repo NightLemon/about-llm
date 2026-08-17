@@ -1,61 +1,97 @@
-# 对齐、奖励模型与偏好优化
+# 对齐进阶：从偏好数据到 DPO 与 PPO
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：已完成[对齐入门](alignment-basics.md)的偏好数据、DPO/PPO 和安全训练工程师。
-- **先修**：[微调总览](finetuning.md)、概率优化、采样和基础策略学习。
-- **首次阅读**：对齐对象 → SFT 先验 → 偏好数据/RM → DPO；PPO 第二遍再读。
-- **完成信号**：能区分 SFT、RM、DPO、PPO 各自的数据和证据边界。
-- **卡住时**：先回到[机器学习与深度学习](../foundations/ml-dl.md)的目标与泛化。
+- **适合读者**：已理解 SFT，想进一步掌握奖励模型、DPO、PPO 和对齐评测的工程师。
+- **先修**：[对齐入门](alignment-basics.md)、条件概率、梯度优化与基础策略学习。
+- **首次阅读**：偏好数据 → Reward Model → KL → DPO；PPO 放在第二遍。
+- **完成信号**：能从数据、目标、状态和失败模式四方面比较 SFT、RM、DPO 与 PPO。
+- **卡住时**：先运行偏好数据审计，再用一对 chosen/rejected 手算 DPO log-ratio。
 
 </div>
 
-本页保留完整公式、实现与证据边界。第一次学习先读[对齐与偏好优化入门](alignment-basics.md)，只在确定数据和训练路线后进入对应算法小节。
+**学习入口**：[对齐入门](alignment-basics.md) · [微调总览](finetuning.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md) · [对齐证据台账](../evidence/alignment-controls.md)
+{ .doc-nav }
 
-对齐（alignment）不是单一 loss，也不是一次训练后永久获得的属性。它至少包含：遵循合法指令、帮助用户、与证据一致、在高风险或不确定时适当拒答、尊重权限，并在不同用户目标冲突时执行明确的优先级。训练只能塑造行为分布，权限和副作用必须由系统强制执行。
+对齐（alignment）不是把一个 loss 降下来，而是让模型行为在明确的人群、规则和场景中更符合目标，并用系统约束处理训练无法保证的权限与副作用。
 
-## 1. 先定义“和谁、对什么对齐”
+本章沿着一条数据流学习：示范建立行为先验，偏好比较表达 trade-off，Reward Model 把比较压成代理分数，DPO 或 PPO 再改变 policy。
 
-同一个回答可能对终端用户有帮助，却违反系统所有者的数据政策；可能符合多数标注者偏好，却伤害某一语言或群体。项目开始前应写清：
+每一步都可能继承上一步的偏差，因此最终判断必须回到独立任务、安全和系统评测。
+
+## 先写清“对齐给谁”
+
+同一个回答可能帮助终端用户，却违反系统所有者的数据政策；也可能符合多数标注者偏好，却伤害某一语言或群体。
+
+项目开始前先固定：
 
 - instruction hierarchy 与不可覆盖约束；
 - 目标用户、语言、地区和专业水平；
 - helpfulness、truthfulness、harmlessness 等维度怎样权衡；
-- 必须拒绝、可以安全替代、应正常帮助的边界；
-- 哪些决定必须交给人或外部 policy engine；
+- 必须拒绝、可以安全替代和应正常帮助的边界；
+- 哪些决定必须交给人或 policy engine；
 - 申诉、纠错和 incident response。
 
-“人类偏好”不是一个无噪声标量。偏好数据反映具体标注协议、标注者群体、界面和时间。
+“人类偏好”不是客观无噪声标量。它是特定标注者、rubric、界面、候选模型和时间共同产生的观测。
 
-## 2. SFT 建立行为先验
+## 先看完整数据流
 
-Supervised Fine-Tuning 使用 \((x,y)\) 示范最大化 response token likelihood：
+~~~mermaid
+flowchart LR
+    A["任务与约束"] --> B["SFT 示范"]
+    B --> C["SFT policy"]
+    C --> D["采样候选"]
+    D --> E["偏好 judgments"]
+    E --> F{"训练路线"}
+    F --> G["DPO / offline preference"]
+    F --> H["Reward Model"]
+    H --> I["PPO / online RL"]
+    G --> J["candidate policy"]
+    I --> J
+    J --> K["独立评测与发布"]
+~~~
+
+SFT、DPO 和 PPO 的输入并不相同：
+
+| 方法 | 主要数据 | 直接优化什么 |
+|---|---|---|
+| SFT | prompt + target response | target token likelihood |
+| Reward Model | prompt + pairwise judgment | preferred 与 rejected 的分数差 |
+| DPO | prompt + chosen/rejected + reference | reference-relative pair classification |
+| PPO/RL | policy rollouts + reward/value | 受约束的期望回报 |
+
+如果基础格式、知识和指令跟随还没有稳定，直接增加 preference objective 不会自动补齐这些能力。
+
+## SFT 建立行为先验
+
+Response-only SFT 的目标是：
 
 \[
-\mathcal L_{SFT}
-=-
-\sum_{t\in response}
-\log\pi_\theta(y_t\mid x,y_{<t}).
+\mathcal L_{\mathrm{SFT}}
+=-\sum_{t\in \mathrm{response}}
+\log \pi_\theta(y_t\mid x,y_{<t}).
 \]
 
-高质量 SFT 能建立格式、语气、任务流程和拒答边界。它的局限是：
+高质量示范可以教会格式、语气、任务流程和拒答样例。但一个 target 会把多解任务压成单一示范，也会复制教师的冗长、风格和错误。
 
-- 单个 target 把一个多解任务压成一个答案；
-- 示范中未出现的 trade-off 没有直接监督；
-- 教师文本的冗长、措辞和错误会被模仿；
-- 只 mask response 还是同时训练 prompt，改变目标；
-- chat template 错位会让 loss 看似正常却训练错误角色。
+训练前必须打印 token IDs、role boundaries 和 labels，确认：
 
-偏好训练通常从可用 SFT policy 开始；若基础指令跟随很差，pairwise objective 不会自动补齐所有行为。
+- prompt token 是否正确 mask；
+- assistant 区域是否真的有监督；
+- truncation 是否切掉关键 response；
+- chat template 是否与部署一致；
+- tool result 与 assistant action 是否被正确区分。
 
-## 3. 偏好数据的最小记录
+Loss 下降只说明模型更接近训练 targets，不说明目标任务、安全或事实性已经改善。
 
-一条 pairwise record 不应只有 `chosen` 和 `rejected`：
+## 偏好数据首先是一份测量记录
 
-```json
+一条 pairwise example 不应只剩 chosen 和 rejected。至少保存：
+
+~~~json
 {
   "prompt_id": "p-1042",
   "prompt": "...",
@@ -66,567 +102,314 @@ Supervised Fine-Tuning 使用 \((x,y)\) 示范最大化 response token likelihoo
   "strength": "slight",
   "rubric_revision": "help-safe-grounded-v3",
   "annotator_pool": "domain-experts-cn",
-  "adjudication": "none",
-  "generator_revisions": ["model-x@sha", "model-y@sha"]
+  "generator_revisions": ["model-x@rev", "model-y@rev"]
 }
-```
-
-还应记录语言、风险、长度、候选生成参数和 policy version。若只保留 winner，无法分析位置偏差、generator bias、ties 和 disagreement。
-
-仓库提供 `about-llm.preference-jsonl.v1` 严格契约。除上述字段外，它要求 source/license/task/language/risk/group/split、rubric revision、annotator pool、adjudication 与 A/B generator revision；拒绝重复 JSON key、未知字段、非标准常数、非法 prompt role 边界和含糊 presentation order。当前候选是 assistant text-only pair，不覆盖多消息 tool trajectory 或多候选 ranking。`label` 可为 `a/b/tie/invalid`，二元标签必须配 `slight/clear`，tie/invalid 必须保留为 `not_applicable`，不能为了喂给 trainer 偷改成 winner。
-
-~~~powershell
-python -m about_llm.preference_cli audit --jsonl projects/single-gpu-finetuning/preference.example.jsonl --require-splits train,validation,test --output outputs/preference-audit.json
 ~~~
 
-审计以 prompt + 无序 A/B 内容识别交换候选后的 duplicate pair，并检查 exact prompt、pair 和 group 跨 split 泄漏；同时报告 label、strength 与 preferred display position 分布、有序/无序 dataset identity。通过只证明这些 exact 规则，没有估计 position bias、annotator agreement、rubric validity、语义等价、许可/consent 或 tokenizer 截断。只有 train 且 `a/b` 的记录能转成 TRL conversational `prompt/chosen/rejected`；tie/invalid 会 fail closed。
+还要记录语言、风险、group、split、生成参数和 policy version。Tie、invalid 和 disagreement 是数据，不应为了适配 trainer 偷改成 winner。
 
-### 3.1 原始 judgment 与一致性
+### 为什么要保留原始 judgment
 
-最终 pair 标签不能替代逐标注者记录。仓库另定义 `about-llm.preference-judgment-jsonl.v1`：每条 judgment 只引用稳定 `pair_id`，保存 annotator、assignment batch、A/B 展示顺序、`a/b/tie/invalid`、强度、rubric revision、盲化/独立声明和耗时。审计要求 judgment 只指向选定的 validation/test case，同一 annotator 不重复判断同一 pair，每个 pair 有精确相同的 rater 数，并且两种展示顺序都达到最小覆盖；rubric mismatch、未知 pair、train 引用、重复 id、未盲化或非独立声明都会 fail closed。
+最终多数标签无法回答：
 
-~~~powershell
-python -m about_llm.preference_cli evaluate-judgments --cases-jsonl projects/single-gpu-finetuning/preference.example.jsonl --judgments-jsonl projects/single-gpu-finetuning/preference-judgments.example.jsonl --case-splits validation,test --judgments-per-pair 4 --minimum-per-order 2 --bootstrap-samples 10000 --bootstrap-seed 17 --output outputs/preference-judgment-report.json
-~~~
+- 标注者是否一致；
+- A/B 展示顺序是否影响选择；
+- 某一人群或语言是否系统性不同；
+- 一个强偏好由多少条独立 judgment 支持；
+- adjudication 是否覆盖了分歧。
 
-报告同时保留三个不同问题：
+关键切片应保留逐标注者结果、展示顺序、rubric、耗时、盲化与 adjudication。Agreement 和 Fleiss’ κ 描述一致性，但一致也可能是共享偏差。
 
-- raw pairwise agreement：同一 case 内标签相同的 annotator 无序对数 / 全部 annotator 无序对数，`invalid` 仍是一个标签；
-- Fleiss’ κ：在每个 case rater 数完全相同时，对 `a/b/tie/invalid` 做 chance correction；若 expected agreement 为 1，则分母为零并报告 `null`，不能伪造 1；
-- position effect：逐 case 计算 (P(A\mid A\text{ first})-P(A\mid A\text{ second}))，tie/invalid 不进入二元分母，再以 **case** 而不是单条 judgment 为 bootstrap 单位。
+### 常见标注捷径
 
-`blind_model_identity=true` 只是 artifact 中的声明，不能证明界面真的隐藏身份；保存 presentation order 也不能证明 assignment 随机。因此 position effect 是描述性诊断，不自动是因果效应。示例的 8 条 judgment 全是 authored fixture，只验证 schema、分母、κ 和 case-cluster bootstrap，不是人类标注、annotator quality、rubric validity 或真实 position bias 证据。
+- **Position bias**：偏好先显示或左侧候选。
+- **Verbosity bias**：更长回答显得更充分。
+- **Style bias**：标题和自信措辞掩盖错误。
+- **Authority bias**：未经核验的引用看起来可信。
+- **Identity leakage**：标注者猜出候选模型。
+- **Criterion collapse**：多个维度被压成含糊的“更好”。
 
-### 3.2 标注界面会改变标签
+通过随机交换 A/B、隐藏身份、分维度标注、允许 tie，并在关键切片上双人标注，降低但不能消除这些偏差。
 
-常见偏差：
+## Reward Model 学的是相对排序
 
-- **position bias**：更偏好左/右或先显示候选；
-- **length/verbosity bias**：更长回答看起来更充分；
-- **style bias**：标题、礼貌和自信掩盖事实错误；
-- **authority bias**：引用或专业措辞未经核验；
-- **identity leakage**：标注者猜出模型来源；
-- **criterion collapse**：把多个 rubric 维度压成一个模糊“更好”。
-
-随机交换 A/B、隐藏模型身份、分维度标注、允许 tie/不可判断，并对关键切片双人标注与 adjudication。
-
-## 4. Bradley–Terry 奖励模型
-
-给定 prompt \(x\)、preferred response \(y_w\) 和 rejected response \(y_l\)，一种常用模型是
+给定 prompt \(x\)、preferred response \(y_w\) 和 rejected response \(y_l\)，Bradley–Terry 模型写成：
 
 \[
 P(y_w\succ y_l\mid x)
-=
-\sigma\left(r_\phi(x,y_w)-r_\phi(x,y_l)\right).
+=\sigma\left(r_\phi(x,y_w)-r_\phi(x,y_l)\right).
 \]
 
-每对样本的 negative log-likelihood 为
+对应 loss 为：
 
 \[
-\mathcal L_{RM}
-=-
-\log\sigma(r_w-r_l)
+\mathcal L_{\mathrm{RM}}
+=-\log \sigma(r_w-r_l)
 =\operatorname{softplus}(-(r_w-r_l)).
 \]
 
-只使用 reward difference，因此给同一 prompt 的所有 reward 加相同常数不改变 pair probability；绝对 reward 不能跨模型/数据集直接解释成“用户价值单位”。
+只有 reward difference 影响 pair probability。给同一 prompt 的两个 reward 同时加常数，预测不会变化，所以绝对 reward 不是可跨模型解释的“用户价值单位”。
 
-### 4.1 线性 RM：把目标与捷径写成可检查的量
+### 从线性 RM 看懂 shortcut
 
-为看清优化器究竟学了什么，先令 response 的数值特征为 \(f(x,y)\)，线性 scorer 为
+先设 response 特征为 \(f(x,y)\)，线性 scorer 为：
 
 \[
 r_w(x,y)=w^\top f(x,y).
 \]
 
-对第 \(i\) 个 chosen/rejected pair，记 \(\Delta f_i=f(x,y_{w,i})-f(x,y_{l,i})\)，则 margin 为 \(m_i=\Delta f_i^\top w\)。带可选 L2 的 full-batch objective 与梯度是
+假设训练集中 preferred 回答通常更长，模型可能给 length feature 很大的正权重。Pair accuracy 会提高，但它学到的是数据捷径，而不是事实性或帮助性。
+
+因此 RM 评测除了 held-out pair accuracy，还应加入：
+
+- 长度匹配 pairs；
+- 风格改写但事实不变的 pairs；
+- 事实错误却措辞自信的 hard negatives；
+- 语言、风险、领域和 generator 切片；
+- score distribution、margin 与 calibration。
+
+Transformer RM 只是把特征提取换成模型 hidden states 和 scalar head，并没有消除 shortcut。
+
+## KL 约束回答“不要走太远”
+
+若直接最大化 learned reward，policy 会寻找 RM 的漏洞。常见目标加入相对 reference policy 的 KL penalty：
 
 \[
-J(w)=\frac1n\sum_i\operatorname{softplus}(-m_i)+\frac\lambda2\lVert w\rVert_2^2,
-\qquad
-\nabla J(w)=-\frac1n\sum_i\sigma(-m_i)\Delta f_i+\lambda w.
-\]
-
-负 margin 的 pair 权重更大，梯度会把 \(w\) 推向 chosen 与 rejected 的特征差；但它不会判断该差异是事实质量还是 length/style shortcut。若某个 prompt 的所有 response reward 同加常数，pair difference 不变，因此这种数据也不能识别该 prompt 下的绝对 offset。
-
-仓库的 NumPy CPU control 从零实现上述线性优化器，并显式采用 **strict pair accuracy**：只把 \(m_i>0\) 计为正确，zero-margin 另计 tie，而不是把 tie 当成半个或一个正确样本。
-
-```powershell
-python projects/single-gpu-finetuning/reward_model_toy.py
-```
-
-`confounded` 训练 pair 中 authored quality signal 与 length proxy 总是同向，因此两个权重相等，训练准确率达到 1，却在“质量仍正、长度方向反转”的 counterfactual held-out pair 上准确率为 0。加入长度正反两种 pair 后，length 权重在数值误差内为 0，训练与 held-out strict accuracy 都为 1。这个对照只说明 fixture 中的捷径可识别；它不是 text/Transformer reward model，不是人类 preference 质量证据，也没有评测 policy optimization 或 reward hacking。
-
-### 4.2 从文本到 Transformer scalar reward
-
-真实 RM 不是先手写 `quality_signal`，而是把完整 prompt+response 经 tokenizer 和 Transformer 编成 hidden states，再由 scalar reward head 输出 \(r_\phi(x,y)\)。Decoder-only classifier 常用最后一个 non-padding token 的 hidden state；因为 causal attention，它能聚合此前 token，但前提是 padding、EOS、截断和 attention mask 都正确。若只输入 response、chosen/rejected 使用不同模板，或静默截断掉判别证据，优化的已不是声明的 pair。
-
-仓库提供完全离线的文本/Transformer CPU control：训练进程只读取 binary train artifact 与不含 held-out plaintext 的 readiness v2，本地 WordLevel vocabulary 也只由 train 构建；随后真实执行 readiness/train ordered binding、chat template、prompt-prefix/截断 audit、随机 tiny `GPT2ForSequenceClassification` forward、Bradley–Terry loss、backward 与 AdamW。reward head 置零，所以初始所有 margin 为 0、loss 精确接近 \(\log2\)；4 个 optimizer steps 后，reward head 与 token embedding 都发生更新，两个 authored train pair 的 strict accuracy 为 1。
-
-```powershell
-python projects/single-gpu-finetuning/smoke_transformer_reward_model.py
-```
-
-控制实验还故意把已见过的 `good/bad` 表面线索反转为 “chosen=bad、rejected=good”，训练后的 counterfactual strict accuracy 为 0。这不是自然语言质量结论，而是证明 tiny model 可以靠 lexical shortcut 拟合训练 pair。测试把 train/readiness 复制到没有 combined 文件的临时目录运行，并在模型初始化前拒绝缺失或篡改 readiness、以及顺序漂移的 train，因此证明当前 trainer 控制路径不需要 held-out plaintext；但无密钥 readiness 仍不能认证签发者或阻止整套 artifact 被协同重写。它也不证明人类标签、目标 checkpoint、广泛 counterfactual/OOD 鲁棒性、CUDA、reward hacking 或 policy optimization。
-
-### 4.3 目标模型 RM 入口：先拒绝，再加载
-
-TRL 0.29 `RewardTrainer` 会将 prompt 与 chosen/rejected 各自拼成完整序列，调用 `AutoModelForSequenceClassification(num_labels=1)`，优化 pairwise `-logsigmoid(chosen_reward-rejected_reward)`；若设置系数 \(\lambda\)，reward centering 项是 \(\lambda\operatorname{mean}[(r_w+r_l)^2]\)，约束的是 pair midpoint，而不改变 Bradley–Terry difference 的定义。一个容易漏掉的行为是：超过 `max_length` 的 pair 会被 trainer **过滤**。若不先审计，训练仍可成功结束，却悄悄改变数据集和切片分布。
-
-仓库新增 held-out-free LoRA/QLoRA RM 入口。第一阶段只加载 train/readiness，适合无网络的权限与身份 gate：
-
-```powershell
-python projects/single-gpu-finetuning/train_reward_model.py --model-id <model> --revision <commit> --train-jsonl projects/single-gpu-finetuning/preference.train.example.jsonl --readiness-json projects/single-gpu-finetuning/preference-training-readiness.example.json --output-dir outputs/rm-run --data-preflight-only
-```
-
-第二阶段下载固定 revision 的 tokenizer，但不加载模型；它真实渲染完整 prompt+response，拒绝 prompt-prefix mismatch、空 chosen/rejected completion、两侧 token 完全相同，以及任何超过 `max_length`、原本会被 trainer 过滤的 pair：
-
-```powershell
-python projects/single-gpu-finetuning/train_reward_model.py --model-id <model> --revision <commit> --train-jsonl projects/single-gpu-finetuning/preference.train.example.jsonl --readiness-json projects/single-gpu-finetuning/preference-training-readiness.example.json --output-dir outputs/rm-run --tokenization-preflight-only
-```
-
-正式运行使用 `RewardTrainer`、`SEQ_CLS` LoRA，并显式保存 scalar head；`--qlora` 才加载 NF4/double-quantized frozen base，adapter、score head、梯度、optimizer 与激活仍不是 4-bit。默认 target modules 与 `score` head 名称适合常见 decoder checkpoint，但必须按目标模型结构核对，不能仅凭模型家族名猜测：
-
-```powershell
-python projects/single-gpu-finetuning/train_reward_model.py --model-id <model> --revision <commit> --train-jsonl projects/single-gpu-finetuning/preference.train.example.jsonl --readiness-json projects/single-gpu-finetuning/preference-training-readiness.example.json --output-dir outputs/rm-run --qlora --target-modules q_proj,k_proj,v_proj,o_proj --modules-to-save score
-```
-
-入口在 trainer 构造后再次确认 pair 数未被过滤，并记录 model/revision、tokenization/readiness fingerprint、head/modules、pairwise loss、centering coefficient、trainable/total parameters、global step 与 Trainer metrics。测试用本地随机 tiny GPT-2 checkpoint 实际执行该入口的 `RewardTrainer`、`SEQ_CLS` LoRA、一个 optimizer step 与 adapter 保存，并确认保存后的 `lora_B` 不再是全零；因此生产入口的非量化 CPU 框架闭环有执行证据。它没有下载任一目标 checkpoint，也没有执行目标 module mapping、CUDA/QLoRA、显存测量或证明目标 RM 收敛和质量。
-
-### 4.4 数值稳定
-
-不要直接计算 `-log(sigmoid(delta))` 后让 `exp` 溢出。仓库提供稳定基线：
-
-```python
-from about_llm.finetuning.preference import bradley_terry_loss
-
-loss = bradley_terry_loss(chosen_reward=3.0, rejected_reward=1.0)
-```
-
-`tests/test_preference_objectives.py` 检查 equal reward 的 loss 为 \(\log2\)，并覆盖极端 margin。
-
-### 4.5 奖励模型不是价值测量仪
-
-Reward model 只在训练 pair 分布附近学到排序代理。常见失败：
-
-- policy 生成超出 RM 训练分布的文本；
-- length/style shortcut；
-- 对事实、代码执行或安全细节缺乏外部验证；
-- annotator disagreement 被压成单标签；
-- reward scale 随 checkpoint/normalization 变化；
-- policy 专门发现 RM 漏洞，即 reward hacking。
-
-应保留 held-out human preference、adversarial pairs、长度匹配 pairs 和真实 task verifier。
-
-## 5. KL-regularized policy objective
-
-一个抽象目标是
-
-\[
-\max_\pi
-\quad
-\mathbb E_{x\sim D,\,y\sim\pi(\cdot\mid x)}
-\left[r(x,y)\right]
--\beta
-\mathbb E_{x\sim D}
-\left[D_{KL}(\pi(\cdot\mid x)\|\pi_{ref}(\cdot\mid x))\right].
-\]
-
-这里写的是 sequence-distribution reverse KL。实际 RLHF 常用 sampled token log-ratio 的估计、per-token penalty 或其他近似；“KL”三个字不能证明实现计算了完整分布 KL。
-
-参考策略通常是 SFT checkpoint 的冻结副本。它提供行为锚点，但不保证参考策略本身真实或安全。
-
-### 5.1 \(\beta\) 的含义
-
-在上述理想目标中，较大 \(\beta\) 更强地惩罚偏离 reference。训练实现还受 reward scale、token aggregation、adaptive controller 和 optimizer 影响。不同方法/库的 `beta`、`kl_coef` 或 temperature 参数不能只按名字横比。
-
-## 6. PPO 在 RLHF 中做什么
-
-Policy 先对 prompt 采样 response，reward model/规则给终局 reward，value model 估计 return，advantage 指示动作相对预期的好坏。PPO 的 clipped surrogate 常写成
-
-\[
-L^{clip}(\theta)=
-\mathbb E_t
+\max_\theta\;
+\mathbb E_{y\sim\pi_\theta(\cdot\mid x)}
 \left[
-\min\left(
-\rho_t(\theta)A_t,
-\operatorname{clip}(\rho_t(\theta),1-\epsilon,1+\epsilon)A_t
-\right)
-\right],
-\]
-
-其中
-
-\[
-\rho_t(\theta)=
-\frac{\pi_\theta(a_t\mid s_t)}
-{\pi_{old}(a_t\mid s_t)}.
-\]
-
-PPO clip 限制的是 sampled action probability ratio 对 surrogate 的影响，不等于严格约束整个新旧策略的 KL，也不保证每次更新都小。
-
-对 \(A_t>0\)，ratio 超过 \(1+\epsilon\) 后继续增大不会提高 clipped surrogate；对 \(A_t<0\)，ratio 低于 \(1-\epsilon\) 后继续减小不会提高它。另一侧并非对称地“把所有 ratio 都夹住”：实现必须先分别算 \(\rho_tA_t\) 与 clipped-ratio objective，再取逐动作最小值。常见 `clip_fraction` 只是样本中 ratio 落在区间外的比例。
-
-训练日志里的 sampled KL proxy 也不是完整分布 KL。例如旧/新三分类分布分别为 \((0.1,0.45,0.45)\) 与 \((0.1,0.9-10^{-12},10^{-12})\)：若恰好采到第一个动作，observed ratio 为 1、不会触发 clip，但未采样动作间的质量重分配使 \(D_{KL}(\pi_{old}\|\pi_{new})>10\)。有限样本、token-wise proxy 和 sequence-distribution KL 必须分开命名。
-
-### 6.1 RLHF 训练状态
-
-典型系统同时维护：
-
-- trainable policy；
-- frozen reference policy；
-- reward model；
-- value model/value head；
-- rollout engine 与旧 policy log-prob；
-- optimizer、scheduler、advantage/return statistics。
-
-还要处理 variable-length response、EOS、truncation、padding mask、reward whitening、value clipping 和 distributed rollout。把普通 language-model trainer 换一个 loss 并不等于完成 PPO RLHF。
-
-### 6.2 Credit assignment
-
-Sequence-level reward 需要分配到 token/action。给定 transition reward \(r_t\)、value \(V_t\) 与显式提供的下一状态 value \(V_{t+1}\)，仓库采用
-
-\[
-\delta_t=r_t+\gamma b_tV_{t+1}-V_t,
-\qquad
-A_t=\delta_t+\gamma\lambda c_tA_{t+1}.
-\]
-
-这里 \(b_t\) 是 **bootstrap mask**，\(c_t\) 是 **continuation mask**，二者不能混为一个 `done`：
-
-- environment `terminated`：吸收终止，\(b_t=0,c_t=0\)；
-- time limit/collector `truncated`：若 next state/value 有效，可显式选择 \(b_t=1\)，否则为 0；但新 episode 不能继承旧 advantage，所以总有 \(c_t=0\)；
-- 普通 transition：\(b_t=c_t=1\)；
-- padding：不计算 residual/advantage、不进入聚合，并把反向递推状态清零。
-
-因此“截断时 bootstrap”不是无条件规则：只有 truncation 语义和 `next_value` 来源允许时才成立。若把 time-limit truncation 当 absorbing termination，return 会有系统偏差；若在 episode boundary 仍令 \(c_t=1\)，则会把下一条轨迹的 reward 泄漏到上一条。Generalized Advantage Estimation 可降低方差但引入 bias 与 \(\lambda\) 超参数；它不会修复错误的 reward、value、EOS 或边界标记。
-
-### 6.3 可执行 CPU reference
-
-~~~powershell
-python projects/single-gpu-finetuning/ppo_objective_toy.py
-~~~
-
-`about_llm.finetuning.ppo` 对一维/批量二维数组实现 mask-aware GAE 和 PPO clipped sampled-action surrogate。toy 用解析两步轨迹验证 TD residual/GAE，用同一 truncated transition 对比启用与禁用 bootstrap，用正负 advantage 验证上下界裁剪，并构造 sampled ratio=1、full-distribution KL 仍很大的反例。它只执行作者构造的 NumPy 数组，不含 policy/value/RM forward、reward shaping、rollout collection、optimizer、多 epoch minibatch、value loss、entropy bonus、reference KL controller 或 GPU；不能写成“已实现 PPO RLHF”或“训练稳定”。
-
-### 6.4 PyTorch rollout 与 optimizer control
-
-~~~powershell
-python projects/single-gpu-finetuning/smoke_torch_ppo.py
-~~~
-
-下一层 control 是可完全枚举的两状态、两动作、两步环境：state 0 选择 action 1 得 1 分，state 1 选择 action 0 得 1 分，所有 episode 在第二步真正 terminated。因此当前 policy 的精确 undiscounted expected return 是
-
-\[
-\mathbb E[R]=\pi(a=1\mid s=0)+\pi(a=0\mid s=1),
-\]
-
-不需要用有限 rollout 均值冒充真实期望。`smoke_torch_ppo.py` 每轮从当前 categorical policy on-policy 采样 128 条完整 episode，冻结 policy-logit snapshot、逐动作 old log-prob 和 rollout value；随后用 GAE、advantage normalization、clipped policy loss、未裁剪 value MSE、entropy bonus、4 epoch × 64-action minibatch 的 Adam 更新 policy/value。默认 6 轮共执行 96 个 optimizer steps。测试要求：初始均匀策略精确期望为 1，最终超过 1.8；policy/value 参数都改变；存下的 old log-prob 在多 epoch 内逐元素不变，且能由对应 snapshot 精确重算。
-
-这个 control 证明真实 PyTorch categorical sampling、value forward、GAE binding、旧策略统计冻结和 minibatch autograd/optimizer 链路能在该 authored MDP 上改善精确 objective。它没有 tokenizer/语言模型 token rollout、learned reward model、reference-policy KL controller、value clipping、time-limit truncation、checkpoint/resume、GPU 或 distributed actor/learner；单 seed、tiny tabular 环境的改善不证明 PPO 对目标 LLM 稳定、样本高效、安全或优于其他方法。更新后 observed sampled-action ratio 仍可越过 clip 区间，也再次说明 clipping surrogate 不是参数空间或 KL 的硬约束。
-
-### 6.5 Tiny Transformer token PPO control
-
-~~~powershell
-python projects/single-gpu-finetuning/smoke_transformer_ppo.py
-~~~
-
-`smoke_transformer_ppo.py` 用随机 tiny `GPT2Model` backbone、policy head 与 value head 对整数 token ID 做两步自回归采样。词表大小为 6，固定 BOS 后，每生成一个目标 token 得 1 分；第二步 terminated。每轮复制并冻结 behavior-policy snapshot，另有从初始化起始终冻结的 reference。Reward shaping 使用
-
-\[
-r_t^{shaped}=r_t^{task}
--\beta\left[
-\log\pi_{old}(a_t\mid s_t)-\log\pi_{ref}(a_t\mid s_t)
+R(x,y)-\beta
+\log\frac{\pi_\theta(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)}
 \right].
 \]
 
-括号内是 **sampled action log-ratio**，单个样本可以为负；只有在 \(a_t\sim\pi_{old}(\cdot\mid s_t)\) 下取条件期望，才得到 \(D_{KL}(\pi_{old}(\cdot\mid s_t)\|\pi_{ref}(\cdot\mid s_t))\)。脚本因此同时报告 sampled log-ratio mean 与在每个 sampled state 上对全部 6 个 action 求和的 exact categorical KL，不能混写两者。
+更完整地写，就是 reward 减去 \(\beta D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})\) 的期望。
 
-两步 task reward 的精确期望可枚举全部 6 个 first-token branch，再对第二步条件分布精确求和；这等价于汇总全部 \(6^2\) 条 token trajectory，而不是用 rollout mean 估计。默认控制从均匀 policy 的精确期望 \(2/6=1/3\) 出发，测试要求 36 次 Transformer PPO optimizer step 后超过 1.8；同时验证 backbone/policy/value 都改变、reference 参数逐元素不变、每轮 old log-prob `requires_grad=False` 且能由 snapshot 在浮点容差内重算。
+\(\beta\) 大时更保守，小则允许 policy 为追求 reward 移动更远。它不是安全系数，也不能阻止 reference 本身已有的错误。
 
-它证明随机 tiny causal Transformer 上的 integer-token autoregressive rollout、reference forward、sampled log-ratio reward、GAE 和 PPO autograd 链路。它不执行 tokenizer 或自然语言，不含 learned RM、目标 checkpoint、variable-length EOS、time-limit truncation、checkpoint/resume、CUDA 或分布式 rollout；“重复目标 token”是作者构造的可验证 reward，不是人类偏好、文本质量或安全目标。单 seed 小模型达到高 reward 不能证明目标 LLM PPO 收敛或对齐。
+工程上要同时记录 reward、KL、response length、entropy 和真实任务指标。只看总 objective，可能掩盖 reward 上升完全来自更长输出或分布漂移。
 
-### 6.6 本地 tokenizer/chat-template 文本 PPO control
+## DPO：直接学习 reference-relative 偏好
 
-~~~powershell
-python projects/single-gpu-finetuning/smoke_text_ppo.py
+DPO 不单独训练一个在线使用的 RM。它把偏好模型与 KL-regularized policy 的关系代入一个 pairwise classification objective。
+
+先定义 policy 对 pair 的 log-probability gap：
+
+\[
+\Delta_\theta
+=\log\pi_\theta(y_w\mid x)
+-\log\pi_\theta(y_l\mid x),
+\]
+
+reference gap 为：
+
+\[
+\Delta_{\mathrm{ref}}
+=\log\pi_{\mathrm{ref}}(y_w\mid x)
+-\log\pi_{\mathrm{ref}}(y_l\mid x).
+\]
+
+DPO loss 可写为：
+
+\[
+\mathcal L_{\mathrm{DPO}}
+=-\log\sigma\left(
+\beta(\Delta_\theta-\Delta_{\mathrm{ref}})
+\right).
+\]
+
+直觉是：candidate policy 应比 reference 更偏向 chosen，而不是只让 chosen 的绝对概率变大。
+
+### 一对样本怎样流过 DPO { #target-qwen-dpo-control }
+
+对同一个 prompt，分别渲染 chosen 和 rejected：
+
+1. 用同一 tokenizer/template 得到 token IDs。
+2. 只在 response tokens 上累加 log probability。
+3. 分别由 policy 和 frozen reference 计算 sequence log-probability。
+4. 得到两个 gap，再计算 logistic loss。
+5. 梯度只更新 policy 或 adapter。
+
+Prompt masking、EOS、truncation 或 template 任一错位，都会让目标变成另一件事。
+
+### Beta、长度和 reduction
+
+DPO 的 \(\beta\) 控制 reference-relative preference signal 的尺度。它不是简单学习率，改变它会改变 loss 对 log-ratio 的敏感度。
+
+Sequence log-probability 是 token log-probability 的和时，较长 response 拥有更多项；若改成平均，又得到不同目标。训练、验证和不同实现必须明确 sum/mean、mask 与 length normalization。
+
+DPO 仍依赖可靠 pairs、固定 reference、support overlap 和独立评测。它省掉显式 RM + online rollout，不等于消除了对齐假设。
+
+## PPO：在 policy 自己的输出上学习
+
+PPO 适合需要在线采样、环境反馈或可验证 reward 的场景。它比 DPO 多出完整 rollout 状态：
+
+~~~text
+prompt
+→ old policy samples response
+→ reward / verifier scores trajectory
+→ value estimates returns
+→ advantages
+→ clipped policy and value updates
 ~~~
 
-`smoke_text_ppo.py` 再加入本地 WordLevel tokenizer、chat template 和自然语言 prompt `Say good.`。随机 tiny GPT-2 policy 从 13 词表最多生成两 token：第一步生成 `good` 得 1 分，仍存活时第二步生成 EOS 再得 1 分；第一步 EOS 是真实 termination，之后的槽位是 padding，第二步仍未 EOS 则记录为 `max_new_tokens` truncation。Rollout 保存冻结 behavior snapshot、old/reference log-prob、value、逐 token mask 与边界，并为被长度截断的 post-action state 计算 value；policy 与 critic 使用分离的 tiny backbone，避免把共享随机表征上的 critic 干扰误写成 PPO 成功。
-
-这个**有限两步任务**的报告 objective 在生成上限处结束，所以默认 `bootstrap_truncated=False`。`truncated` 描述生成停止原因，不自动决定 GAE 的 bootstrap mask；只有评估目标确实包含 cap 之后的 continuation return，且 next-state value 对该目标有效，才应令 \(b_t=1\)。脚本允许显式打开该反事实配置并标记它与报告的有限时域 objective 不一致，不能再拿后者的精确值验证 optimizer。
-
-短时域可以精确枚举。设首 token 分布为 \(p_0\)，给定首 token \(a\) 的第二步 EOS 概率为 \(p_1(e\mid a)\)，则
+Token 级 probability ratio 为：
 
 \[
-J=p_0(\text{good})+\sum_{a\ne e}p_0(a)p_1(e\mid a),\qquad
-P(\text{good},e)=p_0(\text{good})p_1(e\mid\text{good}).
+\rho_t(\theta)
+=\frac{\pi_\theta(a_t\mid s_t)}
+{\pi_{\mathrm{old}}(a_t\mid s_t)}.
 \]
 
-初始零 policy head 给出均匀分布，因此 \(J=25/169\)，目标序列概率为 \(1/169\)。默认 96 次 optimizer step 后，测试要求精确 \(J>1.9\)、目标序列概率 \(>0.95\)，同时验证 EOS、truncation、padding 均在首轮出现，policy/value backbone 与 heads 均改变、reference 不变、old log-prob 可由 snapshot 重算。
-
-这证明本地文本 tokenization/chat rendering、变长 autoregressive rollout、边界 mask、sampled reference penalty、actor/critic autograd 与精确短时域 oracle 的控制路径。它仍没有 learned RM、真实人类偏好、目标 checkpoint、长 response、adaptive KL、value clipping、checkpoint/resume、CUDA 或分布式 rollout，也不证明自然语言质量、安全对齐或生产稳定性。
-
-### 6.7 冻结 learned RM 后的 proxy exploitation control
-
-~~~powershell
-python projects/single-gpu-finetuning/smoke_learned_rm_ppo.py
-~~~
-
-`smoke_learned_rm_ppo.py` 复用相同 tokenizer、chat template 与两 token response 空间，但不再把 authored verifier 直接当 reward。它先用完整 prompt+response 训练随机 tiny `GPT2ForSequenceClassification`：唯一 sparse pair 把 `good, EOS` 标为 chosen、`bad, EOS` 标为 rejected；零 scalar head 的初始 Bradley–Terry loss 为 \(\log 2\)，30 次 AdamW step 后训练准确率为 1、margin 为 5.57。随后 RM 参数全部冻结，sequence score 只绑定到 response 的最后一个有效 action，policy reference 与 behavior snapshot 也按原 PPO 契约冻结。
-
-Pairwise loss 对所有 score 同加常数不敏感。实验因此减去最终训练 pair 的 score midpoint 作为**报告与优化的显式 centering 约定**；这不改变 pair margin 或 response 排名，也不把 OOD score 变成经过校准的效用。生成端显式 suppress `[UNK]`、`[PAD]` 与 role markers，只允许 EOS 和 7 个普通词 token；同一个 allowed-action mask 进入采样、old/new log-prob、entropy、KL 与精确枚举。两步 cap 且 EOS 提前停止时，可达 response 数量是
+Clipped surrogate 的最大化形式是：
 
 \[
-|\mathcal Y|=1+(8-1)\times8=57.
+\mathbb E_t
+\left[
+\min\left(
+\rho_t A_t,\;
+\operatorname{clip}(\rho_t,1-\epsilon,1+\epsilon)A_t
+\right)
+\right].
 \]
 
-穷举冻结 RM 后，训练 chosen `good, EOS` 只排第 38，最高分反而是训练中未出现的 `good., good`；55/57 条可达 response 都未出现在训练 pair。训练集准确率与大 margin 因而不能支持“RM 在 policy support 上可靠”。
+Clip 限制单轮更新幅度，但不是训练稳定或安全的保证。RLHF 还常有 reference KL、value loss、entropy、reward normalization 和 response masks。
 
-脚本同时精确积分完整 policy response distribution，而不是用 rollout mean 代替 ground truth：
+### Reward 怎样分配给 token
 
-\[
-J_{RM}(\theta)=\sum_{y\in\mathcal Y}\pi_\theta(y\mid x)\,[r_\phi(x,y)-c],\qquad
-J_{task}(\theta)=\pi_\theta(y^*=\text{good, EOS}\mid x).
-\]
+很多任务只在序列结束时得到一个 score。Value model 和 Generalized Advantage Estimation（GAE）用于估计每一步相对预期的好坏。
 
-冻结 RM 后执行六轮 PPO，精确 proxy expectation 从 2.739 提升到 4.652，但严格 `good, EOS` success 从 \(1/64=0.015625\) 降到 \(4.99\times10^{-4}\)，约低 31 倍；最终最高概率 response 是 `good, good`。与此同时，给予首 token=`good` 和第二 token=EOS 分项奖励的 dense partial-credit 指标从 \(15/64\) 升至 0.566。报告同时保留这两个 authored verifier，避免把“严格序列目标下降”夸大成“所有任务指标都下降”。测试还验证 RM/reference 参数逐元素不变、old log-prob 可由 snapshot 重算、首轮 EOS/truncation/padding 都实际出现。这里可以严格写成“在这个完整可枚举的 authored support 上观察到 learned proxy 改善而预先声明的严格目标恶化的受控 reward-hacking 反例”。
+若 terminal reward、KL penalty、padding mask 或 bootstrap terminal 处理错误，代码仍可能反向传播，却优化错误目标。
 
-它不能外推为真实用户或目标模型上的 reward hacking：preference pair、严格目标与 dense verifier 都是作者构造的，RM/policy 都是随机 tiny GPT-2，没有 held-out 人类标签、目标 checkpoint、长 response、真实 reward normalization、adaptive KL、checkpoint/resume、CUDA 或分布式 rollout。它证明的是训练准确率、RM reward、partial credit 与严格 success 必须分账，以及 policy optimization 会主动进入 sparse RM 未覆盖的 response 区域。
+PPO 验收至少观察：
 
-## 7. DPO 的 reference-relative 分类目标
+- old/new/ref log probabilities；
+- reward、KL、advantages 与 returns；
+- clip fraction、entropy 与 value error；
+- response length 和 invalid rate；
+- held-out task、安全与 shortcut slices。
 
-对同一 prompt 的 chosen/rejected response，定义完整 response sequence log-probability：
+### 为什么 PPO 更容易产生证据错觉
 
-\[
-\log\pi_\theta(y\mid x)
-=
-\sum_{t\in response}
-\log\pi_\theta(y_t\mid x,y_{<t}).
-\]
+Reward curve 上升可能来自 RM shortcut、输出变长、采样分布改变或 verifier loophole。Tiny CPU rollout 通过只能证明局部数学和状态转移，不证明目标 checkpoint 已完成 RLHF。
 
-Prompt、padding 与被 mask token 不应计入该和。DPO logit 为
+PPO 只有在 reward 可审计、在线探索确有价值、计算预算允许且回滚机制成熟时，才优先于更简单的 SFT/DPO 路线。
 
-\[
-u=\beta\left[
-\log\frac{\pi_\theta(y_w\mid x)}
-{\pi_{ref}(y_w\mid x)}
--
-\log\frac{\pi_\theta(y_l\mid x)}
-{\pi_{ref}(y_l\mid x)}
-\right],
-\]
+## DPO、RM+PPO 怎样选择
 
-loss 为
+| 条件 | 更适合的起点 |
+|---|---|
+| 有高质量示范，基础行为未稳定 | SFT |
+| 有固定、可靠的 offline pairs | DPO |
+| 需要复用可解释的 preference scorer | Reward Model |
+| 需要 policy 在线探索或环境反馈 | PPO / Online RL |
+| 有确定判据的任务 | Verifier + sampling/RL，可同时保留人工切片 |
+| 问题本质是权限或实时事实 | 系统 policy、工具或 RAG，不先靠训练 |
 
-\[
-\mathcal L_{DPO}=-\log\sigma(u).
-\]
+复杂方法只有在能回答“它解决了哪一个 baseline 失败”时才值得加入。
 
-等价地，比较 policy 的 chosen–rejected log-prob margin 相对 reference 改善了多少。它不是只要求 `chosen policy logp > rejected policy logp`；若 reference 已经给 chosen 更大优势，policy 需要在 reference-relative margin 上比较。
+## RLAIF、原则与 Verifier
 
-### 7.1 可执行检查
+RLAIF 用模型根据 rubric 或 principles 提供反馈，可以扩大标注规模，但不会消除人类治理。人仍要制定原则、校准 evaluator、抽检分歧并定义发布门槛。
 
-```python
-from about_llm.finetuning.preference import dpo_loss
+Outcome reward 只检查最终结果；process supervision 还检查中间步骤。后者可能提供更密信号，但也需要可靠的 step annotations 或 verifier。
 
-loss = dpo_loss(
-    chosen_policy_logp=-2.0,
-    rejected_policy_logp=-5.0,
-    chosen_reference_logp=-2.5,
-    rejected_reference_logp=-3.5,
-    beta=0.2,
-)
-```
+程序测试、数学答案和 schema validator 提供可验证信号，却仍可能有测试不完整、解析漏洞和 reward hacking。Verifier pass 不是普遍正确性证明。
 
-`preference.py` 函数只验证 per-pair 数学；仓库另有完全离线的真实 TRL DPO 控制闭环：
+训练信号应组合：
 
-~~~powershell
-python projects/single-gpu-finetuning/smoke_trl_dpo.py
-~~~
+- 可验证的 task outcome；
+- 人工审阅的过程/安全切片；
+- 对 evaluator shortcut 的 adversarial cases；
+- 与真实用户结果的独立评测。
 
-它从严格 preference fixture 选择二元 train pair，用本地 WordLevel tokenizer、随机 tiny GPT-2 和冻结的初始 reference 构造 `DPOTrainer`。测试逐行确认 collator 前半是 chosen、后半是 rejected，`completion_mask` 对 prompt 全为 0、对 chosen/rejected completion 为 1；policy/reference 初始相同所以标准 sigmoid DPO loss 在浮点容差内为 \(\log2\)，真实 optimizer step 后同一 tiny batch loss 下降，reference 参数逐元素不变。
+## 拒答是一个三分类问题
 
-这仍只是 authored `good/bad` 控制 pair 和随机模型上的 CPU 机制证据，不是人类偏好数据、目标模型质量、CUDA、对齐安全或生产收敛证据。若 policy 与 reference 的 chosen/rejected margin 完全相同，理论 logit 为 0、loss 为 \(\log2\)；有限精度 forward 可有微小误差。
+只测 harmful prompt refusal，会把“全部拒绝”误判成安全。至少划分：
 
-### 7.2 固定 Qwen 的目标 DPO 机制证据 { #target-qwen-dpo-control }
+| Case | 正确行为 |
+|---|---|
+| 明确允许且安全 | 正常帮助 |
+| 可通过降风险处理 | 安全替代或澄清 |
+| 明确禁止或越权 | 拒绝并给出合适边界 |
 
-仓库另在固定 `Qwen/Qwen2.5-0.5B-Instruct` revision 上真实执行一次 TRL 0.29.1 sigmoid-DPO/AdamW step。离线 verifier 会重新绑定 checkpoint、binary train、held-out-free readiness、目标 token IDs、collator `[4,28]`、completion mask、LoRA 结构和报告范围：
+同时报告 under-refusal 和 over-refusal，并按语言、措辞和风险切片。训练得到的拒答行为不能替代工具 ACL 和数据权限。
 
-~~~powershell
-python projects/single-gpu-finetuning/run_qwen_target_dpo_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-dpo.recorded-report.json
-~~~
+## 对齐评测回到真实结果
 
-初始 policy 与 adapter-disabled reference 相同，loss 为 `0.693147≈log(2)`；一步后同 batch loss 为 `0.333352`，两条 reference-relative margin 为 `8.566292/10.016453`。96 个 LoRA 梯度张量全部 finite，冻结的 494,032,768 个基座参数以及排除 LoRA 后的 `state_dict`、model config、generation config 指纹前后 exact。Transformers 会把 model/generation special-token config 对齐到 tokenizer，control 在 baseline 前显式完成并验证 Trainer 再执行时是 no-op。
+Offline evaluation 使用固定 prompts，对 baseline/candidate 做 paired comparison：
 
-一个容易误判的结果是：两次 reference forward 内 adapter 状态都实测为 disabled，冻结 state/config 也完全相同，但 reference log-prob replay 仍有 `0.547077` max-abs drift。报告保留两个 tensor hash 与实际误差，不把它叫作“reference 权重改变”，也不声称 bitwise deterministic。这里的 `good/bad` 仍是 authored fixture；同 batch 一步下降只证明目标 checkpoint/TRL/PEFT 机制链路，不证明人类偏好、held-out 改善、对齐质量、安全、收敛、CUDA/QLoRA 或生产能力。
+- task success 与 format correctness；
+- factuality、citation 与 abstention；
+- preference win rate 与 ties；
+- safety、under/over-refusal；
+- length、style 和 generator slices；
+- KL、reward 与能力回归；
+- latency、token 和成本。
 
-### 7.3 长度与 reduction
+所有指标保留 attempted 分母，不能只统计成功解析的样本。Model-as-judge 需要与人工标注校准，并检查位置、长度、self-preference 和 contamination。
 
-标准 sequence log-prob 是 response token log-prob 的**和**，因此长度和每 token 概率共同影响 margin。改为 token mean、加入 length normalization 或只比较尾部会改变 objective，不是无害实现细节。
+上线再观察业务 outcome、申诉、事故、fallback 和用户切片。在线提升不能反向证明训练算法是唯一原因；prompt、routing 和流量组成也可能变化。
 
-仓库 `sequence_log_probability(..., reduction="sum")` 默认求和，同时允许显式 `mean` 仅用于演示差别。任何 chosen/reference 四项必须使用相同 tokenizer、chat template、response mask 和 reduction convention。
+## 系统层仍要强制约束
 
-### 7.4 DPO 没有消除假设
+模型对齐不能保证：
 
-DPO 避免显式训练/在线查询 reward model 和 on-policy RL loop，但仍依赖：
+- 用户身份与资源所有权；
+- 工具 schema、参数和金额合法；
+- 写操作幂等、审批和副作用完成；
+- 敏感数据不进入日志或外部 provider；
+- 高风险决策具备人工复核。
 
-- Bradley–Terry 类偏好模型及 KL-regularized derivation；
-- 固定 reference 与离线 preference distribution；
-- pair label 质量和覆盖；
-- policy 对离线候选以外 response 的泛化；
-- beta、length、mask 和 optimization choices。
+运行时需要认证、授权、budget、sandbox、effect receipt、audit 和 rollback。模型输出是 proposal，不是 capability token。
 
-“无需 reward model”不等于“没有隐式 reward 假设”，也不等于不会 reward overoptimization。
+## 一个渐进式学习实验
 
-## 8. 其他 preference objectives
+选择一个资源可承受的 Instruct checkpoint：
 
-IPO、ORPO、KTO、SimPO、SLiC 等名称覆盖不同目标：是否显式 reference、pairwise 还是 unary feedback、是否加入 SFT term、margin/normalization 怎样定义。版本与实现变化很快，应读取所用库版本的公式和源码，不用方法名猜 loss。
+1. **SFT baseline**：验证 template、labels 和 held-out behavior。
+2. **Preference audit**：保留 A/B、tie、order、generator、group 和 split。
+3. **DPO control**：固定 policy/reference，手算一对样本的四个 sequence log-probabilities。
+4. **训练运行**：从单 batch overfit 到小规模 adapter，保存 before/after artifact。
+5. **独立评测**：比较任务、安全、长度、KL 和通用能力。
+6. **RM/PPO 扩展**：只有 DPO 无法解决在线探索需求时再增加。
 
-选择方法前比较：
+实现、命令、Qwen target DPO control 和各种 negative cases 见[对齐证据台账](../evidence/alignment-controls.md)。
 
-- 数据是 pair、ranking、rating、binary desirable 还是含 tie；
-- 是否能承担 reference forward 的显存/计算；
-- 是否需要在线 exploration；
-- length/style bias 如何控制；
-- 是否有可执行 verifier；
-- 目标是平均偏好、风险约束还是多目标 Pareto。
+## 常见错误
 
-## 9. Online RL 与 offline preference 的差异
+- 把“人类偏好”当作跨人群通用的客观标量。
+- 丢弃 tie、invalid、展示顺序和逐标注者 disagreement。
+- RM pair accuracy 高就认为没有长度或风格 shortcut。
+- DPO 不固定 reference、template、mask、reduction 和 beta。
+- PPO reward 上升就声称真实任务与安全提升。
+- 用 tiny fixture 拼成目标 checkpoint 已完成 RLHF 的结论。
+- 只测 harmful refusal，不测安全请求的 over-refusal。
+- 用模型行为替代工具权限、幂等和人工审批。
 
-Offline DPO 类方法只在固定候选上学习，训练稳定、工程简单，但不会主动探索当前 policy 的新失败。Online RL/iterative preference 可收集当前 policy rollouts，更贴近更新后分布，却引入成本、非平稳性和安全暴露。
+## 面试时怎样回答
 
-若上线 policy 已显著离开原 preference data generator，旧 pair 的覆盖证据变弱。可以周期性采样新 policy，做人工/可验证任务评测，而不是只观察训练 loss。
+面对“解释 RLHF/DPO”，按数据流回答：
 
-## 10. RLAIF 与原则驱动反馈
+1. SFT 用 demonstrations 建立 policy prior。
+2. Pairwise judgments 可以训练 RM，或直接进入 DPO。
+3. DPO 优化 policy 相对 reference 的 chosen/rejected log-ratio。
+4. PPO 在 old policy rollouts 上，用 reward、value、advantage 和 clip 更新。
+5. 两条路线都必须回到独立任务、安全、shortcut 和系统评测。
 
-RLAIF 用模型依据 rubric 生成比较、批评或修订。Constitutional-style workflow 可把原则显式化，改善规模和一致性。它仍需要验证：
+继续追问时，应能解释 reward shift 不可辨识、DPO sequence reduction、PPO old/ref policy 的不同角色，以及 reward hacking 为什么不是简单调小学习率能解决。
 
-- judge 是否理解目标语言/专业域；
-- position、length 和 self-preference bias；
-- prompt injection 是否能操纵 judge；
-- 原则冲突怎样处理；
-- 明显优劣、同答案、随机答案等 control items；
-- 与盲测人类标签的一致性和分歧切片。
+## 自测
 
-高风险领域不能因“AI 反馈更一致”就删除专家与申诉机制。
+1. 为什么最终 chosen/rejected 标签不能替代原始 judgments？
+2. Bradley–Terry RM 的绝对分数为什么不能解释成用户价值单位？
+3. DPO 中 policy gap 为什么还要减去 reference gap？
+4. PPO clip 限制了什么，又没有保证什么？
+5. 一次 DPO loss 下降后，还缺哪些证据才能发布？
 
-## 11. Outcome、Process 与 Verifier
+## 继续学习
 
-- **Outcome supervision** 只评价最终答案，容易获得，但 credit assignment 弱。
-- **Process supervision** 对中间步骤或状态打分，可定位错误，但成本高且标注定义困难。
-- **Executable verifier** 用编译器、单测、数学检查、schema 或模拟环境验证结果，在可验证任务上证据更强。
-
-可见 chain-of-thought 不是内部计算的完整忠实日志。过程文本可被后生成、合理化或迎合 rubric。把它作为可检查 artifact，而不是安全证明；产品也要考虑敏感推理文本的存储和暴露。
-
-## 12. 拒答与过度拒答
-
-安全策略至少区分：
-
-1. 明确应拒绝的高风险请求；
-2. 表面相似但应正常回答的 benign neighbor；
-3. 可以通过缩小范围、脱敏或提供安全替代来帮助的请求；
-4. 信息不足，需要澄清而不是拒绝；
-5. 用户获授权但系统需要外部权限验证的操作。
-
-只测有害集会奖励“全部拒绝”。同时报告 harmful compliance、benign refusal、safe completion utility 与多语言/改写一致性。
-
-## 13. 对齐评测
-
-### 13.1 Offline paired evaluation
-
-在同一 prompt 上盲测 baseline/candidate，随机交换位置，保留原始 rating 和 disagreement。报告总体 win/tie/loss、关键切片、置信区间和长度分布。若 judge 是 LLM，先对人工集校准并加入控制题。
-
-### 13.2 防止只优化代理
-
-同时监控：
-
-- held-out human preference；
-- reward model score 与真实 task success 的 divergence；
-- response length、格式和模板化；
-- policy–reference log-ratio/KL proxy；
-- 通用能力、事实性、安全和拒答回归；
-- prompt injection、jailbreak 与工具权限；
-- 稀有语言和高风险切片。
-
-Reward 上升而 held-out preference 下降，是 overoptimization 的直接警报。
-
-### 13.3 Online evidence
-
-线上 A/B 需要 guardrail、sample-ratio check、延迟/成本、用户群体切片和停止规则。点击、停留时间和重新提问是含噪代理，并受界面与旧 policy 影响，不能直接当“人类价值”。
-
-## 14. 系统层对齐
-
-训练模型不能强制真实权限。生产系统还需要：
-
-- system/developer/user instruction hierarchy；
-- retrieval ACL 与数据最小化；
-- tool schema、allowlist、参数验证和 least privilege；
-- 高风险动作审批、幂等和 reconciliation；
-- rate limit、sandbox、secret isolation；
-- trace、异常监控、红队和 incident response；
-- 模型、prompt、policy 与评测版本回滚。
-
-Agent 运行时的具体副作用协议见[运行时与副作用](../applications/agent-runtime.md)。
-
-## 15. 发布门禁
-
-### 数据
-
-- pair split 按 prompt/source/user 独立单位，避免改写泄漏；
-- A/B 顺序随机且保留原始 presentation；
-- tie/disagreement 不被强制变成 winner；
-- 各语言、长度、风险和 generator 来源有统计；
-- preference data 与最终 eval 隔离。
-
-### 训练
-
-- 打印 chosen/rejected token IDs、response mask 与 sequence log-prob；
-- prompt 单独渲染的 token IDs 必须是 prompt+chosen 与 prompt+rejected 的精确前缀；不要忽略模板或 special-token 差异造成的 prompt-prefix mismatch warning；
-- 在训练前统计两侧完整长度并显式处理长样本；不能让 `max_length` 截断悄悄删除 prompt 或 completion；
-- policy/reference 使用兼容 tokenizer/template；
-- 记录 beta、KL 口径、length、EOS/truncation 和 reward scale；
-- 极端 margin 下 loss/gradient 有限；
-- checkpoint 含 policy/value/optimizer/rollout 所需状态。
-
-### 评测
-
-- 盲测 baseline/candidate 并报告 CI；
-- 质量改善不是单纯长度/格式变化；
-- harmful compliance 与 benign refusal 同时达标；
-- 通用能力、事实性、工具安全和关键语言无回归；
-- 线上 rollout 有权限、预算和停止机制。
-
-## 16. 当前仓库证据边界
-
-仓库已提供稳定的 Bradley–Terry/DPO per-pair 数学、mask-aware GAE/PPO clipped-surrogate CPU reference、两状态 PyTorch categorical rollout/optimizer control、随机 tiny GPT-2 integer-token PPO control、带本地 tokenizer/chat template 与精确有限时域 oracle 的文本 PPO control，以及 sparse tiny learned RM 驱动 PPO 后 proxy 上升、独立目标恶化的完整 support 反例；另有 synthetic linear RM optimizer control、随机 tiny GPT-2 上 held-out-free readiness/train binding、真实文本 tokenization/scalar reward head/backbone optimizer control、严格 pairwise preference JSONL/split audit、有序 binary-train/combined binding、prompt↔prompt 与四种跨记录 candidate surface 的字符 n-gram gate、prompt/两侧 candidate 的 source/sensitive governance、不含 held-out 原文的严格 readiness、目标 tokenizer prefix/空 completion/截断 preflight、随机 tiny GPT-2 的真实 TRL DPO 闭环，以及固定 Qwen checkpoint 上一次 CPU FP32 TRL/PEFT DPO optimizer step。新增 raw judgment binding、agreement/Fleiss’ κ 和 case-cluster position-effect bootstrap，但输入是 authored fixture，不能冒充人类实验。Lexical 阈值和 detector 未经真实域校准，registry 不是法律意见，readiness 也没有验证人类标签质量；无密钥 hash 不认证审计签发者。仓库仍没有真实人类 preference dataset、真实 annotator agreement/position-bias 实证、可靠目标 reward model、learned RM 驱动的目标 checkpoint PPO、目标 CUDA/QLoRA 或 held-out 对齐质量证据。因此当前 Qwen DPO 结果只证明固定 authored pair 上的目标权重机制链路；不证明任一目标模型已经完成偏好对齐。
-
-## 17. 常见错误结论
-
-- **“RM 分数高就是用户价值高”**：reward scale 只是特定数据和模型上的代理。
-- **“PPO clip 就严格限制了 KL”**：clip 是 sampled-ratio surrogate，不是全分布硬约束。
-- **“DPO 只提高 chosen 的原始概率”**：目标比较 policy 相对 reference 的 chosen/rejected margin。
-- **“把 sequence log-prob 改成 token mean 不影响算法”**：这会改变长度权重与目标。
-- **“DPO 没有 reward model，所以没有 reward hacking”**：离线偏好与隐式 reward 假设仍可能被过优化。
-- **“拒绝越多越安全”**：benign refusal 会破坏可用性并可能造成不公平。
-- **“模型对齐了，所以工具安全”**：权限和副作用必须由外部系统保证。
-
-## 自测与实践
-
-1. 推导 Bradley–Terry equal reward 时 loss 为 \(\log2\)。
-2. 构造 policy raw margin 为正、但 reference-relative DPO margin 为负的例子。
-3. 两个 response 每 token 平均 log-prob 相同但长度不同，比较 sum 与 mean reduction。
-4. 设计含 position、length、style control 的中文 preference 标注协议。
-5. 为什么 PPO clip ratio 不能证明整条 sequence policy 的 KL 小？
-6. 运行 `smoke_trl_dpo.py`，解释为什么 prompt 的 `completion_mask=0`、reference 参数不变和初始 loss≈\(\log2\)分别验证不同不变量。
-7. 运行 `reward_model_toy.py`，解释为什么 confounded 训练准确率为 1 仍不能支持 held-out 质量结论。
-8. 运行 `smoke_transformer_reward_model.py`，定位初始 tie、训练 margin 与 authored counterfactual 失败分别证明和没有证明什么。
-9. 对比 `train_reward_model.py` 的两个 preflight-only 模式，解释为何 readiness pass 不能代替目标 tokenizer audit。
-10. 运行 `ppo_objective_toy.py`，解释为什么 truncated transition 的 bootstrap mask 与 continuation mask 可以不同。
-11. 修改 sampled-ratio 反例的未采样尾部概率，观察 sampled proxy 与完整 categorical KL 如何分离。
-12. 运行 `smoke_torch_ppo.py`，解释为什么精确 expected return 比单轮 sampled reward mean 更适合做这个环境的 optimizer oracle。
-13. 为什么 PPO 多 epoch 更新期间必须保留 rollout policy 的 old log-prob，而不能用当前 policy 重新计算分母？
-14. 在 `smoke_transformer_ppo.py` 中，为什么 sampled reference log-ratio 可以为负，而 exact categorical KL 不应为负？
-15. 推导两步、6 词表的 exact expected target-token count，并说明它比单轮 rollout reward mean 多证明了什么、仍没证明什么。
-16. 运行 `smoke_text_ppo.py`，验证初始 \(25/169\) 与 \(1/169\)，并解释为何 `max_new_tokens` 的 truncation 标签本身不能决定 GAE 是否 bootstrap。
-17. 运行 `smoke_learned_rm_ppo.py`，解释为何 RM train accuracy=1、PPO proxy reward 上升与独立 target success 下降可以同时成立，以及 pair-midpoint centering 修复了什么、没有修复什么。
+- [单卡微调项目](../practice/projects/single-gpu-finetuning.md)：SFT、LoRA 与 DPO 的渐进路线。
+- [SFT 数据闭环](sft-data-pipeline.md)：模板、labels、数据治理和切分。
+- [Agent Runtime](../applications/agent-runtime.md)：权限、副作用和回放。
+- [对齐证据台账](../evidence/alignment-controls.md)：严格数据契约、公式 controls 与命令。

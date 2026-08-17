@@ -195,11 +195,6 @@
       "max_prose_line_length": 445,
       "overlong_prose_line_count": 19
     },
-    "docs/training/alignment.md": {
-      "line_count": 632,
-      "max_prose_line_length": 1224,
-      "overlong_prose_line_count": 31
-    },
     "docs/training/continual-learning.md": {
       "max_prose_line_length": 331,
       "overlong_prose_line_count": 5
