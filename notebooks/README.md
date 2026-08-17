@@ -2,6 +2,8 @@
 
 Notebook 用于观察现象，不承载唯一实现。核心逻辑位于 src/about_llm/ 并由 tests/ 覆盖。
 
+三本 Notebook 使用同一学习节奏：**先预测 → 运行透明基线 → 与另一实现对账 → 故意破坏一个条件 → 解释能证明与不能证明什么**。不要跳过预测和反例直接执行全部单元格；那会把实验重新变成演示。
+
 执行约定：
 
 - 从仓库根目录启动 Jupyter。
@@ -15,9 +17,9 @@ Notebook 用于观察现象，不承载唯一实现。核心逻辑位于 src/abo
 
 | Notebook | 直接依赖 | 当前 Windows CPU 参考时间 | 成功特征 |
 |---|---|---:|---|
-| `01_attention_three_ways.ipynb` | NumPy、PyTorch、JAX、about_llm | 约 17 秒 | PyTorch/JAX 输出与 NumPy 容差一致；causal future probability 为 0 |
-| `02_minigpt_forward.ipynb` | PyTorch、JAX、about_llm | 约 18 秒 | byte round-trip 与两种 logits shape 断言通过；未来 token 不改变过去 logits |
-| `03_rag_retrieval_and_evaluation.ipynb` | NumPy、about_llm | 约 5 秒 | 融合结果只含目标 tenant；Recall@2 与 MRR@2 都为 1.0 |
+| `01_attention_three_ways.ipynb` | NumPy、PyTorch、JAX、about_llm | 约 17 秒 | 三方前向对账；移除 mask 出现未来概率；移除缩放改变分布 |
+| `02_minigpt_forward.ipynb` | PyTorch、JAX、about_llm | 约 18 秒 | byte round-trip、logits shape 与 causal 正反对照通过 |
+| `03_rag_retrieval_and_evaluation.ipynb` | NumPy、about_llm | 约 5 秒 | 安全融合无跨租户结果；故意混合会泄漏；错误 case 让指标下降 |
 
 时间是 2026-08-11 在 Windows 11、Python 3.12.10、无 CUDA 的当前仓库环境实测，不是性能承诺；首次 JAX/PyTorch 导入、CPU 和杀毒软件都会改变耗时。逐本执行：
 
