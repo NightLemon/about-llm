@@ -1,0 +1,6190 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="从基础原理到生产实践的大语言模型中文学习手册">
+      
+      
+      
+        <link rel="canonical" href="https://nightlemon.github.io/about-llm/systems/distributed-training/">
+      
+      
+        <link rel="prev" href="../vllm-serving/">
+      
+      
+        <link rel="next" href="../serving/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>高效与分布式训练 - About LLM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@4.1.3/tex-mml-chtml.js" integrity="sha384-OrHfGTnIbkl0do3N76qW/uWr38o91N05sbSPuYBPLH+hG8X/dNSrjZf3AGjzrCwC" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js" integrity="sha384-T/0lMUdJpd2S1ZHtRiofG3htU3xPCrFVeAQ1UUE2TJwlEJSV5NUwn30kP28n238E" crossorigin="anonymous"></script>
+  <script defer src="../../javascripts/mermaid.js"></script>
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="deep-purple">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#_1" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../.." title="About LLM" class="md-header__button md-logo" aria-label="About LLM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            About LLM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              高效与分布式训练
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="切换到深色模式"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切换到深色模式" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="切换到浅色模式"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切换到浅色模式" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/NightLemon/about-llm" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    about-llm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  首页
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/how-to-use/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  使用指南
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../models/landscape/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  模型家族
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../foundations/math/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  基础
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../core/tokenization/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  核心原理
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../training/data/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  数据与训练
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../inference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  推理与系统
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../applications/prompting/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  应用
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../quality/evaluation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  质量与责任
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../frontier/multimodal/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  前沿
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../papers/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  论文解读
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../practice/labs/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  实践
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../career/roadmap/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  求职
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/glossary/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  参考
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="About LLM" class="md-nav__button md-logo" aria-label="About LLM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    About LLM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/NightLemon/about-llm" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    about-llm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    使用指南
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    使用指南
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/how-to-use/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    如何使用
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/beginner-map/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    新手知识地图
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/learning-paths/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    学习路径
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/knowledge-map/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    完整知识地图
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/repo-map/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    仓库地图与实现契约
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    环境与硬件矩阵
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    模型家族
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    模型家族
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/landscape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    模型谱系与选型
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/gpt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/llama/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Llama
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/qwen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Qwen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/deepseek/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeepSeek
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/claude/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/gemini/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gemini
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/cloud-api-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    云 API 契约
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    基础
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    基础
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../foundations/math/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数学基础
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../foundations/ml-dl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    机器学习与深度学习
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../foundations/nlp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NLP 与语言建模
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    核心原理
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    核心原理
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/tokenization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tokenization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/transformer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transformer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    生成与解码
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    生成与解码
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/generation-basics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    完整协议与工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/scaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    规模化规律
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/architectures-interpretability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    架构谱系与可解释性
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据与训练
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    数据与训练
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/synthetic-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    合成数据、蒸馏与反馈环
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/pretraining/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    预训练
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_4" id="__nav_6_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    微调与 PEFT
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    微调与 PEFT
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/finetuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/sft-data-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SFT 数据、模板与闭环
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/peft-qlora-engineering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA、QLoRA 与单卡工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_5" id="__nav_6_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    对齐与偏好优化
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    对齐与偏好优化
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/alignment-basics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/alignment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    方法、实验与证据
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/continual-learning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    持续学习与模型合并
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/jax-optax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX、Optax 与函数式训练
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理与系统
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    推理与系统
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_1" id="__nav_7_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    推理
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理基础（基础）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inference-optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    算子、KV Cache 与量化优化（进阶）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vllm-serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    vLLM 与单卡服务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    高效与分布式训练
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    高效与分布式训练
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        学习目标与证据边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        先做资源账本，而不是先选框架
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="先做资源账本，而不是先选框架">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#activation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activation 为什么难用每参数字节表示
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#global-batch-loss-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global batch 与 loss 归一化
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Global batch 与 loss 归一化">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mean-or-sum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mean 还是 sum
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accumulationno_sync-update-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accumulation、no_sync 与 update control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amp-scaleunscaleclip-skip-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AMP scale、unscale、clip 与 skip control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ddp-amp-overflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DDP + AMP overflow 共识控制
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        数据并行（DP）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zero-fsdp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ZeRO 与 FSDP：沿数据并行组分片状态
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ZeRO 与 FSDP：沿数据并行组分片状态">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        理想内存与实际峰值
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no_sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        no_sync/累积陷阱
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tensor-paralleltp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tensor Parallel（TP）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tensor Parallel（TP）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#column-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Column parallel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#row-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Row parallel
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pipeline-parallelpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pipeline Parallel（PP）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pipeline Parallel（PP）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        调度与内存
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequence-context-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequence 与 Context Parallel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#expert-parallelep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Expert Parallel（EP）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        组合并行与拓扑映射
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        通信成本的简单模型
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="通信成本的简单模型">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#computecommunication-overlap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compute/communication overlap
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#activation-checkpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activation checkpoint 与内存换计算
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-reduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        混合精度与 Distributed Reduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checkpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checkpoint：分片不是完成标志
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Checkpoint：分片不是完成标志">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        故障窗口
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        分布式正确性验证
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="分布式正确性验证">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 单步数学等价
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 数据等价
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 随机性
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 长运行不变量
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        性能指标与可比较报告
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="性能指标与可比较报告">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mfu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MFU 的边界
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        性能诊断顺序
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        容量规划示例
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        可执行验收路线
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        常见错误
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        面试追问
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一手资料
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    服务与可观测性
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hardware-edge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    硬件与端侧部署
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    应用
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    应用
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/prompting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompt 工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAG
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RAG
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-ingestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据摄取与索引生命周期
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-retrieval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    召回、混合检索与重排
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    上下文、引用与忠实度
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-production/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    生产架构与运维
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agent-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    架构、规划与记忆
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agent-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    工具协议与故障恢复
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agent-interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP、A2A 与互操作
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/code-conversation-llmops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    代码、对话与 LLMOps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/product-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI 产品设计与人机协作
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    质量与责任
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    质量与责任
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    评测
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    评测
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览（基础）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/evaluation-methodology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    方法、统计与发布决策（进阶）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/agent-evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent 仿真与红队
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/safety/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安全、隐私与治理
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/reasoning-artifact-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opaque Reasoning 工件与轨迹安全
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/governance-impact/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    法规与社会影响
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/governance-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    治理工件模板
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    前沿
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    前沿
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../frontier/multimodal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    多模态
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../frontier/reasoning-long-context-moe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理、长上下文与 MoE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../frontier/embodied-small-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    具身、计算机使用与小模型
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../papers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    论文解读
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11" id="__nav_11_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    论文解读
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../papers/2026-08/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026 年 8 月
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    实践
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    实践
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_1" id="__nav_12_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    实验与项目
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    实验与项目
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0a-sampling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0A 从 logits 到采样
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0b-generation-protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0B 生成、停止与流式协议
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0c-cloud-budget/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0C 云 API 预算与对账
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0d-reasoning-artifact-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0D Opaque Reasoning 工件安全
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    工程项目
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    工程项目
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/project-index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    项目索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/rag-foundations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAG Foundations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/rag-framework-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAG Framework Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/safe-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safe Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/single-gpu-finetuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Single-GPU Finetuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/transformers-basics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transformers Basics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/jax-minigpt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX MiniGPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/cloud-api-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cloud API Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/inference-serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference Serving
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/evaluation-gate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation Gate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/synthetic-data-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Synthetic Data Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/production-checklist/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    生产检查表
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_13" id="__nav_13_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    求职
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    求职
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    岗位路线
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/interview-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    面试题与回答方法
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/system-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM 系统设计
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/resume-projects/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    简历项目与作品集
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    参考
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    参考
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    术语表
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/formulas/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    公式速查
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    常见问题
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    资料与论文
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/accuracy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    内容准确性与核验台账
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        学习目标与证据边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        先做资源账本，而不是先选框架
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="先做资源账本，而不是先选框架">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#activation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activation 为什么难用每参数字节表示
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#global-batch-loss-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global batch 与 loss 归一化
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Global batch 与 loss 归一化">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mean-or-sum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mean 还是 sum
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accumulationno_sync-update-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accumulation、no_sync 与 update control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amp-scaleunscaleclip-skip-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AMP scale、unscale、clip 与 skip control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ddp-amp-overflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DDP + AMP overflow 共识控制
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        数据并行（DP）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zero-fsdp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ZeRO 与 FSDP：沿数据并行组分片状态
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ZeRO 与 FSDP：沿数据并行组分片状态">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        理想内存与实际峰值
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no_sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        no_sync/累积陷阱
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tensor-paralleltp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tensor Parallel（TP）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tensor Parallel（TP）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#column-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Column parallel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#row-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Row parallel
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pipeline-parallelpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pipeline Parallel（PP）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pipeline Parallel（PP）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        调度与内存
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequence-context-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequence 与 Context Parallel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#expert-parallelep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Expert Parallel（EP）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        组合并行与拓扑映射
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        通信成本的简单模型
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="通信成本的简单模型">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#computecommunication-overlap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compute/communication overlap
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#activation-checkpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activation checkpoint 与内存换计算
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-reduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        混合精度与 Distributed Reduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checkpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checkpoint：分片不是完成标志
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Checkpoint：分片不是完成标志">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        故障窗口
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        分布式正确性验证
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="分布式正确性验证">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 单步数学等价
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 数据等价
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 随机性
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 长运行不变量
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        性能指标与可比较报告
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="性能指标与可比较报告">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mfu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MFU 的边界
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        性能诊断顺序
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        容量规划示例
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        可执行验收路线
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        常见错误
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        面试追问
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一手资料
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="_1">高效与分布式训练<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h1>
+<!-- learning-contract -->
+<div class="learning-contract">
+<p><strong>学习导航</strong></p>
+<ul>
+<li><strong>适合读者</strong>：多 GPU 训练、平台和正确性验收工程师。</li>
+<li><strong>先修</strong>：<a href="../../training/pretraining/">预训练</a>、显存状态和基本集合通信。</li>
+<li><strong>首次阅读</strong>：资源账本 → DP → ZeRO/FSDP → TP/PP → 正确性验证。</li>
+<li><strong>完成信号</strong>：能按参数、梯度、优化器和激活列账，并设计多卡验收矩阵。</li>
+<li><strong>卡住时</strong>：回到<a href="../hardware-edge/">硬件性能模型</a>和<a href="../../training/pretraining/">预训练预算</a>。</li>
+</ul>
+</div>
+<h2 id="_2">学习目标与证据边界<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<p>读完本章应能建立参数、梯度、optimizer state、activation 与通信的资源账本；解释 DP、ZeRO/FSDP、TP、PP、sequence/context parallel 与 expert parallel；根据节点拓扑组合并行维度，并设计单卡到多卡的正确性与故障恢复验证。</p>
+<p>本仓库没有目标多 GPU/多机集群，因此本章给出算法、估算和验收协议，不声称任何拓扑已实测。FSDP、DeepSpeed、Megatron、JAX sharding 与通信库的具体 API/默认值随版本变化，运行命令必须按固定软件栈重新核对。</p>
+<h2 id="_3">先做资源账本，而不是先选框架<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<p>设参数数为 <span class="arithmatex">\(P\)</span>，单个元素字节数为 <span class="arithmatex">\(b\)</span>。仅权重存储约 <span class="arithmatex">\(Pb\)</span>，训练还可能包含：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>forward weights
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>master weights
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>gradients
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>optimizer first/second moments
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>saved activations
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>temporary workspaces / communication buckets
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>allocator fragmentation / runtime context
+</code></pre></div>
+<p>一个常见但非通用的 mixed-precision Adam 示例：BF16 权重 2B、FP32 master weight 4B、FP32 gradient 4B、两份 FP32 moment 8B，共约 <strong>18 bytes/parameter</strong>，尚未包含 activation 和临时 buffer。有些实现没有 master weight、梯度用 BF16、moment 被量化或分片，因此不能把 18B/P 当作固定常数。</p>
+<h3 id="activation">Activation 为什么难用每参数字节表示<a class="headerlink" href="#activation" title="Permanent link">&para;</a></h3>
+<p>Activation 取决于 micro-batch <span class="arithmatex">\(B\)</span>、sequence length <span class="arithmatex">\(T\)</span>、hidden size <span class="arithmatex">\(H\)</span>、layers <span class="arithmatex">\(L\)</span>、attention/MLP 实现、保存边界和 dtype。朴素 attention 还可能物化 <span class="arithmatex">\(B\times heads\times T\times T\)</span> score/probability；FlashAttention 类算法避免保存完整矩阵，但不消除 Q/K/V、MLP 与残差相关 activation。</p>
+<p>OOM 诊断要分项测峰值，不能只用 parameter count。allocator reserved、已分配张量和设备驱动显示值也不是同一指标。</p>
+<h2 id="global-batch-loss-normalization">Global batch 与 loss 归一化<a class="headerlink" href="#global-batch-loss-normalization" title="Permanent link">&para;</a></h2>
+<p>设每个 data-parallel rank 的 micro-batch 为 <span class="arithmatex">\(B_\mu\)</span>，梯度累积次数 <span class="arithmatex">\(A\)</span>，数据并行度 <span class="arithmatex">\(D\)</span>：</p>
+<div class="arithmatex">\[
+B_{global}=B_\mu A D
+\]</div>
+<p>TP、PP、EP 共同处理同一批样本，不乘入 global batch。若长度/padding 可变，每更新有效 token 为：</p>
+<div class="arithmatex">\[
+N_{tokens}=\sum_{rank,microbatch,t}m_{rank,microbatch,t}
+\]</div>
+<p>不能用 <span class="arithmatex">\(B_{global}\times T_{max}\)</span> 替代。</p>
+<h3 id="mean-or-sum">Mean 还是 sum<a class="headerlink" href="#mean-or-sum" title="Permanent link">&para;</a></h3>
+<p>若第 <span class="arithmatex">\(i\)</span> 个 micro-batch/rank shard 有 <span class="arithmatex">\(n_i\)</span> 个有效 token、loss sum 为 <span class="arithmatex">\(S_i\)</span>，global token mean 是</p>
+<div class="arithmatex">\[
+L=\frac{\sum_i S_i}{N},\qquad N=\sum_i n_i.
+\]</div>
+<p>先算 local mean <span class="arithmatex">\(S_i/n_i\)</span> 再等权平均，会让短批或高 padding rank 权重过大；它只有在所有 <span class="arithmatex">\(n_i\)</span> 相同或梯度恰好抵消等特殊情况下才与 global token mean 相同。严格实现应聚合 numerator 与 count，或对梯度使用数学等价缩放。单进程 accumulation 可对每批 <code>reduction="sum"</code> 做 backward，窗口结束后把累计梯度除以 <span class="arithmatex">\(N\)</span>，随后才做 gradient clipping 与 optimizer step。</p>
+<p>DDP 需要再核对 reducer 语义。若默认对 <span class="arithmatex">\(D\)</span> 个 rank 的梯度取平均，每个 rank 直接 backward <code>local_loss_sum / global_N</code>，最终会额外少一个 <span class="arithmatex">\(D\)</span>；可在 backward 前按 <code>D/global_N</code> 缩放 local sum，或改用能得到全局 sum 的等价路径。<code>global_N</code> 必须来自整个 accumulation window、所有 data-parallel ranks 的有效 token count；不能用 <span class="arithmatex">\(A\)</span>、batch size 或 max length 代替。AMP 下还要把 <code>GradScaler</code> 的 scale/unscale、手工归一化和 clipping 顺序写进契约。</p>
+<p>仓库把证据拆成两层。<code>gradient_accumulation_toy.py</code> 固定两个 micro-batch 的有效 token 数为 <code>[1,3]</code>；<code>Fraction</code> oracle 得到正确 class-aggregate logit gradient <code>(23/40,-23/40)</code>，等权 micro-batch mean 为 <code>(7/20,-7/20)</code>。PyTorch CPU Float64 的 full batch 与单进程 sum/count 梯度逐元素相同，三个 ignored/padding 位置梯度为零；这只是 reducer 集成的单进程 reference。</p>
+<p><code>ddp_token_mean_control.py</code> 再把两个 shard 分给 <code>D=2</code> 个真实 OS 进程，并使用 temporary FileStore、Gloo、count <code>all_reduce</code> 和 PyTorch <code>DistributedDataParallel</code> backward。rank-local loss-sum gradient 分别为 <code>(-1/10,+1/10)</code> 与 <code>(+12/5,-12/5)</code>，全局 <code>N=4</code>：</p>
+<table>
+<thead>
+<tr>
+<th>backward 路径</th>
+<th style="text-align: right;">每 rank loss 定义</th>
+<th style="text-align: right;">默认 DDP mean 后梯度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正确 global token mean</td>
+<td style="text-align: right;"><code>(D/N)S_r=(1/2)S_r</code></td>
+<td style="text-align: right;"><code>(+23/40,-23/40)</code> = <code>(0.575,-0.575)</code></td>
+</tr>
+<tr>
+<td>漏掉 world size</td>
+<td style="text-align: right;"><code>(1/N)S_r=(1/4)S_r</code></td>
+<td style="text-align: right;"><code>(+23/80,-23/80)</code> = <code>(0.2875,-0.2875)</code></td>
+</tr>
+<tr>
+<td>rank-local mean</td>
+<td style="text-align: right;"><code>S_r/n_r</code></td>
+<td style="text-align: right;"><code>(+7/20,-7/20)</code> = <code>(0.35,-0.35)</code></td>
+</tr>
+</tbody>
+</table>
+<p>两个 rank 都观察到 count 4 和相同同步梯度；正确路径相对单进程 full-batch 的最大绝对误差约 <code>1.11e-16</code>，漏 world-size 路径相对 full/2 的误差约 <code>5.55e-17</code>。这是当前 PyTorch 2.13.0+cpu/Gloo/default reducer 固定 control 的执行证据，不是所有框架或版本的规范证明。它没有执行 optimizer/parameter update/clipping、gradient accumulation + <code>no_sync</code>、AMP/scaler、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点、目标 LLM/tokenizer/dataset、性能或质量评测。</p>
+<h3 id="accumulationno_sync-update-control">Accumulation、<code>no_sync</code> 与 update control<a class="headerlink" href="#accumulationno_sync-update-control" title="Permanent link">&para;</a></h3>
+<p><code>ddp_accumulation_no_sync_control.py</code> 将证据推进到一个完整但极小的 optimizer update。两个 rank 各有两个 micro-batch，valid-token counts 为 <code>[[1,2],[3,1]]</code>，global <code>N=7</code>。四个 local loss-sum class gradients 是 <code>(-1/10,+1/10)</code>、<code>(+8/5,-8/5)</code>、<code>(+12/5,-12/5)</code>、<code>(-1/10,+1/10)</code>；rank sums 为 <code>(+3/2,-3/2)</code> 与 <code>(+23/10,-23/10)</code>。默认 DDP mean 下每批乘 <code>D/N=2/7</code>，无论每批同步还是只在末批同步，精确结果都是：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pre-clip gradient = (+19/35,-19/35)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>unclipped plain-SGD lr=7/20 parameter delta = (-19/100,+19/100)
+</code></pre></div>
+<p>真实 CPU Float64/Gloo control 分三条路径。第一条使用未注册 hook 的 built-in DDP：首批的 <strong>forward 与 backward</strong> 都在 <code>ddp.no_sync()</code> 内，末批正常同步。第二条注册 PyTorch <code>default_hooks.allreduce_hook</code> 的透明 reference hook以计数，同样正确包裹，观察 1 次两元素 bucket hook。第三条是负对照：forward 在 context 外、只把 backward 放进 <code>no_sync</code>；DDP 已在 forward 决定需要同步，因此观察 2 次 hook。三条路径的 pre-clip gradient 都是约 <code>(0.542857,-0.542857)</code>；同步归一化后执行 <code>max_grad_norm=0.5</code>，clip 后约 <code>(0.353553,-0.353553)</code>，plain SGD <code>lr=0.35</code> 后 bias 约 <code>(-0.123744,+0.123744)</code>，都与单进程 full batch 逐项相同。</p>
+<p>这里的 backward-only 负对照证明“没有减少 collective”，不证明它在此 fixture 上改变数学结果。built-in 路径没有直接插桩 collective count；计数来自另一个使用官方 reference hook 的独立路径。control 只有一个两元素参数和一个 bucket，没有 dropout/BatchNorm/RNG、AMP/scaler/overflow、多参数或多 bucket、AdamW/optimizer state、checkpoint resume、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点、目标 Trainer/LLM、通信字节、性能或质量证据。</p>
+<h3 id="amp-scaleunscaleclip-skip-control">AMP scale、unscale、clip 与 skip control<a class="headerlink" href="#amp-scaleunscaleclip-skip-control" title="Permanent link">&para;</a></h3>
+<p>混合精度是独立状态机，不能仅凭上面的 Float64 DDP control 推断。仓库的 <code>amp_grad_scaler_control.py</code> 真实执行 CPU FP16 autocast 与 <code>torch.amp.GradScaler("cpu")</code>。两个 micro-batch 的 unscaled sum-gradient 是 3，初始 scale=8 时内存中的 scaled gradient 是 24。正确路径先 <code>unscale_</code> 再以 <code>max_norm=0.5</code> 做 global-norm clip，得到约 0.5 并与 full batch/SGD update 相同；负对照先 clip 24 再 unscale，optimizer-visible gradient 约为 0.0625。</p>
+<p>同一 control 先做一次真实 AdamW step 建立 step=1、<code>exp_avg</code> 与 <code>exp_avg_sq</code>，再让三个两批窗口中的第二批产生 <code>inf</code>。GradScaler 逐次把 scale 从 8 降到 4、2、1，三次都跳过整个 optimizer update，参数与 AdamW state exact 不变。进程内复制 model/optimizer/scaler 后，恢复 scale=1 的 10000 边界梯度执行 step=2，并与不中断路径 exact；故意不加载 scaler、回到 scale=8 时 FP16 scaled gradient overflow，scale 降到 4 且 step 仍为 1。</p>
+<p>这条证据只覆盖 PyTorch 2.13.0+cpu、单 FP32 参数、FP16 autocast、单进程和 in-memory state replay；没有把 scaler 纳入 strict 文件 artifact，也没有执行真实进程退出/重启、scheduler/RNG/DataLoader、DDP/FSDP/ZeRO、CUDA kernel、目标 Trainer/model、吞吐、收敛或质量。</p>
+<h3 id="ddp-amp-overflow">DDP + AMP overflow 共识控制<a class="headerlink" href="#ddp-amp-overflow" title="Permanent link">&para;</a></h3>
+<p><code>ddp_amp_overflow_consensus_control.py</code> 把 default DDP reducer、<code>no_sync</code>、CPU FP16 GradScaler、AdamW 和 StepLR 放进同一条真实双进程 CPU/Gloo control。每条路径先做一次相同的 finite warm-up，建立 parameter≈0.99、AdamW step=1、scheduler epoch=1/LR=0.005、scale=8 和 growth tracker=1，再比较：</p>
+<table>
+<thead>
+<tr>
+<th>故障位置与决策</th>
+<th>rank 0</th>
+<th>rank 1</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>首批 <code>no_sync</code> 内 rank 0 产生 non-finite，末批用 built-in DDP 同步</td>
+<td>末批后 non-finite</td>
+<td>末批前 local scaled grad=8，末批后 non-finite</td>
+<td>两边都 skip，scale <code>8→4</code>、tracker <code>1→0</code>；model/AdamW/StepLR 保持一致</td>
+</tr>
+<tr>
+<td>DDP 已得到两边 finite scaled grad=8 后，仓库故意在 rank 0 的 <code>unscale_</code> <strong>之前</strong>把 grad 改成 Inf；无额外共识</td>
+<td>skip，scale=4、step=1</td>
+<td>unscaled grad=1，scale=8、step=2</td>
+<td>参数、moments、scheduler、LR、scale/tracker 全部分叉</td>
+</tr>
+<tr>
+<td>同样的 post-reduction fault，<code>unscale_</code> 后对 local non-finite flag 做 <code>all_reduce(MAX)</code></td>
+<td>local flag=1，global=1</td>
+<td>local flag=0，global=1</td>
+<td>两边都不调用 <code>scaler.step</code>/optimizer/scheduler，并用显式共同 scale policy 回退到 4，训练状态保持一致</td>
+</tr>
+</tbody>
+</table>
+<p>第一条说明：在这个默认 reducer、单参数/单 bucket fixture 中，<strong>reduction 之前</strong>产生的 Inf 会随梯度同步传播，所以不能据此宣称 vanilla DDP 总要再做一次 finite-flag collective。第二条是 authored fault injection，不是“DDP 正常会在 reduction 后损坏一个 rank”；它代表 per-rank gradient transform、条件参数、自定义 communication path、硬件/内存故障等可能绕开共同 reduction 的风险。finite 共识必须放在所有可能生成 non-finite 的 gradient transform 之后、任何 optimizer mutation 之前；step 后才发现 mismatch 已经无法撤销另一个 rank 的更新。</p>
+<p>第三条只证明这个 optimizer-pre gate 阻止了当前故障分叉，不是可直接复制到所有框架的 distributed scaler。<code>GradScaler.update(new_scale=4)</code> 是仓库显式 scale policy：两 rank 的完整已序列化 scaler state 一致，但 growth tracker 保持 1；native found-inf transition 则会把 tracker 重置为 0。生产实现应优先使用目标框架公开的 distributed scaler/overflow 协议，或明确定义并测试 scale、growth tracker、optimizer、scheduler、clip 与 checkpoint 的全状态共识，不能修改私有 found-inf 字段，也不能用 <code>scaler.step()</code>/<code>optimizer.step()</code> 的返回值冒充通用 <code>did_step</code>。</p>
+<p>该控制仍只有一个 FP32 参数、单 bucket、同机 CPU/Gloo 和人为 Inf；built-in collective count 未直接插桩，也没有 clipping、随机层、自然 overflow、custom hook、conditional graph、checkpoint/elastic restart、CUDA/NCCL、多节点、FSDP/ZeRO、目标 LLM/Trainer、性能、收敛或质量证据。</p>
+<h2 id="dp">数据并行（DP）<a class="headerlink" href="#dp" title="Permanent link">&para;</a></h2>
+<p>每个 rank 持有完整参数，处理不同数据，反向后 collective 聚合梯度。若所有 rank 从相同参数开始，使用相同 global batch 和数学归一化，更新应与单设备大 batch 在浮点容差内一致。</p>
+<p>主要成本：</p>
+<ul>
+<li>每卡完整权重、梯度和 optimizer state；</li>
+<li>每步通信量随梯度/参数规模增长；</li>
+<li>最慢 rank 决定同步 step 时间；</li>
+<li>sampler 必须保证 shard 不重不漏。</li>
+</ul>
+<p>Gradient bucketing 用较早完成的梯度与反向计算 overlap。bucket 太大延迟 collective 启动，太小增加 latency/launch overhead。<code>find_unused_parameters</code> 等图遍历功能也会增加开销，且可能掩盖错误冻结。</p>
+<h2 id="zero-fsdp">ZeRO 与 FSDP：沿数据并行组分片状态<a class="headerlink" href="#zero-fsdp" title="Permanent link">&para;</a></h2>
+<p>按经典术语：</p>
+<ul>
+<li>Stage 1：分片 optimizer state；</li>
+<li>Stage 2：再分片 gradients；</li>
+<li>Stage 3：再分片 parameters，并在计算前后按需 all-gather/reshard。</li>
+</ul>
+<p>Fully Sharded Data Parallel 与 ZeRO-3 有相近目标，但对象包装、prefetch、reshard、mixed precision、state dict 和通信调度不等同，不能只按 stage 名称推断行为。</p>
+<h3 id="_4">理想内存与实际峰值<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<p>若分片组大小为 <span class="arithmatex">\(D\)</span>，理想持久状态可近似缩小到 <span class="arithmatex">\(1/D\)</span>。实际峰值还含当前 layer/unit 的 gathered full parameters、通信 buffer、未及时释放的 activation、prefetch 下一单元和 checkpoint staging。</p>
+<p>Wrap 粒度过大时一次 gather 很多参数导致峰值；过小时 collective 太多。要按 Transformer block 等重复结构设计，并用 memory timeline 验证而不是只看配置。</p>
+<h3 id="no_sync"><code>no_sync</code>/累积陷阱<a class="headerlink" href="#no_sync" title="Permanent link">&para;</a></h3>
+<p>某些分片策略在 gradient accumulation 时仍需保留或聚合特定 state；错误使用 no-sync 可能大幅增加内存或产生不正确梯度。必须按目标框架版本验证，不把普通 DDP 经验直接套到 FSDP/ZeRO。</p>
+<h2 id="tensor-paralleltp">Tensor Parallel（TP）<a class="headerlink" href="#tensor-paralleltp" title="Permanent link">&para;</a></h2>
+<p>TP 把单层大矩阵拆到多个设备，常用于单卡放不下层参数或希望扩大 GEMM。以 <span class="arithmatex">\(Y=XW\)</span> 为例：</p>
+<h3 id="column-parallel">Column parallel<a class="headerlink" href="#column-parallel" title="Permanent link">&para;</a></h3>
+<p>按输出列分 <span class="arithmatex">\(W=[W_1,\ldots,W_p]\)</span>：</p>
+<div class="arithmatex">\[
+Y_i=XW_i,\quad Y=\operatorname{concat}(Y_1,\ldots,Y_p)
+\]</div>
+<p>每 rank 计算部分输出特征；后续算子若能继续分片，可推迟 gather。</p>
+<h3 id="row-parallel">Row parallel<a class="headerlink" href="#row-parallel" title="Permanent link">&para;</a></h3>
+<p>按输入行分 <span class="arithmatex">\(W=[W_1^T,\ldots,W_p^T]^T\)</span>，同时分 <span class="arithmatex">\(X=[X_1,\ldots,X_p]\)</span>：</p>
+<div class="arithmatex">\[
+Y=\sum_i X_iW_i
+\]</div>
+<p>需要 reduce-sum 部分结果。实际 Transformer 常把 column/row parallel 成对放置，减少中间 gather。</p>
+<p>TP 每层有高频 collective，通常优先映射到 NVLink/NVSwitch 或其他节点内高速互联。TP 过大时单 rank GEMM 变小、通信 latency 上升，吞吐可能下降。</p>
+<p>Embedding 与 vocab/lm head 也可分片，但 cross entropy 需要处理全局 log-sum-exp 和 target shard；不能先 gather 巨大 vocab logits 再声称 vocab parallel 节省内存。</p>
+<h2 id="pipeline-parallelpp">Pipeline Parallel（PP）<a class="headerlink" href="#pipeline-parallelpp" title="Permanent link">&para;</a></h2>
+<p>PP 把连续层分给 <span class="arithmatex">\(p\)</span> 个 stage，把 global batch 切成 <span class="arithmatex">\(m\)</span> 个 micro-batches，在 stage 间传 activation/gradient。</p>
+<p>对简化、均衡、无交错 pipeline，fill/drain bubble 随 stage 增多而上升，随 micro-batch 数增多而下降。常见近似 bubble fraction：</p>
+<div class="arithmatex">\[
+\frac{p-1}{m+p-1}
+\]</div>
+<p>这不是所有 1F1B/interleaved schedule 的精确公式，只用于直觉。真实效率还受 forward/backward 时间、通信、stage 不均、activation 内存和 optimizer step 同步影响。</p>
+<h3 id="_5">调度与内存<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>GPipe 风格先完成多组 forward 再 backward，bubble 清晰但保存 activation 多；</li>
+<li>1F1B 进入稳态后交替 forward/backward，降低峰值；</li>
+<li>interleaving 让一个设备持多个虚拟 stage，可减 bubble 但通信和调度更复杂。</li>
+</ul>
+<p>Layer 数不能整除 stage 或某些 embedding/head 特别重时，需要显式 balance。按层数均分不保证按 FLOPs、activation 或通信均衡。</p>
+<h2 id="sequence-context-parallel">Sequence 与 Context Parallel<a class="headerlink" href="#sequence-context-parallel" title="Permanent link">&para;</a></h2>
+<p>“沿序列切”包含不同技术：</p>
+<ul>
+<li>sequence parallel：常把 layer norm、dropout 或 TP 区域外的 activation 沿 sequence 分片，减少复制；</li>
+<li>context parallel：把超长 attention 的 token/context 分给多个设备，并交换 K/V 或部分统计；</li>
+<li>ring/blockwise attention：以分块通信和 online softmax 组合全局注意力。</li>
+</ul>
+<p>必须说明 attention 是否全局精确、局部/稀疏近似，mask 与 position 如何跨 rank 保持，以及通信量随 <span class="arithmatex">\(T\)</span> 怎样变化。仅把 input tensor 切片而不交换远端 K/V，会改变模型函数。</p>
+<p>长序列还要验证 packed sample boundary，避免不同 rank 的 mask/position 错位。</p>
+<h2 id="expert-parallelep">Expert Parallel（EP）<a class="headerlink" href="#expert-parallelep" title="Permanent link">&para;</a></h2>
+<p>MoE 将专家分布到设备。Router 为 token 选择 top-k expert，token 经 all-to-all 发往专家，再返回原顺序。</p>
+<p>资源账本要同时报告：</p>
+<ul>
+<li>total parameters 与 active parameters/token；</li>
+<li>experts、top-k、shared experts；</li>
+<li>capacity/overflow/drop policy；</li>
+<li>每 expert token 数和最大/平均负载；</li>
+<li>dispatch/combine all-to-all 时间；</li>
+<li>router/auxiliary loss 与数值精度。</li>
+</ul>
+<p>平均负载均衡不代表没有 tail：一个过载 expert 会让整个同步 step 等待。小 batch 时每 expert GEMM 太小也可能低效。EP 通常对网络 all-to-all 特别敏感。</p>
+<p>本仓库 <code>route_topk_capacity</code> 只在单进程 CPU 上物化 expert ids、capacity keep/drop 与 combine weights，并执行 bias-free linear experts。它可验证 padding、tie-break、assignment count 和 drop 后归一化，不能验证 token packing、rank-to-expert placement、all-to-all bytes/order、grouped GEMM、反向传播或同步 straggler。把该 toy 的 expert count 当通信量或 GPU throughput 属于证据越界。</p>
+<p>独立的 <code>moe_distributed_capacity_control.py</code> 只把证据向前推进一层：两个 same-host CPU/Gloo ranks 用真实 tensor <code>all_gather</code> 形成 replicated 4-token global routing input，并用两个 <code>all_reduce(SUM)</code> 对账 active count=4、selected counts <code>[4,0]</code>。Local-only capacity competition 跨 ranks 合计 kept=2；global score-priority capacity=1 只 kept=1，mask <code>[F,F,T,F]</code>，rank-0 output 因失去 local winner 而改变 <code>0.9640275800758169</code>。因此它确实执行了 collective capacity-group 反事实，不是只给单进程 group IDs 换名称。</p>
+<p>但 hidden <code>all_gather</code> 让每个 rank 复制 global batch，router 与 experts 也完全复制；这不具备 scalable EP 的 expert ownership，且没有 token-to-expert <code>all_to_all</code>/return combine、distributed backward、optimizer 或性能测量。它用于教学上分开三类 process group：capacity/routing group、expert dispatch group、gradient synchronization group；不能外推到 NCCL、多节点、DeepSeek/Qwen、通信 bytes/tail 或 GPU throughput。</p>
+<p>第二条 <code>moe_all_to_all_control.py</code> 单独验证 expert dispatch group：expert 0/1 分别只驻留 rank 0/1；source→owner variable splits 为 <code>[[1,2],[1,0]]</code>。每 rank 的五次 <code>all_to_all_single</code> 依次交换 counts，发送 hidden/gate 与 source metadata，再做 owner→source return 的 output/gate 与 metadata。Rank 0 的 arrival global IDs 是 <code>[1,0,2]</code>，按 source-local index scatter 才与单进程 forward oracle 完全相等；忽略 metadata 会产生 <code>0.8958737432590591</code> 最大差。</p>
+<p>报告的 256/160、合计 416 logical tensor-payload bytes 只是当前 int64/float64 authored tensors 的 <code>numel × element_size</code>；不等于 wire bytes，也没有测 collective latency。该控制不含 capacity/drop、backward/optimizer、CUDA/NCCL、多节点、target checkpoint 或性能；不能把它与 replicated-capacity control 的独立证据相加成完整、可扩展或可训练的 EP runtime。</p>
+<p>第三条 <code>moe_all_to_all_training_control.py</code> 把训练图也做成可执行对照。Authored autograd binding 在 backward 用 reverse-split <code>all_to_all_single</code> backward：先把 output/gate gradients送回 owner，再把 hidden/gate gradients送回 source。每 rank 的 local loss sum 都除 global token count；owner expert gradient 不做 data-parallel all-reduce，因为 owner 已处理来自所有 sources 的本 expert tokens；replicated router gradient 做 SUM all-reduce，保证两个副本更新一致。</p>
+<p>当前 global MSE <code>20.78017329703821→19.41091750734501</code>，gradients、一步 SGD 参数和 post-step forward 都与单进程 oracle exact。但 custom autograd Function 不是 DDP/生产 EP，call ledger 不是 profiler；fixture仍无 capacity、mixed precision、optimizer state、CUDA/NCCL、多节点、目标模型、收敛或性能证据。</p>
+<p>第四条 <code>moe_all_to_all_capacity_training_control.py</code> 在另一张图中把 global score-priority drop、owner-only dispatch 与 backward 合并。四个 active tokens 的 selected counts <code>[2,2]</code> 在 capacity=1 下变为 keep mask <code>[F,T,T,F]</code>；kept-only source→owner splits 为 <code>[[1,1],[0,0]]</code>，其中 rank 1 的全零 source→owner splits <code>[0,0]</code> 仍通过 empty-payload graph edge 触发 reverse collective。Dropped tokens 的 task hidden gradient 为 0；router SUM gradient、owner expert gradients、一步参数和 post-step forward 均与单进程 capacity oracle exact。</p>
+<p>该 fixture 的 global MSE 是 <code>15.253670387373656→14.530264380025987</code>。每 rank authored ledger 为 payload forward/backward 4/2、count+metadata 6、capacity-route all-gather 4、router reduce 1；仍不是 backend profiler。它没有验证 Gloo 以外 backend、DDP/FSDP/ZeRO/TP/PP、mixed precision、optimizer state、reroute/dropless、shared/fine-grained experts、目标模型、扩展性、收敛或性能。</p>
+<h2 id="_6">组合并行与拓扑映射<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<p>设备总数常满足：</p>
+<div class="arithmatex">\[
+N_{devices}=D_{data}\times D_{tensor}\times D_{pipeline}\times D_{expert}
+\]</div>
+<p>具体实现可能让 sequence/context parallel 与 TP 共享或另建 group，不能机械再乘。</p>
+<p>映射原则：</p>
+<ol>
+<li>高频、小延迟敏感 collective（TP）放在最快互联域；</li>
+<li>EP all-to-all 需要高双向带宽并控制跨节点范围；</li>
+<li>PP 主要传 stage activation，可跨较慢边界但要看消息大小；</li>
+<li>DP gradient reduce 可用 bucket/overlap 摊销，常扩到更多节点；</li>
+<li>rank mapping 与物理 topology 写入 run manifest。</li>
+</ol>
+<p>“8 卡节点”不代表所有 pair 带宽相同；PCIe switch、NUMA、NIC 亲和、GPU Direct 与 oversubscription 都会影响。</p>
+<h2 id="_7">通信成本的简单模型<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h2>
+<p>传输 <span class="arithmatex">\(n\)</span> bytes 的一次消息可粗略写成：</p>
+<div class="arithmatex">\[
+T\approx\alpha+\frac{n}{\beta}
+\]</div>
+<p><span class="arithmatex">\(\alpha\)</span> 是 latency，<span class="arithmatex">\(\beta\)</span> 是有效 bandwidth。小消息被 latency 主导，大消息被 bandwidth 主导。</p>
+<p>理想 ring all-reduce 对每 rank 的总传输量近似：</p>
+<div class="arithmatex">\[
+2\frac{p-1}{p}n
+\]</div>
+<p>并经历多轮 reduce-scatter/all-gather。实际还有协议、拓扑、竞争和 overlap；这个公式不能代替 NCCL/目标网络 benchmark。</p>
+<h3 id="computecommunication-overlap">Compute/communication overlap<a class="headerlink" href="#computecommunication-overlap" title="Permanent link">&para;</a></h3>
+<p>总 step time 不是简单相加，若依赖允许，可在 backward 计算后续层时 reduce 已完成层的 gradient，或 prefetch 下一 FSDP unit。应从 trace 观察真正 overlap；异步 API 返回不代表设备通信已隐藏。</p>
+<h2 id="activation-checkpoint">Activation checkpoint 与内存换计算<a class="headerlink" href="#activation-checkpoint" title="Permanent link">&para;</a></h2>
+<p>Activation checkpoint/recomputation 只保存边界，backward 重做 forward。它降低 activation memory，增加 FLOPs 和 wall time。选择性重计算可优先处理内存大、重算便宜的算子；attention/MLP 策略依 kernel。</p>
+<p>FlashAttention 减少 HBM 读写与 materialized score，不改变其支持范围内的 attention 数学目标，但浮点顺序会有差异。它与 activation checkpoint 是不同优化，可以组合，收益不能简单相加。</p>
+<p>CPU offload/NVMe offload 用容量换 PCIe/IO，可能让系统从 compute-bound 变成 IO-bound。报告应包含传输时间和 host 内存，而不是只报 GPU 峰值下降。</p>
+<h2 id="distributed-reduction">混合精度与 Distributed Reduction<a class="headerlink" href="#distributed-reduction" title="Permanent link">&para;</a></h2>
+<ul>
+<li>FP32：精度/范围高，矩阵吞吐和存储成本大；</li>
+<li>TF32：部分 GPU 的 FP32 matmul 加速路径，不是参数存储 dtype；</li>
+<li>FP16：指数范围小，训练常需要 dynamic loss scaling；</li>
+<li>BF16：指数范围接近 FP32，尾数较少；</li>
+<li>FP8：依赖硬件、格式、scale/amax history 和 kernel 支持。</li>
+</ul>
+<p>需要分别声明 parameter、forward compute、gradient、collective、master weight、optimizer state 和 loss dtype。某些框架在低精度 all-reduce 前预缩放；顺序错误可能 overflow/underflow。</p>
+<p>Loss scaler 的 overflow 决策应在相关 ranks 一致，否则部分 rank step、部分 rank skip 会让参数分叉。</p>
+<h2 id="checkpoint">Checkpoint：分片不是完成标志<a class="headerlink" href="#checkpoint" title="Permanent link">&para;</a></h2>
+<p>分布式 checkpoint 要解决：</p>
+<ul>
+<li>每个 rank/shard 是否全部写完；</li>
+<li>manifest 是否原子发布；</li>
+<li>参数、optimizer、RNG、scheduler、sampler 是否一致 step；</li>
+<li>world size/topology 改变时能否 reshard；</li>
+<li>保存期间内存峰值和存储带宽；</li>
+<li>文件 hash、版本、保留和灾难恢复。</li>
+</ul>
+<p>不要让 rank 0 聚合全模型导致 OOM，再把分片训练的内存收益丢掉。需要 full state dict 时，明确在哪里、用多少 host/GPU 内存完成聚合。</p>
+<h3 id="_8">故障窗口<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<p>若部分 rank 在 step <span class="arithmatex">\(t\)</span> 保存、另一部分在 <span class="arithmatex">\(t+1\)</span>，拼出的 checkpoint 不对应任何真实全局状态。manifest 应包含 global step、consumed token、shard list/hash 和 complete marker；恢复只读取完整 generation。</p>
+<h2 id="_9">分布式正确性验证<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h2>
+<p>性能调优前按层级建立证据：</p>
+<h3 id="1">1. 单步数学等价<a class="headerlink" href="#1" title="Permanent link">&para;</a></h3>
+<p>固定相同参数和 global batch，关闭 dropout 或控制 RNG，比较：</p>
+<ul>
+<li>logits 与 loss numerator/denominator；</li>
+<li>关键 gradient 与 global norm；</li>
+<li>optimizer update 后参数；</li>
+<li>TP/PP 边界 tensor shape 与数值。</li>
+</ul>
+<p>浮点 collective 顺序可导致微差，应先定义 atol/rtol 和累积步数，不能要求所有硬件 bitwise 相等，也不能无限放宽容差。</p>
+<p>“full batch 与 gradient accumulation 等价”还要求：监督 token/mask 相同；窗口中只在末尾 step/zero-grad；clip 与 scheduler 按 optimizer update 执行；模型没有跨样本 BatchNorm 等 batch-coupled 运算；dropout、gradient checkpoint 等随机路径按已定义的 RNG 契约比较；AMP overflow、<code>no_sync</code> 与 collective 边界一致。即使数学目标相同，浮点求和顺序也通常只支持容差等价，不自动支持 bitwise 等价。</p>
+<p>本仓库第一条双进程 DDP token-mean control 只覆盖“一次 local backward 后立即同步”的三种 reduction 路径；第二条 accumulation control 已补两个 micro-batch、built-in <code>no_sync</code>、同步后 clipping 和 plain SGD update；第三条 DDP+AMP control 再以 AdamW/StepLR 验证同步前 non-finite 的共同 skip、同步后单 rank 故障的分叉和 optimizer-pre flag 共识。三者合起来仍不能证明随机模型、多参数/bucket、自然 overflow、目标 Trainer、FSDP/ZeRO、GPU 或多节点下的 optimizer-update 等价。</p>
+<h3 id="2">2. 数据等价<a class="headerlink" href="#2" title="Permanent link">&para;</a></h3>
+<p>记录每 rank sample/source id，验证一个 global step 不重不漏；gradient accumulation、worker 重启和 resume 后同样检查。Distributed sampler 的 <code>set_epoch</code>/等价状态与 shuffle RNG 要保存。</p>
+<p>还要区分 sampler-emitted、main-loop-consumed 与 optimizer-committed cursor。<code>dataloader_prefetch_resume_control.py</code> 在单进程训练控制面内真实启动两个 spawn workers；<code>prefetch_factor=2</code> 时，主循环收完 3 条，sampler 已发到 7。从 emitted cursor 重启会漏掉 4 个 queue 中未消费 IDs，从 consumed cursor 重启可恢复顺序；但 fresh worker RNG tail 仍不同。这个 control 没有 DistributedSampler/DDP，也没有把 sample consumption 与 optimizer commit 做原子事务，因此分布式训练仍须为每 rank/global update 明确 cursor 聚合、drop/replay policy 和失败边界。</p>
+<p>独立 <code>optimizer_commit_resume_control.py</code> 再执行 main-process inverted-Bernoulli mask、真实两步 accumulation、backward、SGD momentum 与 StepLR：崩溃时 emitted/consumed/committed=<code>7/3/2</code>。base 不含 <code>.grad</code>，但保存 commit-boundary scheduler/Torch RNG；从 committed=2 恢复 RNG并重放，与 uninterrupted 的 model/optimizer/scheduler/RNG bit-exact。第一个隔离负例从 consumed=3 恢复正确 crash RNG却漏 gradients/sample <code>1</code>：未来 RNG 相同，5 次 optimizer/scheduler step 与 LR <code>0.0125</code> 也相同，参数仍漂移 <code>0.005767858566116724</code>。第五个 PID 加载绑定 base digest 的 pending <code>[1]</code>、position/divisor、逐参数 gradients与 crash RNG sidecar，从 consumed=3 继续也 bit-exact；第六个 PID 保留 gradients/ledger 却错误使用 commit-boundary RNG，参数漂移 <code>0.017878893573032573</code> 且终态 RNG 不同。sidecar 路径先要求最后发布的 canonical manifest 完整绑定 base/sidecar identity；base-only、payloads-without-manifest、manifest-without-sidecar 与 post-manifest tamper 四种快照均 fail closed，但 base-only 仍可用于 commit replay。</p>
+<p>它仍只证明单训练进程的两种恢复协议与两个隔离负例，未执行 DDP/DistributedSampler、rank 间 ledger 共识、collective、sharded optimizer 或 elastic membership；manifest-last 不会让 base+sidecar+manifest 与所有 rank update 原子提交，也没有 directory <code>fsync</code>、断电、原子目录/远程快照或来源认证证据。它覆盖 main-process Torch RNG/StepLR，不覆盖 worker/Python/NumPy/CUDA RNG、GradScaler 或原生任意随机层。分布式实现仍须定义全局 commit receipt、sidecar/shard manifest completeness、失败 rank 的共同回滚/重放以及重复样本是否可接受。</p>
+<h3 id="3">3. 随机性<a class="headerlink" href="#3" title="Permanent link">&para;</a></h3>
+<p>Dropout 通常需要 rank/device 相关但可重放的 RNG；tensor-parallel 区域中某些 mask 可能需要一致，另一些需要独立。不能只给所有 rank 相同 seed，也不能随机到无法恢复。</p>
+<h3 id="4">4. 长运行不变量<a class="headerlink" href="#4" title="Permanent link">&para;</a></h3>
+<p>监控 rank 间 parameter checksum、step/global token、loss scaler、optimizer step 和 collective timeout。一个 rank 静默跳步会在数百步后才表现为 loss 异常。</p>
+<h2 id="_10">性能指标与可比较报告<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h2>
+<p>至少报告：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>model/config and parameter counts
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>hardware/topology/interconnect
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>world size and every parallel dimension
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>precision and kernel/runtime versions
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>micro/global batch and effective tokens/update
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>sequence length distribution / packing
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>activation checkpoint and offload
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>step time distribution / tokens per second
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>peak allocated/reserved memory
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>compute, collective, data and idle breakdown
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>compile/warmup and measurement window
+</code></pre></div>
+<h3 id="mfu">MFU 的边界<a class="headerlink" href="#mfu" title="Permanent link">&para;</a></h3>
+<p>Model FLOPs Utilization 通常是“模型理论 FLOPs × 实际 token throughput / 硬件峰值 FLOPs”。分子 FLOPs 模型和分母峰值 dtype 必须一致。是否包含 activation recomputation、attention、embedding、MoE 路由会改变数值；不同论文/框架的 MFU 不一定可直接比较。</p>
+<p>高 GPU utilization 也可能在做无效重算或通信等待；tokens/s 高也可能因为 padding 被算作 token。质量和有效 token 口径必须同时报告。</p>
+<h2 id="_11">性能诊断顺序<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>确认正确</strong>：global batch、loss reduction、数据/RNG；</li>
+<li><strong>分解 step</strong>：data、forward、backward、collective、optimizer；</li>
+<li><strong>看 shape/GEMM</strong>：是否太小、padding 过多、kernel 未融合；</li>
+<li><strong>看 overlap</strong>：collective 是否真正与 compute 重叠；</li>
+<li><strong>看拓扑</strong>：rank/NIC/NUMA 映射、跨节点流量；</li>
+<li><strong>看 straggler</strong>：每 rank 分位数、热降频、错误重试；</li>
+<li><strong>再调 bucket/prefetch/wrap</strong>：每次只改一个主要变量。</li>
+</ol>
+<p>常见症状：</p>
+<table>
+<thead>
+<tr>
+<th>症状</th>
+<th>优先检查</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>所有卡低利用</td>
+<td>data loader、同步点、小 batch、compile</td>
+</tr>
+<tr>
+<td>一卡慢、全局慢</td>
+<td>热/功率、NUMA/NIC、数据异常、expert 负载</td>
+</tr>
+<tr>
+<td>扩卡吞吐不升</td>
+<td>global batch、collective、TP 粒度、网络拓扑</td>
+</tr>
+<tr>
+<td>FSDP 峰值仍高</td>
+<td>wrap 粒度、prefetch、gather overlap、checkpoint staging</td>
+</tr>
+<tr>
+<td>loss 与单卡不同</td>
+<td>mean/sum、有效 token、sampler、RNG、低精度归约</td>
+</tr>
+<tr>
+<td>resume 后突变</td>
+<td>optimizer/scaler/RNG/data position、world-size reshard</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_12">容量规划示例<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h2>
+<p>假设 TP=8、PP=4、DP=16、micro-batch=2、accumulation=8：</p>
+<div class="arithmatex">\[
+N_{devices}=8\times4\times16=512
+\]</div>
+<div class="arithmatex">\[
+B_{global}=2\times8\times16=256
+\]</div>
+<p>不是 2048 或 8192，因为 TP/PP 没有增加独立样本。若每样本平均 1800 个有效 target token，则每更新约 <span class="arithmatex">\(460{,}800\)</span> token；若只知道 max length 2048，还不能得到真实 token/update。</p>
+<p>选择方案时还要验证：每 stage 层数/时间是否均衡、TP group 是否在高速域、DP collective 是否跨多少节点、activation 与 gathered parameter 峰值，以及 512 卡故障率下 checkpoint 间隔是否合理。</p>
+<h2 id="_13">可执行验收路线<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h2>
+<p>本仓库无法在当前单设备环境证明多卡行为，正确路线是：</p>
+<ol>
+<li>2 个 process 的 CPU/GPU toy model，检查 global loss/gradient；</li>
+<li>单节点多 GPU，逐个启用 DP → sharding/TP；</li>
+<li>固定 global batch 做 strong scaling；</li>
+<li>固定每卡 workload 做 weak scaling；</li>
+<li>注入 rank crash、checkpoint 中断与 data worker 重启；</li>
+<li>再扩到多节点，保存 topology 和通信 trace；</li>
+<li>每一层都与上一级做数值和数据 lineage 对照。</li>
+</ol>
+<p>未获得目标硬件前，文档命令只能是运行计划，不能标成“已验证吞吐/MFU”。</p>
+<h2 id="_14">常见错误<a class="headerlink" href="#_14" title="Permanent link">&para;</a></h2>
+<ul>
+<li>把 18 bytes/parameter 当作所有 Adam 训练固定值；</li>
+<li>global batch 错乘 TP/PP/EP；</li>
+<li>各 rank 本地 mean 再等权平均，忽略有效 token 不同；</li>
+<li>只看配置声称 FSDP state 已按 <span class="arithmatex">\(1/D\)</span> 缩小；</li>
+<li>TP 跨慢网络、EP all-to-all 不测 tail；</li>
+<li>用 PP 层数均分代替实测 stage balance；</li>
+<li>切 sequence 却不交换远端 attention 信息，悄悄改变模型；</li>
+<li>首次 compile/warmup 混入稳态吞吐；</li>
+<li>checkpoint 缺 shard/step manifest 或只保存模型权重；</li>
+<li>追求 MFU 而忽略有效 token、质量和重计算口径；</li>
+<li>在没有目标 GPU/集群时把设计文档写成已验证结果。</li>
+</ul>
+<h2 id="_15">面试追问<a class="headerlink" href="#_15" title="Permanent link">&para;</a></h2>
+<ol>
+<li>为什么 local mean loss 在可变 token rank 上会给出错误 global weighting？</li>
+<li>ZeRO-3 理想节省哪些状态，为什么实际峰值不会严格除以 DP？</li>
+<li>Column/row tensor parallel 各需要什么 collective？</li>
+<li>PP bubble 与 micro-batch 数、stage 数、stage imbalance 有什么关系？</li>
+<li>Context parallel 如何保持全局 attention，而不是变成局部 attention？</li>
+<li>EP 为什么常被 all-to-all 和 tail expert 限制？</li>
+<li>如何设计单卡与多卡单步等价测试？</li>
+<li>world size 改变时，optimizer/RNG/data/checkpoint 如何 reshard 与恢复？</li>
+<li>MFU 为什么可能在两个系统间不可直接比较？</li>
+</ol>
+<h2 id="_16">一手资料<a class="headerlink" href="#_16" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Rajbhandari 等，<a href="https://arxiv.org/abs/1910.02054">ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</a>。</li>
+<li>Shoeybi 等，<a href="https://arxiv.org/abs/1909.08053">Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism</a>。</li>
+<li>Huang 等，<a href="https://arxiv.org/abs/1811.06965">GPipe</a>。</li>
+<li>PyTorch 官方文档，<a href="https://pytorch.org/docs/stable/fsdp.html">FullyShardedDataParallel</a>。</li>
+<li>DeepSpeed、Megatron Core、JAX sharding 与目标通信库的固定版本官方文档；具体参数/支持矩阵的最高优先级来源。</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

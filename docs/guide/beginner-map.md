@@ -57,9 +57,9 @@ python projects/transformers-basics/train_byte_bpe.py
 
 ## 接下来怎样走
 
-- 想理解模型内部：按 Tokenization → Attention → Transformer → Generation 前进。
-- 想做应用：完成 Generation 后进入 RAG，再补评测、安全与权限。
-- 已有 ML 基础：用自检跳过已掌握内容，但仍完成一次最小运行和反例。
-- 想做训练或系统：先完成[基础路线](learning-paths.md#beginner)，再选择模型或系统工程路线。
+- 想理解模型内部：按 [Tokenization](../core/tokenization.md) → [Transformer](../core/transformer.md) → [生成与解码入门](../core/generation-basics.md) 前进；读完后应能解释输入 token 如何变成下一 token 概率。
+- 想做应用：完成[生成与解码入门](../core/generation-basics.md)后进入 [RAG](../applications/rag.md)，再补[评测](../quality/evaluation.md)和[安全与权限](../quality/safety.md)；不要跳过错误分析。
+- 已有 ML 基础：用上面的自检跳过已掌握内容，但仍完成一次最小运行和反例记录，确认自己能复现仓库里的证据格式。
+- 想做训练或系统：先完成[基础路线](learning-paths.md#beginner)，再选择[模型工程](learning-paths.md#model-engineering)或[系统工程](learning-paths.md#systems)路线。
 
 进入工程项目前，你至少应该能提交一份短记录：`问题 → 预测 → 命令 → 原始输出 → 反例 → 结论边界`。

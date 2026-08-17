@@ -1,0 +1,5450 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="从基础原理到生产实践的大语言模型中文学习手册">
+      
+      
+      
+        <link rel="canonical" href="https://nightlemon.github.io/about-llm/reference/accuracy/">
+      
+      
+        <link rel="prev" href="../resources/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>内容准确性与核验台账 - About LLM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@4.1.3/tex-mml-chtml.js" integrity="sha384-OrHfGTnIbkl0do3N76qW/uWr38o91N05sbSPuYBPLH+hG8X/dNSrjZf3AGjzrCwC" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js" integrity="sha384-T/0lMUdJpd2S1ZHtRiofG3htU3xPCrFVeAQ1UUE2TJwlEJSV5NUwn30kP28n238E" crossorigin="anonymous"></script>
+  <script defer src="../../javascripts/mermaid.js"></script>
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="deep-purple">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#_1" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../.." title="About LLM" class="md-header__button md-logo" aria-label="About LLM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            About LLM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              内容准确性与核验台账
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="切换到深色模式"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切换到深色模式" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="切换到浅色模式"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切换到浅色模式" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/NightLemon/about-llm" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    about-llm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  首页
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/how-to-use/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  使用指南
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../models/landscape/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  模型家族
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../foundations/math/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  基础
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../core/tokenization/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  核心原理
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../training/data/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  数据与训练
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../systems/inference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  推理与系统
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../applications/prompting/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  应用
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../quality/evaluation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  质量与责任
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../frontier/multimodal/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  前沿
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../papers/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  论文解读
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../practice/labs/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  实践
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../career/roadmap/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  求职
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../glossary/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  参考
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="About LLM" class="md-nav__button md-logo" aria-label="About LLM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    About LLM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/NightLemon/about-llm" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    about-llm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    使用指南
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    使用指南
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/how-to-use/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    如何使用
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/beginner-map/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    新手知识地图
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/learning-paths/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    学习路径
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/knowledge-map/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    完整知识地图
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/repo-map/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    仓库地图与实现契约
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    环境与硬件矩阵
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    模型家族
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    模型家族
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/landscape/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    模型谱系与选型
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/gpt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/llama/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Llama
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/qwen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Qwen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/deepseek/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeepSeek
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/claude/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/gemini/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gemini
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/cloud-api-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    云 API 契约
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    基础
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    基础
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../foundations/math/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数学基础
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../foundations/ml-dl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    机器学习与深度学习
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../foundations/nlp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NLP 与语言建模
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    核心原理
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    核心原理
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/tokenization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tokenization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/transformer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transformer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    生成与解码
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    生成与解码
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/generation-basics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    完整协议与工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/scaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    规模化规律
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/architectures-interpretability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    架构谱系与可解释性
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据与训练
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    数据与训练
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/synthetic-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    合成数据、蒸馏与反馈环
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/pretraining/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    预训练
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_4" id="__nav_6_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    微调与 PEFT
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    微调与 PEFT
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/finetuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/sft-data-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SFT 数据、模板与闭环
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/peft-qlora-engineering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA、QLoRA 与单卡工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_5" id="__nav_6_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    对齐与偏好优化
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    对齐与偏好优化
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/alignment-basics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/alignment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    方法、实验与证据
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/continual-learning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    持续学习与模型合并
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../training/jax-optax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX、Optax 与函数式训练
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理与系统
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    推理与系统
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_1" id="__nav_7_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    推理
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理基础（基础）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/inference-optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    算子、KV Cache 与量化优化（进阶）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/vllm-serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    vLLM 与单卡服务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/distributed-training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    高效与分布式训练
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    服务与可观测性
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/hardware-edge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    硬件与端侧部署
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    应用
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    应用
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/prompting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompt 工程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAG
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RAG
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-ingestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据摄取与索引生命周期
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-retrieval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    召回、混合检索与重排
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    上下文、引用与忠实度
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/rag-production/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    生产架构与运维
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agent-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    架构、规划与记忆
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agent-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    工具协议与故障恢复
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/agent-interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP、A2A 与互操作
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/code-conversation-llmops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    代码、对话与 LLMOps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../applications/product-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI 产品设计与人机协作
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    质量与责任
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    质量与责任
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    评测
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    评测
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览（基础）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/evaluation-methodology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    方法、统计与发布决策（进阶）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/agent-evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent 仿真与红队
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/safety/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安全、隐私与治理
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/reasoning-artifact-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Opaque Reasoning 工件与轨迹安全
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/governance-impact/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    法规与社会影响
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quality/governance-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    治理工件模板
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    前沿
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    前沿
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../frontier/multimodal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    多模态
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../frontier/reasoning-long-context-moe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    推理、长上下文与 MoE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../frontier/embodied-small-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    具身、计算机使用与小模型
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../papers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    论文解读
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11" id="__nav_11_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    论文解读
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../papers/2026-08/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026 年 8 月
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    实践
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    实践
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_1" id="__nav_12_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    实验与项目
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    实验与项目
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0a-sampling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0A 从 logits 到采样
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0b-generation-protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0B 生成、停止与流式协议
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0c-cloud-budget/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0C 云 API 预算与对账
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/labs/lab-0d-reasoning-artifact-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0D Opaque Reasoning 工件安全
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    工程项目
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    工程项目
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/project-index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    项目索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/rag-foundations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAG Foundations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/rag-framework-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAG Framework Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/safe-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safe Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/single-gpu-finetuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Single-GPU Finetuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/transformers-basics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transformers Basics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/jax-minigpt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX MiniGPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/cloud-api-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cloud API Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/inference-serving/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference Serving
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/evaluation-gate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation Gate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/projects/synthetic-data-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Synthetic Data Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../practice/production-checklist/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    生产检查表
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_13" id="__nav_13_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    求职
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    求职
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    岗位路线
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/interview-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    面试题与回答方法
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/system-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM 系统设计
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../career/resume-projects/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    简历项目与作品集
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    参考
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    参考
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    术语表
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../formulas/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    公式速查
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    常见问题
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    资料与论文
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    内容准确性与核验台账
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    内容准确性与核验台账
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        四类陈述与证据
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        核验边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        引用证据的五层边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        写作与实现规则
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        近期论文快照规则
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        官方核验台账
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        论文与历史协议案例
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        已有可执行证据
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        尚未由本仓库证明
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        维护流程
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        四类陈述与证据
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        核验边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        引用证据的五层边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        写作与实现规则
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        近期论文快照规则
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        官方核验台账
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        论文与历史协议案例
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        已有可执行证据
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        尚未由本仓库证明
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        维护流程
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="_1">内容准确性与核验台账<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h1>
+<p>本页定义教材中的事实如何分类、验证和维护。目标不是用“官方”二字替代证据，而是让读者知道每条结论在什么边界内成立、仓库实际验证了什么、哪些仍需目标环境实测。</p>
+<h2 id="_2">四类陈述与证据<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>典型内容</th>
+<th>首选证据</th>
+<th>必须写清的边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数学与算法</td>
+<td>attention 公式、复杂度、KV Cache 容量</td>
+<td>推导、可执行小例子、单元测试</td>
+<td>变量定义、单位、假设和省略项</td>
+</tr>
+<tr>
+<td>代码与 API</td>
+<td>请求字段、chat template、CLI 参数</td>
+<td>固定版本官方文档、schema、契约测试</td>
+<td>provider、API/runtime 版本、<code>checked_at</code></td>
+</tr>
+<tr>
+<td>产品事实</td>
+<td>模型能力、配额、价格、区域和数据政策</td>
+<td>对应产品的官方页面</td>
+<td>检查日期；不得把当前状态写成永久事实</td>
+</tr>
+<tr>
+<td>工程估算</td>
+<td>显存、吞吐、延迟和成本</td>
+<td>明确公式加目标环境基准</td>
+<td>硬件、dtype、batch、长度、并发、软件版本和误差来源</td>
+</tr>
+</tbody>
+</table>
+<p>论文能说明论文中的方法，不能自动证明某个当前闭源产品采用相同内部实现。官方文档能证明文档在检查时给出的接口承诺，也不等于本仓库已经在真实账号、网络、GPU 或付费端点上运行成功。</p>
+<h2 id="_3">核验边界<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<ul>
+<li>离线单元测试证明给定输入下的本地实现行为，不证明云端 API 当前可用。</li>
+<li>CPU smoke test 不证明 CUDA kernel、vLLM、bitsandbytes 或目标 GPU 的兼容性与峰值显存。</li>
+<li>一台机器上的 benchmark 只对记录的 workload 和版本有效，不是普适性能排名。</li>
+<li>JSON mode 只保证产生有效 JSON；OpenAI Structured Outputs 在受支持范围内约束 JSON Schema，但两者都不保证内容真实、业务规则正确或工具调用已获授权。</li>
+<li>schema、引用格式和安全分类器通过，只是系统质量证据的一部分，不能替代语义评测与权限控制。</li>
+<li>Live execution report 必须绑定当次日期与当前 runtime identity；固定离线 verifier 只接受对应的 reviewed artifact identity。依赖升级后的 live 通过不能自动升级旧录制证据，两类报告不可互换。</li>
+</ul>
+<h2 id="_4">引用证据的五层边界<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>
+<ol>
+<li><code>citation_syntax</code> 只检查可识别引用、supplied known ID 与段落覆盖；它的复合分数不是 groundedness。</li>
+<li>source identity/authorization 要绑定实际 tenant/principal/policy/corpus snapshot；case metadata 中的 <code>citation_sources</code> 只是 scorer 收到的授权来源声明，不能自证来源。</li>
+<li><code>about-llm.citation-evidence-span-metric.v1</code> 验证 strict JSON、source membership、零基/end-exclusive Python string offset 与 exact quote。固定 cases/answers 为 1,015/1,138 bytes，SHA-256 <code>ceb3ff9dc40ae973e07abbb0b5ba0eeb0a07876290a7dbe06021d0d48ff289e8</code> / <code>c61507ec49732a67167dc4bef0e57ee3a18c4359c9a91e7f607074959f712661</code>，五例分数 <code>[1,0,0,0,1]</code>。</li>
+<li>最后一例让无关 claim 精确引用 <code>Earth</code> 而仍通过，锁定“不推断 entailment”的实现边界。语义支持需独立 atomic-claim verdict、judge/人工来源、代表性校准集与误判率。</li>
+<li>source truth/currentness、答案完整性和 <code>publish/reject/abstain</code> 是更外层 policy；任何一层通过都不能借用为下一层结论。Fixture 的 <code>latency_seconds=0.0</code> 是非性能占位，不执行模型、ACL 服务或 judge。</li>
+</ol>
+<h2 id="_5">写作与实现规则<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
+<ol>
+<li>未公开的闭源模型参数量、层数、训练数据、路由和后训练配方保持未知，不从旧论文或同品牌模型外推。</li>
+<li>开放权重模型的架构结论绑定 checkpoint revision，以实际 <code>config</code>、tokenizer、chat template、generation config、model card 和许可为准。</li>
+<li>时间敏感 API 或产品事实记录 <code>checked_at</code>；稳定教材不维护“永久 latest”模型、价格或上下文窗口表。</li>
+<li>数字示例写明单位、公式和排除项。容量估算与实测峰值分开，decimal GB 与 binary GiB 不混用。</li>
+<li>性能结论绑定硬件、dtype/量化、输入输出长度分布、batch/并发、runtime/kernel 版本和采样参数。</li>
+<li>OpenAI-compatible 只表示部分请求形状兼容；provider 的扩展字段、错误、usage、流式事件和工具语义分别验证。</li>
+<li>工具调用是模型提出的候选动作，不是授权。参数校验、身份、权限、幂等和审计由外部 runtime 承担。</li>
+</ol>
+<h2 id="_6">近期论文快照规则<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<p><a href="../../papers/">近期论文解读</a>与稳定教材分开维护。首期固定 <code>snapshot_at=2026-08-12</code>，不静默改写当时的入选依据，并遵守以下边界：</p>
+<ol>
+<li><strong>榜单快照</strong>只说明论文在固定 Hugging Face 周榜或月榜中出现，热度不等于质量、正确性或长期影响；页面互动数字若无法明确归属，不进入教材。</li>
+<li><strong>预印本</strong>不等于已经同行评审；会议接收状态只有在论文页面明确注明时才记录。</li>
+<li><strong>作者报告</strong>不等于独立复现。模型团队 technical report、自建 benchmark、项目 demo 和作者发布 artifact 都保留证据来源标签。</li>
+<li><strong>编辑精选</strong>按课程相关性加入，不冒充榜单入选，也不以机构、模型规模或标题热度替代实验设计。</li>
+<li><strong>版本冲突</strong>保留冲突口径并降级结论。摘要、正文、项目页或修订版本数字不一致时，不选择更漂亮的数字作为主结论。</li>
+<li><strong>不可外推</strong>必须单列：模型、harness、工具权限、数据、硬件、精度、成本、版本和 benchmark 构造至少随结果一起记录。</li>
+</ol>
+<p>本期“为何入选”由前两项榜单来源支持，论文事实由各自 arXiv 页面支持：</p>
+<table>
+<thead>
+<tr>
+<th>用途</th>
+<th>固定来源</th>
+<th>核对边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2026-W32 周榜</td>
+<td><a href="https://huggingface.co/papers/week/2026-W32">Hugging Face Daily Papers</a></td>
+<td>只证明 2026-08-12 快照中展示了 RST、LongHorizon-Harness 与 SwanTale</td>
+</tr>
+<tr>
+<td>2026-07 月榜</td>
+<td><a href="https://huggingface.co/papers/month/2026-07">Hugging Face Daily Papers</a></td>
+<td>只证明快照中展示了 Kimi K3、Orca 与 ABot-World-0</td>
+</tr>
+<tr>
+<td>Kimi K3</td>
+<td><a href="https://arxiv.org/abs/2607.24653">arXiv:2607.24653v2</a></td>
+<td>模型团队 technical report；榜单或作者评测不等于独立复现</td>
+</tr>
+<tr>
+<td>Recursive Synthesis</td>
+<td><a href="https://arxiv.org/abs/2608.05466">arXiv:2608.05466v2</a></td>
+<td>摘要与正文冲突数字不作为主结论；15 轮无 ceiling 不证明可无限递归</td>
+</tr>
+<tr>
+<td>LongHorizon-Harness</td>
+<td><a href="https://arxiv.org/abs/2608.01964">arXiv:2608.01964v1</a></td>
+<td>OSWorld subset 冲突数字不引用；harness 增益绑定模型、权限、预算和 benchmark</td>
+</tr>
+<tr>
+<td>SwanTale</td>
+<td><a href="https://arxiv.org/abs/2608.02023">arXiv:2608.02023v2</a></td>
+<td>使用 2026-08-04 修订版；technical report 的内部数据、自动 judge 与 demo 不等于盲测</td>
+</tr>
+<tr>
+<td>Orca</td>
+<td><a href="https://arxiv.org/abs/2606.30534">arXiv:2606.30534v3</a></td>
+<td>125K 小时/160M 事件是 inventory，不能冒充全部实际训练消费量</td>
+</tr>
+<tr>
+<td>ABot-World-0</td>
+<td><a href="https://arxiv.org/abs/2607.19191">arXiv:2607.19191v1</a></td>
+<td>16 FPS 属于优化低比特上界；小时/天级 rollout 主要是定性证据</td>
+</tr>
+<tr>
+<td>Cracks in the Foundation</td>
+<td><a href="https://arxiv.org/abs/2608.10296">arXiv:2608.10296v1</a></td>
+<td>编辑精选；页面注明 COLM 2026 接收，47% 只限受控 7B 设计空间</td>
+</tr>
+<tr>
+<td>Stealing Reasoning Traces</td>
+<td><a href="https://arxiv.org/abs/2608.09867">arXiv:2608.09867v1</a></td>
+<td>编辑精选；历史实验已披露并缓解，不声称当前 API 仍可复现</td>
+</tr>
+</tbody>
+</table>
+<p>论文后续修订若改变关键实验、限制或接收状态，先更新机器来源的 <code>checked_at</code> 和快照勘误，再决定是否把稳定结论回写教材。新榜单 URL 或论文 URL 必须同时进入本页、<a href="../official-sources.json">机器可读来源登记</a>与内容准确性检查。</p>
+<h2 id="_7">官方核验台账<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h2>
+<p>下列页面按表内日期人工核对。机器可读日期与范围保存在 <a href="../official-sources.json">official-sources.json</a>；CI 在任一来源超过 90 天未复核时失败。链接是事实来源，不是运行证明；采用时仍应固定实际依赖/API 版本。</p>
+<table>
+<thead>
+<tr>
+<th>主题</th>
+<th>已核对结论</th>
+<th>官方来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OpenAI model catalog</td>
+<td>2026-08-14 的目录列出 GPT-5.6 Sol/Terra/Luna 产品档位，并把当前模型使用入口指向 Responses API/SDK；这是带日期的产品事实，不是内部架构、账号可用性或永久选型保证</td>
+<td><a href="https://developers.openai.com/api/docs/models">Model catalog</a>；核对日期 2026-08-14</td>
+</tr>
+<tr>
+<td>OpenAI Responses object</td>
+<td>Create reference 定义 Responses 请求与 response/output 对象；不能把多 item typed output 无损压成 Chat Completions 的单个 choices text</td>
+<td><a href="https://developers.openai.com/api/reference/resources/responses/methods/create">Create a response</a>；核对日期 2026-08-14</td>
+</tr>
+<tr>
+<td>OpenAI Responses streaming</td>
+<td>Streaming guide 要求按 typed semantic events 处理流，而不是假定网络 chunk 等于 text token 或完整事件</td>
+<td><a href="https://developers.openai.com/api/docs/guides/streaming-responses">Streaming API responses</a>；核对日期 2026-08-14</td>
+</tr>
+<tr>
+<td>OpenAI Responses events</td>
+<td>Event reference 是 response/item/content/text/refusal/function arguments/terminal 等事件类型的当前来源；本仓库只审核其中一个显式子集</td>
+<td><a href="https://developers.openai.com/api/reference/resources/responses/streaming-events">Streaming events</a>；核对日期 2026-08-14</td>
+</tr>
+<tr>
+<td>OpenAI Structured Outputs</td>
+<td>支持的 JSON Schema 子集内约束结构；JSON mode 仅保证有效 JSON；refusal 与 incomplete 必须独立处理</td>
+<td><a href="https://developers.openai.com/api/docs/guides/structured-outputs">Structured Outputs</a>；核对日期 2026-08-12</td>
+</tr>
+<tr>
+<td>Anthropic Messages</td>
+<td>普通对话用顶层 <code>system</code> 与客户端提供的无状态历史；content blocks、input/output usage 与 stop reason 属于 Messages 契约</td>
+<td><a href="https://platform.claude.com/docs/en/api/messages">Messages API</a>；核对日期 2026-08-12</td>
+</tr>
+<tr>
+<td>Gemini Interactions</td>
+<td>2026-08-15 时已 GA 且推荐新项目使用；Interaction resource、status、steps、后台执行、存储与 API version 必须独立建模。流式生命周期为 interaction→step→typed terminal→done，不能借用 <code>generateContent</code> 的 finishReason+EOF</td>
+<td><a href="https://ai.google.dev/gemini-api/docs/interactions-overview">Overview</a>、<a href="https://ai.google.dev/api/interactions-api">API reference</a>、<a href="https://ai.google.dev/gemini-api/docs/streaming">Streaming</a>；核对日期 2026-08-15</td>
+</tr>
+<tr>
+<td>Gemini GenerateContent</td>
+<td><code>contents</code>/<code>parts</code>、<code>systemInstruction</code>、candidates、prompt feedback、finish reason 与 usage 属于该接口；仍受支持但已标为 legacy</td>
+<td><a href="https://ai.google.dev/api/generate-content">GenerateContent reference</a>；核对日期 2026-08-15</td>
+</tr>
+<tr>
+<td>Gemini 文本生成</td>
+<td>当前文本生成入口推荐 Interactions API；<code>output_text</code> 是有损便捷视图，无状态续聊需保存必要的 model-generated steps/signatures；不能把它与本仓库 <code>generateContent</code> adapter 的字段或事件混写</td>
+<td><a href="https://ai.google.dev/gemini-api/docs/text-generation">Gemini text generation</a>；核对日期 2026-08-15</td>
+</tr>
+<tr>
+<td>MCP</td>
+<td>2025-11-25 stdio 要求 client 启动 server 子进程、逐行 UTF-8 JSON-RPC 且 stdout 只含协议消息；Streamable HTTP 使用单一 POST/GET endpoint，断线不代表取消；initialize/initialized 后才进入 operation，tools 可声明 input/output schema；发现与 schema-valid 都不等于业务授权</td>
+<td><a href="https://modelcontextprotocol.io/docs/getting-started/intro">Introduction</a>、<a href="https://modelcontextprotocol.io/specification/">Specification</a>、<a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/transports">Transports</a>、<a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle">Lifecycle</a>、<a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation">Cancellation</a>、<a href="https://modelcontextprotocol.io/specification/2025-11-25/server/tools">Tools</a>；固定版本细节核对日期 2026-08-13</td>
+</tr>
+<tr>
+<td>A2A</td>
+<td>最新协议发布版为 1.0.0；JSON-RPC binding 使用 HTTP(S)、<code>application/json</code>、PascalCase 方法与 <code>A2A-Version</code>；0.3 <code>kind</code> fixture 不可混入 1.0；远端 completed 不能替代本地 verifier</td>
+<td><a href="https://a2a-protocol.org/latest/specification/">A2A Specification</a>、<a href="https://a2a-protocol.org/v1.0.0/spec/a2a.json">v1.0.0 JSON Schema</a>、<a href="https://github.com/a2aproject/a2a-python">Python SDK</a>；核对日期 2026-08-13</td>
+</tr>
+<tr>
+<td>Meta Llama 3.2 model card</td>
+<td>固定 commit 的 text-only 表格把 1B/3B、128k、GQA、shared embeddings、pretraining tokens 和 cutoff 作为厂商报告；这些不是独立实测或 checkpoint config</td>
+<td><a href="https://raw.githubusercontent.com/meta-llama/llama-models/0e0b8c519242d5833d8c11bffc1232b77ad7f301/models/llama3_2/MODEL_CARD.md">immutable model card</a>；raw SHA-256 <code>cdc06052…eb78</code>；核对日期 2026-08-13</td>
+</tr>
+<tr>
+<td>Qwen2.5-0.5B-Instruct config</td>
+<td>固定 config 显式给出 24 层、14 query heads、2 KV heads、hidden 896 与 max-position 32768；由标准字段可推 head dim 64 和理想 K/V payload，不能推有效上下文或权重行为</td>
+<td><a href="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/config.json">immutable config</a>；raw SHA-256 <code>18e18afc…f45</code>；核对日期 2026-08-13</td>
+</tr>
+<tr>
+<td>Qwen2.5-0.5B-Instruct 权重执行</td>
+<td>固定 <code>model.safetensors</code> 及其余 6 个执行文件的长度/hash，加载前重哈希实际 bytes，并在已记录环境执行一个 CPU FP32 eager prefill/cache/full/generate case；这不是来源签名、质量/上下文/许可/GPU/性能证据</td>
+<td><a href="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/model.safetensors">immutable model.safetensors</a>；988,097,824 bytes；raw SHA-256 <code>fdf756fa…b7fe</code>；核对日期 2026-08-13</td>
+</tr>
+<tr>
+<td>DeepSeek-V3 config</td>
+<td>固定 config 同时含 KV-head、MLA latent/dimension 与 routed/shared-expert 字段；本仓库据此拒绝标准 dense K/V 公式，不推断运行时 MLA layout</td>
+<td><a href="https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/e815299b0bcbac849fa540c768ef21845365c9eb/config.json">immutable config</a>；raw SHA-256 <code>cbf0b95d…35d9</code>；核对日期 2026-08-13</td>
+</tr>
+<tr>
+<td>TRL <code>SFTTrainer</code></td>
+<td><code>assistant_only_loss</code> 仅用于 conversational 数据并依赖 generation mask；prompt-completion 的 completion-only 默认值不同，仍需检查实际 mask/labels</td>
+<td><a href="https://huggingface.co/docs/trl/en/sft_trainer">SFT Trainer</a>；核对日期 2026-08-12</td>
+</tr>
+<tr>
+<td>vLLM CLI</td>
+<td><code>vllm serve</code> 提供 OpenAI-compatible server；参数和支持矩阵应按安装版本与 stable 文档核对</td>
+<td><a href="https://docs.vllm.ai/en/stable/cli/">vLLM stable CLI</a></td>
+</tr>
+<tr>
+<td>Transformers chat template</td>
+<td>模板序列化 role/control tokens；训练与生成格式、generation prompt 和 assistant mask 要按 tokenizer 模板验证</td>
+<td><a href="https://huggingface.co/docs/transformers/en/chat_templating">Chat templates</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="_8">论文与历史协议案例<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>主题</th>
+<th>论文支持的陈述</th>
+<th>时效与边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Opaque reasoning artifact 重放</td>
+<td><a href="https://arxiv.org/abs/2608.09867">Stealing Reasoning Traces from Proprietary LLM APIs</a> 于 2026-08-10 提交，报告 2026 年 7 月初测试的特定 Anthropic/OpenAI/Google reasoning API 中存在跨会话、跨用户和跨模型兼容，并分析公开 Agent trajectory 的隐私与注入风险</td>
+<td>作者在发布前完成披露；reproducibility statement 明确称截至 2026 年 8 月，供应商缓解后原攻击方法已不能复现。内部密码实现未公开，提取结果没有 ground-truth plaintext reasoning，公开轨迹扫描也非总体审计。本仓库只将其作为历史架构案例，不声称当前端点仍有漏洞</td>
+</tr>
+</tbody>
+</table>
+<p>论文是其研究设计和结果的一手来源，不是当前产品契约。供应商是否返回、保存、绑定或接受某种 reasoning block，仍需按具体 provider、endpoint、API/model version 和检查日期核对官方文档并在授权账号下验证；字段名 <code>signature</code>、base64 外观或 OpenAI-compatible shape 不能证明密码学语义。</p>
+<h2 id="_9">已有可执行证据<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Masked-token gradient accumulation oracle 用整数 probability weights 与 <code>Fraction</code> 精确计算 categorical probability、<code>softmax - one_hot</code> token-logit gradient 和 micro-batch 权重；ignored token 不进入 numerator/denominator。固定两个 micro-batch 的有效 token 数为 <code>[1,3]</code>、ignored positions 为 3：正确 token mean 以 <code>1/4,3/4</code> 加权，class-aggregate gradient 为 <code>(+23/40,-23/40)</code>；等权 micro-batch mean 以 <code>1/2,1/2</code> 加权，得到 <code>(+7/20,-7/20)</code>，naive−full 为 <code>(-9/40,+9/40)</code>。项目 toy 另真实执行 PyTorch 2.13.0+cpu Float64 <code>cross_entropy.backward()</code>：full batch 与逐 micro-batch sum 后除全局有效 token count 的梯度 <code>torch.equal</code>，最大绝对误差 0；naive 路径不同，ignored rows 梯度为 0。18 个定向测试覆盖精确值、loss、输入 gate、资源上限、JSON 投影与项目 CLI。该证据只覆盖 authored logits/targets/mask 和单进程 reduction；class aggregation 不是目标模型参数梯度。没有 optimizer/parameter update、dropout/BatchNorm、AMP、DDP/FSDP/ZeRO collective、<code>no_sync</code>、CUDA、目标 tokenizer/model/dataset、性能或质量评测，不能证明任意 Trainer/分布式配置、收敛或生产训练正确。</li>
+<li>Default-DDP token-mean control 在上述单进程 oracle 之外，固定两个 rank 的有效 token count <code>[1,3]</code>、全局 <code>N=4</code> 与同一个两类 shared-bias 参数；精确 <code>Fraction</code> oracle 给出 rank-local sum gradients <code>(-1/10,+1/10)</code>、<code>(+12/5,-12/5)</code>。项目脚本真实启动两个 OS processes，以 <code>spawn</code>、temporary FileStore、PyTorch 2.13.0+cpu Float64/Gloo 初始化 process group，真实 <code>all_reduce</code> count 并执行 <code>DistributedDataParallel</code> backward。默认 gradient mean 下，local sum 乘 <code>D/N=1/2</code> 得到 <code>(+23/40,-23/40)</code>，相对单进程 full-batch 最大误差约 <code>1.11e-16</code>；漏 world size 的 <code>1/N=1/4</code> 得到 <code>(+23/80,-23/80)</code>，相对 full/2 误差约 <code>5.55e-17</code>；rank-local mean 得到 <code>(+7/20,-7/20)</code>，与 full 最大差 <code>0.225</code>。两个 rank 都观察到 global count 4 与完全相同的同步梯度；7 个定向测试覆盖精确三路径、输入 gate、JSON 与真实 subprocess control。这只证明当前同机 CPU/Gloo/default reducer 和 authored fixture；没有 optimizer/parameter update/clipping、gradient accumulation + <code>no_sync</code>、AMP/scaler、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点/远端、目标 LLM/tokenizer/dataset、传输安全、性能或质量证据，也不证明跨硬件/world-size bitwise 等价。</li>
+<li>DDP accumulation/<code>no_sync</code>/update control 固定两个 rank、每 rank 两个 micro-batch、valid counts <code>[[1,2],[3,1]]</code>、global <code>N=7</code> 和同一个两类 shared-bias 参数。新增 <code>Fraction</code> oracle 得到四个 local loss-sum gradients、rank sums <code>(+3/2,-3/2)</code>/<code>(+23/10,-23/10)</code>、正确 scale <code>D/N=2/7</code>、one-final-sync 与 sync-every-batch 同为 full pre-clip <code>(+19/35,-19/35)</code>，以及未裁剪 plain-SGD <code>lr=7/20</code> delta <code>(-19/100,+19/100)</code>。真实 PyTorch 2.13.0+cpu Float64/Gloo 运行包含三条独立路径：未注册 hook 的 built-in DDP 正确 <code>no_sync</code>；注册官方 <code>default_hooks.allreduce_hook</code> 的可计数正确 scope；forward 在 context 外、只包 backward 的可计数负对照。后两者分别观察 1 与 2 次两元素 bucket hook；三条路径的 pre-clip gradient、<code>max_grad_norm=0.5</code> 后 gradient 与 plain SGD <code>lr=0.35</code> update 均和单进程 full batch 完全相同。12 个定向测试覆盖精确嵌套值、输入/resource gate、JSON 与真实 subprocess control。负对照只证明 backward-only scope 没省通信，不证明本 fixture 数值错误；built-in reducer collective count 未直接插桩。证据仅含一个参数/单 bucket，无 dropout/BatchNorm/RNG、AMP/scaler/overflow、AdamW/optimizer state、checkpoint resume、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点、目标 LLM/tokenizer/dataset/Trainer、通信字节、性能、质量、传输安全或跨硬件 bitwise 等价证据。</li>
+<li>Binary self-consistency oracle 固定奇数 N 与两个 canonical correctness labels；每题先从 finite authored distribution 抽一次 latent regime，候选在给定 regime 后 conditional i.i.d. Bernoulli。实现用精确 <code>Fraction</code> 计算各 regime 的 binomial upper tail、边缘单样本成功率、majority gain，以及共享 regime 引入的 pairwise covariance/correlation，不枚举 <code>2^N</code> vote sequences。Independent fixture 只有 <span class="arithmatex">\(p=3/5\)</span>；correlated fixture 等权混合 easy <span class="arithmatex">\(p=9/10\)</span> 与 hard <span class="arithmatex">\(p=3/10\)</span>，两者边缘单样本成功率同为 <code>3/5</code>，后者 covariance=<code>9/100</code>、correlation=<code>3/8</code>。N=1/3/5/11 的 majority success 分别为 independent <code>3/5, 81/125, 2133/3125, 36791901/48828125</code>，correlated <code>3/5, 297/500, 28863/50000, 13474113561/25000000000</code>；测试另用小 N 显式枚举对照闭式结果。该控制不处理多个错误答案的 plurality、开放文本 canonicalization、temperature/decoding 引起的相关结构，也没有执行 model、tokenizer、dataset、judge、GPU 或 provider；不证明真实 self-consistency 必然改善或退化、目标质量、latency 或 cost。</li>
+<li>Verifier-guided best-of-N oracle 在三个 authored outcome class 上固定 sampling weight <code>5/4/1</code>、deterministic verifier score <code>20/80/99</code>、唯一 target-success class 与最大 <code>(verifier_score, candidate_id)</code> tie-break。实现按 score/id 从弱到强排序，用精确 <code>Fraction</code> 计算 <code>P(select i)=F_i^N-F_{i-1}^N</code> 与 <code>oracle@N=1-(1-p_success)^N</code>，不枚举 candidate sequences；单元测试另在小规模显式枚举全部序列与闭式结果对照。N=1/4/16 的 oracle@N 精确为 <code>2/5</code>、<code>544/625</code>、<code>152544843904/152587890625</code>，selected@N 为 <code>2/5</code>、<code>371/625</code>、<code>28951056265019/156250000000000</code>，expected verifier score 为 <code>519/10</code>、<code>827841/10000</code>、<code>954783461138377521/10000000000000000</code>。因此 oracle 与 proxy 严格上升，但 selected success 先升后降；N=16 的 <code>3^16=43,046,721</code> 只是 logical candidate sequences。该控制只证明固定 finite distribution、i.i.d.、deterministic score、authored target labels 和 tie-break 下的数学结果；logical N model samples/verifier scores 不是 wall-clock、费用或并行行为。它没有执行 model、tokenizer、PRM、GPU、provider 或真实 reward pipeline，不证明 verifier calibration、语义正确性、目标模型质量、latency、cost 或生产中的 optimizer's curse 强度。</li>
+<li>Target Qwen activation-patching control 复用固定 checkpoint manifest 与 7-file/999,586,347-byte selected snapshot；protocol <code>sha256:e34b2bfe…d6702</code> 固定 26-token chat pair，仅把 position 19 的 <code>France</code> 换为 <code>Germany</code>，并在 position 25 计算单 token <code>Paris</code>（59604）减 <code>Berlin</code>（94409）的 logit difference。token boundary 在 templated baseline 后、patch condition 前校准，因此是 authored fixed protocol，不是外部可信时间戳 preregistration。2026-08-13 CPU FP32 eager 录制结果中，clean/corrupt top-1 分别是 <code>Paris</code>/<code>Berlin</code>，metric 为 9.210310935974121/-7.7003021240234375，gap 16.91061305999756；按 first/lower-middle/final 先验规则选择 layer 0/11/23，source-position recovery 为 1.0000241370674128/0.9922442752431005/0。完整 layer-0 prefix 与 final-layer readout 两个构造性正对照均为 1；future-position 与 final-layer source 对过去/readout 的结构负对照为 0，追加 future token 的历史 metric 漂移绝对值不超过 <code>5.7220458984375e-06 ≤ 1e-5</code>，控制后 hook count=0。报告 <code>sha256:3f8410f5…ebb18c</code> 由 strict verifier 绑定 protocol/checkpoint/source/result/scope；8 个定向测试覆盖真实 tiny hook、结构控制、token drift、未裁剪 recovery、报告与攻击者协同 rehash 后的 result/scope 篡改。它只证明单事实、单模板、batch-1、整条 896-d post-layer residual 干预；高 recovery 不定位 head/MLP/feature 或事实存储层，final source=0 是 hook 后无跨位置混合的结构结果。离线 self-hash 不认证执行者/发布者或重放 forward，也无 random source、多样本/语言、component/path、SAE、CUDA/vLLM、性能、总体事实性或生产安全证据。</li>
+<li>NumPy correctness oracle 覆盖稳定 softmax、past-aware causal mask、fully-masked-row 拒绝、RMSNorm、RoPE、GQA 与 cache/full causal 等价；新增 blockwise online-softmax 以 float64 running max/normalizer/value accumulator 支持广播 leading dimensions、causal prefill、带 past key 的单 token decode 与任意 boolean mask。多种 block size、稀疏 mask 和极大 logits 均在容差内对齐会物化完整 score/probability 的 dense reference；固定 5×7、block-size 3 demo 报告 3 blocks、最大 logical score tile 15 elements、full score 35 elements，最大绝对误差 <code>2.220446049250313e-16</code>。全遮挡、非布尔 mask、shape/leading broadcast、非浮点/非有限输入和非正 block size 均 fail closed。Logical tile 计数不包含 Q/K/V、输出、NumPy temporary 或 allocator，不是 RSS、显存、HBM traffic 或 workspace 实测；dense 比较路径本身物化完整矩阵。PyTorch/JAX tiny GPT 分别覆盖模型级因果性、前向/训练等路径；新增 parity 只对齐显式共同契约，不声称默认 RMSNorm/LayerNorm 或 NumPy 完整模型等价，也没有执行 FlashAttention/CUDA/vLLM backend 或提供目标 GPU kernel 精度、性能证据。</li>
+<li>Decoder config inspector 对 strict local JSON object 做 canonical semantic fingerprint，报告显式 core/MoE/MLA marker，并只在 standard attention 字段完整、自洽且没有已知 MLA marker 时计算理想 dense K/V payload。Authored GQA fixture 在 32 层、8 KV heads、head dim 128、4096 tokens、batch 1、2-byte element 下精确为 536,870,912 bytes；authored MoE-GQA fixture 在 24 层、4 KV heads、head dim 128、同 token、batch 2 下为 402,653,184 bytes；authored MLA/MoE fixture 必须拒绝标准估算。测试另覆盖 MHA/MQA 分类、duplicate/nonfinite/non-object/非法 UTF-8 JSON、bool/负数/不整除/缺字段、nested snapshot、standard/MLA CLI round trip 与 Base/Instruct tokenizer mock。真实 checkpoint 脚本检查的是 <code>AutoConfig.to_dict()</code> normalized snapshot，可能含库默认值/metadata，其 fingerprint 不是 raw <code>config.json</code> byte hash。三个 fixture 不属于 Llama/Qwen/DeepSeek；marker 列表并不完备，fingerprint/unkeyed hash 与 resolved metadata 不认证来源或权重，也不证明参数量、有效上下文、实际 cache layout、显存、质量、许可或 runtime 支持。</li>
+<li>Model release evidence verifier 把 authored fixture 与发布证据拆开：Meta Llama 3.2 text-only 记录固定官方 model card commit <code>0e0b8c5…7f301</code>、25,416-byte SHA-256 与六段 exact fragments，所有 1B/3B/128k/GQA/shared-embedding/9T/cutoff 字段均标为 vendor-reported；Qwen2.5-0.5B-Instruct 固定 revision <code>7ae5576…9a775</code> 的 659-byte raw config hash 与完整 semantic snapshot，显式 24 层、14/2 query/KV heads、hidden 896 推得 head dim 64、group 7，32,768-token/batch-1/2-byte 理想 K/V payload 为 402,653,184 bytes；DeepSeek-V3 固定 revision <code>e815299…c9eb</code> 的 1,660-byte raw config hash，确认 MLA+MoE markers 后拒绝标准 K/V 公式。13 个测试覆盖 manifest/snapshot/contract/scenario、上游 byte+JSON+fragment、tamper、path traversal、unknown/duplicate JSON、untrusted URL 与 CLI。默认报告完全离线且 <code>upstream_verified=false</code>；联网 <code>--verify-upstream</code> 于 2026-08-13 得到 projection fingerprint <code>sha256:6fffd665…587b</code>。该控制不下载/运行权重、tokenizer 或 remote code，不证明 config-weight 匹配、发布者签名、有效上下文、参数量、质量、许可、runtime/GPU、显存峰值、性能或生产安全；Llama model-card claim 也不是 config-level deduction 或独立测量。</li>
+<li>Transformers target-checkpoint control 单独固定 Qwen2.5-0.5B-Instruct revision <code>7ae5576…9a775</code> 的 7 个执行文件（999,586,347 bytes）并在加载前逐文件重哈希；其中 <code>model.safetensors</code> 为 988,097,824 bytes、SHA-256 <code>fdf756fa…b7fe</code>。2026-08-13 录制环境用 <code>trust_remote_code=False</code> 加载 <code>Qwen2ForCausalLM</code>，冻结 494,032,768 个 FP32 参数（1,976,131,072-byte 参数存储），真实执行 31-token chat-template 输入、<code>[1,31,151936]</code> prefill logits、cached 第二步、full recompute 与 greedy <code>generate()</code>；continuation 为 <code>[17,151645]</code>/<code>2&lt;|im_end|&gt;</code>，manual 两步 argmax 与 generate 一致，cached/full max-abs error <code>3.719329833984375e-05 ≤ 1e-4</code>。报告 self-fingerprint 为 <code>sha256:56528a3e…dba62</code>；v1 只接受恰好两 token，source/artifact/runtime/model/tokenizer/execution/scope 均为 closed schema，并检查文件账本、冻结、FP32 storage、shape、EOS 与固定误差门槛。22 个定向测试包含攻击者协同重算 self-hash 后的嵌套漂移负例。它只证明选定路径在该 CPU/FP32/eager/库版本/单 prompt 下的观察；无密钥 hash 不认证发布者，verify 后 loader 再按路径打开也未消除 TOCTOU。它不证明其他仓库文件、训练、总体/中文质量、32k 有效上下文、许可、CUDA/vLLM、峰值内存、性能或生产安全。</li>
+<li>Structured evaluation metric control 固定 1,474-byte cases <code>sha256:e29a1b1…259a2</code> 与 432-byte answers <code>sha256:e2a4007f…b1f4</code>，用五条 authored case 同时执行 literal、normalized、token F1、<code>about-llm.json-schema-metric.v2</code> 与 <code>about-llm.json-value-exact.v1</code>。Object key order/whitespace case 得 <code>0/0/1/1/1</code>；wrong value 的 schema/value 为 <code>1/0</code>；duplicate object key 与 <code>NaN</code> 的 strict schema/value 均为 0；reversed array 的 F1/schema/value 为 <code>1/1/0</code>。Schema v2 拒绝 duplicate object key、<code>NaN/Infinity</code>、<code>$id</code> 和 external <code>$ref/$dynamicRef</code>，允许 local fragment ref；invalid schema 是 case error。Value v1 忽略 object key order/JSON whitespace，保留 array order、scalar type 与 parser integer/float distinction；invalid expected 是 case error，invalid output 得 0。测试覆盖 strict parse、local/nonlocal ref、invalid schema、canonical equality 与 CLI metric revision。当前 <code>format</code> 仍是 annotation，不 coercion/default；两指标互不隐式调用，也不验证多 gold、单位、tenant/资源、实时状态、权限或副作用。所有 answers 的 <code>latency_seconds=0.0</code> 是非性能占位；fixture 没有模型/provider/网络/代表性抽样，不证明结构化输出总体质量或生产安全。</li>
+<li>Target Qwen behavior-evaluation control 复用固定 checkpoint manifest 与 7-file/999,586,347-byte selected snapshot，在加载前逐文件重哈希，并于 2026-08-15 以 CPU FP32/eager、batch 1、greedy、<code>max_new_tokens=12</code> 对 7 条 authored case 真实执行七次 <code>GenerationMixin.generate()</code>。Suite <code>sha256:27ada9b1b16cebca8dd9135a5b875de11f412fc9a0f10c6acc462ff76b316201</code> 与 report <code>sha256:dd30a278cbc076c973c0b0babc9e752b1063d8bfb114c852b34ea42b2cd85c43</code> 绑定 prompt/continuation token identity、raw output、EOS/cap、metric revision、slice aggregate 与 scope；中文算术/北京/Paris/空证据拒答通过，英文算术输出 <code>112</code>，大小写复制目标 <code>LLM-2026</code> 输出 <code>llm-2026</code>，JSON 目标 <code>{"answer":42}</code> 输出 <code>{"answer": 42}</code>。Literal decoded-string exact、NFKC+casefold+whitespace normalized exact、regex token F1 分别为 <code>4/7</code>、<code>5/7</code>、<code>6/7</code>；后两例精确展示 normalization 与 tokenization 会掩盖大小写或结构差异。通用 Evaluation Gate 现以 opt-in <code>literal_exact_match</code>/<code>about-llm.literal-exact-match.v1</code> 复用同一函数；默认仍为 normalized exact + token F1，避免静默改变历史 manifest。10 个相关测试覆盖 closed suite/checkpoint binding、tiny loaded generate、duplicate key/case、reviewed report、tamper、协同 rehash、无权重 CLI verify、literal/normalized 反例与 CLI revision。Suite 未外部预注册、未独立抽样或留出、非代表性且无统计功效；没有 judge、人评、不确定性、系统比较、release gate 或 latency/performance benchmark。它不证明总体中英文/数学/事实/指令/结构化能力、质量、泛化、校准、有效上下文、GPU/CUDA/vLLM、工具/RAG/训练、许可、来源认证、生产安全，也未消除 verify→loader reopen TOCTOU。</li>
+<li>Target Qwen selected-weight packed INT4 control 复用同一固定 revision、manifest 与 7-file/999,586,347-byte selected snapshot，并在加载前逐文件重哈希。2026-08-15 CPU FP32 eager 录制只选择第一层 bias-free <code>[896,896]</code> <code>model.layers.0.self_attn.o_proj.weight</code>：802,816 个参数，占 494,032,768 个全模型参数的 0.1625%；row-group 128、FP32 absmax scale、4-bit code range <code>[-7,7]</code> 得到 401,408-byte packed codes、25,088-byte scales 和 427,328-byte strict bundle。相对该矩阵 3,211,264-byte FP32 storage 的 serialized ratio 为 <code>7.514752134192002×</code>，artifact <code>sha256:006cc9a2…0bf7</code> 可 strict reload，且 tamper 在 decode 前拒绝。真实 captured activation 的 selected output relative-L2 为 <code>0.07000153078579582</code>；仅以反量化 FP32 值替换该矩阵后执行一次整模型 forward，末位 logits relative-L2/max-abs 为 <code>0.08513807180570929</code>/<code>1.6255179643630981</code>。argmax 恰好 <code>17→17</code> 只是单提示观察，不是无损或质量证据。报告 <code>sha256:df9ee045…f5cb</code>；8 个定向测试覆盖 tiny 真执行、状态恢复、strict reload、tamper、closed verifier、协同重哈希后的 scope/identity/arithmetic 漂移与 CLI。该 control 不是完整 low-bit checkpoint/runtime，不执行 fused low-bit kernel、NF4/GPTQ/AWQ、calibration、generation、GPU/CUDA/vLLM，也不证明整模型 storage/resident/peak memory、速度、代表性质量、有效上下文、许可、来源认证或生产安全。</li>
+<li>Target-service control 复用上述固定 selected snapshot，Uvicorn 0.52.1 重录的 service manifest <code>sha256:cfb9b540…8fb4ea</code> 另绑定 prompt、精确 completion IDs/text hash、usage/finish 与 Python/Torch/Transformers/HTTPX/Starlette/Uvicorn runtime。真实子进程只监听 IPv4 loopback，以父进程随机 Bearer 执行 models、401、unknown-field 422、wrong-model 404，以及一次 non-stream 和一次 SSE <code>/v1/chat/completions</code>；两次 <code>GenerationMixin.generate()</code> 均观察 31 prompt tokens、<code>[17,151645]</code>、<code>stop</code>，且响应投影一致。7-file/999,586,347-byte load audit 与重录 report <code>sha256:63e566ca…617ddb</code> 可用 closed-schema verifier 离线复核，公开 artifact 不含 token、raw request/response 或 completion 原文。它是 Transformers CPU FP32 eager 单-worker reference，不是 vLLM/OpenAI 全兼容服务；SSE 在完整 generation 后才发送，不证明 incremental decode/cancel。TLS/proxy/OAuth/JWT/IAM、远程/多 worker、representative workload、性能/容量/SLO、质量、许可、来源签名、生产安全和 verify→loader reopen TOCTOU 均未解决。</li>
+<li>Incremental-streaming cancellation control 使用 authored async pseudo-token backend 与真实 Uvicorn subprocess/IPv4 loopback HTTP。完整 case 在 backend 完成前交付 <code>甲</code>、<code>🙂</code>、<code>终</code> 三个 content delta，再验证 <code>stop</code>、5+3=8 usage 与 <code>[DONE]</code>；取消 case 在 <code>首</code>/token ID 201 后读取 preclose audit（active=1、backend incomplete），client 显式关闭 response，postclose audit 验证 ASGI stream task 与 backend iterator 均观察 <code>asyncio.CancelledError</code>、active=0/cancelled=1、iterator closed 且 emitted IDs 仍只有 <code>[201]</code>。Uvicorn 0.52.1 重录 report 为 <code>sha256:25846822…2b5d00</code>，13 个定向测试覆盖值契约、stream-only、完整 SSE、backend terminal/count drift、真实 TCP disconnect、协同 rehash、duplicate/nonfinite/invalid UTF-8 与 CLI。该 control 没有 tokenizer/model forward、Transformers blocking thread、vLLM/CUDA、KV/GPU allocation/release、TLS/proxy/IAM、远程/多 worker、provider billing、性能/质量/SLO；unkeyed fingerprint 也不认证录制者。它只证明当前 cooperative async iterator/ASGI 路径，不证明目标模型 runtime 或云 provider 会停止工作、释放资源或停止计费。</li>
+<li>Tiny Transformers thread-cancellation control 在真实 Uvicorn subprocess/IPv4 loopback HTTP 中构造随机 1,272 参数 <code>GPT2LMHeadModel</code>，用整数 input IDs <code>[1,2,3]</code>、authored logits processor 强制 token 7，并在 Python thread 内真实执行一次 CPU forward 与 <code>GenerationMixin.generate()</code>。Authored streamer 发布首 delta <code>首</code> 后故意暂停 thread；preclose audit 锁定 forward=1、thread alive、<code>generate()</code> 未返回。Client close 让 backend 捕获 <code>CancelledError</code> 并设置 <code>threading.Event</code>；authored <code>StoppingCriteria</code> 在唯一 termination check 观察 event，<code>generate()</code> 返回 continuation <code>[7]</code>，thread exit/join，第二 token 未产生。Uvicorn 0.52.1 重录 report 为 <code>sha256:eadcab54…f62bc7</code>，10 个测试覆盖真实 loopback、离线 verify、协同 rehash、strict JSON/UTF-8/size、loopback/port gate 与 CLI。Streamer pause 是确定性 synchronization，不是生产 scheduler；control 不执行 tokenizer/chat template、公开/目标 checkpoint 或正常模型 logits，不证明未修改/已阻塞 Transformers、任意 thread/process/kernel、vLLM/CUDA、KV/CPU/GPU memory release、远程 provider/计费、性能/质量/容量/SLO。Unkeyed fingerprint 不认证录制者。</li>
+<li>Real-weight RAG control 复用上述固定 Qwen snapshot，manifest <code>sha256:4ee16617…09dfd</code> 锁定 4 条 corpus（含 principal/tenant 高相关禁区）、2 个 query、BM25 top-k、packed document identity、384-token 总预算、64-token 输出预留和 prompt。2026-08-13 录制在相同 CPU/FP32/eager 路径逐步执行每个 greedy logit/KV cache，再与 <code>GenerationMixin.generate()</code> token-for-token 对照；report self-fingerprint 为 <code>sha256:829663e2…e5b60</code>。answerable case 为 209-token prompt，模型复述授权证据并以 EOS 结束，但漏掉 <code>[S1]</code>；empty-evidence case 为 115-token prompt，ACL-before-score 后 retrieval/context 为空，模型仍编造 Kubernetes 步骤并在 64 token cap 停止。citation/exact-abstention behavior gate 因此为 0/2，报告不 repair output。closed-schema verifier 重算 checkpoint binding、当前 corpus context、retrieval/packing/token ledger、raw output、citation audit、exact abstention、case/report hash 与 scope，并拒绝协同 rehash 后的嵌套漂移。它证明固定路径真实执行且两类失败被忠实捕获，不证明语义蕴含、总体 RAG/中文质量、来源/录制者认证、历史 corpus、许可、GPU/vLLM、性能或生产安全；verify→loader reopen TOCTOU 仍未消除。</li>
+<li>RAG publication policy v1 在模型外实现 <code>pre_generation/abstain</code>、<code>post_generation/publish|reject</code>：授权 context 为空时 generator spy 必须保持 0 calls；非空 context 只调用一次，只有本地 citation ID/段落语法通过才发布。审计 <code>to_dict()</code> 保留 raw output/finding，而 allowlist <code>to_public_dict()</code> 不含这些字段，避免 reject 后因直接序列化内部 decision 重新泄露。17 个测试覆盖合法引用、漏引、未知引用、段落漏引、public projection、模型输出恰好等于 fallback、inconsistent context、非字符串/超限/异常、policy 配置、strict replay、source/case/packing drift、duplicate/nonfinite/extra-field JSON 与 CLI。对先经原 verifier 独立确认的 Qwen attempt-1 做 deterministic counterfactual replay，得到 answerable=1 call 后 reject、empty-evidence=0 call 且 abstain、publish=0，冻结 report <code>sha256:ed4d16ad…b13239</code>。replay 保存原 report/case/raw-output identity 并精确重建所有字段，但没有观察到 guard 当时包裹 Qwen runtime，因而不证明真实调用被抑制；所有 decision 均令 <code>semantic_entailment_verified=false</code>，unsigned hash 也不认证来源。它不证明 claim 支持、总体质量、安全或生产集成。</li>
+<li>Guarded real-weight RAG control 用不同于 attempt-1 的 case/query 让上述 policy 真实包裹固定 Qwen2.5-0.5B-Instruct 的 callback；manifest <code>sha256:9ead4c06…40778a</code>，CPU FP32 report <code>sha256:00706d00…f29ede</code>。有证据 case 的 208-token prompt 与 64-token reservation 构成 272-token packing 账本，<code>GenerationMixin.generate</code> API invocation=1，模型输出“无权文档不得进行排序”并 EOS，但因 missing citation 被 <code>post_generation/reject</code>；空证据 case 的授权 retrieval/context 为空，本地审计 prompt 为 116 tokens，<code>prompt_transmitted_to_model=false</code>，callback/framework invocation=0，得到 <code>pre_generation/abstain</code>。publish=0；public projection 两例均没有 raw output/finding。33 个测试含真实 tiny Transformers spy、完整 run-loader mock、runtime/workload 与 reviewed retrieval/packing preflight、recorded verifier、顶层身份、nested extra field、协同 rehash 后的 raw/decision/count/packing/chat-template 漂移、duplicate/nonfinite/invalid UTF-8 与 CLI。offline verifier 重建 BM25/context/packing relation/policy/public/count/hash/scope，但不重放模型、token IDs 或 decode；API method 次数也不是内部 forward/kernel、provider request/cancellation/billing。两个 query 共用 authored corpus/checkpoint，不是代表性质量集；unsigned hash、verify→loader reopen TOCTOU、claim-evidence entailment、GPU/vLLM、性能和生产集成都仍未解决。</li>
+<li>Generation-protocol inspector 对 strict combined JSON 做 canonical identity，把 tokenizer/model config/generation config 的 BOS/EOS/PAD/decoder-start 归一成集合并逐对报告 exact/subset/superset/overlap/disjoint，同时检查 tokenizer size/model vocab 越界。Authored aligned fixture 固定 <code>{2}</code> 对 generation EOS <code>{2,3}</code> 的 strict-subset，而 drift fixture 固定 BOS/EOS/PAD disjoint 且 PAD 9 越过两侧 8-token 上界；测试覆盖缺 generation config、PAD=EOS neutral observation、双 length field、duplicate/negative/bool/empty ID、schema/UTF-8、nested snapshot、CLI 与 checkpoint mock。它不裁决哪一方正确，不解析 <code>generate()</code> kwargs、模型 fallback、runtime precedence 或 stop-string tokenization；normalized <code>to_dict()</code> 不是 raw file hash，静态 match/mismatch 都不证明 Transformers/vLLM/provider 的有效停止行为、权重、来源、质量或许可。</li>
+<li>Transformers generation runtime control 在 3,824-parameter 随机 tiny GPT-2 上真实执行 forward、LogitsProcessor 与 GenerationMixin stopping loop；authored processor 把每步全部 scores 覆盖为一个 token，固定得到 config EOS-set <code>[4,3]</code>、call EOS override <code>[3,5]</code> 与 call max-new-token cap <code>[4,6]</code>，并验证 caller GenerationConfig 未 mutation。测试覆盖三条 exact trace、重复运行 deterministic、processor 输入 gate 与 CLI。它没有真实 tokenizer/chat template或公开 checkpoint，权重不决定 token；finish reason 由已知 plan/条件推断而非框架返回，不证明正常 logits/processor 组合、vLLM/provider、GPU、质量、延迟或吞吐。</li>
+<li>Next-token sampling oracle 固定 sign-aware unique-token repetition → temperature → exact top-k（score tie 按 token id）→ post-top-k-normalized top-p（保留 crossing token）→ renormalization → token-id-order inverse CDF。固定 <code>[0.4,0.3,0.2,0.1]</code>、k=3、p=0.7、u=0.6 fixture 精确得到 <code>[4/7,3/7,0,0]</code> 并选 token 1；signed penalty fixture 将 <code>[2,-2,0.5]</code> 变为 <code>[1,-4,0.5]</code>。测试覆盖 threshold/tie/CDF、temperature-support、稳定性、平移不变性和失败输入。它没有模型/tokenizer、多 token/EOS/stop/KV/batch，也不证明 Transformers/vLLM/provider 默认、跨 RNG bitwise replay、质量或性能。</li>
+<li>Deterministic beam-search oracle 对 authored probability table 逐步展开全部正概率 token，active prefix 按 raw cumulative log probability、再按 token-id sequence 排序，EOS 立即进入 finished 且永不再次展开，达到 token cap 的 active prefix 标记 length。最终分数固定为 <code>log_probability / generated_length**length_penalty</code>，长度只计生成 token、包含 EOS、不含 prompt。固定 pruning fixture 中 beam 1 返回 <code>(A,EOS)</code> 概率 0.306，beam 2 返回 <code>(B,EOS)</code> 概率 0.4；length fixture 在 alpha 0/2 分别返回长度 2/3 的候选。测试覆盖 tie、EOS terminal、零质量 token、final ranking、严格输入和脚本 scope。它保存所有从 active prefix 产生的 EOS、不做 heuristic early stopping，不模拟特定 runtime 的 candidate cap，也没有模型/tokenizer/KV/GPU、质量或性能证据。</li>
+<li>Token-aware constrained-greedy oracle 把 authored finite literal set 编译成 Unicode-code-point trie，对每个 supplied token text 执行完整多字符转移，EOS 只在 accepting state 开放，并在 masking 后按 allowed raw mass 重归一化。JSON-like fixture 中高概率 0.65 的 <code>1]</code> 因第二个字符非法被屏蔽，<code>1}</code>/<code>2}</code> 的 0.25/0.10 质量由 0.35 归一化成 <code>5/7</code>/<code>2/7</code>，最终输出 <code>{"x":1}</code> + EOS。测试覆盖 Unicode token、首字符反例、zero-mass typed dead end、EOS/length/acceptance 分账、tie、不可变输入和严格契约。它假设 supplied fragments 直接拼成文本，只接受有限字符串集合；不执行 tokenizer byte state/normalization、JSON Schema/CFG、模型/KV/GPU，也不证明 provider 等价、语义正确、质量或性能。</li>
+<li>Incremental stop matcher 对 arbitrary UTF-8 bytes 做 strict atomic decode，逐 character 检查 first completion，最长 partial stop prefix 留在 bounded pending，同一 character 多 stop 按配置顺序。固定 <code>甲🙂乙&lt;END&gt;尾</code> fixture 跨 emoji/stop bytes 只返回 <code>甲🙂乙</code>、匹配 <code>&lt;END&gt;</code>、丢弃尾字符；<code>("BC","ABC")</code>/<code>ABCZ</code> 选择 <code>BC</code>、返回 <code>A</code>。测试覆盖 include/exclude、disproof/EOF flush、chunk invariance、overlap、invalid/truncated UTF-8、normalization/case 与 terminal state。它不解模型 token，不证明 provider finish reason/usage、server cancellation、KV/GPU release 或计费停止。</li>
+<li>MoE routing oracle 对 finite <code>[tokens,experts]</code> logits 执行 padding-aware stable softmax、expert-id top-k tie-break、<code>ceil(capacity_factor*N*k/E)</code> per-expert capacity、score/token/rank priority、assignment keep/drop 与可选 post-drop renormalization，并用 kept assignment 真实执行 bias-free linear expert combine。固定 <code>N=4,E=3,k=2,factor=0.75</code> fixture 的 capacity=2，counts 从 <code>(3,4,1)</code> 变为 <code>(2,2,1)</code>，8 个 assignment 保留 5、丢 3、整 token drop 为 0；另验证 uniform balance/z-loss/entropy、padding、整 token drop、不可变数组和失败输入。<code>E*sum(f_e*p_e)</code> 是仓库广义诊断而非通用 aux loss；该 CPU toy 没有训练 router/MLP、backward、all-to-all/GPU、目标 checkpoint、质量或性能证据。</li>
+<li>
+<p>Trainable MoE control 在 PyTorch 2.13.0+cpu/Float64 上执行 5-token、3-expert、stable top-2 router 与三组 bias-free <code>Linear(3,4)→Tanh→Linear(4,2)</code> MLP。Selected-only sparse dispatch 与全 token×expert dense masked oracle 对 <code>MSE + 0.05×balance + 0.001×z</code> 的输出最大差为 0，所有参数 backward 最大差为 <code>6.938893903907228e-18</code>；assignment counts 为 <code>[4,3,3]</code>，一次 SGD step 同时改变 router/三个 experts，authored MSE <code>0.08864729306070791→0.08755795603512319</code>。同一训练图的 score-priority <code>capacity_factor=0.5</code> 得到 capacity=2、counts <code>[4,3,3]→[2,2,2]</code> 与 4/10 assignment drop；capacity-enabled sparse/dense 输出与全参数梯度最大差均为 0。Drop 后重归一化的五个 weight sums 均为 1；保留丢失 mass 时为 <code>[0.8053384164084222,0.6681877721681662,1.0,0.638763175148842,0.5498339973124778]</code>，两种策略输出最大差 <code>0.1255417263895207</code>。独立 capacity=1 同分 fixture 让后两个 token 的 assignments 全丢并得到零 routed output。Padding/grouped fixture 用 mask <code>[true,true,true,true,false]</code> 与 IDs <code>[10,10,20,20,999]</code>；active groups 各 2 tokens、capacities <code>[1,1]</code>，逐组 counts <code>[2,1,1]→[1,1,1]</code> 和 <code>[1,1,2]→[1,1,1]</code>，全局 <code>[3,2,3]→[2,2,2]</code>。两组 balance 为 <code>[1.108214748077347,1.1401893426112772]</code>、z-loss 为 <code>[2.368472188216285,2.345999773471999]</code>，active-token-weighted aggregates 为 <code>1.1242020453443122</code>/<code>2.357235980844142</code>；grouped sparse/dense 输出与全参数梯度差均为 0。改为单组 capacity=2 后输出最大差 <code>0.3293871976258794</code>。Padding output/hidden gradient 为 0；改变 padding value/group id 后 active output、balance、z 差均为 0。Detach selected gate 的隔离负例保持 routes/expert task gradient，却令 router task gradient 缺失；collapsed top-1 control 在 assignments 不变时把诊断 <code>2.5677239505126708→2.552750704884368</code>。</p>
+</li>
+<li>
+<p>Trainable MoE v3 overflow control 使用四个相同 <code>[1,0,0]</code> token、top-1、capacity=2；完整稳定 ranking 均为 <code>[0,2,1]</code>，selected probability 均为 <code>0.5896483941044577</code>。Drop counts <code>[4,0,0]→[2,0,0]</code>、dropped=2。Deterministic full-ranking reroute dispatched indices 为 <code>[[0],[0],[2],[2]]</code>，后两 gate probability 为 <code>0.2649461021163392</code>，counts <code>[4,0,0]→[2,0,2]</code>、rerouted=2、dropped=0、post-policy excess=0；token 内禁止重复 expert，另有 top-2 拥塞测试直接覆盖。Reroute 重归一化后的 weight sums 为 <code>[1,1,1,1]</code>；以原 selected top-k sum 为分母保留 mass 时为 <code>[1,1,0.44932896411722156,0.44932896411722156]</code>，输出最大差 <code>0.06399997177521191</code>。Dropless 保留四个 expert-0 assignments、dropped=0，并报告 nominal-capacity excess <code>[[2,0,0]]</code>。Reroute/dropless 的 sparse—dense output 差均为 0；将未使用 sparse expert 的 <code>grad=None</code> 物化为零后，全参数 gradient 差也均为 0，且 dense 对应 gradient 确为零。Drop—reroute 与 reroute—dropless 输出最大差分别为 <code>0.11622178688336826</code>、<code>0.10698215447093767</code>。Strict finite JSON v3 report 自绑定 canonical fingerprint；68 个 MoE 专项测试覆盖稳定 tie-break、capacity、post-drop policy、全丢 token、padding/group、三种 overflow policy、完整排名、token 内去重、逐组 reroute、sparse/dense forward/backward、materialized-zero gradient、失败输入与 scope。</p>
+</li>
+<li>
+<p>以上 reroute/dropless 是仓库 authored teaching contracts，不是 PyTorch、DeepSeek、Qwen 或任意框架的默认策略。单步 loss 下降不证明收敛、泛化、均衡或 specialization；CPU-local int64 groups 不执行 distributed collective。该 control 仍无 shared/fine-grained experts、all-to-all/grouped-GEMM/GPU、目标 DeepSeek/Qwen checkpoint、质量、性能、内存或扩展性证据。</p>
+</li>
+<li>
+<p>Distributed MoE capacity control 在两个真实 OS spawn processes 上执行 PyTorch 2.13.0+cpu、Gloo 与 temporary FileStore。Rank 0/1 hidden states 分别为 <code>[[2],[1]]</code>、<code>[[3],[0.5]]</code>；replicated 2-expert/top-1 router weight 为 <code>[[1],[0]]</code>，<code>capacity_factor=0.5</code>。一次 tensor <code>all_gather</code> 让两 rank 都观察 global batch <code>[[2],[1],[3],[0.5]]</code>；两个 <code>all_reduce(SUM)</code> 分别得到 global active count=4、pre-capacity selected counts <code>[4,0]</code>。两 rank local-only capacity 都为 1、masks 都是 <code>[true,false]</code>，跨 rank 合计 kept=2；collective global score-priority route 的 capacity=1、selected probabilities 为 <code>[0.8807970779778823,0.7310585786300049,0.9525741268224334,0.6224593312018546]</code>，只保留第三个 token，mask <code>[false,false,true,false]</code>、counts <code>[4,0]→[1,0]</code>、pre/post excess <code>[[3,0]]→[[0,0]]</code>、drop=3。Global routed output 为 <code>[0,0,0.9950547536867305,0]</code>；rank 0 相对 local-only 的最大差为 <code>0.9640275800758169</code>，rank 1 为 0。两 rank 的 global-route fingerprint 同为 <code>sha256:71a66eeb27ebb1f218f7ff4e11eccadee27f0d05f5c977eeaa4633a8dd3b7249</code>；父进程验证 worker PID 不同，但公开 report 只保留 distinct count、不发布 raw PID，因此 canonical report fingerprint 可稳定固定为 <code>sha256:9e342b0ba87b0e11ebf43eb41eaca0be165a3ee365cc9285bbe5a2f2923887be</code>。</p>
+</li>
+<li>
+<p>该 distributed control 的 hidden <code>all_gather</code> 是构造 replicated global routing input 的 authored reference，不是生产 EP 的 token dispatch。Router/experts 在两 rank 完全复制；没有 expert ownership、<code>all_to_all</code>/<code>reduce_scatter</code>、distributed autograd/DDP backward、optimizer、shared/fine-grained experts、CUDA/NCCL、多节点、目标 checkpoint、通信 profiler/packet capture、吞吐、内存、扩展性、收敛或质量证据。它不能与单进程 v3 的 backward 对账拼成 distributed training 正确性声明。</p>
+</li>
+<li>MoE token-to-owner all-to-all control 在两个真实 OS spawn processes 上执行 CPU/Float64、Gloo 与 temporary FileStore。Replicated router 对 rank 0 的 <code>[-1,2,-2]</code> 选择 experts <code>[1,0,1]</code>，对 rank 1 的 <code>[1]</code> 选择 <code>[0]</code>；expert 0/1 参数只驻留 rank 0/1。Source→owner/owner←source variable-split matrices 分别为 <code>[[1,2],[1,0]]</code>/<code>[[1,1],[2,0]]</code>。每 rank 五次 <code>all_to_all_single</code> 完成 count exchange、hidden/gate 与四列 source metadata dispatch、owner output/gate 与 metadata return。Expert 0 为 <code>2x+0.5</code>、expert 1 为 <code>-3x+1</code>，combine 保留 selected softmax probability；按 global token id 的 distributed/oracle outputs 都是 <code>[3.5231883119115293,4.419062055170588,6.874096530265359,2.201992694944706]</code>，最大差为 0。</li>
+<li>Rank 0 的 return arrival global IDs 是 <code>[1,0,2]</code>；按 metadata 中 source-local index scatter 才恢复 <code>[0,1,2]</code>，直接把 arrival row 当 local order 的最大差为 <code>0.8958737432590591</code>。逻辑 tensor-payload 发送账本按 rank 为 256/160、合计 416 bytes，只是 authored tensor numel×element-size，不是 Gloo/TCP wire/protocol measurement。公开报告不含 raw PID，连续运行 strict fingerprint 稳定为 <code>sha256:51c77e2499d84d5cf5500a5f5c1143b2979f3d70f1755114c34900b55299a61c</code>。该控制没有 capacity/drop/reroute/dropless、backward/optimizer、DDP/FSDP/ZeRO/TP/PP、shared/fine-grained experts、CUDA/NCCL、多节点、DeepSeek/Qwen checkpoint、吞吐、延迟、内存、扩展性、收敛或质量证据；也不能与独立 capacity/backward controls 拼接成完整 EP。</li>
+<li>MoE all-to-all training control 用两个 CPU/Gloo spawn ranks 和 authored autograd Function 执行 variable-split float payload forward/backward。Backward 交换 input/output splits：return path先把 output/gate gradient 送回 owner，dispatch path再把 hidden/gate gradient送回 source。每个 local squared-error sum 除 global token count=4；owner expert 参数梯度不再 reduce，replicated router gradient 做 SUM all-reduce。两个 local router gradients 为 <code>[[1.8045724077794292],[-1.8045724077794323]]</code>/<code>[[0.48585685772479353],[-0.48585685772479265]]</code>，global 为 <code>[[2.2904292655042227],[-2.290429265504225]]</code>；expert weight gradients 为 <code>6.460938946431114/-7.209951147135929</code>，四个 source hidden gradients也与单进程 oracle exact。</li>
+<li><code>lr=0.01</code>、无 momentum/weight decay 的一步 SGD 后，router weights 为 <code>[[0.9770957073449578],[-0.9770957073449578]]</code>，两个 owner expert weights 为 <code>1.9353906105356888/-2.927900488528641</code>；分布式 pre/post-step outputs、gradients、参数均与单进程 global-batch oracle最大差 0，global mean MSE <code>20.78017329703821→19.41091750734501</code>。每 rank authored call ledger 为 payload forward/backward 4/2、count+metadata 6、router all-reduce 1；它不是 backend profiler。连续 strict fingerprint 为 <code>sha256:f577b29dd9e1ccc6def8c1fa156a7aba40a352d883646911a603c06f5adca67c</code>。该 control 不使用 <code>torch.distributed.nn.functional</code>、RPC distributed-autograd 或 DDP，不含 capacity、optimizer state、CUDA/NCCL、多节点、目标 checkpoint、收敛、质量或性能证据。</li>
+<li>MoE capacity all-to-all training control 在另一张 two-process CPU/Gloo Float64 图中对全局四个 active tokens 执行 top-1 score-priority drop：selected <code>[1,0,1,0]</code>、counts <code>[2,2]</code>，<code>capacity_factor=0.5</code> 得到每 expert capacity=1、global keep mask <code>[F,T,T,F]</code>、kept <code>[1,1]</code>、drop=2。Kept-only source→owner/owner←source splits 分别为 <code>[[1,1],[0,0]]</code>/<code>[[1,0],[1,0]]</code>；rank 1 是 zero-assignment source，但通过 empty payload 的 graph edge 仍执行 reverse collective。Dropped global token 0/3 的 output/task hidden gradient 均为 0；其余 outputs、hidden gradients、router SUM gradient、owner expert gradients、一步参数和 post-step outputs 与单进程 capacity oracle最大差均为 0。</li>
+<li>该 control 的 router gradient 为 <code>[[1.1172448546425442],[-1.1172448546425469]]</code>，expert weight gradients 为 <code>4.830586772229733/-5.768443796734413</code>，global mean MSE <code>15.253670387373656→14.530264380025987</code>。每 rank authored ledger 为 payload forward/backward 4/2、count+metadata 6、capacity-route all-gather 4、router all-reduce 1；连续 strict fingerprint 为 <code>sha256:33f11f199b9668c3600ce870cd8369c965cf9daad4bb716fe57fdb751373042e</code>。这不是 backend profiler；未执行 reroute/dropless、shared/fine-grained experts、DDP/FSDP/ZeRO/TP/PP、mixed precision、optimizer state、CUDA/NCCL、多节点或目标 checkpoint，也不证明吞吐、延迟、内存、扩展性、收敛或质量。</li>
+<li>Activation patching reference 在 seeded random MiniGPT 上实际缓存 layer-0 post-residual tensor 并执行 forward-hook patch；固定 fixture 验证 joint visible-prefix recovery=1、future-position control=0、hook 移除、严格 shape/device/token 契约、不裁剪 recovery 和小分母拒绝。模型未训练、batch=1，token pair 按当前 clean-corrupt contrast 事后选择；它证明 tensor intervention 与 causal negative control，不证明目标 checkpoint 的语言行为、自然/唯一 circuit 或跨样本稳定性。</li>
+<li>Continual-learning reference 对严格方阵解析计算 final ACC、BWT、非负 peak-to-final forgetting 与相对 pretraining baseline 的 FWT，并拒绝单任务、非方阵、非有限或越界 accuracy；uniform reservoir 有独立边界/确定性测试。PyTorch benchmark 实际执行两阶段 SGD 和 seed 0–19 的 no/64-example/full replay：有限 buffer 对旧任务 accuracy 的 paired mean gain 为 0.4758，95% seed-level interval [0.3389, 0.6104]，同时新任务差值为 -0.0072 [-0.0102, -0.0045]。它是带显式 task-id、固定 task/data、optimizer-step-matched 但非 compute-matched 的 synthetic control；区间不覆盖任务/数据不确定性，也不证明目标 LLM、安全 retention、隐私成本或 replay 总有效。</li>
+<li>KV Cache 理想化 dense K/V 公式由 <code>estimate_kv_cache_bytes</code> 实现；32 层、8 KV heads、head dim 128、8192 tokens、BF16 的结果精确为 1 GiB，测试同时验证 batch 缩放与非法维度。</li>
+<li>Paged KV metadata allocator 测试覆盖固定 block partition、sequence block table、prefix fork/refcount、shared partial-tail COW、shared full-tail append、释放/确定性复用，以及 exclusive/shared tail 无容量时 mutation 前原子失败。toy 的 3×4-slot fixture 验证 <code>4+2</code> fork、COW、物理碎片和 release。<code>logical_tokens</code> 按序列重复共享 prefix，<code>physical_token_values</code> 才用于 allocated-slot fragmentation。它不存储/复制真实 K/V，不覆盖 GPU page table/PagedAttention、并发 kernel、prefix identity/ACL、eviction/preemption/swap、metadata bytes、VRAM 或性能。</li>
+<li>Prefix-cache metadata oracle 要求 trusted tenant/visibility domain、authorization/policy、model/tokenizer/chat-template/adapter、position/RoPE config、KV dtype 与 exact token prefix 全部匹配，并选择最长项。固定 fixture 将所有 fingerprint 强制碰撞，仍精确得到本 tenant 长度 3 hit、未存 tenant miss、1/1 hit/miss 与 release 后 0 active lease；测试另逐字段验证隔离、leased entry pin、unleased LRU、全 leased no-mutation capacity failure 和 foreign/double release。Fingerprint 只作候选索引；它不授权、不保密，也没有真实 K/V、TTL/加密/分布式一致性、timing-channel mitigation、vLLM 等价、VRAM、命中率、prefill savings 或性能证据。</li>
+<li>Continuous-batching reference 在整数 boundary 上执行固定 FCFS admission、decode-first、chunked-prefill policy，并以 <code>max_batch_tokens &gt;= max_running_sequences</code> 保证 resident request 每轮进展。固定三请求 fixture 的逐轮 used slots 为 <code>3,3,2,2</code>；7 个 prompt、6 个 output、3 个 request 得到 <code>7+6-3=10</code> 个 causal forward positions，验证 prefill 最后位置发出首 token、sequence-cap queue、TTFT/TPOT step、completion、idle/active capacity 与确定性。它没有执行模型/KV/GPU，也不覆盖 prefix cache、preemption、priority 或真实时间，不能证明 vLLM scheduler equivalence、wall-clock latency/throughput、GPU utilization 或 SLO。</li>
+<li>KV-aware batching reference 把同一 boundary 语义接入 <code>PagedKVAllocator</code>；block 不足时只能抢占本轮尚未工作且 stable-FCFS 优先级更低的 resident，再选择最近 admission 者，单向优先级边与 repeated-state guard 防止 rebuild ping-pong。被抢占请求释放 metadata KV，按 FCFS 再 admission 后只重建旧 logical context，不重复输出。3×2-slot、A=<code>P4/O3</code>、B=<code>P2/O2</code> fixture 的 used slots 为 <code>3,3,1,1,2,1</code>，logical/recomputed/executed positions 为 <code>9/2/11</code>，B 的 emission boundary 为 <code>2,6</code>，preemption=1、peak/final allocated blocks=3/0；6-block 对照无抢占且 logical=executed=9。它不存 K/V 数值，不覆盖 swap/prefix reuse/priority aging/CUDA/分布式或墙钟，也不证明 vLLM equivalence、VRAM、性能或质量。</li>
+<li>Weight-only quantization reference 对 contiguous row group 执行 finite FP32 symmetric absmax、<code>[-qmax,qmax]</code> code、全零 group scale=1、offset-binary LSB-first dense bit packing、canonical padding/unused-code 拒绝、strict v1 little-endian 单矩阵 artifact、exact reload、反量化和 NumPy linear output。固定 3×5、4-bit、group-size 4 fixture 为 FP32 60 bytes、实际 code 8 bytes（4 个 padding bit）、scale 24 bytes、raw payload 32 bytes、32-byte header + trailing SHA-256 后文件 96 bytes；2–8 bit 跨 byte 测试均 round-trip。测试另拒绝错误 version、payload/digest tamper、trailing/truncation、NaN scale 和覆盖已有输出。Unkeyed digest 不认证来源，单矩阵 artifact 也不是完整模型、fused low-bit kernel、calibration/GPTQ/AWQ、目标质量、显存或延迟证据。</li>
+<li>Multi-matrix quantized bundle reference 把多个 name-sorted、完整 v1 矩阵 artifact 放入 24-byte header + canonical JSON manifest + contiguous payload + 32-byte outer SHA-256，绑定 model/tokenizer revision、architecture config identity，以及每个 tensor 的格式版本、offset、length 和 digest。默认 seed=29、4-bit、group-size=4 two-layer fixture 固定为 FP32 weights 288 bytes、raw payload 124 bytes、inner artifacts 252 bytes、manifest 679 bytes、bundle 987 bytes、outer container overhead 735 bytes；严格 reload 后 byte 与 quantized-forward round trip 为 true，FP32-output RMSE 约 0.0368725、relative L2 约 0.123272。测试拒绝 duplicate/unknown/non-canonical manifest、name/order/offset/digest 漂移、trailing/truncation 和资源上限外输入。它只有 tokenizer identity、没有 tokenizer payload，也不支持未量化 state、model forward、shard/GGUF/safetensors/runtime layout 或 fused kernel；两层 NumPy control 不证明完整 LLM checkpoint、来源认证、质量、VRAM 或加速。Exclusive-create + file fsync 不证明 crash 后无 partial target、parent-directory durability 或断电原子发布。</li>
+<li>Repo-native quantized MiniGPT inference checkpoint 保存 Byte-BPE merge payload、canonical config、固定 architecture revision、全部唯一参数和 tied LM-head contract；二维 embedding/linear 使用 v1 quantized matrix artifact，一维 norm/bias 使用 little-endian FP32，causal mask 由 loader 重建。默认 seed=7 fixture 有 16 个唯一参数、FP32 parameter bytes 10,976、manifest 3,904、payload 4,760、artifact 8,720；prompt <code>abc abc</code>→<code>[257,32,257]</code>，reload logits <code>[1,3,258]</code>，重复读取 exact，FP32-logit RMSE≈0.00477277。21 个测试另覆盖 bias-free two-layer/5-bit/non-divisible group、tokenizer/全部 state/tie/forward、runtime/config/mask drift、outer/inner tamper、duplicate/unknown/non-canonical JSON、name/shape/kind/order/offset/quantization/vocab/architecture drift、非有限 FP32 vector、资源上限、no-overwrite 与 handle release。完整性仅对 trusted repo MiniGPT inference loader 成立：forward code/base-byte algorithm 不嵌入，且无 normalizer/special/chat template、optimizer/RNG/training resume、shard/device/runtime layout、GGUF/safetensors/vLLM、low-bit execution、目标质量/VRAM/性能或来源认证证据。</li>
+<li>Strict MiniGPT training checkpoint 使用 <code>ALLMTRN1</code>/schema v1、canonical JSON、little-endian tensor payload 和 outer SHA-256，保存 16 个 FP32 parameter、每参数 AdamW scalar step/<code>exp_avg</code>/<code>exp_avg_sq</code>、线性 per-update schedule/global step/current LR、Byte-BPE payload/config/tied contract、数据 shape+ordered-content fingerprint、permutation/cursor/epoch、独立 data-generator RNG 与 dropout 的 Torch CPU RNG。固定 seed=13、7×5 tokens、batch=2、dropout=0.2、6 updates 在第 3 步切分：batch 为 <code>(6,5),(2,1),(4,0),(1,0),(6,5),(3,4)</code>，epoch 为 <code>0,0,0,1,1,1</code>，LR 为 <code>0.003,0.0026,0.0022,0.0018,0.0014,0.001</code>；前后段 step report、恢复点 state 和最终 model/optimizer/stream/RNG 与 uninterrupted path bit-exact，loader 不改变外部 Torch RNG。artifact 为 manifest 11,341 bytes、51 tensors、payload 42,520 bytes、总计 53,917 bytes。10 个测试覆盖数据内容漂移、非 zero-grad boundary、optimizer/LR/JSON/tensor/permutation/RNG 漂移、trailing/truncation、资源限制、no-overwrite 与 Windows handle release。当前 AdamW scalar step 为 FP32 tensor，schedule 因此拒绝超过 <span class="arithmatex">\(2^{24}\)</span> 的 update 总数。数据 payload 不嵌入；只保存当前 control 实际使用的 Torch CPU/data-generator RNG，不保存未使用的 Python/NumPy/CUDA RNG。范围仅为当前 CPU/PyTorch/FP32 MiniGPT、单 AdamW param group、无 accumulation 的 linear schedule；不支持 AMP scaler、gradient accumulation、DataLoader worker/prefetch、distributed/sharded、目标 checkpoint/CUDA。六个 loss 不单调，不能证明收敛或质量；unkeyed SHA-256 不认证来源，exclusive-create + file fsync 不证明 crash/断电原子发布。</li>
+<li>KV-cache quantization reference 对每个 <code>[B,Hkv,T,:]</code> K/V 向量独立做 symmetric INT8 absmax，保留 <code>-128</code>，全零 scale=1，真实物化 int8 code 与 FP32 scale。测试证明逐元素误差 ≤ scale/2（FP32 容差）、GQA 与显式 dequant path 一致、causal future mass=0、incremental prefix 与 full causal output 在 <code>rtol=1e-5, atol=1e-7</code> 内一致，并拒绝 shape/non-finite/reserved-code/bad-scale。固定 <code>B=1,Hkv=2,T=5,Dk=4,Dv=6</code> fixture 为 FP32 400 bytes、code 100、scale 80、payload 180；它先 dequantize 再做 FP32 attention，不证明 INT8/PagedAttention kernel、runtime resident VRAM、目标长上下文质量或加速。</li>
+<li>Speculative sampling reference 对严格 probability vector 解析计算接受质量 <code>min(p,q)</code>、拒绝概率/total variation distance、normalized positive <code>(p-q)</code> residual，并验证一步输出边际等于 target。block 测试覆盖首拒绝截断/修正、全接受 bonus、零 draft mass、vocabulary/长度与 uniform 边界；toy 的 Monte Carlo 只是 seeded 演示。它没有执行 tokenizer/model forward、真实 context-dependent logits、KV rollback、GPU verification kernel 或负载，因此不证明任何 runtime 保持 target 分布或取得延迟/吞吐收益。</li>
+<li>Linear Bradley–Terry RM CPU reference 用稳定 <code>logaddexp</code>/sigmoid、full-batch gradient 与可选 L2 拟合 authored numeric pair。固定 fixture 中，quality 与 length 同向的 <code>confounded</code> 训练集达到 strict pair accuracy=1，但长度反转的 counterfactual held-out accuracy=0；加入长度正反 pair 后 length 权重约为 0，训练/held-out accuracy 均为 1。初始零权重 loss 为 <span class="arithmatex">\(\log2\)</span>，zero-margin 全部显式计 tie。该实验不是 text/Transformer reward model，不含真实人类 preference 或目标 RM，也没有评测 policy optimization、OOD 鲁棒性或 reward hacking。</li>
+<li>Tiny Transformer RM smoke 只读取 binary train 与 held-out-free readiness，用 train-only local WordLevel vocabulary、完整 prompt+response chat template、随机 <code>GPT2ForSequenceClassification</code> scalar head 和 AdamW 实际执行 forward/backward。零 reward head 给出初始 loss≈<span class="arithmatex">\(\log2\)</span> 与 2 个 tie；4 步后 head 和 token embedding 都改变，2 个 authored train pair strict accuracy=1，而反转已见 <code>good/bad</code> 线索的单条 authored counterfactual accuracy=0。测试在没有 combined 文件的目录运行，并拒绝缺失/篡改 readiness 与顺序漂移 train。它证明当前 text/token/mask/pooling/pairwise optimizer 与 held-out-free trainer 控制路径及 lexical shortcut；无密钥 readiness 不认证签发者，也不证明标签具有语义、人类 preference、目标 checkpoint、广泛 OOD/counterfactual 鲁棒性、CUDA、reward hacking 或 policy optimization。</li>
+<li>目标 RM 入口在任何训练依赖/下载前校验 train+readiness，随后可单独加载固定 revision tokenizer 执行完整两侧序列 preflight；本地 tokenizer 测试验证合法 pair 通过、超限 pair 在模型加载前失败，避免 TRL 0.29 <code>RewardTrainer</code> 的过滤行为静默改变训练集。另一个测试用本地随机 tiny GPT-2 实际构造 <code>AutoModelForSequenceClassification(num_labels=1)</code>、<code>SEQ_CLS</code> LoRA 与正式 RewardTrainer，执行一个 optimizer step，保存 global-step/metrics 和 adapter，并确认 <code>lora_B</code> 非零。它证明 CPU tiny 框架闭环，不证明目标 checkpoint/module name 兼容、CUDA/QLoRA、显存、收敛或质量。</li>
+<li>PPO/GAE NumPy reference 用分离的 bootstrap/continuation mask 解析验证 terminated、truncated、episode boundary 与 padding；clipped surrogate 测试覆盖正 advantage ratio 上界、负 advantage 下界、mask-aware aggregate、clip fraction 与 sampled KL proxy。三分类反例在 sampled ratio=1、clip fraction=0、sampled proxy=0 时得到 <span class="arithmatex">\(D_{KL}(old\|new)&gt;10\)</span>，直接否定“ratio clip 是完整分布 KL 硬约束”。它只处理 authored transition/log-prob/probability arrays，没有执行 policy/value/RM、rollout、optimizer、真实 EOS/truncation、目标模型或 GPU，不是 PPO RLHF 训练证据。</li>
+<li>PyTorch PPO smoke 在 authored 两状态、两动作、两步 terminated MDP 上真实执行 on-policy categorical sampling、policy/value forward、GAE、advantage normalization、clipped policy/value/entropy loss 与 96 次 Adam step。环境的精确 undiscounted expected return 可由 policy 概率枚举；测试要求从 1.0 提升到 1.8 以上，并验证 policy/value 参数改变、每轮 stored old log-prob 不变且与 snapshot 精确一致。它没有 tokenizer/LLM/RM、reference KL controller、time-limit truncation、checkpoint、GPU 或 distributed rollout；单 seed tiny MDP 不证明目标 LLM PPO 稳定、质量、安全或样本效率。</li>
+<li>Tiny Transformer PPO smoke 用随机 <code>GPT2Model</code> backbone 与 policy/value heads 真实执行两步 integer-token autoregressive rollout、冻结 behavior snapshot/reference forward、sampled reference log-ratio reward、GAE 和 36 次 optimizer step。6 词表、2 horizon 的 exact expected target-token count 通过枚举 first-token branches 与精确条件概率计算；测试要求从 <span class="arithmatex">\(1/3\)</span> 提升到 1.8 以上，并验证 backbone/head 改变、reference 不变、old log-prob 可重算。它不含 tokenizer/自然语言、learned RM、目标 checkpoint、variable EOS、truncation、checkpoint、CUDA 或 distributed rollout；authored target token 不证明真实偏好、质量、安全或目标 LLM 收敛。</li>
+<li>Text PPO smoke 用本地 13-token WordLevel tokenizer、chat template、自然语言 prompt、分离的随机 tiny GPT-2 policy/value backbones 和冻结 reference，实际执行最多两 token 的 variable-length rollout。首轮同时覆盖 EOS termination、generation-cap truncation 与 padding，并计算被截断 post-action value；有限时域 objective 默认不 bootstrap cap 后 return，反事实开启时会标记与报告 oracle 不一致。精确枚举得到均匀初始 expected reward <span class="arithmatex">\(25/169\)</span>、<code>good, EOS</code> 概率 <span class="arithmatex">\(1/169\)</span>，测试要求 96 次 optimizer step 后分别超过 1.9 与 0.95，并验证 actor/critic/head 改变、reference/old log-prob/snapshot 不变量。它没有 learned RM、真实人类偏好、目标 checkpoint、长 response、checkpoint/resume、CUDA 或 distributed rollout；authored <code>good/EOS</code> reward 不证明自然语言质量、目标模型对齐或生产稳定性。</li>
+<li>Learned-RM PPO smoke 用同一本地 tokenizer/chat template 训练随机 tiny <code>GPT2ForSequenceClassification</code>，唯一 authored pair 在 30 step 后达到 strict accuracy=1、margin=5.57；减去训练 pair midpoint 后冻结 RM，并把 sequence score 绑定到最后一个有效 action。生成 allowlist 排除 unknown/padding/role tokens；穷举 8 个允许 token、两步 cap 的全部 57 条 response，训练 chosen <code>good, EOS</code> 仅排第 38、55 条无训练覆盖，最高分为 <code>good., good</code>。六轮 PPO 后精确 centered proxy 从 2.739 升至 4.652，严格 target success 从 <span class="arithmatex">\(1/64\)</span> 降至 <span class="arithmatex">\(4.99\times10^{-4}\)</span>，但 dense partial credit 从 <span class="arithmatex">\(15/64\)</span> 升至 0.566。测试验证 action mask 贯穿 old/new distribution、RM/reference 不变及 EOS/truncation/padding；因此只证明 tiny authored support 上相对严格目标的受控 proxy exploitation，不证明所有任务指标下降、人类偏好、目标 RM/LLM、自然语言质量、CUDA 或生产 PPO 稳定性。</li>
+<li>OpenAI-compatible 流式基准必须取得服务端 <code>completion_tokens</code>；SSE event/chunk 数不作为 token 数。</li>
+<li>Paired randomization oracle 对 candidate−baseline case differences 执行 exact/seeded-Monte-Carlo sign flip，支持 prespecified greater/less/two-sided；固定 5-pair、4 个 +1、1 个 0 fixture 得到 mean=0.8、greater p=1/16、two-sided p=2/16，零差值不重复 assignment，大路径用 <code>(extreme+1)/(draws+1)</code>。测试覆盖 brute-force 对照、system swap、全零、平移不变、seed 与失败输入。它不建立 sharp-null exchangeability、随机 assignment、cluster independence、population sampling、multiple-comparison correction、metric validity、因果或真实模型改善。</li>
+<li>Clustered paired bootstrap 对完整 cluster 有放回重采样：case-weighted 路径每个 resample 用 sampled difference sums / sampled cluster sizes，equal-cluster 路径平均 sampled cluster means。固定 5×<code>+1</code>/1×<code>-1</code> 两 cluster fixture 枚举 4 个 ordered resample，分别得到 observed 4/6、linear 95% interval <code>[-0.875,0.975]</code>、改善比例 3/4，以及 observed 0、<code>[-0.925,0.925]</code>、1/4。测试与独立 <span class="arithmatex">\(3^3\)</span> brute force 对照，覆盖 case 重排、单 cluster 退化分布、seeded Monte Carlo、7-cluster exact cap 和失败输入；逐行 paired bootstrap 也新增严格 bool/type/seed gate 与一百万 index-element 分块。Exact/percentile fixture 不建立小 cluster coverage、BCa/studentization、cluster 独立/代表性、无 interference、正确 weighting、因果或模型改善。</li>
+<li>Clustered randomization oracle 把同一 string cluster id 的 case difference 作为一个 joint sign unit，并显式提供 case-weighted（cluster sum/总 case）与 equal-cluster（cluster mean/cluster 数）estimand。固定 5×<code>+1</code> 属于 user A、1×<code>-1</code> 属于 user B：naive case greater p=7/64，cluster-joint case-weighted observed=4/6、p=2/4，equal-cluster observed=0、two-sided p=1。测试覆盖零 contribution cluster、case 重排、seeded MC plus-one、24-unit exact cap 与失败输入；MC block 把 sign matrix 限制在不超过 1,000,000 元素。Joint flip 不要求 cluster 内 case 独立，但实现不建立 cluster 定义、cluster-level exchangeability/independence、无 interference、抽样代表性、预选 weighting、因果或模型改善。</li>
+<li>Holm correction oracle 对一个输入顺序明确的 p-value family 做 stable ascending sort、rank multiplier、running maximum、cap 与 input-order remap。固定 <code>[0.04,0.01,0.03,0.20]</code> 得到 sorted scaled <code>[0.04,0.09,0.08,0.20]</code>、sorted adjusted <code>[0.04,0.09,0.09,0.20]</code> 和 input-order adjusted <code>[0.09,0.04,0.09,0.20]</code>；<code>alpha=0.05</code> 只拒绝原索引 1。测试覆盖 tie、单 hypothesis、单调/cap 与非法输入。任意依赖下的 FWER 保证以前提“每个 component p-value 有效且 family 事前定义”为条件；实现不修复 post-hoc selection、peeking/optional stopping、cluster unit、effect importance、因果或模型质量。</li>
+<li>Sequential peeking oracle 把无 tie informative pair 明确定义成 i.i.d. Bernoulli(1/2) signs，双侧 p-value 固定为 doubled smaller inclusive binomial tail。对预设 <code>[10,20,30,40,50]</code> looks，用 <code>(n, positive_count)</code> exact <code>Fraction</code> dynamic program 移除首次拒绝路径；逐次 <code>alpha=1/20</code> 的 familywise null rejection 为 <code>7109832616777/70368744177664 ≈ 0.1010367984</code>，逐次 <code>alpha=1/100</code> 的事前 Bonferroni split 为 <code>2142139082367/140737488355328 ≈ 0.0152208136</code>，而不是枚举 <code>2^50</code> 条序列。测试用小规模显式序列穷举复核 DP，并覆盖双侧离散边界、无拒绝区、资源上限与固定 JSON scope。它不实现 confidence sequence/always-valid p-value，不估 effect/power/sample size，也不验证真实 pair/cluster exchangeability、抽样、标签、模型、judge、在线随机化或因果。</li>
+<li>推理负载发生器的 CPU 测试覆盖 burst、constant 与 seeded-Poisson finite arrival schedule；constant/Poisson 的后续到达不依赖请求 completion，scheduled delay 与 semaphore 等待保留在 client queue。它不证明 Python event loop 跟得上 nominal QPS、client queue 等于 server queue，或目标 GPU 达到任何容量/SLO。</li>
+<li>云 API adapter 的离线契约测试覆盖三类字段映射和密钥脱敏；text-only parser 遇到无文本响应会显式失败，fixture loader 拒绝 duplicate key、<code>NaN</code>/<code>Infinity</code> 和 schema 外顶层字段。</li>
+<li>LoRA reference core 覆盖冻结、零初始化、adapter optimizer update 和独立 merged Linear 等价。PEFT CPU export control 进一步在 seed=31 随机 tiny GPT-2 上训练 8 step，验证总参数 28,032、trainable 1,024、4 个 adapter tensor、所有 frozen base exact 不变；保存 base 110,632-byte、adapter 4,608-byte、merged 110,632-byte safetensors，构建/verify 后从 exact saved base 重载 adapter 的最大 logit error=0，<code>safe_merge</code> error≈<span class="arithmatex">\(8.94\times10^{-8}\)</span>，verified merged disk reload error=0。WordLevel tokenizer/chat template 重载前后均得到 <code>[5,7,2,9,2]</code>。Strict canonical manifest 覆盖 13 files/236,589 payload bytes，自身 2,297 bytes，绑定 identity、base/adapter/merged/tokenizer contract、path-sorted size/SHA-256 和 descriptor-set digest；19 个 verifier 测试还要求三个 safetensors 可解析、base/merged 完整 config payload 与 tensor key/dtype/shape signature 一致、每个 target module 同时存在 LoRA A/B tensor，并覆盖 extra/missing/symlink/traversal、duplicate/non-canonical/unknown manifest、资源上限、内容篡改，以及协同 rehash 后的 weight/config/adapter/tokenizer 漂移。结构一致不证明权重数值正确；PEFT 自身不强制仓库 manifest，adapter identity string 不认证 base content；目录也不含 optimizer/scheduler/RNG/resume state。没有量化 base、目标 checkpoint、CUDA、质量/runtime/license、来源认证、目录原子发布或 verify-load TOCTOU 防护证据。</li>
+<li>Target Qwen tool-aware SFT final-label control 复用固定 revision、7-file/999,586,347-byte selected snapshot、2,337-byte authored train fixture、2,570-byte held-out-free readiness 与 2,793-byte 审核模板。原生 chat template <code>sha256:cd8e9439…527f</code> 不含 <code>{% generation %}</code>，在多轮、并行 tool calls、tool preamble 三条记录上实际返回全零 assistant mask。审核模板 <code>sha256:9cfe5d40…54696</code> 保持 47 / 301 / 200 个 input IDs 与原生逐 token 相同，8 / 51 / 31 个 mask token 精确等于 control 独立保存的 assistant serialization（正文、Qwen tool markup 与 <code>&lt;|im_end|&gt;\n</code>）。异构 arguments 在 raw Arrow Dataset 中会被扩成带 <code>null</code> 的 struct，因此 token/mask 必须在 Arrow 前生成；TRL 0.29.1 对已预分词数据使用 <code>assistant_only_loss=False</code>，但真实 configured collator 仍消费预计算 <code>assistant_masks</code>。最终 <code>[3, 301]</code> 有 548 attention token、355 padding token、90 个监督 label、813 个 <code>-100</code>；CPU FP32 no-grad loss <code>1.251716136932373</code>。control manifest <code>sha256:b1c1a6b3…936e6</code>，report <code>sha256:8b61fa58…10421a</code>。它不执行 backward、optimizer、adapter、QLoRA、CUDA、vLLM 或 serving；固定 Qwen fixture 不证明任意 provider schema、multimodal、新记录、tool 执行/结果真实性、数据合法性、质量、泛化、收敛、安全或生产就绪；offline verifier 不重放模型，verify→loader reopen TOCTOU 未消除。</li>
+<li>
+<p>Target Qwen LoRA control 复用固定 Qwen2.5-0.5B-Instruct revision 与 7-file/999,586,347-byte selected snapshot，在两次模型加载前分别重哈希；CPU FP32/eager、<code>trust_remote_code=False</code> 下，目标 chat template 得到 44 tokens，其中 41-token generation prefix mask 为 <code>-100</code>、3 tokens 参与 loss。24 层 <code>q_proj/v_proj</code>、<code>r=4/alpha=8</code> 有 270,336 trainable parameters；注入时 B=0，last-token logits 与基座 exact。一次真实 backward/AdamW step 的 96 个 trainable tensors 都有 finite gradient，frozen base 无 gradient，494,032,768 个基座参数的前后 fingerprint 均为 <code>sha256:716454a9…e7092</code>；48 个 B tensors 全非零、共 98,304 个非零 elements。PEFT safetensors 为 1,093,728 bytes，artifact manifest <code>sha256:ffab4958…c96c46</code> 锁定完整 3-file payload、base identity/revision、config、24×2×A/B key/shape/F32 与非零/finite contract；新基座重载 logits max error=0。report 为 <code>sha256:8a3897b1…026230</code>，12 个测试覆盖 tiny Qwen 真 backward、完整 runner orchestration、自验、recorded verifier、file/config/tensor/report/scope tamper、协同 rehash、duplicate/nonfinite/invalid UTF-8 与 CLI。初始/step 后 loss 约为 <code>0.003864/0.584557</code>，明确上升；单样本单步只证明目标权重 PEFT plumbing，不证明合理 LR、收敛、质量或代表性。离线 verifier 不重放 tokenizer/backward/logits；无 publisher/trainer authentication、optimizer/scheduler/RNG/resume、merge、QLoRA/quantization、CUDA/AMP/vLLM、内存/性能、许可、目录 durability 或 verify→loader reopen TOCTOU 防护证据。</p>
+</li>
+<li>
+<p>Target Qwen DPO control 绑定同一 immutable revision、7-file/999,586,347-byte snapshot、1,325-byte binary train JSONL 与 2,895-byte readiness JSON。目标 token IDs、<code>[4,28]</code> collated shape、112 attention tokens、四个 5-token completion masks 与 special-token normalization 都是 closed contract。CPU FP32、TRL 0.29.1/PEFT 0.20.0 下，一次真实 DPO backward/AdamW step 的 96 个 LoRA gradient tensors 全部 finite，48 个 B tensors/98,304 elements 全非零；loss <code>0.693147→0.333352</code>，两条 relative margin 为 <code>8.566292/10.016453</code>。494,032,768 frozen-base parameters、排除 LoRA 的完整 state、model config 与 generation config 指纹前后 exact。两次 reference forward 内 adapter status 均为 disabled，但 log-prob replay max-abs drift 为 <code>0.547077</code>、hash 不同；证据据实区分 reference identity 与数值 replay，不声称 bitwise determinism。manifest <code>sha256:ebbf3655…d818b3</code>、report <code>sha256:3cafbade…b549b7bc</code>，semantic verifier 在协同重算无密钥 hash 后仍拒绝 runtime/scope/result/special-token 漂移。authored <code>good/bad</code> 不是人类偏好或质量标签；没有 held-out improvement、annotator、收敛、安全、adapter export、optimizer/RNG resume、QLoRA/CUDA/vLLM、性能、来源认证、TOCTOU 消除或生产证据。</p>
+</li>
+<li>从零 tokenizer 覆盖 raw UTF-8 byte 与确定性 byte-level BPE：单测验证多语言 round-trip、merge rank、同频 tie-break、文档边界和非法 id/merge graph。它没有 normalization、pre-tokenizer、special token、offset map 或 checkpoint 兼容证据，不能冒充 GPT-2/目标模型 tokenizer 或真实语料压缩率。</li>
+<li>RAG BM25 在评分前同时过滤 tenant 与 principal ACL；byte packer 不冒充 token，<code>pack-tokenized</code> 则对指定 tokenizer/chat template 的完整 prospective prompt 重计数。generation trace gate 可把 query/security context、当前 chunk bytes/version、canonical context、prompt/raw output 与 recorded answer identity 连成自洽 artifact；它不重新认证 tokenizer/model revision，不证明真实模型执行、历史 corpus、raw-output→claim 蕴含或 unsigned 文件来源。</li>
+<li>RAG extractive baseline 真实串联授权 BM25、byte-budget packing、exact character span、短引用和 lexical coverage answer/abstain；测试覆盖跨 tenant/ACL 拒绝、budget-dropped source 不可引用、offset/source 篡改失败、跨来源回答、主题相关 no-answer 拒答、artifact 确定性，以及改写 qrels 不改变已生成 artifact。5 条 authored fixture 的 action/grounding/recorded-gate 均为 1.0，只证明当前小语料和固定阈值；exact substring 不证明 query-span 语义相关、来源真实、答案完整、阈值校准、token budget 或 LLM 质量。</li>
+<li>RAG rerank core 在 scorer 调用前二次检查 tenant/principal ACL，并拒绝重复 candidate id、非连续 rank、score 数量错误和非有限/布尔分数；CrossEncoder adapter 复用该路径。<code>rerank-recorded</code> fixture 精确绑定 query/chunk/content/scorer identity，并真实重放排序，但分数为作者构造，unsigned identity 不认证 learned model、tokenizer/truncation、相关性增益、延迟或成本。</li>
+<li>RAG framework parity control 真实执行当前环境的 LangChain <code>BaseRetriever.invoke()</code>、LlamaIndex <code>BaseRetriever.retrieve()</code> 与两种 PromptTemplate；四文档 fixture 中 engineering/anonymous 分别得到 2/1 个授权结果，<code>finance-secret</code> 与 <code>other-tenant</code> 在 canonical BM25 评分前排除，两个框架逐字段 round trip、Prompt SHA-256 与 deterministic extractive answer artifact 一致，authored qrels 的 Recall@4/nDCG@4 均为 1.0。Adapter 拒绝 duplicate ID、非连续 rank、非有限 score 和 protected metadata collision；LlamaIndex node 的 protected metadata 会从默认 embed/LLM content 排除。它只证明相对于同次 supplied canonical results 的离线接口/identity/ACL control，不证明框架默认 ACL、canonical result 来源、learned embedding/vector index/reranker、provider/local LLM、网络、质量、延迟、扩展性或生产安全。</li>
+<li>Persistent extractive RAG ASGI control 在 FastAPI 0.115.14/Starlette 0.41.3/HTTPX 0.28.1 上真实 dispatch readiness、两个 authorized query 和两个 negative request；每次查询重开 SQLite，身份由 body 外 resolver 生成，engineering/anonymous 分别只进入 <code>public-security + engineering-citations</code>/<code>public-security</code>，body tenant injection 为 422、缺 credential 为 401，两个 answer artifact fingerprint 固定。9 个 service test 另覆盖 closed strict schema、空租户语料拒答、disabled docs、数据库消失 readiness=503、query/top-k/budget gate、单进程 queue saturation、脱敏 500，以及 execution timeout 后 background thread 结束前仍占 semaphore。ASGI transport 不打开 TCP socket；static bearer 不证明 JWT/IAM/TLS/proxy，<code>wait_for</code> 不终止 thread，per-process semaphore 不是全局 admission；也没有 cache、learned retrieval/reranker、LLM、真实负载、容量或生产 SLO 证据。</li>
+<li>RAG SQLite store 的测试覆盖持久 reopen、expected-version conflict、同版本内容与 chunker 配置漂移拒绝、显式删除、strict stored JSON、tenant/principal 过滤，以及 trigger 在 delete 后/insert 前失败时的事务 rollback。CLI 端到端测试另覆盖创建、版本更新、stale delete 拒绝、授权前候选缩小和 JSON 输出；JSONL loader 拒绝 duplicate key、<code>NaN/Infinity</code> 与溢出为无穷的 float。backup/verify/restore 测试覆盖快照后源库更新不改变 backup、no-overwrite、恢复后版本/正文、strict manifest、物理 hash、逻辑 row fingerprint、内容 hash 漂移和未版本化 schema object 注入。它只证明 schema-v1 authored fixture 的单 SQLite 文件、当前进程和内存 BM25 契约；无密钥 manifest 不认证来源/时间，单文件 <code>fsync</code> 不证明断电目录 durability，一次 tiny restore 不证明 RPO/RTO，也不覆盖加密、ANN、远端向量库、跨存储原子性或多副本一致性。</li>
+<li>统一评测 run manifest 对 ordered case 全语义、recorded answers、scored results、metric revision、scorer 和 caller-supplied system id 做 canonical binding，并在 bootstrap 前拒绝漂移。无密钥 manifest 不能认证 system id、数据/指标 construct validity、真实线上执行或业务影响；仓库 scored fixtures 只是协议和统计回归样例。</li>
+<li>comparison v2 artifact 进一步绑定 case/cluster resampling unit、metadata key、case/equal weighting、exact threshold、bootstrap 配置、全部 gate/slice 阈值、两侧 run manifest、统计结果与失败原因。Cluster result 保存并校验 case/cluster count、cluster sizes、estimand arithmetic、method、实际 resample 数、linear quantile 与 exact/Monte Carlo seed 语义；固定 5+1 反例通过正式 <code>compare_results</code> 复现 case-weighted <code>[-0.875,0.975]</code> 与 equal-cluster <code>[-0.925,0.925]</code>。<code>verify-comparison</code> 只做 artifact-only 严格重载，不重开 manifests/results/cases、重建 cluster 或重算 bootstrap；它不证明 cluster 定义/独立/代表性、coverage，也不防内容与无密钥 hash 协同重写或无可信 head 的历史截断。</li>
+<li><code>verify-evidence</code> 严格重开 cases、两侧 answers/results/run manifests 与 comparison；重算 ordered answer/case identity，要求 manifest scorer/metric revision 与当前可执行实现精确一致，重新评分，并按 artifact 固定的 case/cluster resampling 与 gate 配置重建 comparison。Fixture 与测试覆盖 answer drift、manifest 已同步重写但 score 错误、内部合法却不对应 results 的 comparison summary。成功只证明当前本地 bytes 在声明 revision 下可复算；它不认证文件/<code>system_id</code>，不重放模型/provider，也不验证 sampling/cluster、construct validity 或 production impact。</li>
+<li>Comparison HTML renderer deterministic 展示 pass/fail、identity、总体/切片区间、case/cluster ledger、gate 原因和 evidence boundary；所有动态文本 HTML escape，输出无 script/外部资源并带 restrictive CSP。测试覆盖 project fixture、cluster exact 字段、闭合 <code>td</code>+<code>script src</code> payload 和 CLI receipt。<code>artifact_only_render</code> 明确不重开 evidence graph、不重算 statistics、不认证 artifact；HTML 可覆盖且不是 canonical decision identity，XSS-safe 不证明评测结论正确。当前证据限于语义 DOM/parser、CSS 与自动化测试，不包含跨浏览器、打印或辅助技术人工视觉回归。</li>
+<li>Evaluation release ledger v1 使用 domain-separated HMAC-SHA256 链绑定连续 sequence、唯一 release/artifact id、artifact byte size/SHA-256、decision、caller timestamp、key id 与前序 MAC；三记录 fixture 在末条轮换 key，并严格重哈希当前 baseline/candidate manifests 与 comparison。Canonical loader 拒绝 duplicate/unknown/nonfinite/非规范 JSON、断链/乱序/重复 identity；writer exclusive-create + file-fsync。MAC chain 仅相对 supplied shared keys 认证，artifact path mapping 才检查当前 bytes，ledger 外 trusted head 才检测合法前缀截断/回滚；公开 key 不证明 custody，timestamp MAC 不证明真实时间，且无公钥不可否认性、目录原子发布、post-verify immutability、真实执行或统计有效性证据。</li>
+<li>Safe Agent 离线场景证明审批、幂等、失败预算和 SQLite reconciliation 状态机；transactional-outbox 测试另证明 local task state + pending row 原子提交/回滚、并发 lease claim、renew/retry、stale ack 拒绝、dead letter，以及 provider success 后 ack 前 crash 使用同一 <code>effect_id</code> 重投。demo 的两个 request 被 in-memory provider 折叠成一个模拟 effect，只证明 local SQLite at-least-once 状态机；lease 不提供远端 exactly-once，supplied receipt 不认证真实 effect，也不覆盖网络、真实 provider、broker、跨库/跨区域容灾或断电 durability。</li>
+<li>Strict JSON model planner 测试覆盖 tool/finish/escalate、duplicate/nested-duplicate key、<code>NaN/Infinity</code>/overflow float、Markdown fence、closed fields、unknown tool、evidence contract、deep-frozen tool schema、request state/budget/tool/prompt identity、model/finish-reason/output-cap/byte drift、recorded exact replay、provider metadata promotion和 deterministic decision identity。另有 16 个 executable schema 测试覆盖 explicit Draft 2020-12、closed root、valid/invalid schema、local/external reference、format annotation/enforcement、deep freeze、schema/instance byte cap、脱敏 JSON Pointer error、contract fingerprint 和 schema-before-resolver/policy/handler。端到端 control 由同一 contract 派生 Planner schema/runtime Tool，锁定 draft/schema/validator、两次 request/response/decision，运行 local parser→standard schema→resource/policy→simulated handler→exact verifier，并证明 request drift、fenced JSON、runtime <code>const</code> rejection 与 missing capability fail closed。两条 response、provider request id、62 tokens 与 0.03 cost 都是 authored fixture；schema 不 coercion/default/authorize，无网络/模型/provider 账单/生产 IAM/开放语义 verifier，SHA-256 也不认证来源、安全性或真实性。</li>
+<li>MCP stdio control 真实启动本地 Python server 子进程，通过 OS pipe 执行 MCP 2025-11-25 的 11 条 initialize/initialized/tools list/call JSON-RPC 消息；严格 LF/UTF-8/object framing 拒绝 missing delimiter、embedded raw newline、duplicate key、非有限数、非法 UTF-8 和 byte cap 外输入。<code>fixture.add</code> 发布并执行 closed Draft 2020-12 input/output schema，成功结果同时返回 text/structuredContent，schema-invalid 参数为脱敏 <code>isError</code> tool result，unknown tool 为 <code>-32602</code> protocol error。12 个测试覆盖生命周期、版本 fallback、schema、错误分层、binary loop、真实 subprocess、stdout purity 与 deterministic allowlist-projection fingerprint。公开报告不含 raw messages，投影也不绑定参数/result content；无密钥 fingerprint 不认证来源。它不使用官方 SDK/完整 MCP schema 或 conformance suite，没有 Streamable HTTP、网络、认证、授权/审批、A2A 或跨厂商互操作，不能证明生产安全或任意 server 兼容。</li>
+<li>MCP official-SDK memory control 固定 <code>mcp==1.29.0</code>，在 AnyIO in-memory object streams 两端真实运行 <code>ClientSession</code>、low-level <code>Server</code>、generated types 与 JSON Schema validation，协商 MCP <code>2025-11-25</code>、列出 closed input/output schema 并得到 <code>structuredContent={"sum":5}</code>。schema-invalid 参数在应用 handler 前拒绝，unknown name 则进入应用 handler 并由 allowlist fail closed；6 个测试覆盖闭合报告、协同 rehash 后语义漂移、项目入口与错误内容不公开。它不执行 subprocess、stdio、TCP/HTTP、SSE、远程/跨厂商 server、官方 conformance suite、认证、授权/审批或副作用；SDK error text 可能含 validation detail，公开报告不发布 raw error。无密钥 fingerprint 不认证执行或来源。</li>
+<li>MCP official-SDK stdio control 同样固定 <code>mcp==1.29.0</code>，由官方 <code>stdio_client</code> 启动独立 Python subprocess；子进程以官方 <code>stdio_server</code> 把同一 low-level fixture 接到真实 OS stdin/stdout pipe。client 配置 UTF-8 strict，而当前官方 server 对 stdin 使用 UTF-8 replacement error handling；不能合写成“两端 strict”。它协商 2025-11-25、ping、发现 closed schema 并执行三类 call；exclusive-create canonical receipt 的 handler events 固定为 <code>fixture.add, fixture.missing</code>，因此 schema-invalid 未进入 handler、unknown tool 进入应用 gate，server 正常收到 EOF 后退出且 stderr 为空。11 个测试覆盖真实运行、报告/receipt tamper、duplicate/nonfinite/noncanonical/oversize receipt、no-overwrite 与项目 CLI。公开报告不含 PID/path/raw transcript/raw 参数或 raw result/error content，只发布 allowlisted <code>successful_sum=5</code>；它没有独立注入畸形 framing、invalid UTF-8、byte cap、stdout 污染，没有触发 forced terminate/kill、取消或 deadline，也没有 HTTP/SSE、TLS/OAuth、远程/跨厂商、conformance、授权/审批或生产 supervisor 证据。临时 receipt 与无密钥 fingerprints 不认证进程、执行或来源。</li>
+<li>MCP official-SDK Streamable HTTP control 固定 <code>mcp==1.29.0</code>，由官方 <code>streamable_http_client</code>/<code>ClientSession</code> 连接独立 Python subprocess 中的 low-level <code>Server</code>、<code>StreamableHTTPSessionManager</code> 与 SDK ASGI adapter，在真实 IPv4 loopback TCP/HTTP 上协商 2025-11-25、发现 closed schema 并执行成功/schema-invalid/unknown-tool。stateful profile 固定为 7 POST + 1 GET + 1 DELETE、8×200 + 1×202、7×SSE + 2×JSON；client 关闭时 DELETE 终止 MCP session。exclusive-create receipt 的 handler events 为 <code>fixture.add, fixture.missing</code>，并要求 manager 正常退出、私有 shutdown control 已收到、子进程 exit code 0 与 stdout/stderr 为空。11 个测试覆盖真实运行、闭合报告/协同 rehash、duplicate/nonfinite/noncanonical/oversize receipt、no-overwrite 与项目 CLI。公开报告不含 PID/session id/token/header/raw HTTP/protocol payload、参数、result 或 error。随机 token 只保护 MCP 外的 readiness/shutdown 编排端点，缺失 token 的真实负例为 401；它不是 MCP auth。control 没执行 MCP endpoint 的 malformed body、Host/Origin failure、网络故障、cancel/deadline、resumption、TLS/OAuth、远程/跨厂商、conformance、多 worker、授权/审批或生产 supervisor。先选 port 后 bind 有竞争窗口；临时 receipt 与无密钥 fingerprints 不认证进程、执行或来源。</li>
+<li>MCP Streamable HTTP control 启动只绑定 <code>127.0.0.1</code> 的 server subprocess，在真实 TCP/HTTP 和单 <code>/mcp</code> endpoint 上执行 Origin allowlist、随机 Bearer header gate、initialize/session/version、POST JSON/SSE、GET SSE、空 202 notification、并发显式 cancellation 与 DELETE→404。SSE 验证 id-bearing empty priming event；取消后的 in-flight stream 关闭且没有 JSON-RPC response。10 个测试覆盖 strict finite JSON/duplicate/UTF-8/byte cap、in-process ASGI header/body/session 负例、Accept/SSE helper、lifecycle/cancellation timeout、unsafe bind/config、真实 subprocess 和 CLI；该模块定向 coverage 为 88%。公开报告不含 token、session、event id、raw HTTP、参数或 result，固定无密钥投影指纹为 <code>sha256:5a5cc3be…c8915</code>。本地 Bearer 只证明 shared-secret header gate，不是 OAuth、用户/tenant/scope 或业务授权；没有官方 MCP SDK/完整 Schema/conformance、TLS、远程 server、resumption/redelivery、server-to-client request、跨 stream non-broadcast 或跨厂商证据。</li>
+<li>A2A loopback control 用官方 <code>a2a-sdk==1.1.2</code> 同时构建 client/server，在真实 IPv4 loopback TCP/HTTP 上解析 well-known Agent Card，固定选择 <code>JSONRPC</code>/<code>1.0</code> interface，执行 <code>SendMessage</code> 和 <code>GetTask</code>；返回 completed task/单 artifact 后再由本地 verifier 独立验收。raw HTTP 负例证明 0.3 <code>kind</code> 与 <code>A2A-Version: 9.9</code> 分别得到 <code>-32602</code>、<code>-32009</code>。默认 control 不访问外网，只执行官方 SDK 生成 protobuf/required-field gate；联网参数另下载 SHA-256 固定为 <code>6b6560c7…b8d62</code> 的官方 v1.0.0 <code>a2a.json</code>，以 Draft 2020-12 验证 Agent Card、Send Message Request 与 Task。本次联网报告投影指纹为 <code>sha256:df78d8b7…3704e</code>，离线默认报告为 <code>sha256:f1ad7ae1…b099e</code>；报告不发布 raw message、参数、task/context id 或 artifact value。该 control 不执行 A2A TCK/完整 operation matrix、SSE、HTTP+JSON/REST、gRPC、TLS、签名 card、认证、授权/审批、远程或跨厂商互操作，不能证明完整 conformance、身份、安全或生产可用性。</li>
+<li>云 API contract CLI 明确输出 <code>network_performed: false</code>，只证明固定 fixture 的字段映射、严格解析与密钥脱敏，不证明真实端点可用。</li>
+<li>Opaque reasoning artifact control 使用 <code>cryptography</code> AES-256-GCM、固定虚构 key/nonce、虚构 plaintext 与内存 nonce/consumption ledger。16-case matrix 精确展示 content-only envelope 的 cross-subject/tenant/session/model 四个 unsafe acceptance，并验证 context-bound subject/tenant/session/branch/predecessor/model/expiry、retired key、claims tamper 与 second-consumption 拒绝；报告固定 <code>network_performed=false</code>、<code>real_provider_artifacts_used=false</code>、<code>plaintext_reasoning_emitted=false</code>。它不解析或生成任何真实供应商 block，不调用模型/网络，也不证明当前 provider 有漏洞或采用相同修复；固定 key 和单进程 ledger 不证明 KMS/HSM、CSPRNG、持久/分布式 replay state、fork/compaction/Merkle、key custody 或迁移正确性。</li>
+<li>Trajectory release gate 对 strict JSON/JSONL 的本仓库 v1 publication projection 做字段与 block allowlist；测试覆盖 safe fixture、reasoning/encrypted/unknown block、嵌套 signature、schema drift、duplicate/non-finite loader 与 CLI 非零退出，报告不回显输入值、未知类型或任意字段名。它不是 raw provider response sanitizer，不解析 opaque 内容，<code>secret_pii_scan_performed=false</code>，所以不能证明允许的 visible text、tool data、citation、版权、consent 或用途可公开。</li>
+<li>OpenAI Responses typed-event replay 消费 3,208-byte authored SDK-shaped JSONL（<code>sha256:f2947212…5a54686</code>），以 15 events/2 output items 重建 <code>天气：晴。</code> 与 <code>lookup_weather({"city":"上海"})</code>，对账 12 input + 9 output = 21 total，锁定 event projection <code>sha256:9cc5964d…bd713e</code> 与 receipt <code>sha256:c4829c19…42579</code>。16 个测试覆盖连续 sequence 本地规则、response/item/content lifecycle、delta/done/terminal 漂移、refusal、incomplete/failed、opaque item、未知字段、duplicate/non-finite JSON、invalid UTF-8、截断与资源上限。它没有执行 OpenAI SDK、HTTP/SSE/WebSocket、远程 API/model/billing，不认证 provider/model/response id/usage，也不证明完整 Responses API、质量、安全或生产可靠性。</li>
+<li>云 API retry matrix 只证明本地 <code>408/429/500/502/503/504</code> allowlist、bounded exponential backoff、严格 <code>Retry-After</code>、attempt/deadline 和 replay/outcome fail-closed 决策在固定输入下自洽。它不发送请求，也不证明真实 provider 当前错误语义、配额恢复、idempotency key、重复计费去重或 endpoint 可用；有效 <code>Retry-After</code> 超预算时停止而非提前重试。</li>
+<li>云 API async executor 的 <code>httpx.MockTransport</code> 测试覆盖 exact origin、HTTPS/no-query/no-redirect、monotonic deadline、connect 与 outcome-uncertain timeout 分类、取消传播、strict object JSON 和脱敏 attempt trace。它不执行真实 DNS/TLS/proxy/证书/egress，也不证明 endpoint 或 provider 语义；非流式 <code>max_response_bytes</code> 在 body 缓冲后检查，不是 ingress/memory 上限。</li>
+<li>SSEDecoder 的 CPU byte fixture 覆盖 UTF-8/BOM、LF/CRLF/CR、多行 data、line/event/total byte gate 和截断 EOF；三类 cloud stream state 分别验证 <code>[DONE]</code>、<code>message_stop</code>、finishReason+EOF 及 text/usage/finish 顺序。它只证明 text-only framing/state，不执行 streaming HTTP，不支持 tool/thinking/media，不证明真实 provider event schema、backpressure、取消传播或停止计费。</li>
+<li>Cloud SSE executor 的 MockTransport/AsyncByteStream 测试覆盖 pre-body HTTP retry、<code>text/event-stream</code>、增量 callback、idle/overall deadline，以及成功/截断/超限/timeout/cancel 的 response close；2xx body 开始后不重试。它不证明真实 TCP/HTTP2/backpressure、服务端观察取消或停止计费；partial callback 文本不可撤回，<code>bytes_received</code> 也不是 token/wire-byte 指标。</li>
+<li>Cloud usage budget reference 从 OpenAI-compatible/Anthropic <code>max_tokens</code> 或 Gemini <code>generationConfig.maxOutputTokens</code> 提取唯一正整数 cap，从恰好一个 body/URL 来源提取 model 并要求与 pricing snapshot 精确相等；identity version、billing scope、URL、body 与规范化 header 绑定为 SHA-256 request fingerprint。常见 credential 值先替换，测试证明同 scope key rotation 稳定、prompt/cap/scope drift 改变 identity；settle/cancel/uncertain 错 fingerprint 不释放 active reservation。显式 provider/model/revision/checked_at pricing snapshot 下，以整数 micro-USD per million tokens 对 input estimate + cap 做原子 reservation，成功按 reported usage settle，确定未发送才 cancel，usage 不确定则提交完整 reservation。固定 <code>$1/M + $2/M</code> fixture 得到 60+10 预留 80 micro-USD、58+4 结算 66 micro-USD；两线程不重复占用 cap，post-call overrun 先入账再阻断。内存版不验证 tokenizer estimate、provider 字符串/endpoint 与费率归属、caller/pricing/transport、provider usage/隐藏或 cached/reasoning token；hash 不是签名/保密，也不是发票、持久 ledger、HTTP 原子事务或 billing reconciliation 证据。</li>
+<li>MinHash/LSH reference 以 SHA-256 stable shingle mapping、seed-derived affine hash、完整 band tuple collision 生成 deterministic lexical candidates，并绑定 item/report fingerprint；所有候选可 exact Jaccard recheck。默认 authored toy 的 5 items/10 pairs 得到 3 candidates，其中 threshold 0.8 下 1 true positive、2 false positive，exhaustive snapshot recall=1、precision=1/3；测试另锁定 1-hash 配置漏掉 Jaccard=2/3 pair 的 recall=0 反例。理想 <code>1-(1-s^r)^b</code> 只在独立 MinHash 模型下描述候选概率，不保证单 pair 或新数据召回；exhaustive recall audit 仍为 <span class="arithmatex">\(O(N^2)\)</span>。该实现不证明 semantic/translation duplicate、真实域阈值、hash authenticity、数据许可或 readiness 可直接改用近似 pass。</li>
+<li>SQLite usage budget reference 把 pricing+limits singleton config、reservation tombstone 与 event timeline 放入本地数据库，并以 <code>BEGIN IMMEDIATE</code> 串行化写事务。测试证明同一文件的两连接不会重复预留最后容量、子进程退出后 active 仍占额度、配置漂移 fail closed、event trigger failure 整笔回滚、文件句柄释放，以及 post-call overrun 先持久化再报错；离线 demo 重开后把 active 记为 uncertain。它只证明 local durable atomic quota：active 不按 TTL 自动释放，无密钥 config/request fingerprint 不抗协同篡改；不与远程调用原子，不认证 pricing/provider usage/invoice，不证明断电/备份恢复、跨机器/跨区域 quota、服务端取消或 exactly-once billing。</li>
+<li>Budgeted cloud HTTP reference 在 target preflight 后才 reserve，并强制 <code>max_attempts=1</code>；测试覆盖完整 usage settle、ConnectError cancel、HTTP 500 uncertain、2xx 缺 usage/malformed uncertain、task cancellation uncertain、retry/错误 origin 在 transport 前拒绝，以及 SQLite uncertain 重开。MockTransport demo 得到 settled 66 + uncertain 80 = committed 146 micro-USD。它只证明本地单-attempt 控制流；结构化 pre-send failure 才能证明未发送，HTTP status 的 outcome known 不等于零计费。它不执行网络，不解析 provider-specific error usage，也不消除 provider effect 与 SQLite commit 的 crash window；生产 replay 必须逐 attempt 独立 reserve，不能由一次逻辑-call cap 覆盖。</li>
+<li>Budgeted cloud JSON retry orchestrator 复用同一 HTTP executor 的 bounded retry、有效 <code>Retry-After</code>、monotonic logical deadline、replay-safe 与 outcome-uncertain 决策，并以默认关闭的 lifecycle hooks 在每次发送前 reserve 唯一 <code>logical-call:attempt:N</code>、在 sleep/下一 attempt 前 terminalize。21 个 budgeted-cloud 测试覆盖 500→200 的 uncertain 80 + settled 66 = committed 146、Connect→200 的 cancelled 0 + settled 66、hard limit=140 时第二次 reservation 在 transport 前失败且网络仅 1 call、429 delay 保留、outcome-uncertain/replay-unsafe 不重试、reserve 后取消、malformed/缺 usage 与 SQLite <code>reserved→uncertain→reserved→settled</code> 重开顺序。它只覆盖 JSON/MockTransport/local ledger，不支持 streaming partial-output replay，不解析 provider-specific error usage；uncertain 不声称失败 attempt 一定计费，也不证明真实网络、provider usage/invoice、server cancellation、idempotency、exactly-once billing 或远程 effect—SQLite commit 原子性。</li>
+<li>JAX/Optax tiny-batch 实验在输出中记录实际 backend/device 并同步计时；当前只证明 CPU 小模型闭环，不证明 GPU/TPU 或多设备 sharding。</li>
+<li>PyTorch/JAX MiniGPT parity control 强制两边在 CPU Float32 上使用同一解析式权重、affine LayerNorm/epsilon=<code>1e-5</code>、tanh-GELU、causal mask、tied embedding、含一个 ignored target 的 masked mean loss和 plain SGD。初始 logits/loss 最大差 <code>7.636845111846924e-08/0</code>；20 个 unique parameter gradients 的全局最大差 <code>2.384185791015625e-07</code>。一步 <code>lr=0.025</code> 后参数/logits/loss 最大差为 <code>7.450580596923828e-09</code>、<code>7.450580596923828e-08</code>、<code>2.384185791015625e-07</code>，均低于 <code>2e-6</code> authored tolerance。把相同主干参数送入原生 JAX RMSNorm 路径的 logits 最大差为 <code>0.37747739627957344</code>，证明未对齐 norm 不能冒充 parity。该 control 不比较 AdamW state/schedule、dropout/RNG、JIT/timing、CUDA/TPU/sharding、大模型、收敛或性能；strict fingerprint只绑定当前 runtime/report，不宣称跨版本或跨硬件相同。</li>
+<li>PyTorch/JAX stochastic AdamW trajectory control 在同一 LayerNorm contract 上使用 NumPy PCG64 外部物化的三张 embedding inverted-dropout masks，对账三步 raw/global-norm-clipped gradients、AdamW first/second moments/count、<code>0.02→0.01→0.005</code> schedule、参数和 post-step forward。最大差依次为 raw <code>3.129243850708008e-07</code>、clipped <code>1.862645149230957e-08</code>、moments <code>2.561137080192566e-09/8.003553375601768e-11</code>、参数 <code>2.5480985641479492e-06</code>、logits <code>1.564621925354004e-07</code>；wrong-mask 最终参数差 <code>0.06900620367377996</code>，报告 <code>sha256:68ffa809…5c609</code> 两次独立进程一致。它只证明 shared-mask CPU Float32 authored trajectory，不证明 native RNG/state advance、norm/bias decay mask、JIT、checkpoint、accelerator/sharding、收敛或性能。</li>
+<li>JAX/Optax checkpoint-resume control 使用 pickle-free <code>ALLMJAX1</code> 单文件：canonical manifest 与 little-endian payload 逐项绑定参数 PyTree、Optax count/moments、typed dropout/data key data、shuffle permutation/cursor、step、模型/optimizer/dataset identity 和内外 SHA-256。两个独立 spawn process 在第 3/6 步交接；13,476-byte artifact 为 <code>sha256:e9252e5dddfa4aa5…</code>，sample/loss/gradient trace 与最终 full state 相对 uninterrupted bit-exact。重置 PRNG 与 cursor 两条负例的最终参数最大差分别为 <code>0.037261832505464554</code>、<code>0.03700308472616598</code>。loader 在构造 JAX arrays 前拒绝 schema/order/shape/dtype/hash/截断漂移，writer 只证明 exclusive create + file <code>fsync</code>；没有 Orbax/Flax/TensorStore、directory durability/断电原子性、来源认证、Python/NumPy/worker/accelerator RNG、CUDA/TPU、sharding、目标模型、收敛或性能证据。</li>
+<li>CPU AMP/GradScaler control 真实执行 PyTorch 2.13.0+cpu FP16 autocast、scaled backward、<code>unscale_</code>、global-norm clip、SGD 与 AdamW。两批 clip fixture 固定得到 scaled/unscaled gradient <code>24/3</code>，正确 post-clip 约 <code>0.49999982</code> 与 full batch exact，错误 clip-before-unscale 的 optimizer gradient 约 <code>0.062499996</code>。一个 finite AdamW step 建立 step=1 与 moments；三个含 <code>inf</code> 的 accumulation window 使 scale <code>8→4→2→1</code>，但参数与 optimizer state exact 不变。in-memory model/optimizer/scaler split-run 在 scale=1 的 gradient 10000 上与 uninterrupted exact 并执行 step=2；漏 scaler state、fresh scale=8 的负对照 overflow、scale <code>8→4</code> 且 step 仍为 1。报告用 <code>null</code> 表示 non-finite value 并以 <code>allow_nan=False</code> 输出 strict JSON。它没有文件 artifact/进程重启、scheduler/RNG/DataLoader、DDP/FSDP、CUDA kernel、目标模型/Trainer、性能、收敛或质量证据；也不能与 MiniGPT 文件 resume control 拼接成统一 exact checkpoint 声明。</li>
+<li>
+<p>Cross-process AMP training-resume control 在同一 PyTorch 2.13.0+cpu 轨迹中执行 6 个 FP32 参数、CPU FP16 autocast、GradScaler、AdamW、<code>StepLR(step_size=2,gamma=0.5)</code>、Torch RNG inverted-dropout mask、Python RNG factor 与 8-example stateful shuffle。attempt 0 update 后，attempt 1–3 intentional non-finite 让 scale <code>8→4→2→1</code>，model/AdamW step=1 与 scheduler <code>last_epoch/step_count=1/2</code> 不变。phase-1 把 closed-field model/optimizer/scheduler/scaler、Torch/Python RNG、shuffle generator/permutation/cursor/epoch、progress 与 dataset hash 写入当前 21,747-byte <code>torch.save</code> checkpoint，进程退出；不同 PID 以 16 MiB pre-load cap 和 <code>weights_only=True</code> 重开，attempt 4–7 的 batch/factor/mask/loss/gradient/scale/step/LR trace 及最终七类 component fingerprint 均与独立 uninterrupted worker bit-exact，最终 optimizer/scheduler step 为 5、LR=0.005、scale=1、epoch/cursor=1/8。五条反例分别错误地在 overflow 上推进 scheduler、漏 scheduler/scaler/RNG/data state，并观察 LR、step decision、stochastic trace或 batch/terminal state 的特定漂移；5 个定向测试覆盖 strict JSON、跨 PID/checkpoint inventory、scheduler skip、反例与完整 scope。optimizer receipt 来自 authored AdamW 所有 per-parameter step，不是通用接口。该 pickle-backed local artifact 未认证/加密；<code>weights_only</code> 不消除所有不可信输入/resource risk。temp + file-fsync + replace 无 crash/power-loss/目录-fsync 证明。无 NumPy/CUDA RNG、DataLoader worker/prefetch、accumulation 中间态、DDP/FSDP/ZeRO、目标模型/Trainer、CUDA、远程存储、性能、收敛或质量证据。</p>
+</li>
+<li>
+<p>DDP + AMP overflow-consensus control 在两个真实 OS 进程上执行 PyTorch 2.13.0+cpu、temporary FileStore/Gloo、built-in <code>DistributedDataParallel</code>、CPU FP16 autocast/GradScaler、AdamW 与 StepLR。共同 finite warm-up 建立 parameter≈0.99、optimizer/scheduler step=1、LR=0.005、scale/tracker=<code>8/1</code>。rank 0 在首个 <code>no_sync</code> micro-batch 产生 Inf 后，末批 built-in reduction 使两 rank 都 non-finite，均 skip optimizer/scheduler，scale/tracker=<code>4/0</code> 且训练状态一致。独立负对照先让两边得到 finite scaled gradient 8，再于 rank 0 的 <code>unscale_</code> 前 authored 注入 Inf；无 flag collective 时 rank 0/1 的 optimizer step=<code>1/2</code>、parameter约 <code>0.99/0.985</code>、LR=<code>0.005/0.0025</code>、scale=<code>4/8</code>，moments/scheduler/tracker 全部分叉。optimizer 前对 unscaled local flags <code>[1,0]</code> 做 <code>all_reduce(MAX)</code> 得到 <code>[1,1]</code>，两边都不调用 scaler/optimizer/scheduler step 并显式统一 scale=4，完整已报告训练状态一致。<code>allow_nan=False</code> 与 <code>finite=false,value=null</code> 保持 strict JSON。post-reduction 损坏是 authored counterfactual，不是 DDP 常态；第一条反而证明当前 default reducer 会传播 reduction 前 Inf。<code>update(new_scale=...)</code> 保留 growth tracker=1，不等同 native found-inf transition，也不是通用 distributed scaler。该 control 仅有单 FP32 参数/单 bucket、同机和人为 Inf；collective count 未直接插桩，无 clipping、自然 overflow、custom hook/conditional graph、checkpoint/elastic restart、CUDA/NCCL、多节点、FSDP/ZeRO、目标模型/Trainer、性能、收敛或质量证据。</p>
+</li>
+<li>DataLoader prefetch-resume control 用四个不同顶层 PID 执行 uninterrupted、phase-1、committed-cursor resume 与 emitted-cursor negative control；每段真实启动 <code>num_workers=2,prefetch_factor=2,batch_size=1</code> 的 CPU spawn workers。固定 permutation <code>[8,3,1,7,0,9,4,2,6,5]</code> 中，phase-1 main loop 收到 <code>[8,3,1]</code> 时 tracking sampler 已 emitted 到 7，显式列出 queue 中未交付 <code>[7,0,9,4]</code>；从 application-consumed cursor 3 恢复组合 ID exact，从 emitted cursor 7 恢复的组合仅 <code>[8,3,1,2,6,5]</code>。同 loader seed 的独立 phase prefix worker-local Torch RNG exact；fresh worker resume tail 相对 uninterrupted 最大差约 0.654431，而 <code>(namespace,sample_id)</code> 派生 generator 的 tail 差为 0。canonical strict-JSON checkpoint 绑定 dataset identity、完整 permutation、两种 cursor、consumed IDs、phase PID 与 loader contract；5 个测试覆盖真实 subprocess、duplicate/non-finite/noncanonical、cursor drift、资源 cap 与 no-overwrite。具体 ahead=4 是当前 PyTorch 2.13.0+cpu fixture 的观察值，不是公开跨版本 API；sample-only key 未含 dataset/transform revision、epoch/visit。control 未读写/保存私有 queue 或 worker state，无 persistent workers/pin memory/IterableDataset、collator/model/optimizer、consumption—optimizer commit atomicity、DistributedSampler/DDP、CUDA、性能、收敛或质量证据，不能与 model checkpoint control 拼成完整 exact resume。</li>
+<li>Optimizer-commit resume control 用六个不同顶层 PID 执行 uninterrupted、third-microbatch stochastic-backward 后 phase-1、committed-cursor replay、正确 crash RNG 但漏 gradients 的 consumed-cursor negative、consumed-cursor + 完整 sidecar resume，以及 gradients/ledger 完整但误用 commit-boundary RNG 的 negative；每段真实启动两个 spawn DataLoader workers。CPU Float64 <code>Linear(2,1)</code> 的输入使用 seed <code>20260815</code> 的 main-process inverted-Bernoulli mask，再执行 MSE、<code>SGD(momentum=0.9)</code>、<code>StepLR(step_size=2,gamma=0.5)</code> 与 accumulation steps=2。崩溃点 sampler emitted/main-loop consumed/optimizer committed=<code>7/3/2</code>，模型上有两个 in-flight gradient tensors。8,985-byte base 绑定 commit-boundary model/SGD momentum/StepLR/Torch CPU RNG、data/loader contract、cursor 与 ledger但不含 <code>.grad</code>；从 committed=2 恢复 RNG并 replay sample <code>1</code> 后，最终 ledger、model/optimizer/scheduler/RNG fingerprint 与 uninterrupted bit-exact、参数最大差 0。gradient omission ledger 为 <code>[8,3,7,0,9,4,2,6,5]</code>，未来 mask 与终态 RNG 同 baseline；末尾 singleton 重缩放后 optimizer/StepLR step 同为 5、LR 同为 <code>0.0125</code>，参数最大差仍为 <code>0.005767858566116724</code>。7,905-byte sidecar 绑定 base SHA-256、pending <code>[1]</code>、position=1、steps/loss divisor=2、两个 finite gradient tensors与 crash-observed Torch RNG；最后发布的 827-byte strict canonical JSON manifest 以 closed schema 绑定 dataset、base/sidecar name/schema/size/hash、sidecar→base digest 和 publication sequence。第五个 PID 先验 complete manifest，再对实际交给 <code>torch.load(weights_only=True)</code> 的 bytes 重查 identity；从 consumed=3 恢复后首个窗口 <code>[1,7]</code>，终态也 bit-exact、参数差 0。第六个 PID 恢复完整 gradients/ledger，却使用错误 RNG；它仍有 5 steps/LR <code>0.0125</code>，参数最大差为 <code>0.017878893573032573</code> 且终态 RNG 不同。父进程 fault matrix 在反序列化前拒绝 base-only、base+sidecar 无 manifest、manifest 缺 sidecar 与 post-manifest tamper；base-only 仍可供 commit replay。8 个测试另覆盖 sidecar/base digest/RNG、scheduler/RNG schema、duplicate/noncanonical/unknown manifest、no-overwrite、cursor/loader validation、non-finite model、missing momentum、size cap 与完整 scope。该 stochastic CPU control 证明两种当前协议、两个隔离反例和进程故障快照 completeness gate，不证明 base+sidecar+manifest/checkpoint/sample/optimizer 原子事务、parent-directory <code>fsync</code>、断电/filesystem crash、并发目录替换、来源认证或不可信 pickle 安全；无 queue/worker/Python/NumPy/CUDA RNG state、原生任意随机层、多 epoch、GradScaler、CUDA、distributed/sharded、目标 LLM/Trainer、性能、收敛或质量证据。</li>
+</ul>
+<h2 id="_10">尚未由本仓库证明<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h2>
+<ul>
+<li>当前机器没有完成真实 CUDA/vLLM/QLoRA 的目标硬件验证；文档中的命令是运行路线，不是成功声明。</li>
+<li>Gradient accumulation toy 本身仍没有执行 optimizer、随机层、AMP 或 distributed collective。两条早期 DDP controls 补 default reducer、<code>no_sync</code>、同步后 clipping 和 plain SGD update；独立 CPU AMP control 补 scaler/unscale/overflow/AdamW skip 与进程内 scaler omission；新 DDP+AMP control 补单参数 authored fault 下的共同 skip、分叉与 optimizer-pre flag gate。仍未在同一路径证明目标 Trainer/真实模型、dropout/RNG、多个参数/bucket、自然 overflow、clipping、统一文件 checkpoint/进程重启、distributed scaler 完整协议、FSDP/ZeRO、GPU、多节点、通信量、吞吐、收敛或模型质量。</li>
+<li>离线 adapter 测试没有访问 OpenAI、Anthropic、Gemini、DeepSeek 或 Qwen 的真实付费端点，也不证明账号配额、区域或最新产品行为。</li>
+<li>MCP 已分别执行官方 SDK 1.29.0 的 in-memory、real-stdio subprocess/pipe 与 real-Streamable-HTTP subprocess/loopback 路径，以及自写 2025-11-25 strict stdio 与 Streamable HTTP 子集。两个 official transport controls 未继承 authored negative matrix，也未执行 conformance；五者都没有 OAuth、TLS、远程 server、完整 operation matrix、SSE 恢复或跨厂商互操作，私有 control token 不是 MCP auth。A2A 已执行官方 SDK 1.1.2 的本地 client/server 与真实 loopback JSON-RPC HTTP，但仍没有 TCK/完整 operation matrix、SSE、REST/gRPC、TLS、签名 card、认证、远程或跨厂商网络互操作。它们都不能证明完整兼容、安全或生产可用性。</li>
+<li>任何吞吐、TTFT、TPOT、显存与费用结果都需要在目标环境保存 workload manifest 后才能成为可比较证据。</li>
+<li>闭源模型未公开的内部架构与训练配方不在可核验范围内。</li>
+</ul>
+<h2 id="_11">维护流程<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
+<ol>
+<li>修改公式、API 或数字前先确定陈述类别与证据等级。</li>
+<li>API/产品事实优先核对固定版本官方文档，记录 provider、版本和 <code>checked_at</code>。</li>
+<li>将能执行的不变量写成最小测试；不能执行的事实明确标注“文档核对”或“待目标环境验证”。</li>
+<li>运行 <code>python scripts/check_content_accuracy.py</code>，再运行完整测试、严格类型检查和 MkDocs strict build。</li>
+<li>目标环境基准保存原始结果、配置、硬件与软件版本；只在这些条件内解读结论。</li>
+<li>发现勘误时更新正文、测试、台账与 <code>CHANGELOG.md</code>，避免只改其中一处。</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
