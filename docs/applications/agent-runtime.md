@@ -111,7 +111,7 @@ SHA-256 指纹避免把完整参数直接写进 ledger，但它既不是加密�
 
 幂等键不能只用“当前时间 + 随机数”，否则重试无法复用。它应来自持久 task/step/call identity，并传递给支持 idempotency key 的外部 provider。
 
-## Exactly-once 幻觉
+## Exactly-once 幻觉 { #exactly-once }
 
 本地数据库 claim 与远端副作用无法一般性地组成原子事务。执行序列：
 
