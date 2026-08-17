@@ -196,6 +196,7 @@ nav:
           - Llama 模型证据: evidence/llama-controls.md
           - 对齐与偏好优化证据: evidence/alignment-controls.md
           - 云 API 证据: evidence/cloud-api-controls.md
+          - Transformers Basics 证据: evidence/transformers-controls.md
       - 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md

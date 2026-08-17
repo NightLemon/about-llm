@@ -140,11 +140,6 @@
       "max_prose_line_length": 233,
       "overlong_prose_line_count": 2
     },
-    "docs/practice/projects/transformers-basics.md": {
-      "heading_count": 50,
-      "max_prose_line_length": 318,
-      "overlong_prose_line_count": 13
-    },
     "docs/quality/agent-evaluation.md": {
       "max_prose_line_length": 508,
       "overlong_prose_line_count": 6
