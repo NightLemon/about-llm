@@ -91,7 +91,9 @@ nav:
           - Interactions API: models/gemini-interactions.md
           - generateContent 与多模态: models/gemini-generate-content.md
           - 生产接入: models/gemini-production.md
-      - 云 API 契约: models/cloud-api-contracts.md
+      - 云 API 契约:
+          - 契约基础: models/cloud-api-contracts.md
+          - 可靠性、重试与预算: models/cloud-api-reliability.md
   - 基础:
       - 数学基础: foundations/math.md
       - 机器学习与深度学习: foundations/ml-dl.md
@@ -193,6 +195,7 @@ nav:
           - Claude 模型证据: evidence/claude-controls.md
           - Llama 模型证据: evidence/llama-controls.md
           - 对齐与偏好优化证据: evidence/alignment-controls.md
+          - 云 API 证据: evidence/cloud-api-controls.md
       - 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md

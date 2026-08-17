@@ -88,12 +88,6 @@
       "max_prose_line_length": 1215,
       "overlong_prose_line_count": 9
     },
-    "docs/models/cloud-api-contracts.md": {
-      "heading_count": 51,
-      "line_count": 605,
-      "max_prose_line_length": 262,
-      "overlong_prose_line_count": 1
-    },
     "docs/models/gpt.md": {
       "max_prose_line_length": 274,
       "overlong_prose_line_count": 5
