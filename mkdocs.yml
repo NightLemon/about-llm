@@ -178,6 +178,9 @@ nav:
       - LLM 系统设计: career/system-design.md
       - 简历项目与作品集: career/resume-projects.md
   - 参考:
+      - 证据台账:
+          - 项目实验与证据: evidence/project-controls.md
+          - 作品集 claim 证据: evidence/resume-claims.md
       - 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md
