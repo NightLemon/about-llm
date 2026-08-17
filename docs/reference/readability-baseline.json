@@ -88,12 +88,6 @@
       "max_prose_line_length": 1215,
       "overlong_prose_line_count": 9
     },
-    "docs/models/claude.md": {
-      "heading_count": 59,
-      "line_count": 779,
-      "max_prose_line_length": 370,
-      "overlong_prose_line_count": 5
-    },
     "docs/models/cloud-api-contracts.md": {
       "heading_count": 51,
       "line_count": 605,
