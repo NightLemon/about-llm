@@ -154,7 +154,11 @@ nav:
       - 治理工件模板: quality/governance-templates.md
   - 前沿:
       - 多模态: frontier/multimodal.md
-      - 推理、长上下文与 MoE: frontier/reasoning-long-context-moe.md
+      - 推理、长上下文与 MoE:
+          - 总览: frontier/reasoning-long-context-moe.md
+          - 推理系统: frontier/reasoning-systems.md
+          - 长上下文系统: frontier/long-context-systems.md
+          - MoE 系统: frontier/moe-systems.md
       - 具身、计算机使用与小模型: frontier/embodied-small-models.md
   - 论文解读:
       - 板块说明: papers/index.md
@@ -198,6 +202,7 @@ nav:
           - 对齐与偏好优化证据: evidence/alignment-controls.md
           - 云 API 证据: evidence/cloud-api-controls.md
           - Transformers Basics 证据: evidence/transformers-controls.md
+          - 前沿系统证据: evidence/frontier-controls.md
       - 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md

@@ -70,11 +70,6 @@
     "docs/frontier/multimodal.md": {
       "heading_count": 50
     },
-    "docs/frontier/reasoning-long-context-moe.md": {
-      "heading_count": 52,
-      "max_prose_line_length": 672,
-      "overlong_prose_line_count": 25
-    },
     "docs/guide/environment.md": {
       "max_prose_line_length": 250,
       "overlong_prose_line_count": 1
