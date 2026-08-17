@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 from collections.abc import AsyncIterator, Mapping, Sequence
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -39,12 +40,8 @@ from about_llm.inference.openai_reference import (
 from about_llm.inference.sse import STREAM_FINISHED, parse_sse_data_line
 from about_llm.llmops import artifact_fingerprint, canonical_json_bytes
 
-INCREMENTAL_STREAMING_CONTROL_VERSION: Final = (
-    "about-llm.incremental-streaming-control.v1"
-)
-INCREMENTAL_STREAMING_REPORT_VERSION: Final = (
-    "about-llm.incremental-streaming-control-report.v1"
-)
+INCREMENTAL_STREAMING_CONTROL_VERSION: Final = "about-llm.incremental-streaming-control.v1"
+INCREMENTAL_STREAMING_REPORT_VERSION: Final = "about-llm.incremental-streaming-control-report.v1"
 CONTROL_AUDIT_PATH: Final = "/control/incremental-audit"
 CONTROL_TOKEN_ENV: Final = "ABOUT_LLM_INCREMENTAL_STREAM_TOKEN"
 MODEL_ID: Final = "about-llm/scripted-incremental-backend"
@@ -204,6 +201,7 @@ REVIEWED_RUNTIME: Final = {
     "starlette": "0.41.3",
     "uvicorn": "0.52.1",
 }
+REVIEWED_CHECKED_AT: Final = "2026-08-13"
 
 
 class ScriptedIncrementalBackend:
@@ -225,9 +223,7 @@ class ScriptedIncrementalBackend:
         self.cancel_completed = False
         self.cancel_emitted_token_ids: list[int] = []
 
-    async def stream(
-        self, request: ChatCompletionRequest
-    ) -> AsyncIterator[IncrementalTokenDelta]:
+    async def stream(self, request: ChatCompletionRequest) -> AsyncIterator[IncrementalTokenDelta]:
         if len(request.messages) != 1 or request.messages[0].role != "user":
             raise ValueError("scripted backend requires one user message")
         prompt = request.messages[0].content
@@ -292,19 +288,11 @@ class ScriptedIncrementalBackend:
 
 def _authorized(request: Request, token: str) -> bool:
     headers = cast(Sequence[tuple[bytes, bytes]], request.scope["headers"])
-    values = [
-        value.decode("latin-1")
-        for key, value in headers
-        if key == b"authorization"
-    ]
+    values = [value.decode("latin-1") for key, value in headers if key == b"authorization"]
     if len(values) != 1:
         return False
     scheme, separator, supplied = values[0].partition(" ")
-    return (
-        bool(separator)
-        and scheme.lower() == "bearer"
-        and hmac.compare_digest(supplied, token)
-    )
+    return bool(separator) and scheme.lower() == "bearer" and hmac.compare_digest(supplied, token)
 
 
 def build_control_app(
@@ -391,9 +379,9 @@ async def _wait_ready(
 
 
 async def _consume_complete(response: httpx.Response) -> dict[str, Any]:
-    if response.status_code != 200 or not response.headers.get(
-        "content-type", ""
-    ).startswith("text/event-stream"):
+    if response.status_code != 200 or not response.headers.get("content-type", "").startswith(
+        "text/event-stream"
+    ):
         raise ValueError("complete stream request failed")
     content = ""
     content_delta_count = 0
@@ -437,13 +425,7 @@ async def _consume_complete(response: httpx.Response) -> dict[str, Any]:
             if not isinstance(raw_usage, Mapping):
                 raise ValueError("complete stream usage is invalid")
             usage = dict(raw_usage)
-    if (
-        not done
-        or not role_seen
-        or not content
-        or usage is None
-        or len(fingerprints) != 1
-    ):
+    if not done or not role_seen or not content or usage is None or len(fingerprints) != 1:
         raise ValueError("complete stream did not reach the reviewed terminal state")
     return {
         "content": content,
@@ -462,9 +444,9 @@ async def _read_cancel_prefix(
     base_url: str,
     headers: Mapping[str, str],
 ) -> tuple[str, dict[str, Any]]:
-    if response.status_code != 200 or not response.headers.get(
-        "content-type", ""
-    ).startswith("text/event-stream"):
+    if response.status_code != 200 or not response.headers.get("content-type", "").startswith(
+        "text/event-stream"
+    ):
         raise ValueError("cancel stream request failed")
     async for line in response.aiter_lines():
         event = parse_sse_data_line(line)
@@ -487,9 +469,7 @@ async def _read_cancel_prefix(
             continue
         if not isinstance(fragment, str) or not fragment:
             raise ValueError("cancel stream content is invalid")
-        audit_response = await audit_client.get(
-            f"{base_url}{CONTROL_AUDIT_PATH}", headers=headers
-        )
+        audit_response = await audit_client.get(f"{base_url}{CONTROL_AUDIT_PATH}", headers=headers)
         if audit_response.status_code != 200:
             raise ValueError("preclose audit request failed")
         return fragment, decode_strict_json_object(audit_response.content)
@@ -526,6 +506,10 @@ def _runtime_versions() -> dict[str, str]:
         "starlette": importlib.metadata.version("starlette"),
         "uvicorn": importlib.metadata.version("uvicorn"),
     }
+
+
+def _utc_date() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 async def _run_control_async() -> dict[str, Any]:
@@ -616,9 +600,7 @@ async def _run_control_async() -> dict[str, Any]:
         raise RuntimeError("incremental control did not collect all audit states")
     preclose_backend = preclose.get("backend")
     final_backend = final_audit.get("backend")
-    if not isinstance(preclose_backend, Mapping) or not isinstance(
-        final_backend, Mapping
-    ):
+    if not isinstance(preclose_backend, Mapping) or not isinstance(final_backend, Mapping):
         raise ValueError("incremental control backend audit is missing")
     expected_complete_text = "".join(item[1] for item in COMPLETE_PLAN)
     if (
@@ -657,14 +639,13 @@ async def _run_control_async() -> dict[str, Any]:
         or final_audit.get("failed_backend_requests") != 0
         or final_backend.get("stream_call_count") != 2
         or final_backend.get("complete_completed") is not True
-        or final_backend.get("complete_emitted_token_ids")
-        != [item[0] for item in COMPLETE_PLAN]
+        or final_backend.get("complete_emitted_token_ids") != [item[0] for item in COMPLETE_PLAN]
     ):
         raise ValueError("incremental control final audit drift")
 
     report: dict[str, Any] = {
         "report_version": INCREMENTAL_STREAMING_REPORT_VERSION,
-        "checked_at": "2026-08-13",
+        "checked_at": _utc_date(),
         "implementation": INCREMENTAL_STREAMING_CONTROL_VERSION,
         "backend_fingerprint": SCRIPTED_BACKEND_FINGERPRINT,
         "runtime": _runtime_versions(),
@@ -689,9 +670,7 @@ async def _run_control_async() -> dict[str, Any]:
         },
         "complete_stream": {
             "client_content_delta_count": len(COMPLETE_PLAN),
-            "client_content_fingerprint": _canonical_sha256(
-                {"text": expected_complete_text}
-            ),
+            "client_content_fingerprint": _canonical_sha256({"text": expected_complete_text}),
             "client_finish_reason": "stop",
             "client_usage": copy.deepcopy(complete["usage"]),
             "client_sse_done_observed": True,
@@ -700,9 +679,7 @@ async def _run_control_async() -> dict[str, Any]:
         },
         "disconnect_stream": {
             "client_content_delta_count_before_close": 1,
-            "client_content_fingerprint_before_close": _canonical_sha256(
-                {"text": cancel_fragment}
-            ),
+            "client_content_fingerprint_before_close": _canonical_sha256({"text": cancel_fragment}),
             "preclose_service_active_streams": 1,
             "preclose_service_cancelled_streams": 0,
             "preclose_backend_first_delta_emitted": True,
@@ -768,8 +745,16 @@ def _exact(value: Mapping[str, Any], fields: frozenset[str], location: str) -> N
 
 def verify_incremental_streaming_report(
     report: Mapping[str, Any],
+    *,
+    reviewed: bool = False,
 ) -> dict[str, Any]:
-    """Verify the reviewed recorded report without starting a server."""
+    """Verify one report without starting a server.
+
+    Live reports bind the observed runtime and UTC date into their fingerprint, but
+    those values vary across otherwise equivalent executions. ``reviewed=True`` is
+    reserved for the frozen repository artifact and additionally requires its
+    manually reviewed runtime and date.
+    """
 
     _exact(report, _TOP_LEVEL_FIELDS, "report")
     nested = (
@@ -794,15 +779,25 @@ def verify_incremental_streaming_report(
     del unsigned["report_fingerprint"]
     if not hmac.compare_digest(supplied, _canonical_sha256(unsigned)):
         raise ValueError("report fingerprint mismatch")
+    checked_at = report.get("checked_at")
+    try:
+        date.fromisoformat(cast(str, checked_at))
+    except (TypeError, ValueError) as error:
+        raise ValueError("report checked_at is not an ISO date") from error
+    runtime = cast(Mapping[str, Any], report["runtime"])
+    if any(not isinstance(runtime[field], str) or not runtime[field] for field in _RUNTIME_FIELDS):
+        raise ValueError("report runtime identity is invalid")
     if (
         report.get("report_version") != INCREMENTAL_STREAMING_REPORT_VERSION
-        or report.get("checked_at") != "2026-08-13"
         or report.get("implementation") != INCREMENTAL_STREAMING_CONTROL_VERSION
         or report.get("backend_fingerprint") != SCRIPTED_BACKEND_FINGERPRINT
-        or report.get("runtime") != REVIEWED_RUNTIME
         or report.get("evidence_boundary") != INCREMENTAL_STREAMING_EVIDENCE_BOUNDARY
     ):
-        raise ValueError("report identity/runtime/evidence boundary drift")
+        raise ValueError("report identity/evidence boundary drift")
+    if reviewed and (
+        checked_at != REVIEWED_CHECKED_AT or report.get("runtime") != REVIEWED_RUNTIME
+    ):
+        raise ValueError("reviewed report date/runtime drift")
     if report["transport"] != {
         "scheme": "http",
         "address_scope": "IPv4 loopback",
@@ -841,9 +836,7 @@ def verify_incremental_streaming_report(
         raise ValueError("report complete-stream drift")
     if report["disconnect_stream"] != {
         "client_content_delta_count_before_close": 1,
-        "client_content_fingerprint_before_close": _canonical_sha256(
-            {"text": CANCEL_FIRST[1]}
-        ),
+        "client_content_fingerprint_before_close": _canonical_sha256({"text": CANCEL_FIRST[1]}),
         "preclose_service_active_streams": 1,
         "preclose_service_cancelled_streams": 0,
         "preclose_backend_first_delta_emitted": True,
@@ -897,7 +890,7 @@ def load_and_verify_incremental_streaming_report(path: Path) -> dict[str, Any]:
         report = decode_strict_json_object(raw)
     except ValueError as error:
         raise ValueError("recorded report is not strict JSON") from error
-    return verify_incremental_streaming_report(report)
+    return verify_incremental_streaming_report(report, reviewed=True)
 
 
 def _build_parser() -> argparse.ArgumentParser:

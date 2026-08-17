@@ -41,9 +41,7 @@ class FixtureIncrementalBackend:
         self.events = events
         self.calls = 0
 
-    async def stream(
-        self, request: ChatCompletionRequest
-    ) -> AsyncIterator[IncrementalTokenDelta]:
+    async def stream(self, request: ChatCompletionRequest) -> AsyncIterator[IncrementalTokenDelta]:
         self.calls += 1
         assert request.model == self.model_id
         for event in self.events:
@@ -100,9 +98,7 @@ def test_incremental_token_delta_validates_closed_value_contract() -> None:
 
 def test_incremental_app_rejects_nonstream_without_calling_backend() -> None:
     async def exercise() -> None:
-        backend = FixtureIncrementalBackend(
-            (IncrementalTokenDelta("x", 1, 3, "stop"),)
-        )
+        backend = FixtureIncrementalBackend((IncrementalTokenDelta("x", 1, 3, "stop"),))
         app = build_incremental_reference_app(
             backend,
             bearer_token="t" * 32,
@@ -212,9 +208,7 @@ def test_incremental_service_rejects_backend_protocol_drift(
 
 def test_real_loopback_disconnect_control_and_recorded_report_verify() -> None:
     live = run_incremental_streaming_control()
-    assert live["disconnect_stream"][
-        "postclose_backend_asyncio_cancelled_error_observed"
-    ] is True
+    assert live["disconnect_stream"]["postclose_backend_asyncio_cancelled_error_observed"] is True
     assert live["disconnect_stream"]["postclose_backend_emitted_token_ids"] == [201]
     assert live["complete_stream"]["backend_completion_token_ids"] == [101, 102, 103]
     assert live["scope"]["kv_or_gpu_resource_release_proven"] is False
@@ -226,6 +220,17 @@ def test_real_loopback_disconnect_control_and_recorded_report_verify() -> None:
     )
     assert recorded["backend_fingerprint"] == SCRIPTED_BACKEND_FINGERPRINT
     assert recorded["evidence_boundary"] == INCREMENTAL_STREAMING_EVIDENCE_BOUNDARY
+
+
+def test_live_report_verification_binds_but_does_not_freeze_runtime() -> None:
+    report = copy.deepcopy(json.loads(RECORDED_REPORT.read_text(encoding="utf-8")))
+    report["checked_at"] = "2026-08-17"
+    report["runtime"]["python"] = "3.12.portable-control"
+    _rehash(report)
+
+    assert verify_incremental_streaming_report(report) == report
+    with pytest.raises(ValueError, match="reviewed report date/runtime drift"):
+        verify_incremental_streaming_report(report, reviewed=True)
 
 
 @pytest.mark.parametrize(
@@ -260,5 +265,3 @@ def test_recorded_loader_rejects_duplicate_nonfinite_and_invalid_utf8(
         path.write_bytes(payload)
         with pytest.raises(ValueError, match="strict JSON"):
             load_and_verify_incremental_streaming_report(path)
-
-

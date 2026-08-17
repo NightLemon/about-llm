@@ -23,6 +23,7 @@ jobs:
             pyproject.toml
             constraints/ci.txt
       - run: python -m pip install -e ".[docs,dev]"
+      - run: python scripts/check_repo_hygiene.py
       - run: python scripts/doctor.py --profile docs
       - run: python scripts/doctor.py --profile cpu-starter
       - run: python scripts/check_docs.py
@@ -52,6 +53,7 @@ jobs:
             pyproject.toml
             constraints/ci.txt
       - run: python -m pip install -e ".[dev,torch,jax,transformers,finetune,rag,langchain,llamaindex,api,evaluation,agents]"
+      - run: python scripts/check_repo_hygiene.py
       - run: python -m ipykernel install --user --name about-llm
       - run: python -m ruff check .
       - run: python -m mypy src/about_llm
