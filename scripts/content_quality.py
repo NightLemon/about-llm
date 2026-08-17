@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-ACCURACY_PAGE = ROOT / "docs" / "reference" / "accuracy.md"
+ACCURACY_LEDGER = ROOT / "docs" / "evidence" / "accuracy-ledger.md"
 SOURCE_REGISTRY = ROOT / "docs" / "reference" / "official-sources.json"
 
 TEXT_SUFFIXES = {".md", ".py", ".yml", ".yaml", ".toml", ".json", ".jsonl"}
@@ -124,7 +124,7 @@ def _load_registry(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
 
 def check_ledger(
     *,
-    accuracy_page: Path = ACCURACY_PAGE,
+    accuracy_page: Path = ACCURACY_LEDGER,
     source_registry: Path = SOURCE_REGISTRY,
     as_of: date | None = None,
     expected_urls: set[str] = OFFICIAL_URLS,

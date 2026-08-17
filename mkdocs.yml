@@ -187,6 +187,7 @@ nav:
           - 作品集 claim 证据: evidence/resume-claims.md
           - Gemini 接入证据: evidence/gemini-controls.md
           - 面试深挖与 control: evidence/interview-controls.md
+          - 内容准确性证据: evidence/accuracy-ledger.md
       - 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md
