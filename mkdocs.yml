@@ -86,7 +86,11 @@ nav:
       - Qwen: models/qwen.md
       - DeepSeek: models/deepseek.md
       - Claude: models/claude.md
-      - Gemini: models/gemini.md
+      - Gemini:
+          - 总览: models/gemini.md
+          - Interactions API: models/gemini-interactions.md
+          - generateContent 与多模态: models/gemini-generate-content.md
+          - 生产接入: models/gemini-production.md
       - 云 API 契约: models/cloud-api-contracts.md
   - 基础:
       - 数学基础: foundations/math.md
@@ -181,6 +185,7 @@ nav:
       - 证据台账:
           - 项目实验与证据: evidence/project-controls.md
           - 作品集 claim 证据: evidence/resume-claims.md
+          - Gemini 接入证据: evidence/gemini-controls.md
       - 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md
