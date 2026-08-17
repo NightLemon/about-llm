@@ -59,11 +59,6 @@
       "max_prose_line_length": 409,
       "overlong_prose_line_count": 4
     },
-    "docs/foundations/math.md": {
-      "heading_count": 54,
-      "max_prose_line_length": 292,
-      "overlong_prose_line_count": 3
-    },
     "docs/foundations/ml-dl.md": {
       "max_prose_line_length": 438,
       "overlong_prose_line_count": 7

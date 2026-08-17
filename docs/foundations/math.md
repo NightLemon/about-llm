@@ -7,8 +7,8 @@
 
 - **适合读者**：需要读懂 shape、概率、梯度和评测区间的工程师。
 - **先修**：Python 基础；能理解变量、函数、指数和对数记号。
-- **首次阅读**：先读 Shape、矩阵乘法、概率与 softmax；统计实验可按任务回补。
-- **完成信号**：能标注一次 attention 的 shape，并解释一个置信区间不代表什么。
+- **首次阅读**：先读 Shape、矩阵乘法、概率与 softmax；模型比较转到[评测统计](evaluation-statistics.md)。
+- **完成信号**：能标注一次 attention 的 shape，并解释一个数值公式的成立前提。
 - **卡住时**：先看[新手知识地图](../guide/beginner-map.md)，只回补当前公式需要的小节。
 
 </div>
@@ -21,7 +21,7 @@
 - 解释 token 概率、最大似然、交叉熵、KL 与困惑度；
 - 用链式法则理解反向传播、梯度累积和裁剪；
 - 区分 SGD、AdamW、weight decay 与学习率调度；
-- 给模型比较定义 estimand、置信区间、配对实验和切片；
+- 知道何时转到[评测统计](evaluation-statistics.md)定义 estimand、配对实验和区间；
 - 识别公式成立的假设，不把理想数学量冒充硬件实测。
 
 本仓库的 NumPy attention、PyTorch/JAX tiny GPT、KV Cache 公式和 paired bootstrap 是本章的可执行证据。小数组测试证明实现不变量，不证明大模型精度、训练稳定性或生产质量。
@@ -179,7 +179,9 @@ Padding mask、causal mask、packing block mask 和 loss mask 目的不同：前
 
 朴素 score 矩阵有 \(O(T^2)\) 元素，QK/AV 计算也含二次项。FlashAttention 通过 tiled IO 与 online softmax 避免物化完整 score/probability，降低 HBM traffic 和内存；它没有普遍把精确 dense attention 的算术复杂度变成线性。
 
-Online softmax 的关键是旧 block 的统计量可以在全局最大值变化后重标定。对一个 query row，把第 \(b\) 个 key block 的 scaled、masked scores 写成 \(s_{b,j}\)，维护 running maximum \(m_b\)、相对该 maximum 的 normalizer \(\ell_b\) 与未归一化 value accumulator \(o_b\)。初值为 \(m_0=-\infty,\ell_0=0,o_0=0\)：
+Online softmax 的关键是旧 block 的统计量可以在全局最大值变化后重标定。
+对一个 query row，把第 \(b\) 个 key block 的 scaled、masked scores 写成 \(s_{b,j}\)。
+维护 running maximum \(m_b\)、normalizer \(\ell_b\) 与未归一化 value accumulator \(o_b\)。初值为 \(m_0=-\infty,\ell_0=0,o_0=0\)：
 
 \[
 m_b=\max\left(m_{b-1},\max_j s_{b,j}\right),
@@ -193,9 +195,16 @@ m_b=\max\left(m_{b-1},\max_j s_{b,j}\right),
 o_b=e^{m_{b-1}-m_b}o_{b-1}+\sum_j e^{s_{b,j}-m_b}v_{b,j}.
 \]
 
-最后输出 \(o_B/\ell_B\)。第一项把旧 block 的分子和分母从旧 maximum 坐标系缩放到新坐标系；第二项加入当前 block。对不可见位置令 \(s=-\infty\)。若此前还没有任何可见 key，旧 \(\ell/o\) 本来就是 0，实现应直接把旧贡献定义为 0，不能真的计算 \(-\infty-(-\infty)\)；这样前几个 block 全被 mask、后续才出现可见 key 也不会产生 NaN。若处理完全部 blocks 后整行仍不可见，则 \(\ell_B=0\)，实现必须拒绝。
+最后输出 \(o_B/\ell_B\)。第一项把旧 block 的分子和分母缩放到新 maximum 坐标系；第二项加入当前 block。
+对不可见位置令 \(s=-\infty\)。
+若此前还没有任何可见 key，旧 \(\ell/o\) 本来就是 0，实现应直接把旧贡献定义为 0，不能真的计算 \(-\infty-(-\infty)\)。
+这样前几个 block 全被 mask、后续才出现可见 key 也不会产生 NaN。
+若处理完全部 blocks 后整行仍不可见，则 \(\ell_B=0\)，实现必须拒绝。
 
-在实数算术下，这和一次性计算 dense softmax 完全等价；有限精度下，block 划分与归约顺序可能造成微小误差，不能要求逐 bit 相同。仓库的 `blockwise_online_attention` 使用 float64 累积，只构造当前 score tile 与每行状态，不返回完整 probability matrix。它报告的 `logical_peak_score_elements` 只是最大逻辑 tile，不包含 Q/K/V、输出、NumPy temporary 或 allocator，因此不是进程峰值内存测量；这个 CPU oracle 也不证明 CUDA kernel、FlashAttention backend、HBM traffic、速度或 vLLM 行为。
+在实数算术下，这和一次性计算 dense softmax 完全等价；有限精度下，block 划分与归约顺序可能造成微小误差，不能要求逐 bit 相同。
+仓库的 blockwise online attention 使用 float64 累积，只构造当前 score tile 与每行状态，不返回完整 probability matrix。
+报告的 logical peak score elements 只是最大逻辑 tile，不包含 Q/K/V、输出、NumPy temporary 或 allocator，因此不是进程峰值内存测量。
+这个 CPU oracle 也不证明 CUDA kernel、FlashAttention backend、HBM traffic、速度或 vLLM 行为。
 
 ~~~powershell
 python projects/transformers-basics/online_softmax_demo.py
@@ -467,57 +476,7 @@ BF16 指数范围接近 FP32、尾数更短；FP16 指数范围更小，训练�
 
 近 0 值由 `atol` 主导，大值由 `rtol` 主导。容差应由 dtype、运算长度和业务影响决定，不能为让测试绿而无限放宽。
 
-## 10. Statistics：从指标到结论
-
-### 先定义 estimand
-
-“模型 A 更好”不是可计算问题。先定义：目标用户/任务分布、采样单位、指标、预算、时间窗口和聚合方式。例如：
-
-> 在 2026-Q3 中文客服目标流量分布上、相同工具与 2k 输出预算下，candidate 相对 baseline 的 case-level task success 平均差。
-
-若 estimand 不同，两个数字不能直接比较。
-
-### Mean、variance 与 standard error
-
-样本均值：
-
-\[
-\bar x=\frac1n\sum_i x_i
-\]
-
-样本方差：
-
-\[
-s^2=\frac1{n-1}\sum_i(x_i-\bar x)^2
-\]
-
-独立同分布近似下 mean 的 standard error 约 \(s/\sqrt n\)。但 LLM case 常按用户/文档聚类；把同一文档 100 个切片当 100 个独立样本会低估不确定性。应按独立采样单位 bootstrap/cluster。
-
-### 配对比较
-
-同一 case 运行 baseline/candidate，分析差值 \(d_i=c_i-b_i\)。配对设计消除 case 难度的大量方差，比两个独立均值更有力。
-
-本仓库 paired bootstrap 对 case id 同步重采样差值，报告 mean difference、置信区间和 improvement probability。它仍假设采样单位合理，不能修复污染、judge 偏差或重复 case。
-
-### Confidence interval 不是什么
-
-频率学置信区间的严格含义是：重复执行相同采样/构造过程，给定比例的区间覆盖真实参数。一次得到的 95% CI 不能简单说“真实值有 95% 概率在这里”，除非采用明确 Bayesian 模型。
-
-Bootstrap CI 在小样本、极端离散指标或强依赖数据上可能不稳；应报告 case 数、分布和敏感性。
-
-### 多重比较与选择偏差
-
-尝试 30 个 prompt 后只报告最佳一个，其 estimate 含 winner's curse。多模型、多指标、多切片会提高偶然显著概率。实践可预注册 primary metric、保留 final test、做 multiplicity correction 或明确探索性分析。
-
-### Simpson's paradox 与切片
-
-总体提升可能来自流量配比变化，而每个关键切片都退化。报告 overall 之外，还看语言、风险、长度、工具类型和用户群；关键安全切片使用 guardrail，不让平均质量抵消。
-
-### LLM-as-judge
-
-Judge 分数也是有误差的测量工具。要固定 rubric/model/prompt/parser，随机交换 A/B 顺序，与人工标签校准 precision/recall/相关性，并检查语言、长度、风格偏差。Judge 自信不是 ground truth。
-
-## 11. 可执行小实验
+## 10. 可执行小实验
 
 ### Attention 因果性
 
@@ -537,10 +496,6 @@ M=2\times L\times B\times T\times H_{kv}\times d_h\times bytes(dtype)
 
 JAX/Optax 实验固定 632 参数模型和 tiny batch，验证 loss 大幅下降、参数变化、gradient norm 有限、JIT 同步计时。它能发现训练闭环错误，不证明 validation 泛化。
 
-### Paired release gate
-
-Evaluation CLI 对相同 case 的 baseline/candidate 运行 paired bootstrap，并把质量 CI、安全差和延迟阈值组合成 gate。样例 2 cases 只验证代码路径，不能作为统计充分的产品结论。
-
 ## 常见错误
 
 - Shape 能乘就认为语义正确，忽略轴含义；
@@ -551,9 +506,7 @@ Evaluation CLI 对相同 case 的 baseline/candidate 运行 paired bootstrap，�
 - 用不同 tokenizer 的 PPL 排名模型；
 - gradient accumulation 忘记平均或有效 token weighting；
 - 把 AdamW 说成“Adam + 在 loss 加 L2”而不讲条件；
-- 只报告均值，不报告采样单位和不确定性；
-- 反复看 test 调参，却仍称其为独立测试；
-- 用 2 个 case 的 bootstrap CI 声称生产提升；
+- 进行模型比较却没有先读[评测统计](evaluation-statistics.md)定义采样单位与 estimand；
 - 用理想 FLOPs/bytes 公式冒充硬件实测。
 
 ## 面试追问
@@ -565,9 +518,7 @@ Evaluation CLI 对相同 case 的 baseline/candidate 运行 paired bootstrap，�
 5. Forward KL 与 reverse KL 的直觉差别是什么？
 6. AdamW 为什么不等同于任意 Adam + L2 loss？
 7. 可变长度 micro-batch 怎样得到正确 global token mean？
-8. 为什么 paired evaluation 通常比独立均值比较方差小？
-9. 95% CI 的正确频率学解释是什么？
-10. 如何证明一个数值优化没有改变模型语义，而不只是最终文本相似？
+8. 如何证明一个数值优化没有改变模型语义，而不只是最终文本相似？
 
 ## 一手资料与继续学习
 
@@ -575,4 +526,5 @@ Evaluation CLI 对相同 case 的 baseline/candidate 运行 paired bootstrap，�
 - Murphy，《Probabilistic Machine Learning》：概率模型、估计与不确定性。
 - Boyd、Vandenberghe，《Convex Optimization》：凸性、对偶与优化直觉；神经网络虽非凸，基础工具仍重要。
 - JAX/PyTorch autodiff、numerical accuracy 与 distributed 官方文档；实现行为以固定版本为准。
-- 本仓库 `attention_numpy.py`、`gpt_torch.py`、`gpt_jax.py`、`inference/kv_cache.py` 与对应测试。
+- 本仓库的 attention、PyTorch/JAX GPT、KV Cache 实现与对应测试。
+- 模型比较、置信区间与 judge 校准继续读[评测统计](evaluation-statistics.md)。
