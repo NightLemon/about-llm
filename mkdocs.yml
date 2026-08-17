@@ -191,6 +191,7 @@ nav:
           - Qwen 模型证据: evidence/qwen-controls.md
           - DeepSeek 模型证据: evidence/deepseek-controls.md
           - Claude 模型证据: evidence/claude-controls.md
+          - Llama 模型证据: evidence/llama-controls.md
       - 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md

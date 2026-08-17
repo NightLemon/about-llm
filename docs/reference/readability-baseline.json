@@ -102,12 +102,6 @@
       "max_prose_line_length": 254,
       "overlong_prose_line_count": 4
     },
-    "docs/models/llama.md": {
-      "heading_count": 49,
-      "line_count": 710,
-      "max_prose_line_length": 307,
-      "overlong_prose_line_count": 6
-    },
     "docs/practice/labs/lab-0c-cloud-budget.md": {
       "max_prose_line_length": 244,
       "overlong_prose_line_count": 2
