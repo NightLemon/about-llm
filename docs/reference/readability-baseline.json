@@ -100,12 +100,6 @@
       "max_prose_line_length": 262,
       "overlong_prose_line_count": 1
     },
-    "docs/models/deepseek.md": {
-      "heading_count": 49,
-      "line_count": 823,
-      "max_prose_line_length": 659,
-      "overlong_prose_line_count": 11
-    },
     "docs/models/gpt.md": {
       "max_prose_line_length": 274,
       "overlong_prose_line_count": 5
