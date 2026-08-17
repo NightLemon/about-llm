@@ -122,7 +122,6 @@ PEFT 只能改变哪些参数更新，不能修正错误监督边界。固定 Qw
 
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_lora_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-lora.recorded-report.json
-pytest tests/test_target_lora_control.py -q
 ~~~
 
 ## 训练恢复不是 adapter 保存

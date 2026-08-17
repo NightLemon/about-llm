@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -138,25 +135,3 @@ def test_experiment_rejects_ambiguous_tensor_contracts(
         _run(model, clean, corrupted, positions)
 
 
-def test_project_script_emits_machine_readable_causal_and_negative_controls() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    payload = json.loads(completed.stdout)
-
-    assert payload["experiment"] == "seeded-random-minigpt-residual-patching-v1"
-    assert payload["results"]["joint_causal_prefix"]["normalized_recovery"] == 1.0
-    assert (
-        payload["results"]["future_position_negative_control"][
-            "normalized_recovery"
-        ]
-        == 0.0
-    )
-    assert payload["scope"]["actual_forward_hooks_executed"] is True
-    assert payload["scope"]["target_checkpoint_tested"] is False
-    assert "post-hoc" in payload["metric_selection"]

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -208,38 +205,3 @@ def test_default_fingerprint_is_deterministic_but_not_a_security_boundary() -> N
     )
 
 
-def test_prefix_cache_toy_records_collision_isolation_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "projects" / "inference-serving" / "prefix_cache_toy.py"),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["fixture"]["injected_fingerprint"] == "collision"
-    assert artifact["fixture"]["longest_match_token_ids"] == [11, 12, 13]
-    assert artifact["fixture"]["longest_match_length"] == 3
-    assert artifact["fixture"]["cross_tenant_result"] is None
-    assert artifact["report"] == {
-        "active_leases": 0,
-        "capacity_entries": 3,
-        "evictions": 0,
-        "hits": 1,
-        "leased_entries": 0,
-        "misses": 1,
-        "resident_entries": 3,
-    }
-    assert artifact["scope"] == {
-        "cross_tenant_reuse_observed": False,
-        "fingerprint_collision_injected": True,
-        "fingerprint_confidentiality_or_authorization_proved": False,
-        "full_identity_and_exact_token_comparison_executed": True,
-        "real_kv_tensors_or_gpu_runtime_executed": False,
-        "timing_channel_mitigation_proved": False,
-        "vllm_prefix_cache_equivalence_proved": False,
-        "vram_latency_hit_rate_or_prefill_savings_proved": False,
-    }

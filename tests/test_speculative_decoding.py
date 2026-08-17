@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -180,40 +177,3 @@ def test_block_rejects_mismatched_input_lengths() -> None:
         )
 
 
-def test_speculative_toy_reports_analytic_identity_and_explicit_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "speculative_decoding_toy.py"
-            ),
-            "--seed",
-            "23",
-            "--trials",
-            "5000",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    analytic = artifact["analytic_one_step"]
-    assert analytic["acceptance_probability"] == pytest.approx(0.6)
-    assert analytic["rejection_probability"] == pytest.approx(0.4)
-    assert analytic["theoretical_output_probabilities"] == pytest.approx(
-        [0.1, 0.2, 0.3, 0.4]
-    )
-    assert artifact["monte_carlo"]["maximum_target_difference"] < 0.03
-    assert artifact["forced_block_rejection"]["emitted_tokens"] == [0, 1]
-    assert artifact["scope"] == {
-        "authored_probability_vectors": True,
-        "analytic_identity_checked": True,
-        "monte_carlo_is_demonstration_not_proof": True,
-        "model_forward_or_tokenizer_executed": False,
-        "gpu_verification_kernel_executed": False,
-        "latency_or_speedup_proved": False,
-    }

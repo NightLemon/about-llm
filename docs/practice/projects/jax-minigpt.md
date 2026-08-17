@@ -118,7 +118,7 @@ JAX dispatch 通常是异步的。脚本每步调用 `loss.block_until_ready()` 
 
 ~~~powershell
 python projects/jax-minigpt/cross_framework_parity.py
-python -m pytest tests/test_gpt_cross_framework_parity.py -q
+python projects/jax-minigpt/cross_framework_parity.py
 ~~~
 
 ### 为什么不能比较两个随机模型
@@ -157,7 +157,7 @@ Report fingerprint 为 `sha256:63408e2e…40277e5`。通过只证明这个对齐
 
 ~~~powershell
 python projects/jax-minigpt/cross_framework_training_parity.py
-python -m pytest tests/test_gpt_cross_framework_training_parity.py -q
+python projects/jax-minigpt/cross_framework_training_parity.py
 ~~~
 
 该 control 在已对齐的 LayerNorm 主干上加入：
@@ -183,7 +183,6 @@ g'_t=g_t\min\left(1,\frac{c}{\lVert g_t\rVert_2}\right),
 
 ~~~powershell
 python projects/jax-minigpt/checkpoint_resume_control.py
-python -m pytest tests/test_jax_training_resume.py -q
 ~~~
 
 ### 需要保存哪些状态
@@ -215,10 +214,7 @@ Uninterrupted/resumed sample IDs 都是 `[[0,4],[3,2],[5,1],[6,3],[2,1],[6,4]]`�
 
 ~~~powershell
 python -m pytest `
-  tests/test_gpt_jax.py `
-  tests/test_gpt_cross_framework_parity.py `
-  tests/test_gpt_cross_framework_training_parity.py `
-  tests/test_jax_training_resume.py -q
+  tests/test_gpt_jax.py -q
 ~~~
 
 | 现象 | 优先检查 | 不能据此下的结论 |

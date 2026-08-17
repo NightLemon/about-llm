@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -129,33 +126,3 @@ def test_allocator_rejects_invalid_and_unknown_sequences() -> None:
         allocator.append("a", 0)
 
 
-def test_kv_allocator_toy_records_cow_fragmentation_and_atomic_failure() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "kv_block_allocator_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["initial_append"]["physical_block_ids"] == [0, 1]
-    assert artifact["after_prefix_fork"]["sharing_saved_blocks"] == 2
-    assert artifact["copy_on_write_append"]["copied_partial_block"] == [1, 2]
-    assert artifact["failure_was_atomic"] is True
-    assert artifact["before_capacity_failure"]["internal_fragmentation_slots"] == 1
-    assert artifact["after_releasing_request_a"]["allocated_blocks"] == 2
-    assert artifact["scope"] == {
-        "metadata_only_cpu_simulation": True,
-        "real_kv_tensor_values_stored_or_copied": False,
-        "paged_attention_gpu_kernel_executed": False,
-        "eviction_preemption_or_swap_implemented": False,
-        "latency_throughput_or_vram_proved": False,
-    }

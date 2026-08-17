@@ -47,7 +47,7 @@ flowchart LR
 - **稀疏检索**（BM25）：擅长精确术语、编号、姓名、罕见关键词。
 - **稠密检索**：Embedding 捕捉语义近似，但可能忽略精确词。
 - **混合检索**：分别召回，再用 RRF 或归一化分数组合。
-- **元数据过滤**：在召回时执行租户、权限、日期、类型约束。
+- **授权与元数据过滤**：tenant/ACL 必须在读取正文、打分、缓存、重排或交给模型之前执行；日期、类型等过滤尽量进入候选生成。
 
 Embedding 的 query/document 前缀、归一化和相似度必须匹配模型说明。换 Embedding 模型通常要重建索引。向量距离分数不跨模型、查询直接可比，不宜写死全局阈值。
 
@@ -86,13 +86,19 @@ RRF 常用：
 
 端到端错误应归因到“知识库无资料、解析错、检索漏、排序错、模型没使用、模型越界生成”之一，再决定改哪里。
 
-仓库的 RAG CLI 可分别重放 source-level 检索 qrels 和 recorded answer/abstain/error artifact。后者会复查上下文权限并聚合外部提供的 atomic-claim verdict，但不会自行判断语义蕴含；fixture 通过只证明离线协议和分母正确，不证明真实模型忠实度。
+## 建立可诊断的基线
 
-CLI 另有 `answer-extractive` / `evaluate-extractive` 非 LLM 基线：先做 tenant/principal 授权检索和 context packing，再从 packed chunk 逐字复制 span；distinct lexical coverage 不足时即使召回到主题相关文档也拒答。它让 retrieval→packing→answer/abstain→artifact/evaluation 的控制路径可运行，并证明输出 claim 是授权原文的 exact substring；它不证明语义相关、来源真实、答案完整、阈值校准或 LLM 生成质量，byte budget 也不是模型 token budget。
+不要直接从向量数据库和大模型开始。一个便于排错的顺序是：
 
-项目另有固定 Qwen2.5-0.5B-Instruct 的真实权重 control：逐文件重哈希后执行 ACL-before-BM25、目标 tokenizer packing、greedy logits/KV cache 与 `generate()`。attempt-1 的 answerable case 复述正确但漏引，empty-context case 编造步骤且没有拒答，behavior gate 为 0/2。该结果被原样保留，用来说明真实执行、检索正确和生成质量是三种不同证据；详见[生成、引用与忠实度](rag-generation.md#real-weight-rag-control)。
+1. 用 BM25 和 source-level qrels 建立 retrieval 基线；
+2. 在检索前执行 tenant/ACL 授权，并加入跨权限负例；
+3. 用逐字抽取答案验证 packing、引用和拒答协议；
+4. 改用目标 tokenizer 计算完整 Prompt 与输出预留；
+5. 最后接入生成模型，分别评价答案、忠实度和引用。
 
-同一 CLI 既提供 UTF-8 byte-budget 演示，也提供 `pack-tokenized`：加载明确 tokenizer/revision 与 chat template，对每个 prospective 完整 prompt 重计数、预留输出并记录最终 token IDs。它仍不自动验证 tokenizer 与部署权重匹配、模型实际 context window、生成忠实度或目标硬件吞吐；本地 WordLevel 测试只证明控制路径。
+逐字抽取通过只能说明答案来自授权上下文，不说明片段相关、来源正确或答案完整。真实模型能运行也不说明会引用或拒答。两者是不同层的证据，应保留各自失败样例。
+
+仓库中的最小实现与运行顺序见 [RAG Foundations](../practice/projects/rag-foundations.md)；深入讨论见[检索与重排](rag-retrieval.md)、[生成与忠实度](rag-generation.md)和[生产 RAG](rag-production.md)。
 
 ## 高级模式
 

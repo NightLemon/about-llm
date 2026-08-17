@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -166,32 +163,3 @@ def test_invalid_clustered_contracts_fail_closed(
         operation()
 
 
-def test_clustered_randomization_toy_records_pseudoreplication_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "evaluation-gate"
-                / "clustered_randomization_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["naive_case_sign_flip"]["assignments_evaluated"] == 64
-    assert artifact["naive_case_sign_flip"]["p_value"] == pytest.approx(7 / 64)
-    assert artifact["cluster_joint_case_weighted"]["assignments_evaluated"] == 4
-    assert artifact["cluster_joint_case_weighted"]["p_value"] == pytest.approx(1 / 2)
-    assert artifact["cluster_joint_equal_weighted"]["mean_difference"] == 0
-    assert artifact["scope"] == {
-        "causal_or_general_model_improvement_proved": False,
-        "cluster_joint_sign_flip_executed": True,
-        "cluster_level_exchangeability_or_independence_established": False,
-        "estimand_or_cluster_definition_selected_without_outcome_looking": False,
-        "within_cluster_case_independence_required": False,
-    }

@@ -310,7 +310,6 @@ toy hook 通过后，仓库还有一条更窄但确实加载目标权重的 cont
 ~~~powershell
 python projects/transformers-basics/run_qwen_activation_patching_control.py `
   --local-files-only
-python -m pytest tests/test_transformers_activation_patching_control.py -q
 ~~~
 
 2026-08-13 的录制环境与 checkpoint control 相同。clean prompt 的 top-1 是 `Paris`，metric 为 9.210311；corrupt prompt 的 top-1 是 `Berlin`，metric 为 -7.700302，分母为 16.910613。层位不是扫描后挑选，而按 first/lower-middle/final 固定为 0/11/23：

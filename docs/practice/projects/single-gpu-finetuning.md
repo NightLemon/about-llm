@@ -94,7 +94,6 @@ Qwen2.5-0.5B-Instruct 的 checkpoint-native template 不含 `{% generation %}`�
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_sft_label_control.py `
   --verify projects/single-gpu-finetuning/qwen2.5-0.5b-sft-label.recorded-report.json
-python -m pytest tests/test_target_sft_label_control.py -q
 ~~~
 
 正式入口先在 Python record 上渲染，再构造只含整数特征的 Arrow Dataset，避免异构 tool arguments 被 Arrow 扩成带 `null` 的统一 struct。TRL 0.29.1 对预分词数据配置 `assistant_only_loss=False`，但 configured collator 仍消费预计算 mask；入口随后写 `sft-template-mask-audit.json` 与 `sft-final-label-audit.json`，逐位置确认 assistant label 等于 input ID，其他有效 token 和 padding 都是 `-100`。
@@ -117,7 +116,6 @@ python projects/single-gpu-finetuning/smoke_peft.py `
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_lora_control.py `
   --verify projects/single-gpu-finetuning/qwen2.5-0.5b-lora.recorded-report.json
-python -m pytest tests/test_target_lora_control.py -q
 ~~~
 
 该录制 control 真实执行 CPU FP32 assistant-only backward、一次 AdamW step、冻结基座检查、标准 PEFT adapter 发布和新基座重载。270,336 个 `q_proj/v_proj` adapter 参数完成导出，重载 logits max error=0；但固定单样本 loss 从约 0.003864 升到 0.584557。正确结论是“目标权重训练与发布链路执行过”，不是“LoRA 改善了模型”。
@@ -225,7 +223,6 @@ python -m pytest tests/test_gradient_accumulation.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/ddp_token_mean_control.py
-python -m pytest tests/test_ddp_token_mean.py -q
 ~~~
 
 固定 `D=2,N=4`、rank counts `[1,3]` 时，正确 local loss-sum scale `D/N=1/2` 得到 full-batch `(+23/40,-23/40)`；漏 world size 的 `1/N=1/4` 得到 `(+23/80,-23/80)`，rank-local mean 得到 `(+7/20,-7/20)`。两个 OS 进程都观察到 all-reduced count 4 和相同同步梯度。它只证明当前 PyTorch/Gloo/default reducer 固定路径；没有执行 optimizer、accumulation + `no_sync`、AMP、FSDP/ZeRO、GPU、多节点、目标 Trainer/model 或质量评测。
@@ -236,7 +233,6 @@ python -m pytest tests/test_ddp_token_mean.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/ddp_accumulation_no_sync_control.py
-python -m pytest tests/test_ddp_accumulation_no_sync.py -q
 ~~~
 
 两个 rank 各有两个 micro-batch，counts `[[1,2],[3,1]]`、`N=7`，正确 scale `D/N=2/7`。精确 pre-clip gradient 为 `(+19/35,-19/35)`；built-in DDP 的正确 `no_sync`、同步后 global-norm clip、plain SGD update 均与 full batch 相同。官方 reference hook 的通信计数正/负对照分别为 1 次（forward+backward 都在 context 内）与 2 次（只包 backward）。负对照的数值在本线性 fixture 上仍正确，只是未省通信；计数不是对 built-in reducer 的直接插桩。该 control 仅有一个两元素参数/单 bucket，没有 AMP、随机层、AdamW、FSDP/ZeRO、GPU、多节点、目标 Trainer/model 或性能/质量证据。
@@ -258,7 +254,6 @@ CPU FP16 autocast/GradScaler 下，正确 `unscale→clip` 将 scaled gradient 2
 
 ~~~powershell
 python projects/single-gpu-finetuning/ddp_amp_overflow_consensus_control.py
-python -m pytest tests/test_ddp_amp_overflow_consensus.py -q
 ~~~
 
 当前双进程 CPU/Gloo fixture 中，rank 0 在首个 `no_sync` micro-batch 产生 Inf 后，末批 built-in DDP reduction 会让两 rank 都 non-finite；两边共同 skip AdamW/StepLR，scale `8→4`。故意改在 finite reduction 之后、rank 0 `unscale_` 之前损坏 gradient，则两个 rank-local scaler 分别 skip/update，optimizer step 变成 `[1,2]`，参数、moments、scheduler、LR 与 scaler 都分叉。optimizer 前对 local flag 做 `all_reduce(MAX)` 后，两边共同 skip 并采用 scale=4 的显式策略，训练状态重新保持一致。
@@ -271,7 +266,6 @@ post-reduction 损坏是 authored counterfactual，不是 DDP 正常行为；默
 
 ~~~powershell
 python projects/single-gpu-finetuning/checkpoint_resume_control.py
-python -m pytest tests/test_training_resume_process_control.py -q
 ~~~
 
 6 参数 CPU FP16 fixture 在一次有限 AdamW update 后连续 overflow 三次；scale `8→4→2→1`，optimizer 与 StepLR 都不前进。phase-1 将 model/optimizer/scheduler/scaler、Torch+Python RNG、stateful shuffle permutation/cursor/epoch 与 dataset hash 写入约 21 KiB checkpoint 后退出；不同 PID 用 `weights_only=True` 重开，resume tail 与最终状态和 uninterrupted worker bit-exact。错误推进 scheduler、漏 scheduler/scaler/RNG/data state 分别产生 LR、step、随机 trace 或 batch 漂移。它仍没有 DataLoader worker/prefetch、accumulation 中间态、DDP/CUDA、目标 Trainer、crash atomicity、来源认证、性能或质量证据。
@@ -282,7 +276,6 @@ python -m pytest tests/test_training_resume_process_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/dataloader_prefetch_resume_control.py
-python -m pytest tests/test_dataloader_prefetch_resume_control.py -q
 ~~~
 
 固定 permutation `[8,3,1,7,0,9,4,2,6,5]`、两个 spawn workers、prefetch factor 2、batch 1。phase-1 只消费 `[8,3,1]` 时 sampler 已 emitted 到 7；从这个 cursor 恢复会漏 `[7,0,9,4]`，从应用 consumed cursor=3 恢复才还原完整 ID 顺序。fresh worker-local Torch RNG tail 仍与 uninterrupted 不同，最大差约 0.654431；按 sample ID 派生的局部 generator tail exact。该 key 没有 epoch/visit，control 也没有 collator/model/optimizer、persistent/IterableDataset、DistributedSampler 或 queue-state checkpoint；consumed 不等于 optimizer committed，不能与统一 model checkpoint 拼成完整训练 exact resume。
@@ -293,7 +286,6 @@ python -m pytest tests/test_dataloader_prefetch_resume_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
-python -m pytest tests/test_optimizer_commit_resume_control.py -q
 ~~~
 
 六个独立顶层 PID 的每段都启动两个 spawn workers。CPU Float64 `Linear(2,1)` 的输入先乘 main-process inverted-Bernoulli mask（seed `20260815`），再执行 MSE、SGD momentum、`StepLR(step_size=2,gamma=0.5)` 与两步 accumulation。phase-1 在第三条 `[8,3,1]` 已 stochastic backward 后退出：emitted/consumed/committed=`7/3/2`。当前 8,985-byte base checkpoint 不含 `.grad`，但保存 commit-boundary model/optimizer/scheduler/Torch RNG；从 committed=2 恢复 RNG并重放后，ledger 与 model/optimizer/scheduler/RNG fingerprint 都和 uninterrupted bit-exact，参数最大差 0。
@@ -310,7 +302,6 @@ python -m pytest tests/test_optimizer_commit_resume_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_sft_label_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-sft-label.recorded-report.json
-python -m pytest tests/test_target_sft_label_control.py -q
 ~~~
 
 它没有执行 backward 或 optimizer，只证明固定 Qwen tool schema/fixture，不能证明数据合法性、任意 provider schema、tool 结果真实性、其他消息结构、收敛或模型质量。
@@ -321,7 +312,6 @@ python -m pytest tests/test_target_sft_label_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_lora_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-lora.recorded-report.json
-python -m pytest tests/test_target_lora_control.py -q
 ~~~
 
 ### TRL DPO 单步与 reference replay drift
@@ -330,7 +320,6 @@ python -m pytest tests/test_target_lora_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_dpo_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-dpo.recorded-report.json
-python -m pytest tests/test_target_dpo_control.py -q
 ~~~
 
 ## 项目验收清单
@@ -354,11 +343,8 @@ python -m pytest tests/test_target_dpo_control.py -q
 python -m pytest `
   tests/test_finetuning_cli.py `
   tests/test_sft_readiness.py `
-  tests/test_trl_sft_smoke.py `
-  tests/test_peft_smoke.py `
-  tests/test_target_sft_label_control.py `
-  tests/test_target_lora_control.py `
-  tests/test_target_dpo_control.py -q
+  tests/test_lora.py `
+  tests/test_peft_export.py -q
 python scripts/check_content_accuracy.py
 ~~~
 

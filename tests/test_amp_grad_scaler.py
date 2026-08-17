@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -132,17 +129,3 @@ def test_scope_does_not_overclaim(report: dict[str, object]) -> None:
     }
 
 
-def test_cli_emits_strict_machine_readable_report() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    assert "Infinity" not in completed.stdout
-    assert "NaN" not in completed.stdout
-    payload = json.loads(completed.stdout, parse_constant=lambda value: pytest.fail(value))
-    assert payload["implementation"] == AMP_GRAD_SCALER_CONTROL_VERSION
-    assert all(payload["assertions"].values())

@@ -315,7 +315,7 @@ Greedy speculative decoding 是另一份契约：target 逐位置确认与自身
 
 greedy、top-k/top-p、temperature 在 logits 上执行。大词表排序可优化为局部选择。logprobs、多个候选、beam search 会增加内存和计算，且可能限制 batching。API 是否请求 logprobs 应进入 workload。
 
-Beam width (B) 不只是最后多排几个字符串：每步需要为 active prefixes 计算/筛选候选，保留每条分叉的序列状态和 KV block table；共享 prefix 可以引用相同 full blocks，但分叉后各自增长，shared partial tail 追加还要 copy-on-write。实际成本依 candidate-selection kernel、finished-candidate cap、early stopping、输出长度和 batching policy，不应写成固定 (B\) 倍。比较 beam 配置时同时报告 returned sequence 数与内部 beam 数，不能把只返回 1 条误认为只执行 1 条路径。
+Beam width \(B\) 不只是最后多排几个字符串：每步需要为 active prefixes 计算/筛选候选，保留每条分叉的序列状态和 KV block table；共享 prefix 可以引用相同 full blocks，但分叉后各自增长，shared partial tail 追加还要 copy-on-write。实际成本依 candidate-selection kernel、finished-candidate cap、early stopping、输出长度和 batching policy，不应写成固定 \(B\) 倍。比较 beam 配置时同时报告 returned sequence 数与内部 beam 数，不能把只返回 1 条误认为只执行 1 条路径。
 
 Grammar/JSON constrained decoding 需要为每条 active sequence 保存 parser state，并把 tokenizer token 对该状态的完整转移变成 mask。逐 token 解释字符串或遍历全词表可能成为 CPU bottleneck；常见优化会缓存 state→allowed-token set、使用 trie/FSM 与 GPU masking，但收益依 grammar、词表和状态复用。缓存 key 必须包含 grammar/tokenizer revision 与完整 parser state，不能跨不兼容 schema 复用。约束保证的仍只是所编码的语法性质，不可用“JSON 有效”替代业务校验。
 

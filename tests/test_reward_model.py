@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import math
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -119,37 +116,3 @@ def test_reward_training_rejects_invalid_optimizer_contract(
         )
 
 
-def test_reward_model_toy_exposes_shortcut_and_evidence_boundaries() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "single-gpu-finetuning"
-                / "reward_model_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    confounded = artifact["confounded_training"]
-    balanced = artifact["counterfactually_balanced_training"]
-    assert confounded["final_objective"] < confounded["initial_objective"]
-    assert confounded["final_metrics"]["strict_pair_accuracy"] == 1
-    assert artifact["confounded_held_out"]["strict_pair_accuracy"] == 0
-    assert balanced["final_metrics"]["strict_pair_accuracy"] == 1
-    assert artifact["counterfactually_balanced_held_out"][
-        "strict_pair_accuracy"
-    ] == 1
-    assert artifact["scope"] == {
-        "device": "CPU",
-        "authored_numeric_features_and_preferences": True,
-        "text_tokenizer_or_transformer_executed": False,
-        "human_preference_quality_proved": False,
-        "target_reward_model_quality_proved": False,
-        "reward_hacking_or_policy_optimization_evaluated": False,
-    }

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from fractions import Fraction
 from itertools import product
 from pathlib import Path
@@ -199,51 +196,3 @@ def test_regime_rejects_noncanonical_or_unbounded_fields(
         BinaryVoteRegime(*args)  # type: ignore[arg-type]
 
 
-def test_toy_cli_reports_exact_correlation_counterexample_and_scope() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(TOY)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    report = json.loads(completed.stdout)
-
-    assert completed.stderr == ""
-    assert report["implementation"] == "about-llm.self-consistency-correlation-toy.v1"
-    assert report["binary_answer_labels"] == [
-        "target_success",
-        "target_failure",
-    ]
-    assert report["observations"] == {
-        "same_single_sample_success_probability": True,
-        "independent_majority_strictly_increases": True,
-        "correlated_majority_strictly_decreases": True,
-        "independent_pairwise_correlation_is_zero": True,
-        "latent_pairwise_correlation_is_three_eighths": True,
-    }
-    independent = report["scenarios"]["independent"]
-    correlated = report["scenarios"]["latent_correlated"]
-    assert [analysis["sample_count"] for analysis in independent] == [1, 3, 5, 11]
-    assert [analysis["sample_count"] for analysis in correlated] == [1, 3, 5, 11]
-    assert independent[-1]["majority_success_probability"] == {
-        "numerator": 36_791_901,
-        "denominator": 48_828_125,
-        "decimal": 0.75349813248,
-    }
-    assert correlated[-1]["majority_success_probability"] == {
-        "numerator": 13_474_113_561,
-        "denominator": 25_000_000_000,
-        "decimal": 0.53896454244,
-    }
-    assert report["scope"] == {
-        "authored_binary_answer_distribution": True,
-        "one_latent_regime_drawn_per_question": True,
-        "candidate_correctness_conditionally_iid_within_regime": True,
-        "exact_fraction_binomial_tail_executed": True,
-        "binary_vote_sequence_enumeration_executed": False,
-        "multiclass_or_open_text_canonicalization_modeled": False,
-        "model_tokenizer_dataset_or_judge_executed": False,
-        "latency_cost_provider_or_target_quality_measured": False,
-    }

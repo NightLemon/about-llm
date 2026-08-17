@@ -163,7 +163,6 @@ Schema projection equality 只能发现已比较字段的漂移。它不证明�
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents,langchain,llamaindex]"
 python projects/safe-agent/framework_agent_loop_control.py
-python -m pytest tests/test_framework_agent_loop_control.py -q
 ~~~
 
 固定环境为 `langchain==1.3.14`、`langchain-core==1.5.3`、`langgraph==1.2.10`、`llama-index-core==0.14.23`。模型只看见 `key` 和 allowlisted `fixture_lookup`；subject、tenant、capability、resource resolver、policy、canonical call identity 与 verifier 都在模型外。四组 case 在两个 loop 中执行同一断言：
@@ -302,7 +301,7 @@ python projects/safe-agent/outbox_demo.py `
 完整回归：
 
 ~~~powershell
-python -m pytest tests/test_agent_runtime.py tests/test_agent_policy.py tests/test_agent_schema.py tests/test_agent_loop.py tests/test_model_planner.py tests/test_model_planner_control.py tests/test_agent_framework_tool_adapters.py tests/test_framework_agent_loop_control.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py tests/test_sqlite_agent_ledger.py tests/test_agent_cli.py tests/test_agent_evaluation.py
+python -m pytest tests/test_agent_runtime.py tests/test_agent_policy.py tests/test_agent_schema.py tests/test_agent_loop.py tests/test_model_planner.py tests/test_agent_framework_tool_adapters.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py tests/test_sqlite_agent_ledger.py tests/test_agent_cli.py tests/test_agent_evaluation.py
 ~~~
 
 ## 生产替换点

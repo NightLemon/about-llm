@@ -46,6 +46,7 @@ BM25 对精确术语、错误码、型号和人名很强。一个常见形式是
 
 \[
 s(q,d)=\frac{e_q^\top e_d}{\|e_q\|\|e_d\|}
+\]
 
 归一化后 cosine 与 inner product 排序等价。必须确认模型是否要求 query/document 不同前缀、最大长度、pooling 与归一化；漏掉 instruction prefix 可能比换索引算法影响更大。
 

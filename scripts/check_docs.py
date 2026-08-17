@@ -36,6 +36,10 @@ MARKDOWN_EXTENSIONS = ["extra", "toc"]
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
 ATTR_LIST_RE = re.compile(r"\s*\{[^{}]*\}\s*$")
 INLINE_MARKUP_RE = re.compile(r"[`*_~]|\[([^]]+)\]\([^)]+\)")
+FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+INLINE_CODE_RE = re.compile(r"(`+)(.*?)\1")
+MATH_DELIMITER_RE = re.compile(r"(?<!\\)(\\\(|\\\)|\\\[|\\\])")
+TEST_FILE_RE = re.compile(r"\btests/test_[A-Za-z0-9_]+\.py\b")
 
 
 @dataclass
@@ -102,6 +106,11 @@ def curriculum_markdown_files(docs: Path = DOCS) -> list[Path]:
     )
 
 
+def project_markdown_files(root: Path = ROOT) -> list[Path]:
+    projects = root / "projects"
+    return sorted(projects.rglob("*.md")) if projects.exists() else []
+
+
 def check_internal_links(
     files: list[Path], *, root: Path = ROOT, docs: Path = DOCS
 ) -> list[str]:
@@ -147,6 +156,62 @@ def check_basics(files: list[Path], *, root: Path = ROOT) -> list[str]:
     return errors
 
 
+def _prose_lines(text: str) -> list[tuple[int, str]]:
+    lines: list[tuple[int, str]] = []
+    fence: tuple[str, int] | None = None
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        match = FENCE_RE.match(line)
+        if fence is not None:
+            if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= fence[1]:
+                fence = None
+            continue
+        if match:
+            marker = match.group(1)
+            fence = (marker[0], len(marker))
+            continue
+        lines.append((line_number, INLINE_CODE_RE.sub("", line)))
+    return lines
+
+
+def check_math_delimiters(files: list[Path], *, root: Path = ROOT) -> list[str]:
+    errors: list[str] = []
+    opening = {r"\(": r"\)", r"\[": r"\]"}
+    closing = {r"\)": r"\(", r"\]": r"\["}
+    for source in files:
+        stack: list[tuple[str, int]] = []
+        for line_number, line in _prose_lines(source.read_text(encoding="utf-8")):
+            for match in MATH_DELIMITER_RE.finditer(line):
+                token = match.group(1)
+                if token in opening:
+                    stack.append((token, line_number))
+                    continue
+                if not stack or stack[-1][0] != closing[token]:
+                    errors.append(
+                        f"{source.relative_to(root)}:{line_number}: "
+                        f"unexpected math delimiter {token}"
+                    )
+                    continue
+                stack.pop()
+        errors.extend(
+            f"{source.relative_to(root)}:{line_number}: "
+            f"unclosed math delimiter {token}"
+            for token, line_number in stack
+        )
+    return errors
+
+
+def check_test_references(files: list[Path], *, root: Path = ROOT) -> list[str]:
+    errors: list[str] = []
+    for source in files:
+        references = set(TEST_FILE_RE.findall(source.read_text(encoding="utf-8")))
+        errors.extend(
+            f"{source.relative_to(root)}: missing test file: {reference}"
+            for reference in sorted(references)
+            if not (root / reference).is_file()
+        )
+    return errors
+
+
 def check_learning_contracts(files: list[Path], *, root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     for source in files:
@@ -179,9 +244,12 @@ def main() -> int:
         reconfigure(encoding="utf-8", errors="backslashreplace")
     files = markdown_files()
     curriculum_files = curriculum_markdown_files()
+    reference_files = sorted({*files, *project_markdown_files()})
     errors = (
         check_basics(files)
         + check_internal_links(files)
+        + check_math_delimiters(files)
+        + check_test_references(reference_files)
         + check_learning_contracts(curriculum_files)
     )
     if errors:
@@ -190,7 +258,7 @@ def main() -> int:
         return 1
     print(
         f"OK: checked {len(files)} Markdown files, assets, local anchors, "
-        f"and {len(curriculum_files)} learning contracts"
+        f"test references, and {len(curriculum_files)} learning contracts"
     )
     return 0
 

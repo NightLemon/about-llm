@@ -10,9 +10,7 @@ python projects/jax-minigpt/train_tiny.py --steps 60 --learning-rate 0.02 --seed
 python projects/jax-minigpt/cross_framework_parity.py
 python projects/jax-minigpt/cross_framework_training_parity.py
 python projects/jax-minigpt/checkpoint_resume_control.py
-python -m pytest tests/test_gpt_jax.py tests/test_gpt_cross_framework_parity.py `
-  tests/test_gpt_cross_framework_training_parity.py `
-  tests/test_jax_training_resume.py -q
+python -m pytest tests/test_gpt_jax.py -q
 ~~~
 
 输出分开记录首次 trace/compile + step 时间与后续同步 step 均值。JAX 默认异步 dispatch，因此计时前调用 `loss.block_until_ready()`；不做同步的 wall time 只量到 Python enqueue，不能当作训练吞吐。
@@ -335,11 +333,7 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 专项测试：
 
 ~~~powershell
-python -m pytest `
-  tests/test_gpt_jax.py `
-  tests/test_gpt_cross_framework_parity.py `
-  tests/test_gpt_cross_framework_training_parity.py `
-  tests/test_jax_training_resume.py -q
+python -m pytest tests/test_gpt_jax.py -q
 ~~~
 
 测试覆盖包括：

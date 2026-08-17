@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import itertools
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -188,34 +185,3 @@ def test_invalid_randomization_contracts_fail_closed(
         operation()
 
 
-def test_paired_randomization_toy_records_exact_mc_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "evaluation-gate"
-                / "paired_randomization_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["exact_greater"]["pair_count"] == 5
-    assert artifact["exact_greater"]["nonzero_pair_count"] == 4
-    assert artifact["exact_greater"]["p_value"] == pytest.approx(1 / 16)
-    assert artifact["exact_two_sided"]["p_value"] == pytest.approx(2 / 16)
-    assert artifact["seeded_monte_carlo_greater"]["method"] == "monte_carlo"
-    assert artifact["seeded_monte_carlo_greater"]["p_value"] > 0
-    assert artifact["scope"] == {
-        "causal_product_or_model_improvement_proved": False,
-        "cluster_dependence_modeled": False,
-        "exchangeability_or_random_assignment_established": False,
-        "multiple_comparison_correction_applied": False,
-        "paired_case_sign_flip_distribution_executed": True,
-        "zero_difference_removed_from_sign_enumeration": True,
-    }

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import copy
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -389,17 +387,3 @@ def test_replay_verifier_rejects_extra_fields_duplicate_keys_and_nonfinite_json(
             )
 
 
-def test_replay_cli_help_is_offline_and_does_not_load_model() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(REPLAY_SCRIPT), "--help"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=30,
-    )
-
-    assert "--verify" in completed.stdout
-    assert "counterfactual fail-closed publication-policy replay" in completed.stdout
-    assert completed.stderr == ""

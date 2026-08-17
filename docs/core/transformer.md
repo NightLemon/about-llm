@@ -27,7 +27,7 @@
 
 ## 1. Decoder-only 数据流
 
-输入 token id (I\in\mathbb{N}^{B\times T}) 经 Embedding 得到隐藏状态 (X\in\mathbb{R}^{B\times T\times d})。每个 Pre-Norm block 计算：
+输入 token id \(I\in\mathbb{N}^{B\times T}\) 经 Embedding 得到隐藏状态 \(X\in\mathbb{R}^{B\times T\times d}\)。每个 Pre-Norm block 计算：
 
 \[
 X' = X + \operatorname{Attention}(\operatorname{Norm}(X)),
@@ -35,7 +35,7 @@ X' = X + \operatorname{Attention}(\operatorname{Norm}(X)),
 X'' = X' + \operatorname{MLP}(\operatorname{Norm}(X')).
 \]
 
-堆叠 (L) 层后，再经 final norm 和 LM head 得到 logits：
+堆叠 \(L\) 层后，再经 final norm 和 LM head 得到 logits：
 
 \[
 Z\in\mathbb{R}^{B\times T\times V}.
@@ -50,11 +50,11 @@ flowchart LR
   E --> F["Final Norm + LM Head [B,T,V]"]
 ```
 
-自回归训练常把位置 (t) 的 hidden state 用来预测下一个 token。不同库可能由数据 collator 显式 shift，也可能在模型 loss 内部 shift；必须检查实现，不能重复 shift。`input_ids`、attention visibility 和 labels/loss mask 是三个不同契约。
+自回归训练常把位置 \(t\) 的 hidden state 用来预测下一个 token。不同库可能由数据 collator 显式 shift，也可能在模型 loss 内部 shift；必须检查实现，不能重复 shift。`input_ids`、attention visibility 和 labels/loss mask 是三个不同契约。
 
 ## 2. 缩放点积注意力
 
-对某一层输入 (X)：
+对某一层输入 \(X\)：
 
 \[
 Q=XW_Q,\quad K=XW_K,\quad V=XW_V,
@@ -65,7 +65,7 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 \qquad O=AV.
 \]
 
-其中每个 query/key head 的维度为 (D)。若各分量近似独立且方差相近，未缩放点积的方差会随 (D) 增长；除以 (sqrt D) 用于控制 score 尺度，避免 softmax 过早饱和。这是初始化直觉，不是对训练后分布的独立同分布承诺。
+其中每个 query/key head 的维度为 \(D\)。若各分量近似独立且方差相近，未缩放点积的方差会随 \(D\) 增长；除以 \(\sqrt D\) 用于控制 score 尺度，避免 softmax 过早饱和。这是初始化直觉，不是对训练后分布的独立同分布承诺。
 
 数值稳定 softmax 先减去每行最大值：
 
@@ -78,7 +78,7 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 
 ## 3. 多头张量形状
 
-设 query head 数为 (H_q)，K/V head 数为 (H_{kv})，head dimension 为 (D)，通常 (d=H_qD)。reshape 后：
+设 query head 数为 \(H_q\)，K/V head 数为 \(H_{kv}\)，head dimension 为 \(D\)，通常 \(d=H_qD\)。reshape 后：
 
 | 张量 | 形状 |
 |---|---|
@@ -92,11 +92,11 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 
 ### 3.1 MHA、GQA 与 MQA
 
-- MHA：(H_{kv}=H_q)，每个 query head 有独立 K/V head；
-- GQA：(1<H_{kv}<H_q)，每组 (H_q/H_{kv}) 个 query heads 共享 K/V；
-- MQA：(H_{kv}=1)，所有 query heads 共享一组 K/V。
+- MHA：\(H_{kv}=H_q\)，每个 query head 有独立 K/V head；
+- GQA：\(1<H_{kv}<H_q\)，每组 \(H_q/H_{kv}\) 个 query heads 共享 K/V；
+- MQA：\(H_{kv}=1\)，所有 query heads 共享一组 K/V。
 
-只有当 (H_q) 能被 (H_{kv}) 整除，简单均匀分组才成立。仓库的 `grouped_query_attention` 为解释等价性而物理 `repeat` K/V heads；优化 kernel 不应真的复制，否则会抵消 cache/带宽收益。
+只有当 \(H_q\) 能被 \(H_{kv}\) 整除，简单均匀分组才成立。仓库的 `grouped_query_attention` 为解释等价性而物理 `repeat` K/V heads；优化 kernel 不应真的复制，否则会抵消 cache/带宽收益。
 
 理想 dense KV Cache 元素数为：
 
@@ -110,7 +110,7 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 
 ### causal mask
 
-位置 (t) 只能读取 key position (\le t)。训练时所有 query 仍可并行计算；mask 禁止信息泄漏，不要求逐 token forward。
+位置 \(t\) 只能读取 key position \(\le t\)。训练时所有 query 仍可并行计算；mask 禁止信息泄漏，不要求逐 token forward。
 
 ### padding mask
 
@@ -148,7 +148,7 @@ Pre-Norm 在进入子层前归一化，残差支路保留较直接的 identity p
 
 ## 6. RoPE：旋转 Q/K，不是给 hidden state 加表
 
-对每一对维度 ((x_{2i},x_{2i+1}))，位置 (p) 的 RoPE 使用角度 (p\theta_i) 做二维旋转：
+对每一对维度 \((x_{2i},x_{2i+1})\)，位置 \(p\) 的 RoPE 使用角度 \(p\theta_i\) 做二维旋转：
 
 \[
 \begin{bmatrix}x'_{2i}\\x'_{2i+1}\end{bmatrix}
@@ -160,7 +160,7 @@ Pre-Norm 在进入子层前归一化，残差支路保留较直接的 identity p
 \begin{bmatrix}x_{2i}\\x_{2i+1}\end{bmatrix}.
 \]
 
-常见频率形式是 (\theta_i=\text{base}^{-2i/D})。旋转保持每对分量的二范数；对 Q/K 同时应用后，点积包含相对位置差。把 query position 与 key position 同时平移相同常数，理想数学点积不变。仓库测试直接验证这两个性质。
+常见频率形式是 \(\theta_i=\text{base}^{-2i/D}\)。旋转保持每对分量的二范数；对 Q/K 同时应用后，点积包含相对位置差。把 query position 与 key position 同时平移相同常数，理想数学点积不变。仓库测试直接验证这两个性质。
 
 工程上仍需核对：
 
@@ -223,8 +223,7 @@ assert concat(step_0, ..., step_T_minus_1) == full
 
 ~~~powershell
 python -m pytest tests/test_attention_numpy.py -q
-python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py `
-  tests/test_gpt_cross_framework_parity.py -q
+python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py -q
 ~~~
 
 NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 分别验证模型 forward/训练等路径。新增 cross-framework control 说明跨框架等价不是同名模块等价：只有显式统一 affine LayerNorm/epsilon、tanh-GELU、mask、tied embedding、loss 与 SGD 后，才对账 logits、20 个参数梯度和一步更新；原生 JAX RMSNorm 反事实 logits 最大差为 `0.37747739627957344`。
@@ -233,7 +232,7 @@ NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 分别验证模型 forward
 
 ## 10. 复杂度和 kernel 边界
 
-标准 dense attention 的 score/probability 张量有 (T_qT_k) 项，每头 score 与 value aggregation 的主要算术随 (T_qT_kD) 增长。投影与 MLP 通常含 (Td^2) 量级项。短序列/大 hidden 时线性层可能主导；长序列时 attention 与 KV 读写更突出。Big-O 不能直接替代实测延迟。
+标准 dense attention 的 score/probability 张量有 \(T_qT_k\) 项，每头 score 与 value aggregation 的主要算术随 \(T_qT_kD\) 增长。投影与 MLP 通常含 \(Td^2\) 量级项。短序列/大 hidden 时线性层可能主导；长序列时 attention 与 KV 读写更突出。Big-O 不能直接替代实测延迟。
 
 FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返及完整中间矩阵存储；它针对的是精确 attention 数学，而不是稀疏 attention 近似，但浮点归约顺序可能使结果不逐 bit 相同。[数学基础](../foundations/math.md#attention-storage-online-softmax)给出 recurrence，`projects/transformers-basics/online_softmax_demo.py` 逐块和 dense reference 对照。NumPy oracle 的 logical tile 元素数不是进程峰值内存或 HBM 流量测量，更不等于 FlashAttention kernel 已执行。使用优化 kernel 时要记录实际 backend，并验证 head dim、dtype、mask、dropout、GQA、RoPE/ALiBi 和硬件支持；配置声称启用不证明没有 fallback。
 

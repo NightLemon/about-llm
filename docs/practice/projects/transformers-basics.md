@@ -138,8 +138,7 @@ o'=e^{m-m'}o+
 
 ~~~powershell
 python projects/transformers-basics/online_softmax_demo.py
-python -m pytest tests/test_attention_numpy.py `
-  tests/test_online_softmax_project.py -q
+python -m pytest tests/test_attention_numpy.py -q
 ~~~
 
 固定 `query_length=5`、`key_length=7`、`block_size=3` 的实跑结果：
@@ -160,7 +159,6 @@ Demo 为比较而另外物化 dense reference，所以 `15 vs 35` 不是整个�
 
 ~~~powershell
 python projects/transformers-basics/smoke_tiny.py
-python -m pytest tests/test_transformers_smoke.py -q
 ~~~
 
 当前实跑得到 27,008 个参数、纯参数存储 108,032 bytes，loss `3.4888949394226074→2.1879992485046387`，生成 shape 为 `[2,5]`。
@@ -196,7 +194,6 @@ python projects/transformers-basics/inspect_generation_protocol.py `
 
 ~~~powershell
 python projects/transformers-basics/generation_runtime_control.py
-python -m pytest tests/test_generation_runtime_control.py -q
 ~~~
 
 脚本在随机 3,824-parameter tiny GPT-2 上真实调用 `generate()`，再用 authored `LogitsProcessor` 强制每一步只有一个 token 可选，从而隔离停止控制流：
@@ -320,7 +317,6 @@ python projects/transformers-basics/run_qwen_weight_quantization_control.py `
   --local-files-only
 python projects/transformers-basics/run_qwen_weight_quantization_control.py `
   --verify projects/transformers-basics/target-checkpoints/qwen2.5-0.5b-instruct.weight-int4.recorded-report.json
-python -m pytest tests/test_target_weight_quantization_control.py -q
 ~~~
 
 它先重哈希同一 999,586,347-byte snapshot，加载 494,032,768 个 CPU FP32 参数，再选择第一层 bias-free `model.layers.0.self_attn.o_proj.weight`。矩阵为 `[896,896]`、802,816 参数，只占全模型 `0.0016250258120530175`；使用 contiguous-row group 128、每行 7 groups、FP32 absmax scale、4-bit 对称码 `[-7,7]`。
@@ -367,8 +363,6 @@ Token 27/19 是按这个随机 fixture 的 contrast 事后选择；模型没有�
 ~~~powershell
 python projects/transformers-basics/run_qwen_activation_patching_control.py `
   --local-files-only
-python -m pytest `
-  tests/test_transformers_activation_patching_control.py -q
 ~~~
 
 该协议复用同一 Qwen snapshot，固定 26-token France/Germany chat pair、source position 19、readout position 25、单-token `Paris−Berlin` metric，以及预先指定的 layer 0/11/23。它真实执行 10 次 CPU FP32 forward/hook。
@@ -455,7 +449,6 @@ flowchart TD
 
 ~~~powershell
 python projects/transformers-basics/moe_distributed_capacity_control.py
-python -m pytest tests/test_moe_distributed_capacity.py -q
 ~~~
 
 两个 spawn workers 用 CPU/Gloo 和 temporary FileStore。`all_gather` 建立 4-token replicated global batch，两个 `all_reduce` 得到 active=4、selected counts=`[4,0]`。Rank-local 独立 capacity 合计保留 2 个 assignment；global competition 只保留全局最高分 token，mask `[F,F,T,F]`、drop=3，rank-0 output counterfactual 差为 `0.9640275800758169`。
@@ -466,7 +459,6 @@ python -m pytest tests/test_moe_distributed_capacity.py -q
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_control.py
-python -m pytest tests/test_moe_all_to_all.py -q
 ~~~
 
 Rank 0/1 各自只持有 expert 0/1 的 owner-only expert parameters。Source→owner counts 为 `[[1,2],[1,0]]`。每 rank 五次 `all_to_all_single` 分别交换 count、dispatch float/metadata、return output/gate/metadata。
@@ -479,7 +471,6 @@ Rank 0 return arrival 的 global token 顺序 `[1,0,2]` 不是 source-local 顺�
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_training_control.py
-python -m pytest tests/test_moe_all_to_all_training.py -q
 ~~~
 
 Authored `autograd.Function` 在 backward 交换 input/output splits，执行 reverse-split backward。Owner expert 已收齐所有 source 发来的 tokens，因此 owner expert gradient 不再按 data-parallel 语义重复 reduce；replicated router 只看到 local source gate path，必须做 gradient SUM all-reduce。
@@ -490,8 +481,6 @@ Distributed forward、gradients、一步参数和 post-step forward 都与单进
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_capacity_training_control.py
-python -m pytest `
-  tests/test_moe_all_to_all_capacity_training.py -q
 ~~~
 
 四个 active tokens 的初选 counts 为 `[2,2]`；`capacity_factor=0.5` 得到 per-expert capacity=1、global keep mask `[F,T,T,F]` 和 kept `[1,1]`。Kept-only source→owner splits 为 `[[1,1],[0,0]]`。
@@ -518,28 +507,14 @@ python projects/transformers-basics/activation_patching.py
 
 ~~~powershell
 python projects/transformers-basics/verify_release_evidence.py
-python -m pytest `
-  tests/test_model_release_evidence.py `
-  tests/test_transformers_checkpoint_control.py `
-  tests/test_target_weight_quantization_control.py `
-  tests/test_transformers_activation_patching_control.py -q
+python -m pytest tests/test_model_release_evidence.py -q
 ~~~
 
-后三个测试默认验证 recorded reports，不重新运行约 1 GB 权重。需要新 runtime observation 时，才显式运行三个 target-Qwen scripts，并保存新环境、版本、报告和失败日志。
+这组回归只检查离线 manifest、快照投影和 verifier 负例，不重新运行约 1 GB 权重。需要新 runtime observation 时，才显式运行三个 target-Qwen scripts，并保存新环境、版本、报告和失败日志。
 
 ### 9.3 完整 MoE 路径
 
-~~~powershell
-python -m pytest `
-  tests/test_moe_routing.py `
-  tests/test_moe_training.py `
-  tests/test_moe_distributed_capacity.py `
-  tests/test_moe_all_to_all.py `
-  tests/test_moe_all_to_all_training.py `
-  tests/test_moe_all_to_all_capacity_training.py -q
-~~~
-
-当前 Windows/PyTorch CPU/Gloo 环境的整组 Transformers Basics 专项为 `123 passed in 86.64s`。这是 2026-08-15 的本机观测；测试数量和耗时会随仓库、CPU 和依赖版本变化，不应写进性能承诺。
+依次运行 8.4–8.7 的四个实验脚本；每次只比较该脚本输出与本节给出的预期，不把不同实验的证据合并。
 
 ## 10. 故障定位
 

@@ -44,4 +44,4 @@ python scripts/check_docs.py
 python -m pytest tests/test_check_docs.py -q
 ```
 
-`docs/`、`mkdocs.yml` 与 `overrides/` 是站点源码；`site/` 是 `mkdocs build` 的生成物，不直接编辑或提交。部署前 `python scripts/check_built_site.py` 会检查 sitemap、资源引用以及关键新手页面的当前内容 token，防止上传陈旧构建。
+`docs/`、`mkdocs.yml` 与 `overrides/` 是站点源码；`site/` 是 `mkdocs build` 的生成物，不直接编辑或提交。部署前 `python scripts/check_built_site.py` 只检查 sitemap 和静态资源结构，不锁定教材原句。

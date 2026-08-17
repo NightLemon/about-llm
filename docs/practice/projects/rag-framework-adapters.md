@@ -136,12 +136,10 @@ LangChain validator 对照结果数量、顺序位置上的 `id`、`page_content
 ## 专项验证与负例
 
 ~~~powershell
-python -m pytest `
-  tests/test_rag_framework_adapters.py `
-  tests/test_rag_framework_parity_control.py -q
+python -m pytest tests/test_rag_framework_adapters.py -q
 ~~~
 
-当前 16 个测试真实覆盖：
+专项测试覆盖：
 
 - 两种对象字段与 LlamaIndex exclusion keys；
 - 业务 metadata 伪造 `tenant_id` 时 fail closed；

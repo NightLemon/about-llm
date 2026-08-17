@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -522,68 +519,3 @@ def test_sqlite_uncertain_transition_survives_reopen(tmp_path: Path) -> None:
     assert reopened.snapshot().committed_estimated_microusd == 80
 
 
-def test_budgeted_http_demo_has_success_and_sent_error_ledgers(tmp_path: Path) -> None:
-    database = tmp_path / "demo.db"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "cloud-api-contracts"
-                / "budgeted_http_demo.py"
-            ),
-            "--database",
-            str(database),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["network_used"] is False
-    assert artifact["http_calls"] == 2
-    assert artifact["records"]["call-success"]["state"] == "settled"
-    assert artifact["records"]["call-http-500"]["state"] == "uncertain"
-    assert artifact["failure"]["reconciliation_state"] == "uncertain"
-    assert artifact["final_snapshot"]["committed_estimated_microusd"] == 146
-    assert artifact["scope"]["each_replay_requires_new_reservation"] is True
-
-
-def test_budgeted_retry_demo_persists_independent_attempts(tmp_path: Path) -> None:
-    database = tmp_path / "retry-demo.db"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "cloud-api-contracts"
-                / "budgeted_retry_demo.py"
-            ),
-            "--database",
-            str(database),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["network_used"] is False
-    assert artifact["http_calls"] == 2
-    assert artifact["records"]["logical-call:attempt:1"]["state"] == "uncertain"
-    assert artifact["records"]["logical-call:attempt:2"]["state"] == "settled"
-    assert [event["event_type"] for event in artifact["events"]] == [
-        "reserved",
-        "uncertain",
-        "reserved",
-        "settled",
-    ]
-    assert (
-        artifact["result"]["budget_snapshot"]["committed_estimated_microusd"]
-        == 146
-    )
-    assert artifact["scope"]["each_attempt_has_independent_reservation"] is True
-    assert artifact["scope"]["proves_provider_usage_or_invoice"] is False

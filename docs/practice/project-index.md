@@ -113,7 +113,7 @@ python projects/safe-agent/mcp_sdk_stdio_control.py
 python projects/safe-agent/mcp_sdk_streamable_http_control.py
 python projects/safe-agent/mcp_stdio_control.py
 python projects/safe-agent/mcp_streamable_http_control.py
-python -m pytest tests/test_model_planner_control.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py -q
+python -m pytest tests/test_model_planner.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py -q
 ~~~
 
 沿 trace 分开标记 model response、decision、action proposal、approval、execution 与 verifier result。严格 JSON schema 只说明结构符合约束，不说明资源已授权、内容可信或副作用可以执行。模型看到的工具结果和网页文本都属于不可信 observation。

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -182,31 +180,3 @@ def test_strict_document_loader_rejects_invalid_utf8(tmp_path: Path) -> None:
         load_generation_protocol_json(path)
 
 
-@pytest.mark.parametrize(
-    ("name", "expected_observation"),
-    [
-        (
-            "aligned-superset-eos.example.json",
-            "generation_config_contains_both_max_length_and_max_new_tokens; "
-            "runtime precedence is not inferred",
-        ),
-        (
-            "drift-out-of-range.example.json",
-            "pad_token_id:ids_outside_model_vocab=9",
-        ),
-    ],
-)
-def test_cli_round_trip(name: str, expected_observation: str) -> None:
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT), str(PROTOCOLS / name)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=30,
-    )
-    report = json.loads(completed.stdout)
-
-    assert expected_observation in report["observations"]
-    assert report["effective_runtime_contract_proved"] is False

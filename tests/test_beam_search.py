@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import math
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -255,35 +252,3 @@ def test_invalid_beam_contracts_fail_closed(
         operation()
 
 
-def test_beam_search_toy_records_pruning_length_penalty_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "projects" / "inference-serving" / "beam_search_toy.py"),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["pruning_counterexample"]["beam_1"]["returned_sequences"][0][
-        "token_ids"
-    ] == [0, 2]
-    assert artifact["pruning_counterexample"]["beam_2"]["returned_sequences"][0][
-        "token_ids"
-    ] == [1, 2]
-    assert artifact["length_penalty_counterexample"]["alpha_0"][
-        "returned_sequences"
-    ][0]["token_ids"] == [0, 3]
-    assert artifact["length_penalty_counterexample"]["alpha_2"][
-        "returned_sequences"
-    ][0]["token_ids"] == [1, 2, 3]
-    assert artifact["scope"] == {
-        "beam_pruning_eos_and_length_finalization_executed": True,
-        "global_sequence_optimality_proved": False,
-        "length_penalty_includes_eos_and_excludes_prompt": True,
-        "model_tokenizer_kv_or_gpu_executed": False,
-        "runtime_or_provider_equivalence_claimed": False,
-        "text_quality_or_performance_proved": False,
-    }

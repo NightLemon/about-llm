@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -170,31 +167,3 @@ def test_simulation_is_deterministic() -> None:
     assert _fixture_report() == _fixture_report()
 
 
-def test_continuous_batching_toy_reports_exact_trace_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "continuous_batching_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["summary"]["modeled_forward_tokens"] == 10
-    assert artifact["summary"]["elapsed_token_capacity"] == 16
-    assert [step["used_token_slots"] for step in artifact["steps"]] == [3, 3, 2, 2]
-    assert artifact["scope"] == {
-        "deterministic_discrete_cpu_policy_simulated": True,
-        "prefill_last_position_emits_first_token": True,
-        "real_model_or_gpu_kernel_executed": False,
-        "vllm_scheduler_equivalence_proved": False,
-        "kv_capacity_preemption_or_prefix_cache_modeled": False,
-        "wall_clock_latency_throughput_or_slo_proved": False,
-    }

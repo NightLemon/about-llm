@@ -94,13 +94,13 @@ Request id 用于关联一次 attempt；logical call id 用于聚合可能的重
 
 版本协商必须 fail closed。若客户端请求的 model/adapter/API feature 不存在，不应静默换成另一个模型再返回普通成功；允许降级时，把实际 revision、降级原因和能力差异放入机器可读 receipt/trace，并让质量与合规策略先授权这条路径。
 
-“HTTP 200”还不足以证明服务调用了目标权重。最小集成证据应绑定 immutable model/checkpoint manifest，在加载前核对 bytes，另以服务 manifest 固定 prompt、token/usage/finish、runtime 和 API 子集；用独立进程走真实 socket，并从 server-side audit 证明 framework generation 被调用。仓库的 Qwen target-service control 按这条路径执行了 models、401/422/404、non-stream、SSE 与两次 `GenerationMixin.generate()`，Uvicorn 0.52.1 重录 report 为 `sha256:63e566ca…617ddb`。它不保存 raw request/response，也不把无密钥 fingerprint 当来源认证。
+三种常见误判需要分开验证：
 
-但“返回 SSE”不等于边生成边发送。该 reference backend 先完成整个 `generate()`，再依次发文本 delta、finish、usage 和 `[DONE]`；因此它只能验证 framing 与两种响应投影一致，不能证明 incremental decode、client disconnect 后取消、KV 释放或停止计费。真实上线还要把 client disconnect、engine request id、generation task 与资源释放 trace 关联。
+- **HTTP 200 不证明目标权重执行**：把 request id、model/tokenizer/template revision 与 server-side generation trace 关联。
+- **SSE 不证明增量生成**：后端可能先完成全部生成，再分块发送；检查首个 delta 到达时 generation 是否仍在运行。
+- **客户端断连不证明底层停算**：分别测 disconnect-to-work-stop 与 disconnect-to-resource-release；阻塞线程、GPU kernel 和远程 provider 需要各自的取消协议。
 
-仓库另有一条故意与目标模型隔离的 incremental control：authored async backend 在完整 case 中先逐 delta 交付、后完成；在取消 case 中，client 收到首个 content 时 server audit 仍为 active/backend-incomplete，显式关闭 response 后 ASGI task 与 cooperative iterator 均观察 `CancelledError`，后续 authored token 未产生。Uvicorn 0.52.1 重录报告 `sha256:25846822…2b5d00` 因而能证明这条单进程 loopback 协作取消路径，却不能证明 Transformers 阻塞线程、vLLM/CUDA kernel、KV/GPU 资源、远程 provider 或计费同时停止。生产验收仍需给目标 runtime 加 request-id 关联的 decode/allocator trace，并测 disconnect-to-work-stop 与 disconnect-to-resource-release 两个不同延迟。
-
-再下一层 tiny Transformers control 在随机 1,272 参数 GPT-2 上真实启动 `GenerationMixin.generate()` thread：authored streamer 在首 token 后暂停，断连触发 backend event，authored `StoppingCriteria` 观察 event 后让 `generate()` 返回并 join。Uvicorn 0.52.1 重录报告 `sha256:eadcab54…f62bc7` 证明的是“**专门植入 cooperative check 的这条 CPU thread 路径**”，不是 Python 能强杀 thread，也不是未修改或已经卡在 kernel/driver 的调用必然退出。它没有目标 tokenizer/checkpoint/logits，也没有观测 KV/CPU/GPU memory release；生产实现应给 stop-check 最坏响应时间、thread/process recycle fallback 和 allocator trace 分别设门槛。
+最小集成测试应走真实 socket 和独立服务进程，覆盖认证、schema、非流式、流式与错误终态。它仍不能替代目标 runtime 上的 KV 释放、容量、故障注入和计费对账。
 
 Stop string 是独立的增量文本协议：它可能跨 token/event/UTF-8 byte chunk，客户端必须暂存仍可能成为 stop 的最长 suffix，不能先展示后撤回。明确是否返回 stop、overlap/priority、大小写/Unicode normalization、usage 与 finish reason。客户端本地截断只改变展示，不证明服务端停止 decode、释放 KV 或停止计费；需要 cancellation/terminal trace 关联验证。
 
@@ -225,18 +225,9 @@ Runbook 不应只有“重启服务”。按现象至少准备：
 6. 以质量、安全、success rate、尾延迟、资源和成本的联合 gate 选择 operating point，并给单副本故障/发布余量。
 7. 换长度、租户、cache、adapter 或硬件后重新测；不要把一个点拟合成通用容量公式。
 
-## 本仓库证据矩阵
+## 实践入口
 
-| Control | 实际证明 | 不能据此声称 |
-|---|---|---|
-| strict attempt/SLO fixture | offered/dispatch、成功条件延迟、失败分母与 gate 算术 | 真实 event loop、server queue、GPU 容量 |
-| continuous-batching CPU oracle | 固定 FCFS/decode-first policy 的 admission、chunk、work conservation | 某版 vLLM scheduler、秒级延迟或 GPU utilization |
-| KV preemption metadata oracle | block capacity、抢占、重建 work 与不重复交付 token | 真实 K/V 数值、GPU page table、victim policy 性能 |
-| 固定 Qwen HTTP control | 目标 snapshot→Transformers CPU FP32→loopback API 的固定执行路径 | vLLM/CUDA、incremental stream、吞吐、容量或质量 |
-| authored incremental SSE control | 单进程 async iterator 的首 delta 前未完成与断连协作取消 | blocking thread/kernel、KV/GPU release、远端计费 |
-| tiny Transformers thread control | 显式 event/`StoppingCriteria` 让受控 CPU `generate()` 返回并 join | Python 强杀 thread、未修改 runtime 或不可中断 kernel 会退出 |
-
-这些 controls 是因果链中的局部证据，不能彼此拼接成“已完成生产服务”：Qwen control 没有 incremental decode，incremental control 没有模型，thread control 没有目标 checkpoint，统计 fixture 没有真实 GPU。生产结论必须在同一目标 runtime/workload 上取得关联证据。
+[Inference Serving 项目](../practice/projects/inference-serving.md)把正确性 oracle、调度/KV、HTTP/流式取消和容量实验分开。先完成单请求协议和失败终态，再进入真实 GPU 压测；不同实验的局部成功不能拼成生产结论。
 
 ## 自测
 

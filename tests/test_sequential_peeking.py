@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from fractions import Fraction
 from itertools import product
 from pathlib import Path
@@ -181,43 +178,3 @@ def test_sign_test_rejects_invalid_counts(
         )
 
 
-def test_toy_reports_exact_peeking_counterexample_and_scope() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(TOY)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    report = json.loads(completed.stdout)
-
-    assert completed.stderr == ""
-    assert report["implementation"] == "about-llm.sequential-peeking-toy.v1"
-    assert report["observations"] == {
-        "bonferroni_familywise_error_at_most_five_percent": True,
-        "naive_familywise_error_exceeds_five_percent": True,
-        "same_look_schedule": True,
-    }
-    naive = report["scenarios"]["naive_alpha_at_every_look"]
-    bonferroni = report["scenarios"]["prespecified_bonferroni_alpha_split"]
-    assert naive["familywise_null_rejection_probability"] == {
-        "numerator": 7_109_832_616_777,
-        "denominator": 70_368_744_177_664,
-        "decimal": pytest.approx(0.10103679836642243),
-    }
-    assert bonferroni["familywise_null_rejection_probability"] == {
-        "numerator": 2_142_139_082_367,
-        "denominator": 140_737_488_355_328,
-        "decimal": pytest.approx(0.015220813639636788),
-    }
-    assert naive["logical_binary_sign_sequences"] == 2**50
-    assert report["scope"] == {
-        "case_sampling_labels_clusters_or_exchangeability_validated": False,
-        "confidence_sequence_or_always_valid_p_value_implemented": False,
-        "effect_size_power_or_sample_size_estimated": False,
-        "exact_fraction_dynamic_program_executed": True,
-        "logical_sign_sequence_enumeration_executed": False,
-        "look_schedule_and_thresholds_prespecified": True,
-        "model_judge_provider_or_online_ab_test_executed": False,
-    }

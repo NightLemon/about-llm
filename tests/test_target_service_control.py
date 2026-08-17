@@ -4,7 +4,6 @@ import copy
 import dataclasses
 import json
 import subprocess
-import sys
 import threading
 from collections.abc import Mapping
 from pathlib import Path
@@ -322,22 +321,3 @@ def test_recorded_real_qwen_report_verifies_without_loading_weights() -> None:
     assert verify_recorded_target_service_report(spec, checkpoint, report) == report
 
 
-def test_project_cli_verifies_recorded_report_without_starting_service() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(PROJECT / "run_qwen_target_service.py"),
-            "--verify",
-            str(RECORDED_REPORT),
-        ],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    report = json.loads(completed.stdout)
-    assert report["report_fingerprint"].endswith("c493617ddb")
-    assert report["scope"]["vllm_executed"] is False

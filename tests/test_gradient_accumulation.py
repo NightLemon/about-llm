@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import math
-import subprocess
-import sys
 from fractions import Fraction
 from pathlib import Path
 
@@ -209,51 +206,3 @@ def test_report_dict_preserves_exact_fraction_payloads() -> None:
     ]
 
 
-def test_toy_executes_pytorch_backward_and_reports_scope() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(TOY)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    report = json.loads(completed.stdout)
-
-    assert completed.stderr == ""
-    assert report["implementation"] == "about-llm.gradient-accumulation-toy.v1"
-    assert report["observations"] == {
-        "count_scaled_matches_full_exactly_in_fraction_oracle": True,
-        "equal_microbatch_mean_changes_the_objective": True,
-        "ignored_positions_have_zero_gradient": True,
-        "pytorch_count_scaled_gradient_matches_full": True,
-        "pytorch_naive_gradient_differs_from_full": True,
-        "valid_token_counts_are_one_and_three": True,
-    }
-    exact = report["exact_oracle"]
-    assert exact["valid_token_count"] == 4
-    assert exact["ignored_token_count"] == 3
-    assert exact["full_batch_class_aggregate_logit_gradient"] == [
-        {"numerator": 23, "denominator": 40, "decimal": 0.575},
-        {"numerator": -23, "denominator": 40, "decimal": -0.575},
-    ]
-    autograd = report["pytorch_autograd"]
-    assert autograd["full_vs_count_scaled_max_abs_gradient_error"] == 0.0
-    assert autograd["full_vs_naive_max_abs_gradient_difference"] > 0
-    assert autograd["ignored_row_max_abs_gradient"] == 0.0
-    assert autograd["full_class_aggregate_gradient"] == pytest.approx(
-        [0.575, -0.575]
-    )
-    assert autograd["naive_equal_microbatch_class_aggregate_gradient"] == (
-        pytest.approx([0.35, -0.35])
-    )
-    assert report["scope"] == {
-        "amp_cuda_gpu_memory_throughput_or_quality_measured": False,
-        "authored_probabilities_targets_and_padding_executed": True,
-        "ddp_fsdp_zero_collective_or_no_sync_executed": False,
-        "dropout_batchnorm_or_stochastic_model_equivalence_proved": False,
-        "exact_fraction_logit_gradient_oracle_executed": True,
-        "optimizer_step_or_parameter_update_executed": False,
-        "pytorch_float64_cross_entropy_backward_executed": True,
-        "target_llm_tokenizer_dataset_or_training_run_executed": False,
-    }

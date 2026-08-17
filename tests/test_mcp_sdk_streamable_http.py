@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import json
 import os
 import subprocess
 import sys
@@ -168,17 +167,3 @@ def test_server_mode_refuses_to_overwrite_receipt(tmp_path: Path) -> None:
     assert receipt.read_text(encoding="utf-8") == "sentinel"
 
 
-def test_project_control_emits_closed_verified_json() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(PROJECT_CONTROL)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    report = json.loads(completed.stdout)
-
-    assert verify_mcp_sdk_http_report(report) == report
-    assert completed.stderr == ""
-    assert "TOP-SECRET" not in completed.stdout

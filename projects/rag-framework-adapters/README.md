@@ -31,7 +31,6 @@ projects/rag-framework-adapters/
 
 src/about_llm/integrations/rag_frameworks.py
 tests/test_rag_framework_adapters.py
-tests/test_rag_framework_parity_control.py
 ```
 
 各文件职责：
@@ -272,12 +271,10 @@ Supplied expected results 本身先通过 canonical gate。validator 能发现�
 ## 专项测试
 
 ~~~powershell
-python -m pytest `
-  tests/test_rag_framework_adapters.py `
-  tests/test_rag_framework_parity_control.py -q
+python -m pytest tests/test_rag_framework_adapters.py -q
 ~~~
 
-当前 16 个测试覆盖：
+专项测试覆盖：
 
 - 两种对象的 canonical 字段；
 - LlamaIndex embed/LLM exclusion keys；

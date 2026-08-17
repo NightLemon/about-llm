@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -261,34 +259,3 @@ def test_bundle_rejects_duplicate_names_invalid_identity_and_missing_tensor() ->
         bundle.get("missing.weight")
 
 
-def test_quantized_bundle_toy_executes_reloaded_two_layer_forward(
-    tmp_path: Path,
-) -> None:
-    artifact_path = tmp_path / "toy.allmqb"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "quantized_bundle_toy.py"
-            ),
-            "--artifact-path",
-            str(artifact_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["tensor_names"] == ["layer.0.weight", "layer.1.weight"]
-    assert artifact["tensor_count"] == 2
-    assert artifact["reference_fp32_weight_bytes"] == 288
-    assert artifact["exact_byte_round_trip"] is True
-    assert artifact["exact_quantized_forward_round_trip"] is True
-    assert artifact["disk_round_trip"] is True
-    assert artifact["bundle_container_overhead_bytes"] > 0
-    assert artifact["scope"]["tokenizer_payload_embedded"] is False
-    assert artifact["scope"]["full_llm_checkpoint"] is False

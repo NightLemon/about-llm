@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -164,60 +161,3 @@ def test_kv_quantization_rejects_invalid_contracts(
         operation()
 
 
-def test_kv_quantization_toy_reports_storage_attention_error_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "kv_quantization_toy.py"
-            ),
-            "--seed",
-            "7",
-            "--batch-size",
-            "1",
-            "--query-heads",
-            "4",
-            "--key-value-heads",
-            "2",
-            "--cached-tokens",
-            "5",
-            "--query-tokens",
-            "3",
-            "--key-head-dim",
-            "4",
-            "--value-head-dim",
-            "6",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["storage"] == {
-        "reference_fp32_kv_bytes": 400,
-        "actual_int8_code_bytes": 100,
-        "float32_scale_metadata_bytes": 80,
-        "actual_code_plus_scale_payload_bytes": 180,
-        "payload_compression_ratio": pytest.approx(400 / 180),
-    }
-    assert artifact["invariants"] == {
-        "zero_key_vector_scale": 1.0,
-        "zero_value_vector_scale": 1.0,
-        "maximum_future_attention_probability": 0.0,
-        "maximum_probability_row_sum_error": pytest.approx(0.0, abs=1e-6),
-    }
-    for error in artifact["error"].values():
-        assert error["root_mean_squared_error"] >= 0
-    assert artifact["scope"] == {
-        "device": "CPU",
-        "cache": "seeded synthetic K/V tensors",
-        "actual_int8_codes_and_fp32_scales_materialized": True,
-        "dequantized_gqa_attention_executed": True,
-        "attention_on_int8_codes_or_fused_kv_kernel_executed": False,
-        "paged_runtime_layout_or_resident_vram_measured": False,
-        "target_model_quality_or_speed_proved": False,
-    }

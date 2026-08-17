@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import json
-import math
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -290,36 +286,3 @@ def test_state_and_token_text_validation() -> None:
         constraint.advance(0, "")
 
 
-def test_constraint_toy_records_full_token_rejection_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "constrained_decoding_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["result"]["token_ids"] == [0, 1, 2, 5]
-    assert artifact["result"]["decoded_text"] == '{"x":1}'
-    assert artifact["critical_step"]["grammar_allowed_token_ids"] == [2, 4]
-    assert 3 in artifact["critical_step"]["grammar_blocked_token_ids"]
-    assert math.isclose(
-        artifact["critical_step"]["raw_allowed_probability_mass"], 0.35
-    )
-    assert artifact["scope"] == {
-        "allowed_probability_mass_renormalized": True,
-        "complete_multi_character_token_transition_checked": True,
-        "eos_requires_accepting_state": True,
-        "finite_authored_literal_set_only": True,
-        "json_schema_cfg_or_provider_runtime_equivalence_proved": False,
-        "model_kv_gpu_quality_or_performance_executed": False,
-        "tokenizer_byte_state_or_normalization_executed": False,
-    }

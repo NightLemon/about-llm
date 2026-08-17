@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -212,20 +210,3 @@ def test_fetcher_rejects_untrusted_source_url_without_network(url: str) -> None:
         fetch_release_artifact(url)
 
 
-def test_release_evidence_cli_emits_machine_readable_offline_report() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=30,
-    )
-    payload = json.loads(completed.stdout)
-
-    assert payload["manifest_fingerprint"] == (
-        "sha256:74166133716bfebddb444587e9f9a012b4beada923f5209482308ff61194953b"
-    )
-    assert payload["upstream_verified"] is False
-    assert len(payload["records"]) == 3

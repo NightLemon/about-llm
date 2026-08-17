@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import copy
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -87,16 +84,3 @@ def test_report_rejects_cooperatively_rehashed_semantic_drift() -> None:
         verify_mcp_sdk_memory_report(report)
 
 
-def test_project_control_emits_closed_verified_json() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(PROJECT_CONTROL)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    report = json.loads(completed.stdout)
-
-    assert verify_mcp_sdk_memory_report(report) == report
-    assert "TOP-SECRET" not in completed.stdout

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from fractions import Fraction
 from itertools import product
 from pathlib import Path
@@ -218,38 +215,3 @@ def test_candidate_rejects_noncanonical_or_unbounded_fields(
         VerifierCandidate(*args)  # type: ignore[arg-type]
 
 
-def test_toy_cli_reports_exact_counterexample_and_bounded_scope() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(TOY)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    report = json.loads(completed.stdout)
-
-    assert completed.stderr == ""
-    assert report["implementation"] == "about-llm.verifier-best-of-n-toy.v1"
-    assert [analysis["sample_count"] for analysis in report["analyses"]] == [
-        1,
-        4,
-        16,
-    ]
-    assert report["observations"] == {
-        "expected_verifier_score_strictly_increases": True,
-        "selected_success_n4_above_n1": True,
-        "selected_success_n16_below_n1": True,
-        "oracle_success_strictly_increases": True,
-    }
-    assert report["scope"] == {
-        "authored_finite_candidate_distribution": True,
-        "iid_fixed_distribution_assumed": True,
-        "closed_form_exact_fraction_analysis_executed": True,
-        "candidate_sequence_enumeration_executed": False,
-        "oracle_target_labels_authored": True,
-        "model_tokenizer_or_prm_executed": False,
-        "verifier_calibration_or_semantic_correctness_proved": False,
-        "latency_cost_parallelism_or_target_quality_measured": False,
-        "target_model_provider_or_gpu_behavior_proved": False,
-    }

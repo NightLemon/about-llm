@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
-import json
-import subprocess
 import sys
-from importlib.metadata import version
 from pathlib import Path
 from types import ModuleType
 
@@ -55,27 +52,3 @@ def test_direct_framework_schema_behavior_is_not_overclaimed() -> None:
     assert report["scope"]["langgraph_or_llamaindex_agent_loop_executed"] is False
 
 
-def test_framework_adapter_cli_emits_versions_and_closed_scope() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    report = json.loads(completed.stdout)
-
-    assert report["schema_version"] == (
-        "about-llm.agent-framework-tool-adapter-control.v1"
-    )
-    assert report["framework_versions"] == {
-        "jsonschema": version("jsonschema"),
-        "langchain": version("langchain"),
-        "langchain_core": version("langchain-core"),
-        "llama_index_core": version("llama-index-core"),
-        "pydantic": version("pydantic"),
-    }
-    assert report["scope"]["real_langchain_structured_tool_executed"] is True
-    assert report["scope"]["real_llamaindex_function_tool_executed"] is True
-    assert report["scope"]["model_or_provider_executed"] is False

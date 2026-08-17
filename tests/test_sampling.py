@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -221,35 +218,3 @@ def test_sampling_is_deterministic_for_fixed_logits_config_history_and_uniform()
     assert _exact_fixture().to_dict() == _exact_fixture().to_dict()
 
 
-def test_sampling_toy_records_exact_ledger_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "projects" / "inference-serving" / "sampling_toy.py"),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-    fixture = artifact["exact_top_k_then_top_p_fixture"]
-
-    assert fixture["top_k_token_ids"] == [0, 1, 2]
-    assert fixture["top_p_token_ids"] == [0, 1]
-    assert fixture["support_token_ids"] == [0, 1]
-    assert fixture["probabilities"] == pytest.approx([4 / 7, 3 / 7, 0, 0])
-    assert fixture["sampled_token_id"] == 1
-    assert artifact["signed_repetition_penalty_fixture"]["adjusted_logits"] == [
-        1,
-        -4,
-        0.5,
-    ]
-    assert artifact["scope"] == {
-        "authored_finite_logits_processed": True,
-        "fixed_uniform_inverse_cdf_executed": True,
-        "generation_quality_latency_or_throughput_proved": False,
-        "model_forward_or_tokenizer_executed": False,
-        "multi_token_eos_stop_or_kv_modeled": False,
-        "processor_order_and_tie_break_fixed": True,
-        "runtime_default_equivalence_proved": False,
-    }

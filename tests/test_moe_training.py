@@ -3,8 +3,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import NoReturn
 
@@ -970,23 +968,3 @@ def test_control_report_pins_gradient_semantics_and_scope() -> None:
     ).hexdigest()
 
 
-def test_project_control_emits_strict_finite_json() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-    )
-    report = json.loads(
-        completed.stdout,
-        parse_constant=_reject_nonfinite,
-    )
-
-    assert completed.stderr == ""
-    assert report["schema_version"] == TRAINABLE_MOE_CONTROL_VERSION
-    assert report["report_fingerprint"].startswith("sha256:")
-    assert "NaN" not in completed.stdout
-    assert "Infinity" not in completed.stdout

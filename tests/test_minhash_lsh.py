@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import math
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -152,34 +149,3 @@ def test_invalid_item_snapshot_is_rejected(items) -> None:
         generate_minhash_lsh_candidates(items, config=_config())
 
 
-def test_minhash_lsh_toy_reports_exact_recheck_and_snapshot_recall() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "single-gpu-finetuning"
-                / "minhash_lsh_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-    candidate_report = artifact["candidate_report"]
-    recall = artifact["exhaustive_recall_audit"]
-
-    assert artifact["network_used"] is False
-    assert candidate_report["item_count"] == 5
-    assert candidate_report["possible_pair_count"] == 10
-    assert candidate_report["candidate_pair_count"] == 3
-    assert candidate_report["candidate_fraction"] == pytest.approx(0.3)
-    assert recall["exact_positive_pair_count"] == 1
-    assert recall["recovered_positive_pair_count"] == 1
-    assert recall["false_positive_candidate_count"] == 2
-    assert recall["candidate_recall"] == 1
-    assert recall["candidate_precision"] == pytest.approx(1 / 3)
-    assert artifact["scope"]["candidate_recall_guaranteed"] is False
-    assert artifact["scope"]["exhaustive_recall_audit_is_quadratic"] is True

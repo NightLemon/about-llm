@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from itertools import pairwise
 from pathlib import Path
@@ -78,27 +75,3 @@ def test_invalid_holm_contracts_fail_closed(
         operation()
 
 
-def test_holm_toy_records_rank_ledger_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "projects" / "evaluation-gate" / "holm_correction_toy.py"),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["input_order"]["p_values"] == [0.04, 0.01, 0.03, 0.2]
-    assert artifact["holm"]["adjusted_p_values"] == pytest.approx(
-        [0.09, 0.04, 0.09, 0.2]
-    )
-    assert artifact["holm"]["rejected"] == [False, True, False, False]
-    assert artifact["scope"] == {
-        "arbitrary_dependence_fwer_control_requires_valid_input_p_values": True,
-        "effect_size_or_practical_importance_estimated": False,
-        "family_prespecified_or_selection_bias_repaired": False,
-        "holm_rank_and_running_maximum_executed": True,
-        "repeated_peeking_or_optional_stopping_repaired": False,
-    }

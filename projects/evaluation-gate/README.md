@@ -32,7 +32,6 @@ python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
 # 普通 CI：只复算 strict report，不加载约 1 GB snapshot
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
   --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
-python -m pytest tests/test_target_qwen_evaluation_control.py -q
 ~~~
 
 Suite `sha256:27ada9b1…6201` 固定中英文算术、北京/Paris 事实、空证据拒答、大小写复制和 JSON 三类输出约束。Report `sha256:dd30a278…5c43` 保存每条 prompt token identity、continuation IDs、raw decoded output、EOS/cap terminal，并从原始文本重算三种不同指标：

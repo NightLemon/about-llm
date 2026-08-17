@@ -19,7 +19,6 @@ NumPy reference 不依赖 PyTorch kernel，提供 stable softmax、past-aware ca
 ~~~powershell
 python projects/transformers-basics/online_softmax_demo.py
 python -m pytest tests/test_attention_numpy.py -q
-python -m pytest tests/test_online_softmax_project.py -q
 python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py -q
 ~~~
 
@@ -67,7 +66,6 @@ v3 再加入三个显式 overflow policy。固定 4-token/top-1 fixture 的完�
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_control.py
-python -m pytest tests/test_moe_all_to_all.py -q
 ~~~
 
 `moe_all_to_all_control.py` 隔离 expert dispatch/return 语义：rank 0 只驻留 expert 0（`2x+0.5`），rank 1 只驻留 expert 1（`-3x+1`），router 在两 rank 复制。Rank 0 的三个 tokens `[-1,2,-2]` 路由到 `[1,0,1]`，rank 1 的 `[1]` 路由到 `[0]`，所以 source→owner counts matrix 为 `[[1,2],[1,0]]`，owner←source 为 `[[1,1],[2,0]]`。每 rank 真实调用五次 `all_to_all_single`：交换 counts、dispatch float payload、dispatch metadata、return output/gate、return metadata；`[1,0]` 的 split 还覆盖零长度 destination chunk。
@@ -80,7 +78,6 @@ Owner 计算后按 source rank 返回，但 rank 0 的 return arrival global tok
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_training_control.py
-python -m pytest tests/test_moe_all_to_all_training.py -q
 ~~~
 
 这条独立训练 fixture 复用同一组 routes、targets 和 owner-only experts，但把可微 float payload 的 variable-split 通信封装为 authored `torch.autograd.Function`。Forward 以原 splits dispatch/return；backward 把 `input_splits`/`output_splits` 互换，再执行 reverse `all_to_all_single`，把 raw-output/gate 梯度送回 owner、把 hidden/gate 梯度送回 source。Metadata 与 count 仍走不可微 collectives，不能期待 autograd 自动恢复 token identity。
@@ -93,7 +90,6 @@ python -m pytest tests/test_moe_all_to_all_training.py -q
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_capacity_training_control.py
-python -m pytest tests/test_moe_all_to_all_capacity_training.py -q
 ~~~
 
 这条独立 control 才把 global capacity、owner-only dispatch、reverse-split backward 与一步 SGD 接入同一计算图。四个 active tokens 的初选 counts 为 `[2,2]`；`capacity_factor=0.5` 令每 expert capacity=1，按 selected probability、再按 global token id 稳定竞争后，global keep mask `[F,T,T,F]`、kept counts `[1,1]`、drop 2 个。只有幸存 assignments 进入 source→owner all-to-all：两 rank 的 splits 为 `[[1,1],[0,0]]`，owner←source 为 `[[1,0],[1,0]]`。
@@ -122,7 +118,6 @@ fixture 同时包含正干预、联合 causal-prefix patch 和未来位置负对
 ~~~powershell
 python projects/transformers-basics/run_qwen_activation_patching_control.py `
   --local-files-only
-python -m pytest tests/test_transformers_activation_patching_control.py -q
 ~~~
 
 固定 chat-template pair 只有位置 19 的 ` France`/` Germany` 不同；metric 是 position 25 上无前导空格单 token `Paris−Berlin`。协议在 patch 前固定 first/lower-middle/final layer 0/11/23，而不是扫完热图再挑层。录制结果的 clean/corrupt metric 为 9.210311/-7.700302；source patch recovery 为 1.000024/0.992244/0。完整 layer-0 prefix 与 final-layer readout 两个构造性正对照均为 1，future-position 负对照为 0，全部 hooks 在结束后移除。机器报告位于 `target-checkpoints/qwen2.5-0.5b-instruct.activation-patching.recorded-report.json`，self-fingerprint 是 `sha256:3f8410f5c31666b1be4f83e343a5b849a0545b2f635f7d415da85a195eebb18c`。
@@ -227,7 +222,6 @@ python projects/transformers-basics/run_qwen_weight_quantization_control.py `
 # 普通 CI 只验证冻结的 closed report，不加载权重
 python projects/transformers-basics/run_qwen_weight_quantization_control.py `
   --verify projects/transformers-basics/target-checkpoints/qwen2.5-0.5b-instruct.weight-int4.recorded-report.json
-python -m pytest tests/test_target_weight_quantization_control.py -q
 ~~~
 
 所选矩阵 shape 为 `[896,896]`、共 802,816 个参数，只占 494,032,768 参数的 `0.0016250258120530175`。Reference 使用 contiguous-row group size 128、每行 7 groups、FP32 absmax scale 和对称 code range `[-7,7]`；`-8` 故意不用。它不是 NF4、GPTQ、AWQ、SmoothQuant 或任一 runtime 的专有 layout。

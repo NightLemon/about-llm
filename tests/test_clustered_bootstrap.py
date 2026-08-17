@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import itertools
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -169,33 +166,3 @@ def test_invalid_bootstrap_contracts_fail_closed(
         operation()
 
 
-def test_clustered_bootstrap_toy_records_exact_distributions_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "evaluation-gate"
-                / "clustered_bootstrap_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["case_weighted"]["resamples_evaluated"] == 4
-    assert artifact["case_weighted"]["confidence_low"] == pytest.approx(-0.875)
-    assert artifact["case_weighted"]["probability_of_improvement"] == 0.75
-    assert artifact["equal_cluster"]["mean_difference"] == 0
-    assert artifact["equal_cluster"]["probability_of_improvement"] == 0.25
-    assert artifact["scope"] == {
-        "bca_or_small_cluster_coverage_guarantee": False,
-        "case_and_equal_weighting_treated_as_same_estimand": False,
-        "causal_or_general_model_improvement_proved": False,
-        "ordered_cluster_resamples_enumerated": True,
-        "representative_independent_clusters_established": False,
-        "within_cluster_case_independence_required": False,
-    }

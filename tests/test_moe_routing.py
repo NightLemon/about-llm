@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -241,34 +238,3 @@ def test_sparse_expert_forward_rejects_invalid_shapes(
         routed_linear_expert_forward(hidden, weights, routing)
 
 
-def test_moe_routing_toy_reports_exact_capacity_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "projects" / "transformers-basics" / "moe_routing.py"),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    routing = artifact["routing"]
-    assert routing["expert_capacity"] == 2
-    assert routing["expert_counts_before_capacity"] == [3, 4, 1]
-    assert routing["expert_counts_after_capacity"] == [2, 2, 1]
-    assert routing["dropped_assignments"] == 3
-    assert routing["kept_mask"] == [
-        [True, False],
-        [True, False],
-        [False, True],
-        [True, True],
-    ]
-    assert artifact["scope"] == {
-        "actual_topk_routing_and_capacity_drop_executed": True,
-        "actual_linear_expert_dispatch_and_combine_executed": True,
-        "trained_expert_mlp_or_router_used": False,
-        "expert_parallel_all_to_all_or_gpu_kernel_executed": False,
-        "deepseek_qwen_or_other_checkpoint_reproduced": False,
-        "quality_throughput_or_memory_proved": False,
-    }

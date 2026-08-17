@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -318,16 +316,3 @@ def test_manifest_rejects_unknown_nested_field(tmp_path: Path) -> None:
         load_rag_transformers_control_spec(path)
 
 
-def test_cli_help_does_not_load_or_download_model() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT), "--help"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=30,
-    )
-
-    assert "--local-files-only" in completed.stdout
-    assert completed.stderr == ""

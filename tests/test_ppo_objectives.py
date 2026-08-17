@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import math
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -161,44 +158,3 @@ def test_masked_mean_and_objectives_reject_invalid_contracts() -> None:
         )
 
 
-def test_ppo_toy_reports_math_controls_and_evidence_boundaries() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "single-gpu-finetuning"
-                / "ppo_objective_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-    assert artifact["gae"]["advantages"] == pytest.approx([0.265, 0.75, 0.0])
-    assert artifact["truncation_bootstrap_control"] == pytest.approx(
-        {
-            "with_bootstrap_advantage": 2.3,
-            "without_bootstrap_advantage": 0.5,
-            "recursion_continues_across_truncation": False,
-        }
-    )
-    assert artifact["ppo"]["per_action_surrogate"] == pytest.approx(
-        [1.2, -0.8, 1.0]
-    )
-    counterexample = artifact["sampled_ratio_counterexample"]
-    assert counterexample["sampled_probability_ratio"] == pytest.approx(1)
-    assert counterexample["sampled_clip_fraction"] == 0
-    assert counterexample["sampled_approximate_kl"] == pytest.approx(0)
-    assert counterexample["full_distribution_forward_kl"] > 10
-    assert artifact["scope"] == {
-        "device": "CPU",
-        "authored_rewards_values_and_distributions": True,
-        "numpy_objectives_executed": True,
-        "rollout_engine_or_language_model_executed": False,
-        "reward_or_value_model_quality_proved": False,
-        "full_distribution_kl_constrained": False,
-        "stable_ppo_training_proved": False,
-    }

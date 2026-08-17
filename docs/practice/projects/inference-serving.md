@@ -201,14 +201,14 @@ KV oracle 对每个 `[batch, kv_head, token, :]` 向量物化 INT8 code + FP32 s
 项目级验证：
 
 ~~~powershell
-python -m pytest tests/test_inference_analysis_cli.py tests/test_openai_reference.py tests/test_target_service_control.py tests/test_incremental_streaming_control.py tests/test_transformers_thread_cancellation_control.py tests/test_sampling.py tests/test_beam_search.py tests/test_constrained_decoding.py tests/test_stop_matching.py tests/test_continuous_batching.py tests/test_kv_preemption_batching.py tests/test_kv_allocator.py tests/test_prefix_cache.py tests/test_inference_quantization.py tests/test_quantized_bundle.py tests/test_minigpt_checkpoint.py tests/test_kv_quantization.py tests/test_speculative_decoding.py tests/test_self_consistency.py tests/test_verifier_selection.py -q
+python -m pytest tests/test_inference_analysis_cli.py tests/test_openai_reference.py tests/test_target_service_control.py tests/test_incremental_streaming_control.py tests/test_sampling.py tests/test_beam_search.py tests/test_constrained_decoding.py tests/test_stop_matching.py tests/test_continuous_batching.py tests/test_kv_preemption_batching.py tests/test_kv_allocator.py tests/test_prefix_cache.py tests/test_inference_quantization.py tests/test_quantized_bundle.py tests/test_minigpt_checkpoint.py tests/test_kv_quantization.py tests/test_speculative_decoding.py tests/test_self_consistency.py tests/test_verifier_selection.py -q
 ~~~
 
 故意失败路径至少覆盖：门禁一次返回全部失败原因、success 行缺 token contract、同一 attempt 文件混用 offered/no-offered 时钟、报告协同重哈希后语义漂移、断连后继续产生 token、KV capacity failure 发生部分 mutation、prefix hash collision 绕过 full identity、量化/checkpoint inner/outer tamper：
 
 ~~~powershell
 python -m pytest tests/test_inference_analysis_cli.py::test_cli_failure_exit_retains_every_gate_reason tests/test_inference_analysis_cli.py::test_cli_rejects_success_row_without_token_contract tests/test_inference_analysis_cli.py::test_cli_rejects_ambiguous_attempt_artifacts -q
-python -m pytest tests/test_target_service_control.py::test_offline_verifier_rejects_cooperatively_rehashed_drift tests/test_incremental_streaming_control.py::test_report_verifier_rejects_cooperatively_rehashed_drift tests/test_transformers_thread_cancellation_control.py::test_verifier_rejects_cooperatively_rehashed_semantic_drift -q
+python -m pytest tests/test_target_service_control.py::test_offline_verifier_rejects_cooperatively_rehashed_drift tests/test_incremental_streaming_control.py::test_report_verifier_rejects_cooperatively_rehashed_drift -q
 python -m pytest tests/test_kv_allocator.py::test_capacity_failure_is_atomic_before_mutating_an_exclusive_tail tests/test_prefix_cache.py::test_injected_hash_collision_never_bypasses_full_identity_or_token_comparison tests/test_minigpt_checkpoint.py::test_checkpoint_rejects_truncation_outer_and_inner_tamper -q
 ~~~
 

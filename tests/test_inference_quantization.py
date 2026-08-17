@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import struct
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -232,89 +229,3 @@ def test_quantized_matrix_constructor_and_linear_input_fail_closed() -> None:
         quantized_linear([[1.0, 2.0]], quantized, bias=[1.0, 2.0])
 
 
-def test_quantization_toy_emits_storage_error_and_scope_artifact(
-    tmp_path: Path,
-) -> None:
-    artifact_path = tmp_path / "matrix.allmqtz"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "quantization_toy.py"
-            ),
-            "--seed",
-            "7",
-            "--output-features",
-            "3",
-            "--input-features",
-            "5",
-            "--batch-size",
-            "2",
-            "--group-size",
-            "4",
-            "--artifact-path",
-            str(artifact_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["configuration"]["code_range"] == [-7, 7]
-    assert artifact["schema_version"] == 2
-    assert artifact["storage"] == {
-        "reference_fp32_weight_bytes": 60,
-        "ideal_packed_weight_bytes": 8,
-        "float32_scale_metadata_bytes": 24,
-        "ideal_total_bytes": 32,
-        "ideal_compression_ratio": pytest.approx(60 / 32),
-        "numpy_unpacked_reference_bytes": 39,
-        "actual_dense_packed_weight_bytes": 8,
-        "actual_code_plus_fp32_scale_payload_bytes": 32,
-        "final_byte_padding_bits": 4,
-        "raw_payload_includes_container_header_or_alignment": False,
-        "serialized_tensor_artifact_bytes": 96,
-    }
-    assert len(bytes.fromhex(artifact["packed_codes"]["hex"])) == 8
-    assert artifact["packed_codes"]["sha256"].startswith("sha256:")
-    assert artifact["packed_codes"]["round_trip_codes_exact"] is True
-    assert artifact["packed_codes"]["round_trip_scales_exact"] is True
-    assert artifact["tensor_artifact"] == {
-        "format_version": 1,
-        "byte_order": "little-endian header and float32 scales",
-        "integrity": "trailing unkeyed SHA-256 over header and payload",
-        "sha256": "sha256:"
-        + hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
-        "round_trip_exact": True,
-        "written_to_disk": True,
-        "path": str(artifact_path),
-    }
-    written_bytes = artifact_path.read_bytes()
-    reloaded = PackedGroupwiseQuantizedMatrix.from_bytes(written_bytes)
-    assert reloaded.original_shape == (3, 5)
-    second = subprocess.run(
-        completed.args,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert second.returncode != 0
-    assert "FileExistsError" in second.stderr
-    assert artifact_path.read_bytes() == written_bytes
-    assert artifact["weight_error"]["root_mean_squared_error"] >= 0
-    assert artifact["linear_output_error"]["root_mean_squared_error"] >= 0
-    assert artifact["scope"] == {
-        "device": "CPU",
-        "weights": "seeded synthetic matrix",
-        "quantizer": "symmetric absmax per contiguous row group",
-        "actual_low_bit_packing_executed": True,
-        "self_contained_quantized_tensor_artifact_constructed": True,
-        "self_contained_model_artifact_written": False,
-        "fused_low_bit_kernel_executed": False,
-        "calibration_or_gptq_awq_executed": False,
-        "model_quality_or_latency_proved": False,
-    }

@@ -2,7 +2,7 @@
 
 这张图只回答三个问题：现在从哪里开始、下一步学什么、什么时候可以进入项目。它不是完整目录，也不要求一次掌握所有术语；需要查覆盖范围和实现成熟度时，再看[完整知识地图](knowledge-map.md)。
 
-**新手导航**：[30 分钟最小成功](#30-minutes) · [六周入门路径](learning-paths.md#_2) · [环境配置](environment.md) · [术语表](../reference/glossary.md)
+**新手导航**：[30 分钟最小成功](#30-minutes) · [六周入门路径](learning-paths.md#beginner) · [环境配置](environment.md) · [术语表](../reference/glossary.md)
 { .doc-nav }
 
 ## 先做四项自检
@@ -60,6 +60,6 @@ python projects/transformers-basics/train_byte_bpe.py
 - 想理解模型内部：按 Tokenization → Attention → Transformer → Generation 前进。
 - 想做应用：完成 Generation 后进入 RAG，再补评测、安全与权限。
 - 已有 ML 基础：用自检跳过已掌握内容，但仍完成一次最小运行和反例。
-- 想做训练或系统：先完成[入门路径](learning-paths.md#_2)，再选择工程或研究路径。
+- 想做训练或系统：先完成[基础路线](learning-paths.md#beginner)，再选择模型或系统工程路线。
 
 进入工程项目前，你至少应该能提交一份短记录：`问题 → 预测 → 命令 → 原始输出 → 反例 → 结论边界`。

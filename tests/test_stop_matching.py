@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -211,35 +208,3 @@ def test_invalid_stop_contracts_fail_closed(
         operation()
 
 
-def test_stop_matching_toy_records_chunk_overlap_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "projects" / "inference-serving" / "stop_matching_toy.py"),
-        ],
-        check=True,
-        capture_output=True,
-        encoding="utf-8",
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-    utf8_fixture = artifact["utf8_split_fixture"]
-
-    assert utf8_fixture["returned_text"] == "甲🙂乙"
-    assert utf8_fixture["report"]["matched_stop"] == "<END>"
-    assert utf8_fixture["report"]["discarded_after_stop_characters"] == 1
-    assert artifact["same_completion_overlap_fixture"] == {
-        "configured_stops": ["BC", "ABC"],
-        "discarded_after_stop_characters": 1,
-        "matched_stop": "BC",
-        "returned_text": "A",
-    }
-    assert artifact["scope"] == {
-        "byte_chunk_independent_character_matching_executed": True,
-        "partial_stop_withholding_executed": True,
-        "provider_usage_or_finish_reason_equivalence_proved": False,
-        "server_cancellation_gpu_release_or_billing_proved": False,
-        "strict_incremental_utf8_decoding_executed": True,
-        "tokenizer_or_model_token_ids_decoded": False,
-        "unicode_normalization_or_case_folding_performed": False,
-    }

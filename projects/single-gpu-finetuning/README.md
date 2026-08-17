@@ -105,7 +105,6 @@ python -m pytest tests/test_gradient_accumulation.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/ddp_token_mean_control.py
-python -m pytest tests/test_ddp_token_mean.py -q
 ~~~
 
 固定 `world_size=2`、全局有效 token 数 `N=4`、rank counts `[1,3]`。精确 oracle 表明，默认 DDP 对 rank gradient 取 mean 时，每 rank 应把 local loss sum 乘 `D/N=1/2`；真实 Gloo/DDP 得到 `(+23/40,-23/40)` = `(0.575,-0.575)`，与单进程 full batch 的最大误差约 `1.11e-16`。漏乘 world size、只用 `1/N=1/4` 时结果为 `(+23/80,-23/80)` = `(0.2875,-0.2875)`，恰为 full 的一半；rank-local mean 则为 `(+7/20,-7/20)` = `(0.35,-0.35)`。两个真实 OS 进程都通过 count `all_reduce` 观察到 4，并看到相同同步梯度。
@@ -118,7 +117,6 @@ python -m pytest tests/test_ddp_token_mean.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/ddp_accumulation_no_sync_control.py
-python -m pytest tests/test_ddp_accumulation_no_sync.py -q
 ~~~
 
 两个 rank 各处理两个 micro-batch，监督 token counts 为 `[[1,2],[3,1]]`，全局 `N=7`，所以 local loss sum 统一乘 `D/N=2/7`。精确 oracle 的 full/one-final-sync/sync-every-microbatch pre-clip gradient 都为 `(+19/35,-19/35)`；若不裁剪，plain SGD `lr=7/20` 的参数 delta 是 `(-19/100,+19/100)`。
@@ -148,7 +146,6 @@ AdamW 路径先做一次 finite step，得到 step=1、`exp_avg=0.1`、`exp_avg_
 
 ~~~powershell
 python projects/single-gpu-finetuning/ddp_amp_overflow_consensus_control.py
-python -m pytest tests/test_ddp_amp_overflow_consensus.py -q
 ~~~
 
 三条路径都先执行一次 finite warm-up，建立 parameter≈0.99、AdamW step=1、scheduler epoch=1/LR=0.005、scale=8、growth tracker=1。第一条让 rank 0 在首个 `no_sync` micro-batch 产生 non-finite；末批 built-in DDP reduction 后两个 rank 都 non-finite，均跳过 AdamW/StepLR，scale `8→4`、tracker `1→0`，训练状态保持一致。
@@ -163,7 +160,6 @@ python -m pytest tests/test_ddp_amp_overflow_consensus.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/checkpoint_resume_control.py
-python -m pytest tests/test_training_resume_process_control.py -q
 ~~~
 
 固定 6 参数线性模型使用 CPU FP16 autocast、真实 GradScaler/AdamW/`StepLR(step_size=2,gamma=0.5)`、Torch 全局 RNG 生成的显式 inverted-dropout mask、Python RNG loss factor，以及独立 generator 驱动的 8-example stateful shuffle。attempt 0 成功，attempt 1–3 intentional non-finite，使 scale `8→4→2→1`，但 AdamW step 保持 1、scheduler `last_epoch/step_count` 保持 `1/2`。phase-1 随后把 model/optimizer/scheduler/scaler、Torch CPU/Python RNG、permutation/cursor/epoch/generator、attempt/update progress 与 dataset hash 写入 21,747-byte checkpoint 并退出；不同 PID 的进程重开后完成 attempt 4–7。resume tail 的 batch、随机因子、mask、loss、gradient norm、scale、optimizer/scheduler/LR trace 和最终所有组件 fingerprint 与独立 uninterrupted worker exact。
@@ -178,7 +174,6 @@ python -m pytest tests/test_training_resume_process_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/dataloader_prefetch_resume_control.py
-python -m pytest tests/test_dataloader_prefetch_resume_control.py -q
 ~~~
 
 四个不同顶层 PID 分别执行 uninterrupted、phase-1、正确 resume 和错误 resume；每段用 `DataLoader(num_workers=2,prefetch_factor=2,batch_size=1,multiprocessing_context="spawn",in_order=True)` 启动真实 CPU workers。固定 permutation 为 `[8,3,1,7,0,9,4,2,6,5]`。phase-1 主循环只收到前三条时，tracking sampler 已 emitted 到 cursor 7，所以 `[7,0,9,4]` 虽已送进 worker 队列，却尚未交付给训练循环。
@@ -193,7 +188,6 @@ python -m pytest tests/test_dataloader_prefetch_resume_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
-python -m pytest tests/test_optimizer_commit_resume_control.py -q
 ~~~
 
 六个不同顶层 PID 分别执行 uninterrupted、phase-1、从 optimizer-committed cursor 正确恢复、从 consumed cursor 只恢复 crash RNG 却漏 gradients、从 consumed cursor 加载完整 sidecar 正确恢复，以及 gradients 完整但误用 commit-boundary RNG 的隔离负例；每段仍启动两个 spawn DataLoader workers。CPU Float64 `Linear(2,1)` 的输入先乘 main-process inverted-Bernoulli mask（固定 seed `20260815`），再执行 MSE、`SGD(momentum=0.9)`、`StepLR(step_size=2,gamma=0.5)` 和 accumulation steps=2。phase-1 在第三个 microbatch `[8,3,1]` 已交付且 stochastic forward/backward 后模拟崩溃：sampler emitted=7、main loop consumed=3，但只有 `[8,3]` 已进入 optimizer step/scheduler step，所以 committed cursor=2，模型上还有两个未提交 gradient tensors。
@@ -218,7 +212,6 @@ python -m pytest tests/test_optimizer_commit_resume_control.py -q
 
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_sft_label_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-sft-label.recorded-report.json
-python -m pytest tests/test_target_sft_label_control.py -q
 ~~~
 
 这条 control 不执行 backward、optimizer、adapter export、LoRA、QLoRA、CUDA、vLLM 或 serving，也不证明 loss 会下降、训练会收敛、数据能泛化或系统可生产使用。训练 fixture/readiness/template 都是仓库 authored artifact；size/SHA-256 和严格 verifier 能发现已定义范围内的漂移，但不证明数据合法性、语义质量、发布者/审核者身份或来源真实性，无密钥 hash 可被有写权限的攻击者协同重算，verify→loader reopen 的 TOCTOU 也没有消除。
@@ -399,7 +392,6 @@ fixture 中的 `good/bad` 是作者构造的控制信号，不是人类偏好、
 
 ~~~powershell
 python projects/single-gpu-finetuning/run_qwen_target_dpo_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-dpo.recorded-report.json
-python -m pytest tests/test_target_dpo_control.py -q
 ~~~
 
 2026-08-13 的 recorded control 在 CPU FP32 eager、TRL 0.29.1/PEFT 0.20.0 下，为 24 层 `q_proj/v_proj` 注入 `r=4, alpha=8` LoRA，共 270,336 个 trainable parameters。一次真实 backward/AdamW step 的 96 个梯度张量全部 finite，48 个 B tensors 从全零变为全非零，共 98,304 个非零 elements；同 batch loss 从 `0.693147` 降至 `0.333352`，两条 chosen-relative margin 为 `8.566292/10.016453`。基座参数、排除 LoRA 后的完整 `state_dict`、规范化后的 model config 与 generation config 前后指纹分别 exact；report 指纹为 `sha256:3cafbade…b549b7bc`。

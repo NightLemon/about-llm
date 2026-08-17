@@ -1,59 +1,71 @@
 # About LLM
 
-大语言模型不是一个孤立算法，而是一条从数据、表示、优化和分布式计算，到交互设计、评测、安全与治理的完整技术链。本手册帮助你同时回答三类问题：
+这是一套面向开发者和算法工程师的中文 LLM 教材。目标不是罗列术语，而是帮助你建立一条完整主线：文本怎样变成 token，模型怎样训练和生成，RAG 与 Agent 怎样接入外部世界，系统又怎样被评测、部署和治理。
 
-- **它为什么有效？** 理解 token、Transformer、目标函数、规模化和涌现行为。
-- **它怎样做出来？** 掌握数据处理、预训练、后训练、推理优化和服务系统。
-- **怎样负责任地使用？** 学会评测事实性、鲁棒性、偏见、隐私和安全边界。
+第一次来，请从[新手知识地图](guide/beginner-map.md)开始。它包含一次不下载模型、只使用 CPU 的 30 分钟实验。
 
-## 快速入口
+## 你会获得什么
 
-| 你的目标 | 从这里开始 |
-|---|---|
-| 第一次使用这套手册 | [如何使用](guide/how-to-use.md) → [新手知识地图](guide/beginner-map.md) |
-| 按主题查漏补缺 | [完整知识地图](guide/knowledge-map.md) |
-| 理解文档、源码、Notebook 和项目的关系 | [仓库地图与实现契约](guide/repo-map.md) |
-| 配置 Python、GPU 或云 API 环境 | [环境与硬件矩阵](guide/environment.md) |
-| 直接动手做实验 | [实验与项目](practice/labs.md) → [工程项目索引](practice/project-index.md) |
-| 跟进近期论文并核对证据边界 | [近期论文解读](papers/index.md) → [2026 年 8 月快照](papers/2026-08.md) |
-| 核对事实来源和证据边界 | [内容准确性与核验台账](reference/accuracy.md) |
+学完一条完整路线后，你应该能够：
+
+- 用张量形状和简单算例解释 Transformer，而不是只背结构图；
+- 为 RAG、Agent 或微调任务建立可复现的基线与评测集；
+- 区分模型能力、代码正确性和生产可靠性，不用一次 demo 代替结论；
+- 阅读论文和系统报告时，判断证据支持了什么、遗漏了什么。
+
+## 选择学习方向
+
+| 你的目标 | 建议入口 | 第一个成果 |
+|---|---|---|
+| 从零理解语言模型 | [基础路线](guide/learning-paths.md#beginner) | 手算注意力，并运行一个最小 tokenizer |
+| 构建 RAG 或 Agent | [应用工程路线](guide/learning-paths.md#application) | 一个带引用、权限和错误分析的小系统 |
+| 学习微调与训练 | [模型工程路线](guide/learning-paths.md#model-engineering) | 一次可解释的数据准备和训练实验 |
+| 学习推理与部署 | [系统工程路线](guide/learning-paths.md#systems) | 一份延迟、吞吐、显存和失败路径报告 |
+| 做论文复现 | [研究路线](guide/learning-paths.md#research) | 一项有基线、消融和负结果的复现实验 |
+
+还不确定方向时，先看[知识地图](guide/knowledge-map.md)，只选择一条主线，不必一次读完整站。
 
 ## 建议的第一小时
 
-1. 用 5 分钟阅读[如何使用](guide/how-to-use.md)，再用[新手知识地图](guide/beginner-map.md)完成四项自检。
-2. 基础薄弱时先读[机器学习与深度学习](foundations/ml-dl.md)、[NLP 与语言建模](foundations/nlp.md)的开头，再建立[文本到 token](core/tokenization.md)的心智模型。
-3. 用 15 分钟完成[Byte-BPE 最小运行](guide/beginner-map.md#30-minutes)，得到第一个纯 CPU、无网络结果。
-4. 按“解释机制 → 运行基线 → 制造反例 → 通过门禁”记录结果，不把“命令能跑”当作已经学会。
-5. 最后浏览[知识地图](guide/knowledge-map.md)，只定位下一站，不要求一次读完全部主题。
+1. 用[新手知识地图](guide/beginner-map.md)完成四项自检。
+2. 运行 Byte-BPE 最小实验，观察 byte、token 和 round trip 的关系。
+3. 阅读 [Tokenization](core/tokenization.md) 的直觉与示例。
+4. 修改一个输入，先预测输出变化，再重新运行。
+5. 用三句话记录：我观察到了什么、为什么、还不能说明什么。
 
-## 一张图理解 LLM 生命周期
+这套流程比从目录第一页顺序读到最后一页更有效。
+
+## 一张图看完整主线
 
 ```mermaid
 flowchart LR
-  A["原始数据"] --> B["清洗、去重与配比"]
-  B --> C["Tokenization"]
-  C --> D["预训练：预测 token"]
-  D --> E["后训练：指令、偏好与工具"]
-  E --> F["压缩与推理优化"]
-  F --> G["Prompt / RAG / Agent 应用"]
-  G --> H["离线与在线评测"]
-  H --> I["监控、反馈与治理"]
-  I --> B
+  A[文本与数据] --> B[Tokenization]
+  B --> C[Transformer]
+  C --> D[训练与对齐]
+  C --> E[生成与推理]
+  E --> F[RAG 与 Agent]
+  D --> G[模型发布]
+  F --> H[评测与安全]
+  G --> H
+  H --> I[监控与迭代]
 ```
 
-## 阅读层次
+## 教材、实验和项目的关系
 
-每个主题尽量区分四层，不要求一次全部掌握：
+| 层次 | 用途 | 位置 |
+|---|---|---|
+| 教材 | 建立概念、公式和工程判断 | `docs/` |
+| 实验 | 隔离一个机制，观察变量变化 | `notebooks/`、[实验目录](practice/labs.md) |
+| 项目 | 把多个机制组合成完整工作流 | [项目索引](practice/project-index.md)、`projects/` |
+| 参考 | 查询术语、来源和时效信息 | `docs/reference/` |
 
-| 层次 | 你应该能做什么 |
-|---|---|
-| 直觉 | 用自己的话解释输入、输出和用途 |
-| 机制 | 读懂关键公式、张量形状与算法步骤 |
-| 实践 | 能运行实验、选择参数、分析失败案例 |
-| 深入 | 能阅读论文、复现结果、质疑假设并设计改进 |
+推荐顺序是“教材 → 最小实验 → 项目”，而不是先运行所有测试。测试用于保护代码回归，不是学习进度表。
 
-## 重要提醒
+## 阅读原则
 
-模型学习的是数据分布下的条件概率，不是可直接查询的事实数据库。它可能同时表现出强大的模式归纳能力和非常自信的错误。可靠系统依赖外部证据、约束、验证、权限控制和持续评测，而不只是“换一个更强的模型”。
+- 看到公式时，先写出每个变量的形状和单位。
+- 看到实验结果时，先找基线、控制变量和失败样例。
+- 看到模型或 API 规格时，检查版本与查询日期。
+- 看到“效果更好”时，追问指标、数据、预算和适用范围。
 
-下一步：先读[如何使用这套手册](guide/how-to-use.md)，或者直接选择一条[学习路径](guide/learning-paths.md)。
+更具体的方法见[如何使用这套手册](guide/how-to-use.md)。环境配置、目录结构和贡献方式分别见[环境矩阵](guide/environment.md)、[仓库地图](guide/repo-map.md)与[贡献指南](https://github.com/NightLemon/about-llm/blob/main/CONTRIBUTING.md)。

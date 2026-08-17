@@ -117,7 +117,6 @@ Control 真实执行 `langchain==1.3.14` / `langchain-core==1.5.3` 的 `Structur
 
 ~~~powershell
 python projects/safe-agent/framework_agent_loop_control.py
-python -m pytest tests/test_framework_agent_loop_control.py -q
 ~~~
 
 它固定 `langchain==1.3.14`、`langchain-core==1.5.3`、`langgraph==1.2.10` 与 `llama-index-core==0.14.23`，真实进入 LangChain `create_agent()`/LangGraph 和 LlamaIndex `FunctionAgent.run()` 的 model→tool→model 控制流。两个 model 都是确定性的进程内 scripted fixture，不是 provider/目标模型；tool 最终仍委托同一 canonical runtime 执行 schema、可信 resource resolver、policy 与 call-id cache。
@@ -175,7 +174,7 @@ python projects/safe-agent/a2a_loopback_control.py --verify-official-schema
 ## 最小验证与故意破坏
 
 ~~~powershell
-python -m pytest tests/test_agent_runtime.py tests/test_agent_policy.py tests/test_agent_schema.py tests/test_agent_loop.py tests/test_model_planner.py tests/test_model_planner_control.py tests/test_agent_framework_tool_adapters.py tests/test_framework_agent_loop_control.py tests/test_agent_outbox.py tests/test_sqlite_agent_ledger.py tests/test_agent_cli.py tests/test_agent_evaluation.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py tests/test_a2a_loopback.py -q
+python -m pytest tests/test_agent_runtime.py tests/test_agent_policy.py tests/test_agent_schema.py tests/test_agent_loop.py tests/test_model_planner.py tests/test_agent_framework_tool_adapters.py tests/test_agent_outbox.py tests/test_sqlite_agent_ledger.py tests/test_agent_cli.py tests/test_agent_evaluation.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py tests/test_a2a_loopback.py -q
 ~~~
 
 重点反例：撤权后 cached result 必须重新授权；同 call id 换参数/身份/版本冲突；approval 漂移或过期拒绝；resume 不得重复 usage；handler 非 JSON 结果保持 pending；provider success/ack 前 crash 只允许 at-least-once 重投；schema-invalid 必须在 handler 前停止；远端 completed 不能跳过本地 verifier：
@@ -183,7 +182,8 @@ python -m pytest tests/test_agent_runtime.py tests/test_agent_policy.py tests/te
 ~~~powershell
 python -m pytest tests/test_agent_policy.py::test_cached_replay_is_reauthorized_after_capability_revocation tests/test_agent_runtime.py::test_call_id_reuse_with_changed_arguments_is_rejected tests/test_agent_policy.py::test_approval_rejects_expiry_subject_and_argument_drift -q
 python -m pytest tests/test_agent_loop.py::test_checkpoint_round_trip_restart_and_resume_without_double_usage tests/test_agent_runtime.py::test_invalid_handler_result_stays_pending_without_reexecution tests/test_agent_outbox.py::test_crash_after_provider_success_causes_redelivery_not_exactly_once -q
-python -m pytest tests/test_model_planner_control.py::test_control_exercises_fail_closed_negative_paths tests/test_agent_loop.py::test_loop_requires_verifier_pass_before_completion -q
+python projects/safe-agent/model_planner_control.py
+python -m pytest tests/test_agent_loop.py::test_loop_requires_verifier_pass_before_completion -q
 ~~~
 
 验收至少保存：trusted subject/resource context、proposal/execution identity、schema/policy/approval revision、handler attempt 与 budget、effect verifier、pending/reconciliation、checkpoint/outbox timeline，以及一个越权、篡改或 crash 反例。不能只保存模型对话截图。

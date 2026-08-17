@@ -258,7 +258,7 @@ python -m pip install -e ".[jax]"
 python projects/jax-minigpt/train_tiny.py --steps 60 --learning-rate 0.02 --seed 11
 python projects/jax-minigpt/cross_framework_parity.py
 python projects/jax-minigpt/checkpoint_resume_control.py
-python -m pytest tests/test_gpt_jax.py tests/test_gpt_cross_framework_parity.py tests/test_jax_training_resume.py
+python -m pytest tests/test_gpt_jax.py
 ```
 
 验收项：

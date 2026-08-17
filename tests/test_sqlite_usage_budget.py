@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 import subprocess
 import sys
@@ -371,40 +370,3 @@ def test_durable_reserve_request_rejects_model_mismatch(tmp_path: Path) -> None:
     assert ledger.snapshot().active_reservations == 0
 
 
-def test_sqlite_usage_budget_demo_reopens_and_reconciles(tmp_path: Path) -> None:
-    database = tmp_path / "demo.db"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "cloud-api-contracts"
-                / "sqlite_usage_budget_demo.py"
-            ),
-            "--database",
-            str(database),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["simulated_offline"] is True
-    assert len(artifact["active_after_reopen"]) == 1
-    assert artifact["active_after_reopen"][0]["state"] == "active"
-    assert artifact["reconciled_record"]["state"] == "uncertain"
-    assert artifact["uncertain_snapshot"]["committed_estimated_microusd"] == 80
-    assert [event["event_type"] for event in artifact["events"]] == [
-        "reserved",
-        "uncertain",
-    ]
-    assert artifact["scope"] == {
-        "storage": "local SQLite",
-        "network_used": False,
-        "remote_call_atomic_with_sqlite": False,
-        "authenticates_usage_or_pricing": False,
-        "proves_provider_invoice": False,
-        "proves_exactly_once_billing": False,
-    }

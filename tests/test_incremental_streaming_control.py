@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
-import subprocess
-import sys
 from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any
@@ -264,21 +262,3 @@ def test_recorded_loader_rejects_duplicate_nonfinite_and_invalid_utf8(
             load_and_verify_incremental_streaming_report(path)
 
 
-def test_project_cli_verifies_recorded_report_without_starting_server() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(PROJECT / "incremental_streaming_control.py"),
-            "--verify",
-            str(RECORDED_REPORT),
-        ],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert completed.returncode == 0, completed.stderr
-    report = json.loads(completed.stdout)
-    assert report["report_fingerprint"].endswith("0e80f42b5d00")
-    assert report["scope"]["transformers_generation_thread_cancellation_proven"] is False

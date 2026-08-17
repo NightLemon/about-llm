@@ -13,8 +13,8 @@
 | Temperature sampling | \(p_i(T)=\exp(z_i/T)/\sum_j\exp(z_j/T),\ T>0\) | `temperature=0` 是部分 API 的 greedy 特例，不能代入除法；temperature 会改变后续 top-p support |
 | Top-p support | \(m=\min\{r:\sum_{i=1}^{r}p_{(i)}\ge p\}\) | 保留前 \(m\) 个，包含 crossing token；组合 top-k 时先明确在哪个 support 上归一化 |
 | Sign-aware repetition（本仓库 oracle） | \(z_i'=rz_i\ (z_i<0),\ z_i'=z_i/r\ (z_i\ge0)\) | 只处理历史中每个唯一 token 一次；不是 frequency penalty，也不是通用 provider 契约 |
-| Beam final score（本仓库 oracle） | \(s(x_{1:T})=\log p(x_{1:T})/T^\alpha\) | (T\) 只计生成 token、包含已发出的 EOS、不含 prompt；active beam 仍按 raw cumulative log-prob 剪枝，此约定不等于所有 runtime |
-| Constrained renormalization | \(\tilde p_i=p_i\mathbf1[i\in A(q)]/\sum_jp_j\mathbf1[j\in A(q)]\) | (A(q)) 由 token 完整片段对状态 (q) 的转移决定；分母为 0 必须显式失败，EOS 只在 accepting state 合法 |
+| Beam final score（本仓库 oracle） | \(s(x_{1:T})=\log p(x_{1:T})/T^\alpha\) | \(T\) 只计生成 token、包含已发出的 EOS、不含 prompt；active beam 仍按 raw cumulative log-prob 剪枝，此约定不等于所有 runtime |
+| Constrained renormalization | \(\tilde p_i=p_i\mathbf1[i\in A(q)]/\sum_jp_j\mathbf1[j\in A(q)]\) | \(A(q)\) 由 token 完整片段对状态 \(q\) 的转移决定；分母为 0 必须显式失败，EOS 只在 accepting state 合法 |
 | Paired sign-flip exact p | \(p=2^{-m}\sum_{s\in\{-1,1\}^m}\mathbf1[T(s\odot d)\text{ 至少同样极端}]\) | \(m\) 只计非零 pair；依赖 sharp-null label exchangeability，单/双侧须预先指定，不是 effect size 或 null posterior |
 | Case-weighted cluster difference | \(\hat\Delta=N^{-1}\sum_g\sum_{i=1}^{n_g}d_{gi}\) | joint sign flip 用 cluster sum 作 contribution；大 cluster 权重更高 |
 | Equal-cluster difference | \(\hat\Delta=G^{-1}\sum_g n_g^{-1}\sum_i d_{gi}\) | joint sign flip 用 cluster mean；与随机 case estimand 不同，须预指定 |

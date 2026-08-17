@@ -734,9 +734,9 @@ python projects/transformers-basics/inspect_config.py `
 
 ```powershell
 python -m pytest tests/test_moe_routing.py tests/test_moe_training.py -q
-python -m pytest tests/test_moe_all_to_all.py `
-  tests/test_moe_all_to_all_training.py `
-  tests/test_moe_all_to_all_capacity_training.py -q
+python projects/transformers-basics/moe_all_to_all_control.py
+python projects/transformers-basics/moe_all_to_all_training_control.py
+python projects/transformers-basics/moe_all_to_all_capacity_training_control.py
 ```
 
 它们用于理解 routing/capacity/dispatch/backward，不是 DeepSeek target tests；CPU/Gloo 也不证明 CUDA/NCCL 或 expert-parallel 性能。

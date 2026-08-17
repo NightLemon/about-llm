@@ -38,7 +38,6 @@ python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
 
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
   --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
-python -m pytest tests/test_target_qwen_evaluation_control.py -q
 ~~~
 
 Suite fingerprint 是 `sha256:27ada9b1b16cebca8dd9135a5b875de11f412fc9a0f10c6acc462ff76b316201`，report fingerprint 是 `sha256:dd30a278cbc076c973c0b0babc9e752b1063d8bfb114c852b34ea42b2cd85c43`。逐例结果不 repair：

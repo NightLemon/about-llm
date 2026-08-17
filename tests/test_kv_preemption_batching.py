@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import random
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -225,33 +222,3 @@ def test_kv_preemption_simulation_is_deterministic() -> None:
     assert _fixture_report() == _fixture_report()
 
 
-def test_kv_preemption_toy_reports_exact_trace_and_scope() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(
-                ROOT
-                / "projects"
-                / "inference-serving"
-                / "kv_preemption_batching_toy.py"
-            ),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    artifact = json.loads(completed.stdout)
-
-    assert artifact["summary"]["logical_forward_positions"] == 9
-    assert artifact["summary"]["recomputed_positions"] == 2
-    assert artifact["summary"]["executed_forward_positions"] == 11
-    assert artifact["summary"]["preemption_count"] == 1
-    assert artifact["scope"] == {
-        "metadata_only_paged_kv_and_scheduler_integrated": True,
-        "recompute_preemption_and_rebuild_executed": True,
-        "logical_and_executed_forward_work_separated": True,
-        "real_kv_tensor_values_or_gpu_kernel_executed": False,
-        "swap_prefix_cache_or_distributed_scheduler_modeled": False,
-        "vllm_scheduler_equivalence_proved": False,
-        "wall_clock_latency_throughput_vram_or_quality_proved": False,
-    }

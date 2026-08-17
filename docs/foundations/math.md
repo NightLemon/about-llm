@@ -199,7 +199,7 @@ o_b=e^{m_{b-1}-m_b}o_{b-1}+\sum_j e^{s_{b,j}-m_b}v_{b,j}.
 
 ~~~powershell
 python projects/transformers-basics/online_softmax_demo.py
-python -m pytest tests/test_attention_numpy.py tests/test_online_softmax_project.py -q
+python -m pytest tests/test_attention_numpy.py -q
 ~~~
 
 ## 4. 概率：模型输出究竟是什么

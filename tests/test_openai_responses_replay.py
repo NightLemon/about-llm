@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import copy
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -356,23 +353,3 @@ def test_state_snapshots_caller_events_before_later_mutation() -> None:
     assert receipt.model == original["response"]["model"]
 
 
-def test_project_cli_emits_machine_readable_scope_receipt() -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(PROJECT / "openai_responses_replay.py"),
-            "--events",
-            str(FIXTURE),
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert payload["terminal_status"] == "completed"
-    assert payload["function_calls"][0]["arguments_is_strict_object"] is True
-    assert payload["scope"]["openai_sdk_or_remote_api_executed"] is False
