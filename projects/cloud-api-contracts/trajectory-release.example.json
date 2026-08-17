@@ -1,0 +1,57 @@
+{
+  "schema_version": "about-llm.trajectory-release.v1",
+  "trajectory_id": "authored-release-fixture-001",
+  "turns": [
+    {
+      "turn_id": "turn-001",
+      "role": "user",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Which deployment control failed in the authored incident?"
+        }
+      ]
+    },
+    {
+      "turn_id": "turn-002",
+      "role": "assistant",
+      "blocks": [
+        {
+          "type": "tool_call",
+          "call_id": "call-001",
+          "tool_name": "lookup_public_runbook",
+          "arguments": {
+            "runbook_id": "fixture-runbook-001"
+          }
+        }
+      ]
+    },
+    {
+      "turn_id": "turn-003",
+      "role": "tool",
+      "blocks": [
+        {
+          "type": "tool_result",
+          "call_id": "call-001",
+          "status": "ok",
+          "content": "The authored fixture reports a missing release gate."
+        }
+      ]
+    },
+    {
+      "turn_id": "turn-004",
+      "role": "assistant",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "The fixture attributes the incident to a missing release gate."
+        },
+        {
+          "type": "citation",
+          "source_id": "fixture-runbook-001",
+          "quote": "Public trajectories require an allowlist projection."
+        }
+      ]
+    }
+  ]
+}

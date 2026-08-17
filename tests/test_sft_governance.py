@@ -10,6 +10,8 @@ import pytest
 from about_llm.finetuning.data import (
     ChatMessage,
     DataSplit,
+    FunctionToolCall,
+    FunctionToolDefinition,
     MessageRole,
     SFTRecord,
     load_sft_records,
@@ -162,6 +164,59 @@ def test_sensitive_candidates_omit_plaintext_and_fail_closed() -> None:
     assert "AKIAABCDEFGHIJKLMNOP" not in rendered
     assert "4111 1111 1111 1111" not in rendered
     assert '"matched_plaintext": null' in rendered
+
+
+def test_sensitive_scan_covers_tool_calls_and_tool_schemas() -> None:
+    record = SFTRecord(
+        "tool-sensitive",
+        (
+            ChatMessage(MessageRole.USER, "send notification"),
+            ChatMessage(
+                MessageRole.ASSISTANT,
+                "",
+                tool_calls=(
+                    FunctionToolCall(
+                        "call-1", "notify", {"email": "alice@example.test"}
+                    ),
+                ),
+            ),
+            ChatMessage(
+                MessageRole.TOOL,
+                "queued",
+                tool_call_id="call-1",
+                name="notify",
+            ),
+            ChatMessage(MessageRole.ASSISTANT, "done"),
+        ),
+        "about-llm-authored-fixture",
+        "CC-BY-4.0",
+        "governance-test",
+        "en",
+        "normal",
+        "group-tool-sensitive",
+        DataSplit.TRAIN,
+        tools=(
+            FunctionToolDefinition(
+                "notify",
+                "Fixture key AKIAABCDEFGHIJKLMNOP.",
+                {
+                    "type": "object",
+                    "properties": {"email": {"type": "string"}},
+                },
+            ),
+        ),
+    )
+
+    report = audit_sft_governance((record,), policy=_policy(), evaluated_at=AS_OF)
+
+    assert not report.gate_passed
+    assert {(item.role, item.detector_id) for item in report.sensitive_candidates} == {
+        ("assistant", "email_address"),
+        ("tool_schema", "aws_access_key_id"),
+    }
+    rendered = json.dumps(report.to_dict(), ensure_ascii=False)
+    assert "alice@example.test" not in rendered
+    assert "AKIAABCDEFGHIJKLMNOP" not in rendered
 
 
 def test_exact_candidate_exception_passes_but_stale_exception_fails() -> None:

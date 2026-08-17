@@ -1,0 +1,5 @@
+{"case_id":"span-valid-unicode","output":"{\"claims\":[{\"claim_id\":\"c1\",\"text\":\"地球围绕太阳运行。\",\"evidence\":[{\"source_id\":\"S1\",\"start_char\":0,\"end_char\":9,\"quote\":\"地球围绕太阳运行。\"}]}]}","latency_seconds":0.0}
+{"case_id":"span-unknown-source","output":"{\"claims\":[{\"claim_id\":\"c1\",\"text\":\"abc\",\"evidence\":[{\"source_id\":\"S9\",\"start_char\":0,\"end_char\":3,\"quote\":\"abc\"}]}]}","latency_seconds":0.0}
+{"case_id":"span-offset-mismatch","output":"{\"claims\":[{\"claim_id\":\"c1\",\"text\":\"bcd\",\"evidence\":[{\"source_id\":\"S1\",\"start_char\":0,\"end_char\":3,\"quote\":\"bcd\"}]}]}","latency_seconds":0.0}
+{"case_id":"span-duplicate-json-key","output":"{\"claims\":[{\"claim_id\":\"c1\",\"claim_id\":\"c2\",\"text\":\"abc\",\"evidence\":[{\"source_id\":\"S1\",\"start_char\":0,\"end_char\":3,\"quote\":\"abc\"}]}]}","latency_seconds":0.0}
+{"case_id":"span-semantic-boundary","output":"{\"claims\":[{\"claim_id\":\"c1\",\"text\":\"The moon is cheese.\",\"evidence\":[{\"source_id\":\"S1\",\"start_char\":0,\"end_char\":5,\"quote\":\"Earth\"}]}]}","latency_seconds":0.0}

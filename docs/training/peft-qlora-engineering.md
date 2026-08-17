@@ -1,5 +1,18 @@
 # LoRA、QLoRA 与单卡工程
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：单卡微调、显存规划和 adapter 发布工程师。
+- **先修**：[微调总览](finetuning.md)、Transformer 线性层和显存账本。
+- **首次阅读**：LoRA 直觉 → target modules → QLoRA → 显存 → checkpoint/export。
+- **完成信号**：能做目标 GPU dry-run，并验证 base、adapter、tokenizer 身份。
+- **卡住时**：先完成[Single-GPU Finetuning 最小审计](../practice/projects/single-gpu-finetuning.md#run)。
+
+</div>
+
 参数高效微调（PEFT）减少可训练参数，但不自动减少所有显存，也不保证与全参数微调等价。理解每一块内存和 adapter 的线性代数，才能在消费级 GPU 上做可信实验。
 
 ## LoRA 直觉
@@ -83,6 +96,10 @@ weight decay 通常不作用 bias/LayerNorm；对 LoRA A/B 的最佳设置需要
 
 多 GPU 时不要在量化模型上盲目使用普通 data parallel。确认 bitsandbytes、Accelerate、FSDP/DeepSpeed 的兼容矩阵和保存方式。仓库不把未在目标组合运行的配置写成已验证。
 
+## 先固定 SFT 最终 labels
+
+PEFT 只能改变哪些参数更新，不能修正错误监督边界。固定 Qwen tool-aware SFT control 已把三条多轮/tool fixture 从原生模板的全零 assistant mask，推进到 Arrow 前预分词、真实 TRL 0.29.1 collator 和目标权重 no-grad forward：batch `[3, 301]` 中 90 个 labels 受监督、813 个为 `-100`，loss 为 `1.251716`。该 control 没有执行 backward、LoRA 或 QLoRA；模板证据只覆盖固定 Qwen schema/fixture。先用它理解 token/mask/label 三层身份，再进入 adapter 实验；完整边界见[SFT 数据闭环](sft-data-pipeline.md#target-qwen-sft-final-label-control)。
+
 ## Adapter 保存与合并
 
 保存内容包括 adapter state、PEFT config、base model id/revision、tokenizer revision/template、target modules、训练配置和数据 manifest hash。只写“基于 Llama”无法重现。
@@ -95,11 +112,32 @@ weight decay 通常不作用 bias/LayerNorm；对 LoRA A/B 的最佳设置需要
 
 仓库 strict verifier 覆盖目录内全部 13 个文件，而非只列三个 weight：canonical manifest 绑定 identity、base/adapter/merged/tokenizer contract、path-sorted file size/SHA-256 和 descriptor-set digest；加载前要求三个 safetensors 可解析、base/merged 完整 config 与 tensor key/dtype/shape signature 一致、每个 target 有 LoRA A/B tensor，并拒绝额外、缺失、symlink、路径穿越、duplicate/non-canonical JSON、资源超限和语义漂移。结构一致仍不证明权重数值正确。PEFT 自身不会自动强制仓库 manifest，base path 或 identity string 也不认证内容；必须把 `verify_peft_export_directory` 放在任何 published-artifact load 之前。Unkeyed digest 可被协同重算，exclusive-create + file `fsync` 不证明目录原子发布；verify 后再由框架按路径打开文件还存在并发替换 TOCTOU，需由不可变发布目录、ACL/lease 或内容寻址句柄补足。Fixture 仍没有训练恢复状态、量化 merge、目标 checkpoint 或 CUDA，所以它证明当前标准 artifact plumbing、完整文件集校验和数值等价，不证明来源、license、目标质量或跨版本/runtime 兼容。
 
+### 固定 Qwen 目标 LoRA 控制 { #target-qwen-lora-control }
+
+`qwen2.5-0.5b-lora.control.json` 复用已验证的固定 Qwen2.5-0.5B-Instruct revision 与 999,586,347-byte selected snapshot；每次加载前重哈希，使用 CPU FP32/eager、`trust_remote_code=False`。目标 template 产生 44-token 完整对话，其中 41-token generation prefix 全部 mask 为 `-100`，只监督 3 个 assistant-side tokens。24 层 `q_proj/v_proj` 的 `r=4, alpha=8` LoRA 有 270,336 个 trainable parameters；零初始化 B 使注入前后 logits exact。
+
+录制运行的 96 个 trainable tensors 都取得 finite gradient，frozen base 没有 gradient，494,032,768 个基座参数的前后 fingerprint 同为 `sha256:716454a9…e7092`。一次 AdamW step 后 48 个 B tensors 全非零；1,093,728-byte safetensors 与 config/README 由 1,488-byte strict manifest 绑定。重新哈希并新加载基座，再由 PEFT 加载 adapter，last-token logits max error 为 0；report 为 `sha256:8a3897b1…026230`。
+
+必须同时报告反例：单样本 loss 从约 0.003864 升至 0.584557。它没有 early stopping、验证集或代表性数据，因而不能用来选 learning rate，也不能宣称 objective 或质量改善。Verifier 只核对 recorded identity、当前 adapter bytes/config/tensor structure 与内部关系，不重放 backward；unkeyed hash 不认证训练来源，verify→framework reopen TOCTOU 也未消除。该 control 没有 optimizer/scheduler/RNG/resume state、merge、量化/QLoRA、CUDA/AMP、vLLM、峰值内存、性能或 production evidence。
+
+~~~powershell
+python projects/single-gpu-finetuning/run_qwen_target_lora_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-lora.recorded-report.json
+pytest tests/test_target_lora_control.py -q
+~~~
+
 ## 训练恢复不是 adapter 保存
 
 adapter 目录通常只面向推理或后续加载，不自动包含 optimizer、scheduler、scaler、RNG、sampler/data cursor 和未完成 accumulation window。要声称训练可恢复，先定义一致性边界，再做两条同起点实验：一条不中断运行到第 `N` 步，另一条在第 `K` 步写盘、终止进程、重载后运行到 `N`；逐步比较 sample identity、LR、loss，并在终点比较 adapter/base 可训练参数、optimizer state 与所有消费过的 RNG。只比较最终 loss 接近不够。
 
 仓库 `minigpt_resume_toy.py` 已在 CPU FP32 MiniGPT + 单组 AdamW 上给出这种 bit-exact control，并验证 loader 构造随机模型不会污染调用进程的 Torch RNG。它没有 LoRA/QLoRA、AMP、accumulation、worker、CUDA 或 shard，因此不能替代目标 PEFT 训练的恢复演练。目标单卡路径至少还应覆盖 adapter 与 `modules_to_save`、bitsandbytes optimizer state、GradScaler（若使用 FP16）、CUDA RNG、sampler/data cursor、scheduler step 和 accumulation 边界；量化基座的 identity 也必须绑定，不能只保存 adapter。
+
+`amp_grad_scaler_control.py` 进一步给出 scaler omission 的因果反例：真实 CPU FP16 autocast/GradScaler 连续 overflow 后 scale=1，带 model/非空 AdamW moments/scaler 的 in-memory 恢复会执行下一条 10000 gradient；仅恢复 model/optimizer、让 scaler 回到 8 时 scaled gradient 溢出并跳过 update。它没有生成磁盘 checkpoint 或退出进程，也没有 adapter、bitsandbytes、scheduler/RNG、CUDA 与目标 Trainer，因此只证明 scaler state 会改变恢复后的控制流，不能补写成 PEFT exact resume 已完成。
+
+`dataloader_prefetch_resume_control.py` 补的是另一条独立边界：多 worker prefetch 会让 sampler-emitted cursor 领先 main loop consumed cursor；当前 `2 workers × factor 2` fixture 在 consumed=3 时 emitted=7，从 7 恢复会漏掉 4 条。按 consumed=3 重建能恢复 sample IDs，却不能恢复 fresh worker 的 local Torch RNG；sample-keyed stateless transform 在单 epoch fixture 上 exact，但没有 optimizer/adapter、epoch/visit key、persistent worker、DistributedSampler 或 queue payload。因而目标 LoRA/QLoRA restart 仍要把“哪个 batch 已产生/已交付/已完成 backward/已执行 optimizer update”分层，并与 adapter、optimizer、scaler、scheduler 和 CUDA RNG 放进同一协议，不能把这个数据 control 借成 PEFT exact resume 证据。
+
+`optimizer_commit_resume_control.py` 已在 tiny CPU 线性模型上补出其中一个 stochastic 因果窗口：第三条 sample 已经 inverted-Bernoulli mask、backward，consumed=3 时，accumulation steps=2 的 SGD/StepLR 只 committed=2。base 不保存 `.grad`，但保存 commit-boundary scheduler/Torch RNG；从 2 恢复 RNG 并 replay 与 uninterrupted bit-exact。第一个负例恢复正确 crash RNG却漏 gradients/sample `1`，在 optimizer/scheduler step 同为 5、LR 同为 `0.0125` 时仍产生 `0.005767858566116724` 的参数最大差。另一正确路径显式保存绑定 base digest 的 pending `[1]`、position/divisor、逐参数 gradients 与 crash RNG，并以最后发布的 strict canonical manifest 绑定两个 artifacts；从 consumed=3 继续后也 bit-exact。第二个负例保留 gradients/ledger 却使用错误 RNG，参数最大差为 `0.017878893573032573`。四种 fault snapshots 证明 sidecar 路径会拒绝缺 manifest、缺 sidecar或 hash drift，而 base-only 仍可走 replay。
+
+这说明目标 PEFT trainer 可以选择 zero-grad boundary + committed ledger，或完整保存半窗口 state；manifest-last 只增加 completeness gate，并未让 base/sidecar/manifest、adapter optimizer 与 sample commit 原子化。脚本没有 adapter/bitsandbytes、有效-token分母、GradScaler、Python/NumPy/CUDA/worker RNG、原生随机层、CUDA 或 distributed state；它只覆盖 main-process Torch RNG 与 StepLR，也无 directory `fsync`、断电、原子目录、来源认证/不可变快照证据，不能把 tiny control 借成 LoRA/QLoRA exact resume 证据。
 
 ## 多 Adapter
 
@@ -122,19 +160,23 @@ adapter 目录通常只面向推理或后续加载，不自动包含 optimizer�
 1. `LoRALinear`：验证冻结、零初始化和 merge 代数。
 2. `about-llm-sft-data audit`：严格 schema、exact/group 泄漏门禁与 manifest identity。
 3. `smoke_peft.py`：随机 tiny GPT 实际训练 PEFT，无网络下载。
-4. `smoke_trl_sft.py`：离线贯通真实 template mask、collator assistant-only labels 与 tiny-batch overfit。
-5. `about-llm-sft-data prepare-training`：在可读 held-out 的审计进程执行 exact/binding/lexical 与 source-policy/有限敏感候选 gate，生成不含 held-out 原文的 readiness。
-6. `train_trl_sft.py --data-preflight-only`：train-only 进程严格重载 readiness 并绑定当前 train，再运行固定 revision、assistant-only loss 的 LoRA SFT。
-7. `about-llm-preference-data prepare-training`：把 binary train-only pair 按顺序绑定到完整 preference split artifact，执行 prompt/candidate lexical 与 source/sensitive gate，不把 tie/invalid 强制成 winner。
-8. `train_trl_dpo.py --data-preflight-only`：无下载地验证 preference readiness；正式运行在模型权重加载前用目标 tokenizer 阻断 prefix mismatch、空/同 token completion 和截断。
-9. `train_qlora.py --estimate-only`：CPU 上做容量计划。
-10. `minigpt_resume_toy.py`：CPU FP32、单 AdamW group 的严格 checkpoint 与 bit-exact split-run control。
-11. 目标 CUDA：NF4 SFT/偏好 QLoRA dry-run，记录版本、峰值与 token/s，并演练真实 LoRA/QLoRA restart。
-12. 完整 run：与 base/prompt/RAG 基线做统一 test。
+4. `run_qwen_target_sft_label_control.py --verify ...`：核对固定 Qwen 原生/审核模板、assistant mask、真实 TRL final labels 与 no-grad forward；不要把它写成训练。
+5. `run_qwen_target_lora_control.py --verify ...`：核对固定 Qwen 真实 backward、冻结基座、adapter 导出与新基座重载证据；不要把单步 loss 变化当质量结论。
+6. `smoke_trl_sft.py`：离线贯通真实 template mask、collator assistant-only labels 与 tiny-batch overfit。
+7. `about-llm-sft-data prepare-training`：在可读 held-out 的审计进程执行 exact/binding/lexical 与 source-policy/有限敏感候选 gate，生成不含 held-out 原文的 readiness。
+8. `train_trl_sft.py --data-preflight-only`：train-only 进程严格重载 readiness 并绑定当前 train，再运行固定 revision、assistant-only loss 的 LoRA SFT。
+9. `about-llm-preference-data prepare-training`：把 binary train-only pair 按顺序绑定到完整 preference split artifact，执行 prompt/candidate lexical 与 source/sensitive gate，不把 tie/invalid 强制成 winner。
+10. `train_trl_dpo.py --data-preflight-only`：无下载地验证 preference readiness；正式运行在模型权重加载前用目标 tokenizer 阻断 prefix mismatch、空/同 token completion 和截断。
+11. `train_qlora.py --estimate-only`：CPU 上做容量计划。
+12. `minigpt_resume_toy.py`：CPU FP32、单 AdamW group 的严格 checkpoint 与 bit-exact split-run control。
+13. 目标 CUDA：NF4 SFT/偏好 QLoRA dry-run，记录版本、峰值与 token/s，并演练真实 LoRA/QLoRA restart。
+14. 完整 run：与 base/prompt/RAG 基线做统一 test。
 
 两个训练入口只把 `messages` 交给 dataset adapter，治理字段留在 audit manifest；这避免随意 metadata schema 干扰 Arrow/trainer 输入。审计侧的 `sft-data-audit.json`、`sft-split-audit.json`、`sft-data-binding.json` 与 `sft-governance-audit.json` 分别绑定训练集、combined split gate、有序精确关系和当时 policy/candidate 决策；trainer 侧只需要当前 train 和最小 `sft-training-readiness.json`，不需要 validation/test 文件权限。readiness 的无密钥 hash 可检出意外漂移但不可认证签发者，governance pass 也不等于法律许可或敏感信息不存在。`sft-template-mask-audit.json` 证明实际目标 tokenizer 返回对齐、非空、二值且未截断的 assistant mask；它仍依赖模板自己的 generation 标注，不独立证明语义边界或最终 collator labels 正确。真实运行先 8 条样本/10 step，再 100 step，再完整数据。每阶段抽样可视化 token/mask/label，并验证梯度、checkpoint 和生成。
 
 DPO 路线使用另一套 `preference-training-readiness.json`，把 binary train 身份、exact/group split、prompt/candidate lexical policy 与 source/sensitive governance 绑定到 combined artifact。它复用同一 source policy，但使用 preference 自己的 dataset/detector/audit 版本；pass 仍不是许可、consent、无敏感信息或语义无重复证明。`preference-tokenization-audit.json` 复现 TRL 0.29 的 prompt 与两侧完整对话 tokenization，并把其 prefix warning 升级为阻断；因为长度超过 `max_length` 时 TRL 会按 `keep_start/keep_end` 截断 tensor，入口选择训练前拒绝而不是静默改变学习信号。LoRA 时 `ref_model=None + peft_config` 让 TRL 通过禁用当前 adapter 回到冻结基座 reference，避免再复制一套基座；QLoRA 仍必须在目标 CUDA/bitsandbytes 组合实测。
+
+固定 Qwen CPU control 已真实验证该路径的一次 DPO step：reference forward 内 adapter status 为 disabled，冻结 parameter/non-adapter state/model config/generation config 指纹前后 exact；但两次 reference log-prob replay 仍有 `0.547077` max-abs drift。因此“reference 冻结”应由权重/state/config 和 adapter 状态证明，不能偷换为数值 bitwise replay。该 run 的同 batch loss `0.693147→0.333352` 也不外推为 held-out 质量或人类偏好改善；完整边界见[偏好对齐的目标 Qwen 控制](alignment.md#target-qwen-dpo-control)。
 
 ## 实验比较
 

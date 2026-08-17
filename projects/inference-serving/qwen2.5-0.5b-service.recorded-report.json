@@ -1,0 +1,132 @@
+{
+  "api": {
+    "chat_nonstream_executed": true,
+    "chat_sse_executed": true,
+    "models_endpoint_executed": true,
+    "raw_request_or_response_published": false,
+    "service_version": "about-llm.openai-reference-service.v1",
+    "sse_done_observed": true,
+    "stream_usage_observed": true,
+    "unauthorized_status": 401,
+    "unknown_field_status": 422,
+    "wrong_model_status": 404
+  },
+  "artifacts": {
+    "files": [
+      {
+        "filename": "config.json",
+        "sha256": "sha256:18e18afcaccafade98daf13a54092927904649e1dd4eba8299ab717d5d94ff45",
+        "size_bytes": 659,
+        "verified": true
+      },
+      {
+        "filename": "generation_config.json",
+        "sha256": "sha256:e558847a8b4402616f1273797b015104dc266fe4b520056fca88823ba8f8ebe6",
+        "size_bytes": 242,
+        "verified": true
+      },
+      {
+        "filename": "merges.txt",
+        "sha256": "sha256:599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+        "size_bytes": 1671839,
+        "verified": true
+      },
+      {
+        "filename": "model.safetensors",
+        "sha256": "sha256:fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
+        "size_bytes": 988097824,
+        "verified": true
+      },
+      {
+        "filename": "tokenizer.json",
+        "sha256": "sha256:c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+        "size_bytes": 7031645,
+        "verified": true
+      },
+      {
+        "filename": "tokenizer_config.json",
+        "sha256": "sha256:5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+        "size_bytes": 7305,
+        "verified": true
+      },
+      {
+        "filename": "vocab.json",
+        "sha256": "sha256:ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "size_bytes": 2776833,
+        "verified": true
+      }
+    ],
+    "selected_file_count": 7,
+    "selected_total_bytes": 999586347
+  },
+  "checked_at": "2026-08-13",
+  "checkpoint_manifest_fingerprint": "sha256:ddf41f2cff963bc2a8fc186c28369abba8a920b850152fc815e2b17c7d037876",
+  "control_manifest_fingerprint": "sha256:cfb9b5409c1ccec7267d85e5adca2ae8f8e9e80c0ff4301f0414f659728fb4ea",
+  "execution": {
+    "completion_text_fingerprint": "sha256:f734df76252d8e1047f3dcca7ecbcef3e8d07c1e24c28dd62eb023b88ffac4a5",
+    "completion_token_ids": [
+      17,
+      151645
+    ],
+    "finish_reason": "stop",
+    "framework_generate_call_count": 2,
+    "generation_completed_before_sse_emission": true,
+    "model_class": "Qwen2ForCausalLM",
+    "model_type": "qwen2",
+    "nonstream_stream_content_match": true,
+    "nonstream_stream_usage_match": true,
+    "parameter_count": 494032768,
+    "parameters_frozen": true,
+    "prompt_token_count": 31,
+    "stream_content_delta_count": 2
+  },
+  "network": {
+    "address_scope": "IPv4 loopback",
+    "endpoint": "/v1/chat/completions",
+    "real_tcp_http": true,
+    "scheme": "http",
+    "tls": false
+  },
+  "report_fingerprint": "sha256:63e566ca60126c09c0f97f23b591e879d6efe7991b646f72bcc96ec493617ddb",
+  "report_version": "about-llm.target-service-control-report.v1",
+  "runtime": {
+    "httpx": "0.28.1",
+    "python": "3.12.10",
+    "starlette": "0.41.3",
+    "torch": "2.13.0+cpu",
+    "transformers": "4.57.6",
+    "uvicorn": "0.52.1"
+  },
+  "scope": {
+    "client_disconnect_cancellation_proven": false,
+    "cuda_executed": false,
+    "full_openai_api_compatibility_proven": false,
+    "incremental_model_decode_streaming_proven": false,
+    "license_compatibility_proven": false,
+    "model_quality_proven": false,
+    "multiple_workers_or_distributed_serving_proven": false,
+    "oauth_jwt_iam_or_business_authorization_proven": false,
+    "performance_capacity_or_slo_proven": false,
+    "production_safety_proven": false,
+    "publisher_authenticated_by_signature": false,
+    "real_ipv4_loopback_tcp_http_executed": true,
+    "report_fingerprint_proves_authenticity": false,
+    "target_checkpoint_weights_loaded": true,
+    "tls_reverse_proxy_or_remote_network_proven": false,
+    "transformers_generate_executed": true,
+    "verification_to_loader_reopen_toctou_eliminated": false,
+    "vllm_executed": false
+  },
+  "server_process": {
+    "stderr_bytes": 0,
+    "stdout_bytes": 0,
+    "stdout_stderr_empty": true,
+    "subprocess_used": true
+  },
+  "source": {
+    "checkpoint_files_verified_before_load": true,
+    "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+    "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "trust_remote_code": false
+  }
+}

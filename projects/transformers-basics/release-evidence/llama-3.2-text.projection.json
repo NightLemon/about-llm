@@ -1,0 +1,25 @@
+{
+  "projection_version": "about-llm.vendor-model-card-projection.v1",
+  "source_fragments": [
+    "**Model Developer:** Meta",
+    "**Model Architecture:** Llama 3.2 is an auto-regressive language model that uses an optimized transformer architecture.",
+    "| Llama 3.2 (text only)  | A new mix of publicly available online data. | 1B (1.23B) | Multilingual Text | Multilingual Text and code  | 128k | Yes | Yes | Up to 9T tokens | December 2023 |",
+    "|  |  | 3B (3.21B) | Multilingual Text | Multilingual Text and code  |  |  |  |  |  |",
+    "All model versions use Grouped-Query Attention (GQA) for improved inference scalability.",
+    "**License:** Use of Llama 3.2 is governed by the [Llama 3.2 Community License]"
+  ],
+  "vendor_reported": {
+    "evidence_type": "vendor_model_card_claims_not_independent_measurements",
+    "family": "Llama 3.2 text-only",
+    "gqa": true,
+    "knowledge_cutoff": "December 2023",
+    "parameters": [
+      "1B (1.23B)",
+      "3B (3.21B)"
+    ],
+    "pretraining_tokens": "Up to 9T tokens",
+    "publisher": "Meta",
+    "reported_context_length": "128k",
+    "shared_embeddings": true
+  }
+}

@@ -1,5 +1,18 @@
 # 评测
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：第一次建立 LLM 质量体系的工程和产品团队。
+- **先修**：能描述任务输入、输出和失败；不要求先掌握统计检验。
+- **首次阅读**：定义“好” → case → 指标 → judge → 错误分析 → 回归门禁。
+- **完成信号**：能建立小型评测集、评分规则、切片和失败 taxonomy。
+- **卡住时**：先用 20–30 条真实 case 建基线，再读[评测方法](evaluation-methodology.md)。
+
+</div>
+
 本章给出评测地图。实验设计、统计和 LLM-as-judge 校准详见[评测方法与发布决策](evaluation-methodology.md)，工具型系统另见[Agent 评测、仿真与红队](agent-evaluation.md)。
 
 ## 先定义“好”
@@ -32,6 +45,16 @@
 
 不要把不同维度随意加权成一个总分，除非权重对应真实效用并报告各分项。
 
+指标名称不够，必须固定实现 revision 与 normalization policy。仓库的固定 Qwen 七例 control 给出一个可执行反例：目标 `LLM-2026`、输出 `llm-2026` 时，raw decoded string 的 literal exact 为 0，但 NFKC + `casefold()` + whitespace normalization 后 exact 为 1；目标 `{"answer":42}`、输出 `{"answer": 42}` 时，literal/normalized exact 都为 0，而忽略标点/空白的当前 token F1 为 1。七例汇总因此分别是 `4/7`、`5/7`、`6/7`，不是三个可互换的“准确率”。标识符大小写敏感时不得 case-fold；JSON 应解析后做 schema 与字段语义检查，不能用 token F1 代替结构验证。
+
+通用 Evaluation Gate 保留兼容默认值：不传 `--metric` 时仍计算 normalized `exact_match` 与 `token_f1`；需要逐字契约时显式传 `--metric literal_exact_match`，需要并列审计时再重复传 `--metric exact_match`。三者分别写入独立 metric revision；literal 比较 decoded string，不等同于原始网络响应 bytes。
+
+结构化输出至少分四层：strict JSON syntax、JSON Schema、expected parsed value、业务语义/授权。仓库五条 fixture 中，object key order/whitespace 变化的 literal/normalized/F1/schema/value 为 `0/0/1/1/1`；错误值 `43` 仍 schema-valid，但 value exact 为 0；duplicate object key 与 `NaN/Infinity` 必须在 strict parser 层拒绝；array 逆序仍可 schema-valid 且 token F1=1，却 value exact=0。`about-llm.json-schema-metric.v2` 与 `about-llm.json-value-exact.v1` 因此是两个独立 opt-in 指标，不能用其中一个替代另一个，更不能替代 tenant、单位、时效和副作用规则。
+
+RAG 引用同样不能压成“有 `[S1]` 就忠实”。`citation_syntax` 只覆盖已知 ID 与段落引用；opt-in `about-llm.citation-evidence-span-metric.v1` 进一步验证 strict claim artifact 中 source ID、end-exclusive offset 与 exact quote 一致。固定五例为 `[1,0,0,0,1]`，最后一个明显无关 claim 仍因 exact span binding 得 1，明确说明 span identity 不推断 semantic entailment。ACL snapshot provenance、claim segmentation、support verdict、judge error、source quality 与 publication policy 都要另测。
+
+这七次确实加载固定 Qwen 权重并真实调用 `GenerationMixin.generate()`，只能建立固定执行路径和逐例输出事实；suite 是 authored、未外部预注册、未独立抽样/留出且没有统计功效。真实执行不自动建立 construct validity、sampling validity、总体模型质量或发布有效性。
+
 ## LLM-as-judge
 
 适合大规模初筛和复杂 rubric，但会有位置偏差、冗长偏差、自我偏好、提示敏感和知识盲区。使用方式：
@@ -50,7 +73,7 @@ Judge 自述 confidence 或输出的 1–5 分不是天然正确概率。若要�
 
 报告样本量、均值、置信区间和效应大小。成对样本用配对 bootstrap/置换检验比独立检验更合适。小提升可能小于随机波动。分层报告可发现总体提升掩盖某语言或用户群体退化。
 
-两者回答不同问题：paired bootstrap 估计 mean difference 的不确定区间；paired sign-flip/randomization test 在 sharp null 与 pair-label exchangeability 下计算 observed statistic 的尾部概率。P-value 不是 posterior probability，bootstrap 改善比例也不是候选更优的后验概率。用户/文档相关数据需按 cluster 整体重采样或联合翻转；case-weighted bootstrap 每个 resample 重算 cluster-sum/cluster-size ratio，equal-cluster 则平均 cluster means，二者必须预先选定。`compare --cluster-metadata-key ... --cluster-weighting case|equal` 会把该选择、cluster sizes、exact/Monte Carlo 方法和实际 resample 数写入 comparison v2；通过工件仍不证明 cluster 假设。同时扫描多个预定义 slice/metric 时，可用 Holm step-down 对明确 family 的有效 p-value 控制 FWER。仓库 case/cluster bootstrap、sign-flip 与 Holm CPU oracle 只验证统计口径；它们不建立正确 cluster、抽样、交换性、独立性、coverage、因果、effect importance 或指标有效性。
+两者回答不同问题：paired bootstrap 估计 mean difference 的不确定区间；paired sign-flip/randomization test 在 sharp null 与 pair-label exchangeability 下计算 observed statistic 的尾部概率。P-value 不是 posterior probability，bootstrap 改善比例也不是候选更优的后验概率。用户/文档相关数据需按 cluster 整体重采样或联合翻转；case-weighted bootstrap 每个 resample 重算 cluster-sum/cluster-size ratio，equal-cluster 则平均 cluster means，二者必须预先选定。`compare --cluster-metadata-key ... --cluster-weighting case|equal` 会把该选择、cluster sizes、exact/Monte Carlo 方法和实际 resample 数写入 comparison v2；通过工件仍不证明 cluster 假设。同时扫描多个预定义 slice/metric 时，可用 Holm step-down 对明确 family 的有效 p-value 控制 FWER；同一 hypothesis 随数据累积反复查看则是 sequential design，不能用 Holm 替代。仓库 exact sign-test peeking oracle 在 `[10,20,30,40,50]` 五个 looks 上把逐次 0.05 的实际假阳性算为约 0.1010，并把预先均分为每次 0.01 的 Bonferroni 对照算为约 0.0152。case/cluster bootstrap、sign-flip、Holm 与 sequential CPU oracle 都只验证统计口径；它们不建立正确 cluster、抽样、交换性、独立性、coverage、因果、effect importance 或指标有效性。
 
 重复在测试集调 Prompt 会过拟合。维护滚动新鲜集和时间切片。公开基准可能被预训练污染；用 canary、改写、私有数据和过程证据增强可信度。
 
@@ -60,7 +83,7 @@ Judge 自述 confidence 或输出的 1–5 分不是天然正确概率。若要�
 
 ## 在线评测
 
-A/B 测试看任务完成、留存、人工升级、撤销/纠错等真实指标，同时设安全 guardrail。随机化单位要避免同一用户跨版本污染；考虑新奇效应、学习效应和延迟。高风险变更先 shadow/canary，不直接全量。
+A/B 测试看任务完成、留存、人工升级、撤销/纠错等真实指标，同时设安全 guardrail。随机化单位要避免同一用户跨版本污染；考虑新奇效应、学习效应和延迟。最大样本、时长、look schedule、停止规则与异常中止条件要事前固定；每天用固定样本 p-value 偷看并“显著即停”会膨胀假阳性。高风险变更先 shadow/canary，不直接全量。
 
 ## Eval-driven development
 

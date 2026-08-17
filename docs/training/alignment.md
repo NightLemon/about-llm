@@ -1,5 +1,20 @@
 # 对齐、奖励模型与偏好优化
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：已完成[对齐入门](alignment-basics.md)的偏好数据、DPO/PPO 和安全训练工程师。
+- **先修**：[微调总览](finetuning.md)、概率优化、采样和基础策略学习。
+- **首次阅读**：对齐对象 → SFT 先验 → 偏好数据/RM → DPO；PPO 第二遍再读。
+- **完成信号**：能区分 SFT、RM、DPO、PPO 各自的数据和证据边界。
+- **卡住时**：先回到[机器学习与深度学习](../foundations/ml-dl.md)的目标与泛化。
+
+</div>
+
+本页保留完整公式、实现与证据边界。第一次学习先读[对齐与偏好优化入门](alignment-basics.md)，只在确定数据和训练路线后进入对应算法小节。
+
 对齐（alignment）不是单一 loss，也不是一次训练后永久获得的属性。它至少包含：遵循合法指令、帮助用户、与证据一致、在高风险或不确定时适当拒答、尊重权限，并在不同用户目标冲突时执行明确的优先级。训练只能塑造行为分布，权限和副作用必须由系统强制执行。
 
 ## 1. 先定义“和谁、对什么对齐”
@@ -434,13 +449,25 @@ python projects/single-gpu-finetuning/smoke_trl_dpo.py
 
 这仍只是 authored `good/bad` 控制 pair 和随机模型上的 CPU 机制证据，不是人类偏好数据、目标模型质量、CUDA、对齐安全或生产收敛证据。若 policy 与 reference 的 chosen/rejected margin 完全相同，理论 logit 为 0、loss 为 \(\log2\)；有限精度 forward 可有微小误差。
 
-### 7.2 长度与 reduction
+### 7.2 固定 Qwen 的目标 DPO 机制证据 { #target-qwen-dpo-control }
+
+仓库另在固定 `Qwen/Qwen2.5-0.5B-Instruct` revision 上真实执行一次 TRL 0.29.1 sigmoid-DPO/AdamW step。离线 verifier 会重新绑定 checkpoint、binary train、held-out-free readiness、目标 token IDs、collator `[4,28]`、completion mask、LoRA 结构和报告范围：
+
+~~~powershell
+python projects/single-gpu-finetuning/run_qwen_target_dpo_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-dpo.recorded-report.json
+~~~
+
+初始 policy 与 adapter-disabled reference 相同，loss 为 `0.693147≈log(2)`；一步后同 batch loss 为 `0.333352`，两条 reference-relative margin 为 `8.566292/10.016453`。96 个 LoRA 梯度张量全部 finite，冻结的 494,032,768 个基座参数以及排除 LoRA 后的 `state_dict`、model config、generation config 指纹前后 exact。Transformers 会把 model/generation special-token config 对齐到 tokenizer，control 在 baseline 前显式完成并验证 Trainer 再执行时是 no-op。
+
+一个容易误判的结果是：两次 reference forward 内 adapter 状态都实测为 disabled，冻结 state/config 也完全相同，但 reference log-prob replay 仍有 `0.547077` max-abs drift。报告保留两个 tensor hash 与实际误差，不把它叫作“reference 权重改变”，也不声称 bitwise deterministic。这里的 `good/bad` 仍是 authored fixture；同 batch 一步下降只证明目标 checkpoint/TRL/PEFT 机制链路，不证明人类偏好、held-out 改善、对齐质量、安全、收敛、CUDA/QLoRA 或生产能力。
+
+### 7.3 长度与 reduction
 
 标准 sequence log-prob 是 response token log-prob 的**和**，因此长度和每 token 概率共同影响 margin。改为 token mean、加入 length normalization 或只比较尾部会改变 objective，不是无害实现细节。
 
 仓库 `sequence_log_probability(..., reduction="sum")` 默认求和，同时允许显式 `mean` 仅用于演示差别。任何 chosen/reference 四项必须使用相同 tokenizer、chat template、response mask 和 reduction convention。
 
-### 7.3 DPO 没有消除假设
+### 7.4 DPO 没有消除假设
 
 DPO 避免显式训练/在线查询 reward model 和 on-policy RL loop，但仍依赖：
 
@@ -572,7 +599,7 @@ Agent 运行时的具体副作用协议见[运行时与副作用](../application
 
 ## 16. 当前仓库证据边界
 
-仓库已提供稳定的 Bradley–Terry/DPO per-pair 数学、mask-aware GAE/PPO clipped-surrogate CPU reference、两状态 PyTorch categorical rollout/optimizer control、随机 tiny GPT-2 integer-token PPO control、带本地 tokenizer/chat template 与精确有限时域 oracle 的文本 PPO control，以及 sparse tiny learned RM 驱动 PPO 后 proxy 上升、独立目标恶化的完整 support 反例；另有 synthetic linear RM optimizer control、随机 tiny GPT-2 上 held-out-free readiness/train binding、真实文本 tokenization/scalar reward head/backbone optimizer control、严格 pairwise preference JSONL/split audit、有序 binary-train/combined binding、prompt↔prompt 与四种跨记录 candidate surface 的字符 n-gram gate、prompt/两侧 candidate 的 source/sensitive governance、不含 held-out 原文的严格 readiness、目标 tokenizer prefix/空 completion/截断 preflight，以及随机 tiny GPT-2 上真实 TRL DPO tokenization、completion mask、冻结 reference 和 optimizer 闭环；另有可选 LoRA/QLoRA DPO 入口。新增 raw judgment binding、agreement/Fleiss’ κ 和 case-cluster position-effect bootstrap，但输入是 authored fixture，不能冒充人类实验。Lexical 阈值和 detector 未经真实域校准，registry 不是法律意见，readiness 也没有验证人类标签质量；无密钥 hash 不认证审计签发者。仓库目前没有真实人类 preference dataset、真实 annotator agreement/position-bias 实证、目标 reward model 训练、learned RM 驱动的目标 checkpoint PPO、目标模型 DPO 或 CUDA 证据。因此当前结果证明公式、artifact/权限/tokenization/统计控制流、tiny MDP/Transformer optimizer、线性/文本 shortcut 与 proxy exploitation 对照及 tiny-pair 优化，不证明任一目标模型已经完成偏好对齐。
+仓库已提供稳定的 Bradley–Terry/DPO per-pair 数学、mask-aware GAE/PPO clipped-surrogate CPU reference、两状态 PyTorch categorical rollout/optimizer control、随机 tiny GPT-2 integer-token PPO control、带本地 tokenizer/chat template 与精确有限时域 oracle 的文本 PPO control，以及 sparse tiny learned RM 驱动 PPO 后 proxy 上升、独立目标恶化的完整 support 反例；另有 synthetic linear RM optimizer control、随机 tiny GPT-2 上 held-out-free readiness/train binding、真实文本 tokenization/scalar reward head/backbone optimizer control、严格 pairwise preference JSONL/split audit、有序 binary-train/combined binding、prompt↔prompt 与四种跨记录 candidate surface 的字符 n-gram gate、prompt/两侧 candidate 的 source/sensitive governance、不含 held-out 原文的严格 readiness、目标 tokenizer prefix/空 completion/截断 preflight、随机 tiny GPT-2 的真实 TRL DPO 闭环，以及固定 Qwen checkpoint 上一次 CPU FP32 TRL/PEFT DPO optimizer step。新增 raw judgment binding、agreement/Fleiss’ κ 和 case-cluster position-effect bootstrap，但输入是 authored fixture，不能冒充人类实验。Lexical 阈值和 detector 未经真实域校准，registry 不是法律意见，readiness 也没有验证人类标签质量；无密钥 hash 不认证审计签发者。仓库仍没有真实人类 preference dataset、真实 annotator agreement/position-bias 实证、可靠目标 reward model、learned RM 驱动的目标 checkpoint PPO、目标 CUDA/QLoRA 或 held-out 对齐质量证据。因此当前 Qwen DPO 结果只证明固定 authored pair 上的目标权重机制链路；不证明任一目标模型已经完成偏好对齐。
 
 ## 17. 常见错误结论
 

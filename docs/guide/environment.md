@@ -1,5 +1,8 @@
 # 环境与硬件矩阵
 
+**相关导航**：[学习路径](learning-paths.md) · [仓库地图](repo-map.md) · [实验与项目](../practice/labs.md) · [工程项目索引](../practice/project-index.md)
+{ .doc-nav }
+
 ## 推荐基线
 
 - Python 3.10–3.12；优先使用独立虚拟环境。
@@ -25,13 +28,14 @@
 
 核心包按需安装，避免把 JAX、CUDA、vLLM 和多个 Agent 框架塞进一个不可维护环境：
 
-~~~powershell
-python -m pip install -e ".[docs,dev,torch]"
-python -m pip install -e ".[transformers,finetune]"
-python -m pip install -e ".[rag,api]"
-~~~
+| Profile | 用途 | 安装命令 | 检查命令 |
+|---|---|---|---|
+| docs | 只读/构建教材 | `python -m pip install -c constraints/ci.txt -e ".[docs]"` | `python scripts/doctor.py --profile docs` |
+| cpu-starter | tokenizer 与 NumPy 机制 | `python -m pip install -c constraints/ci.txt -e .` | `python scripts/doctor.py --profile cpu-starter` |
+| notebooks | 三本离线 Notebook | `python -m pip install -c constraints/ci.txt -e ".[dev,torch,jax]"` | `python scripts/doctor.py --profile notebooks` |
+| full-ci | 本地 CPU 全门禁 | `python -m pip install -c constraints/ci.txt -e ".[docs,dev,torch,jax,transformers,finetune,rag,langchain,llamaindex,api,evaluation,agents]"` | `python scripts/doctor.py --profile full-ci` |
 
-JAX 单独按官方平台说明安装；CPU 版可使用 jax 依赖组。vLLM 更新快且平台约束强，不固定进通用依赖组，在对应项目记录已验证组合。
+Python 支持 3.10–3.12。`doctor` 的 `fail` 会返回非零退出码并附修复命令，`warn` 表示任务仍可运行但环境未完全隔离。`constraints/ci.txt` 是 CI 直接依赖的已复核快照，不是传递依赖或 CUDA wheel 的全平台 lock。MkDocs 保持 1.x，以匹配当前 Material 9.x 主题、插件和 overrides；升级到 MkDocs 2 前必须单独验证迁移。JAX GPU 版按官方平台说明安装；CPU 版可使用 jax 依赖组。vLLM 更新快且平台约束强，不固定进通用依赖组，在对应项目记录已验证组合。
 
 ## 云 API
 
@@ -47,7 +51,7 @@ Provider adapter 统一消息、超时、重试、usage 和错误，但不会假
 实验报告必须保存 Python、包版本、OS、设备、dtype、模型 revision、tokenizer、随机种子、输入/输出长度和配置。CUDA 还记录 driver、runtime 与 GPU 名称。
 
 ~~~powershell
-python scripts/doctor.py
+python scripts/doctor.py --profile cpu-starter
 python -m pip freeze > outputs/environment-lock.txt
 ~~~
 
@@ -58,3 +62,10 @@ python -m pip freeze > outputs/environment-lock.txt
 - JAX 看不到 GPU：JAX wheel/plugin 必须匹配平台与 CUDA。
 - vLLM Windows 安装失败：使用官方支持的 Linux/WSL2 环境。
 - FAISS Windows wheel 不稳定：教学项目提供 NumPy/SQLite 基线，或使用 WSL2。
+
+## 环境就绪后
+
+- CPU 环境：从[注意力、MiniGPT 与 RAG 实验](../practice/labs.md)开始。
+- NVIDIA GPU：进入[单卡微调](../training/peft-qlora-engineering.md)或[推理服务](../systems/vllm-serving.md)，先按目标 workload 做显存 dry-run。
+- 云 API：先阅读[云模型 API 契约](../models/cloud-api-contracts.md)，再设置请求、token 与费用预算。
+- 出现版本或平台差异：回到[内容准确性台账](../reference/accuracy.md)，区分文档核对与目标环境实测。

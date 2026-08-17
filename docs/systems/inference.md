@@ -1,5 +1,18 @@
 # 推理基础与优化
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：推理实现、服务和容量规划工程师。
+- **先修**：[Transformer](../core/transformer.md)与[生成](../core/generation.md)基础。
+- **首次阅读**：prefill/decode → KV Cache → batching → 采样契约 → 优化顺序。
+- **完成信号**：能区分 TTFT、TPOT、吞吐、缓存容量和生成质量。
+- **卡住时**：先回到[生成与解码](../core/generation.md)的最小循环。
+
+</div>
+
 本章建立生成计算的基础。性能与部署继续阅读[从算子到 KV Cache 的推理优化](inference-optimization.md)和[vLLM/OpenAI-compatible 单卡服务](vllm-serving.md)。
 
 ## 两个阶段
@@ -41,7 +54,9 @@ Chunked prefill 把很长 prompt 分块，与 decode 请求交错，避免长 pr
 
 停止条件还要区分 config 与 call override。仓库 Transformers runtime control 用强制 token plan 真实执行三条生成循环：config EOS `{2,3}` 在 3 停止；call EOS=5 后 3 不再停止、5 才停止；call `max_new_tokens=2` 在无 EOS 时按长度停。它验证当前依赖版本的受控 `GenerationMixin` 路径，不执行真实 tokenizer、正常模型 token 选择、vLLM/provider 或 GPU。该返回对象没有 provider 风格 finish reason，因此报告的 stop 分类是依据已知 plan 与条件推断，而不是服务端 receipt。
 
-Beam search 还要单独固定 active-prefix 的累计 log probability、最终 length normalization、EOS 是否计入生成长度、prompt 是否计入长度、finished-candidate cap、early stopping 与并列规则。仓库 table-driven oracle 使用 \(s=\log p/T^\alpha\)，其中 (T) 只计生成 token、包含 EOS、不含 prompt；EOS 立即完成且不再展开，不做 heuristic early stopping，并保留所有从 active prefix 产生的 EOS。它用 beam 1 返回概率 0.306、beam 2 返回概率 0.4 的反例证明有限 beam 可剪掉更优路径，但不等价于 Transformers、vLLM 或 provider 的实现。
+仓库还有一条不同层级的 target-service control：固定 Qwen2.5-0.5B-Instruct selected snapshot 在加载前逐文件重哈希，真实加载 tokenizer/权重，并由独立子进程经 IPv4 loopback TCP/HTTP 各处理一次 non-stream 与 SSE chat completion。它对账 31-token prompt、continuation `[17,151645]`、usage、`stop`、后端 fingerprint 和两次 `GenerationMixin.generate()` audit；这证明目标权重到 reference HTTP API 的固定路径。它仍是 CPU FP32 eager、单 worker，SSE 在完整 generation 后才发出，不证明 vLLM/CUDA、incremental decode、断流取消、性能或质量。
+
+Beam search 还要单独固定 active-prefix 的累计 log probability、最终 length normalization、EOS 是否计入生成长度、prompt 是否计入长度、finished-candidate cap、early stopping 与并列规则。仓库 table-driven oracle 使用 \(s=\log p/T^\alpha\)，其中 \(T\) 只计生成 token、包含 EOS、不含 prompt；EOS 立即完成且不再展开，不做 heuristic early stopping，并保留所有从 active prefix 产生的 EOS。它用 beam 1 返回概率 0.306、beam 2 返回概率 0.4 的反例证明有限 beam 可剪掉更优路径，但不等价于 Transformers、vLLM 或 provider 的实现。
 
 约束解码还要固定 grammar state 与 tokenization 的组合语义：每个 token 的完整 decoded fragment 都必须能穿过状态机，EOS 只在 accepting state 开放，屏蔽后的 allowed probability mass 必须重新归一化，质量为零则 typed failure。仓库 finite-literal trie oracle 用高概率 `1]` 反例证明只检查 token 首字符会放过非法输出；它假设 supplied text fragment 可直接拼接，不覆盖真实 tokenizer byte state、JSON Schema/CFG 或 runtime 性能。
 

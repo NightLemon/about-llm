@@ -1,5 +1,18 @@
 # 代码模型、对话状态与 LLMOps
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：代码 Agent、对话系统和 LLMOps 平台工程师。
+- **先修**：软件测试、版本控制、Agent 基础和 artifact identity。
+- **首次阅读**：任务分类 → repository context → patch-first → execution feedback → 发布。
+- **完成信号**：能产出可验证 patch、typed conversation state 和 evidence trace。
+- **卡住时**：先读[Agent 总览](agents.md)和[评测总览](../quality/evaluation.md)。
+
+</div>
+
 代码生成、长会话和 LLMOps 看似三个主题，实际共享同一原则：模型输出必须落在可版本化、可验证、可恢复的系统中。代码要通过执行和 review，对话要维护真实状态，线上变化要能归因到完整 artifact graph。
 
 ## Part A：代码模型与软件工程 Agent

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from about_llm.integrations.rag_frameworks import (
@@ -91,6 +93,62 @@ def test_round_trip_validators_reject_framework_mutation(result: SearchResult) -
     llamaindex_nodes[0].node.text = "mutated"
     with pytest.raises(ValueError, match="text drift"):
         validate_llamaindex_round_trip(llamaindex_nodes, [result])
+
+    llamaindex_nodes = to_llamaindex_nodes([result])
+    llamaindex_nodes[0].node.excluded_llm_metadata_keys = []
+    with pytest.raises(ValueError, match="LLM metadata exclusion drift"):
+        validate_llamaindex_round_trip(llamaindex_nodes, [result])
+
+
+def test_adapter_rejects_noncanonical_result_identity_and_rank(
+    result: SearchResult,
+) -> None:
+    pytest.importorskip("langchain_core.documents")
+    rank_gap = SearchResult(
+        result.document,
+        score=result.score,
+        rank=2,
+        source=result.source,
+    )
+    with pytest.raises(ValueError, match="contiguous one-based ranks"):
+        to_langchain_documents([rank_gap])
+
+    duplicate = SearchResult(
+        result.document,
+        score=0.5,
+        rank=2,
+        source=result.source,
+    )
+    with pytest.raises(ValueError, match="duplicate document ids"):
+        to_langchain_documents([result, duplicate])
+
+
+@pytest.mark.parametrize("score", [math.nan, math.inf, -math.inf])
+def test_adapter_rejects_non_finite_scores(
+    result: SearchResult,
+    score: float,
+) -> None:
+    pytest.importorskip("langchain_core.documents")
+    invalid = SearchResult(
+        result.document,
+        score=score,
+        rank=1,
+        source=result.source,
+    )
+    with pytest.raises(ValueError, match="scores must be finite"):
+        to_langchain_documents([invalid])
+
+
+def test_adapter_rejects_boolean_score(result: SearchResult) -> None:
+    pytest.importorskip("langchain_core.documents")
+    invalid = SearchResult(
+        result.document,
+        score=True,
+        rank=1,
+        source=result.source,
+    )
+    with pytest.raises(TypeError, match="scores must be real numbers"):
+        to_langchain_documents([invalid])
 
 
 def test_framework_retrievers_keep_acl_inside_canonical_search() -> None:

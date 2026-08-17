@@ -1,0 +1,61 @@
+{
+  "control_version": "about-llm.transformers-checkpoint-control.v1",
+  "checked_at": "2026-08-13",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "source_base_url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/",
+  "expected_model_class": "Qwen2ForCausalLM",
+  "expected_model_type": "qwen2",
+  "dtype": "float32",
+  "device": "cpu",
+  "attention_implementation": "eager",
+  "max_new_tokens": 2,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a concise assistant."
+    },
+    {
+      "role": "user",
+      "content": "Reply with the next integer after 1 and nothing else."
+    }
+  ],
+  "files": [
+    {
+      "filename": "config.json",
+      "size_bytes": 659,
+      "sha256": "sha256:18e18afcaccafade98daf13a54092927904649e1dd4eba8299ab717d5d94ff45"
+    },
+    {
+      "filename": "generation_config.json",
+      "size_bytes": 242,
+      "sha256": "sha256:e558847a8b4402616f1273797b015104dc266fe4b520056fca88823ba8f8ebe6"
+    },
+    {
+      "filename": "merges.txt",
+      "size_bytes": 1671839,
+      "sha256": "sha256:599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+    },
+    {
+      "filename": "model.safetensors",
+      "size_bytes": 988097824,
+      "sha256": "sha256:fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe"
+    },
+    {
+      "filename": "tokenizer.json",
+      "size_bytes": 7031645,
+      "sha256": "sha256:c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+    },
+    {
+      "filename": "tokenizer_config.json",
+      "size_bytes": 7305,
+      "sha256": "sha256:5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583"
+    },
+    {
+      "filename": "vocab.json",
+      "size_bytes": 2776833,
+      "sha256": "sha256:ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    }
+  ],
+  "evidence_boundary": "This control hashes selected files from an immutable-revision repository snapshot, then loads from the verified local snapshot paths with trust_remote_code disabled, and executes one fixed CPU FP32 eager forward/cache/generate case. It does not authenticate the publisher, prove every repository file or config-weight semantic match, eliminate the verification-to-loader-reopen TOCTOU window, reproduce training, establish model quality or effective context, test other prompts/languages/dtypes/devices/runtimes, benchmark performance, validate licensing, or prove production safety."
+}

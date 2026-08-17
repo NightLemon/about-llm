@@ -12,7 +12,9 @@ import pytest
 
 from about_llm.integrations.budgeted_cloud import (
     BudgetedCloudCallError,
+    BudgetedCloudRetryError,
     execute_budgeted_json_request,
+    execute_budgeted_json_request_with_retry,
 )
 from about_llm.integrations.cloud_api import (
     ChatMessage,
@@ -49,6 +51,12 @@ def _limits() -> UsageBudgetLimits:
 
 def _memory_ledger() -> UsageBudgetLedger:
     return UsageBudgetLedger(limits=_limits(), pricing=_pricing())
+
+
+def _retry_ledger() -> UsageBudgetLedger:
+    return UsageBudgetLedger(
+        limits=UsageBudgetLimits(200, 40, 200), pricing=_pricing()
+    )
 
 
 def _request():
@@ -89,6 +97,37 @@ async def _execute(
             policy=policy or RetryPolicy(max_attempts=1),
             config=_config(),
             replay_safe=True,
+            jitter=lambda: 0,
+        )
+
+
+async def _execute_retry(
+    ledger,
+    handler,
+    *,
+    parse_response=parse_openai_compatible_response,
+    policy: RetryPolicy | None = None,
+    replay_safe: bool = True,
+    sleep=None,
+):
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        return await execute_budgeted_json_request_with_retry(
+            ledger=ledger,
+            logical_call_id="logical-call",
+            billing_scope="account/project",
+            estimated_input_tokens=60,
+            client=client,
+            request=_request(),
+            parse_response=parse_response,
+            policy=policy
+            or RetryPolicy(max_attempts=2, base_delay_seconds=0),
+            config=_config(),
+            replay_safe=replay_safe,
+            sleep=sleep or no_sleep,
+            wall_clock=lambda: datetime(2026, 8, 1, tzinfo=timezone.utc),
             jitter=lambda: 0,
         )
 
@@ -233,6 +272,236 @@ def test_target_policy_is_validated_before_reservation() -> None:
     assert ledger.snapshot().active_reservations == 0
 
 
+def test_retry_http_500_then_success_reconciles_each_attempt() -> None:
+    ledger = _retry_ledger()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(500, request=request, json={"error": "authored"})
+        return _success(request)
+
+    result = asyncio.run(_execute_retry(ledger, handler))
+
+    assert calls == 2
+    assert [attempt.reservation.reservation_id for attempt in result.attempts] == [
+        "logical-call:attempt:1",
+        "logical-call:attempt:2",
+    ]
+    assert [attempt.reconciliation_state for attempt in result.attempts] == [
+        "uncertain",
+        "settled",
+    ]
+    assert [
+        attempt.budget_snapshot.committed_estimated_microusd
+        for attempt in result.attempts
+    ] == [80, 146]
+    assert result.budget_snapshot.committed_estimated_microusd == 146
+
+
+def test_retry_connect_failure_then_success_cancels_first_attempt() -> None:
+    ledger = _retry_ledger()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("authored connect failure", request=request)
+        return _success(request)
+
+    result = asyncio.run(_execute_retry(ledger, handler))
+
+    assert calls == 2
+    assert [attempt.reconciliation_state for attempt in result.attempts] == [
+        "cancelled",
+        "settled",
+    ]
+    assert [
+        attempt.budget_snapshot.committed_estimated_microusd
+        for attempt in result.attempts
+    ] == [0, 66]
+
+
+def test_retry_budget_gate_blocks_second_network_attempt() -> None:
+    ledger = UsageBudgetLedger(
+        limits=UsageBudgetLimits(200, 40, 140), pricing=_pricing()
+    )
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, request=request, json={"error": "authored"})
+
+    with pytest.raises(BudgetedCloudRetryError) as captured:
+        asyncio.run(_execute_retry(ledger, handler))
+
+    assert captured.value.reason == "budget_reservation_rejected"
+    assert calls == 1
+    assert len(captured.value.attempts) == 1
+    assert captured.value.attempts[0].reconciliation_state == "uncertain"
+    assert captured.value.budget_snapshot.committed_estimated_microusd == 80
+    assert captured.value.budget_snapshot.active_reservations == 0
+
+
+def test_retry_after_delay_is_preserved_by_budget_orchestrator() -> None:
+    ledger = _retry_ledger()
+    calls = 0
+    sleeps: list[float] = []
+
+    async def record_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(
+                429,
+                request=request,
+                headers={"Retry-After": "2"},
+                json={"error": "authored"},
+            )
+        return _success(request)
+
+    result = asyncio.run(_execute_retry(ledger, handler, sleep=record_sleep))
+
+    assert calls == 2
+    assert sleeps == [2]
+    trace = result.attempts[0].trace
+    assert trace is not None
+    decision = trace.retry_decision
+    assert decision is not None and decision.retry_after_state == "valid"
+    assert result.budget_snapshot.committed_estimated_microusd == 146
+
+
+def test_outcome_uncertain_transport_is_not_retried() -> None:
+    ledger = _retry_ledger()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("authored read timeout", request=request)
+
+    with pytest.raises(BudgetedCloudRetryError) as captured:
+        asyncio.run(
+            _execute_retry(
+                ledger,
+                handler,
+                policy=RetryPolicy(max_attempts=3, base_delay_seconds=0),
+            )
+        )
+
+    assert captured.value.reason == "outcome_uncertain"
+    assert calls == 1
+    assert captured.value.attempts[0].reconciliation_state == "uncertain"
+    assert captured.value.budget_snapshot.committed_estimated_microusd == 80
+
+
+def test_replay_unsafe_request_is_not_retried() -> None:
+    ledger = _retry_ledger()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, request=request, json={"error": "authored"})
+
+    with pytest.raises(BudgetedCloudRetryError) as captured:
+        asyncio.run(_execute_retry(ledger, handler, replay_safe=False))
+
+    assert captured.value.reason == "replay_unsafe"
+    assert calls == 1
+    assert captured.value.attempts[0].reconciliation_state == "uncertain"
+
+
+def test_retry_cancellation_after_reserve_is_uncertain() -> None:
+    ledger = _retry_ledger()
+
+    async def cancelled(_request: httpx.Request) -> httpx.Response:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(_execute_retry(ledger, cancelled))
+
+    assert ledger.snapshot().committed_estimated_microusd == 80
+    assert ledger.snapshot().uncertain_settlements == 1
+    assert ledger.snapshot().active_reservations == 0
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        lambda request: httpx.Response(
+            200,
+            request=request,
+            headers={"content-type": "application/json"},
+            content=b"not-json",
+        ),
+        lambda request: httpx.Response(
+            200,
+            request=request,
+            headers={"content-type": "application/json"},
+            json={
+                "choices": [
+                    {"message": {"content": "answer"}, "finish_reason": "stop"}
+                ]
+            },
+        ),
+    ],
+)
+def test_retry_final_malformed_or_missing_usage_is_uncertain(handler) -> None:
+    ledger = _retry_ledger()
+
+    with pytest.raises(BudgetedCloudRetryError) as captured:
+        asyncio.run(_execute_retry(ledger, handler))
+
+    assert len(captured.value.attempts) == 1
+    assert captured.value.attempts[0].reconciliation_state == "uncertain"
+    assert captured.value.budget_snapshot.committed_estimated_microusd == 80
+
+
+def test_retry_sqlite_attempt_tombstones_survive_reopen(tmp_path: Path) -> None:
+    database = tmp_path / "retry-budget.db"
+    limits = UsageBudgetLimits(200, 40, 200)
+    ledger = SQLiteUsageBudgetLedger(database, limits=limits, pricing=_pricing())
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(500, request=request, json={"error": "authored"})
+        return _success(request)
+
+    result = asyncio.run(_execute_retry(ledger, handler))
+    reopened = SQLiteUsageBudgetLedger(database, limits=limits, pricing=_pricing())
+
+    first = reopened.get("logical-call:attempt:1")
+    second = reopened.get("logical-call:attempt:2")
+    assert first is not None and first.state == "uncertain"
+    assert second is not None and second.state == "settled"
+    events = sorted(
+        (
+            *reopened.events("logical-call:attempt:1"),
+            *reopened.events("logical-call:attempt:2"),
+        ),
+        key=lambda event: event.event_id,
+    )
+    assert [event.event_type for event in events] == [
+        "reserved",
+        "uncertain",
+        "reserved",
+        "settled",
+    ]
+    assert result.budget_snapshot.committed_estimated_microusd == 146
+    assert reopened.snapshot() == result.budget_snapshot
+
+
 def test_sqlite_uncertain_transition_survives_reopen(tmp_path: Path) -> None:
     database = tmp_path / "budget.db"
     ledger = SQLiteUsageBudgetLedger(database, limits=_limits(), pricing=_pricing())
@@ -280,3 +549,41 @@ def test_budgeted_http_demo_has_success_and_sent_error_ledgers(tmp_path: Path) -
     assert artifact["failure"]["reconciliation_state"] == "uncertain"
     assert artifact["final_snapshot"]["committed_estimated_microusd"] == 146
     assert artifact["scope"]["each_replay_requires_new_reservation"] is True
+
+
+def test_budgeted_retry_demo_persists_independent_attempts(tmp_path: Path) -> None:
+    database = tmp_path / "retry-demo.db"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(
+                ROOT
+                / "projects"
+                / "cloud-api-contracts"
+                / "budgeted_retry_demo.py"
+            ),
+            "--database",
+            str(database),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    artifact = json.loads(completed.stdout)
+
+    assert artifact["network_used"] is False
+    assert artifact["http_calls"] == 2
+    assert artifact["records"]["logical-call:attempt:1"]["state"] == "uncertain"
+    assert artifact["records"]["logical-call:attempt:2"]["state"] == "settled"
+    assert [event["event_type"] for event in artifact["events"]] == [
+        "reserved",
+        "uncertain",
+        "reserved",
+        "settled",
+    ]
+    assert (
+        artifact["result"]["budget_snapshot"]["committed_estimated_microusd"]
+        == 146
+    )
+    assert artifact["scope"]["each_attempt_has_independent_reservation"] is True
+    assert artifact["scope"]["proves_provider_usage_or_invoice"] is False

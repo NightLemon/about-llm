@@ -1,0 +1,37 @@
+{
+  "control_version": "about-llm.target-service-control.v1",
+  "checked_at": "2026-08-13",
+  "checkpoint_manifest_fingerprint": "sha256:ddf41f2cff963bc2a8fc186c28369abba8a920b850152fc815e2b17c7d037876",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "expected_model_class": "Qwen2ForCausalLM",
+  "expected_model_type": "qwen2",
+  "maximum_prompt_tokens": 64,
+  "max_tokens": 2,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a concise assistant."
+    },
+    {
+      "role": "user",
+      "content": "Reply with the next integer after 1 and nothing else."
+    }
+  ],
+  "expected_prompt_token_count": 31,
+  "expected_completion_token_ids": [
+    17,
+    151645
+  ],
+  "expected_completion_text_fingerprint": "sha256:f734df76252d8e1047f3dcca7ecbcef3e8d07c1e24c28dd62eb023b88ffac4a5",
+  "expected_finish_reason": "stop",
+  "reviewed_runtime": {
+    "python": "3.12.10",
+    "torch": "2.13.0+cpu",
+    "transformers": "4.57.6",
+    "httpx": "0.28.1",
+    "starlette": "0.41.3",
+    "uvicorn": "0.52.1"
+  },
+  "evidence_boundary": "This control verifies the selected immutable-revision checkpoint files, loads Qwen with trust_remote_code disabled into a CPU FP32 eager Transformers backend, and executes one non-streaming and one SSE request over real IPv4 loopback TCP/HTTP. The backend completes generation before emitting SSE chunks, so it does not prove incremental decode streaming or cancellation. It does not use vLLM, CUDA, TLS, a reverse proxy, OAuth/JWT/IAM, multiple workers, remote clients, a representative workload, performance benchmarking, publisher signatures, license compatibility, model quality, full OpenAI API compatibility, or production safety, and it does not eliminate the verification-to-loader-reopen TOCTOU window."
+}

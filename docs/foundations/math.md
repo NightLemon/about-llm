@@ -1,5 +1,18 @@
 # 数学基础：从张量形状到可信实验
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：需要读懂 shape、概率、梯度和评测区间的工程师。
+- **先修**：Python 基础；能理解变量、函数、指数和对数记号。
+- **首次阅读**：先读 Shape、矩阵乘法、概率与 softmax；统计实验可按任务回补。
+- **完成信号**：能标注一次 attention 的 shape，并解释一个置信区间不代表什么。
+- **卡住时**：先看[新手知识地图](../guide/beginner-map.md)，只回补当前公式需要的小节。
+
+</div>
+
 ## 学习目标与证据边界
 
 本章不追求完整数学课程，而是建立读懂和验证 LLM 公式所需的最小闭环。读完应能：
@@ -162,9 +175,32 @@ Causal mask 应在 softmax 前把未来 score 设为足够负的值，使概率�
 
 Padding mask、causal mask、packing block mask 和 loss mask 目的不同：前三者控制信息能否被读取，最后一个控制该位置是否贡献训练目标。
 
-### 复杂度与存储
+### 复杂度与存储 { #attention-storage-online-softmax }
 
 朴素 score 矩阵有 \(O(T^2)\) 元素，QK/AV 计算也含二次项。FlashAttention 通过 tiled IO 与 online softmax 避免物化完整 score/probability，降低 HBM traffic 和内存；它没有普遍把精确 dense attention 的算术复杂度变成线性。
+
+Online softmax 的关键是旧 block 的统计量可以在全局最大值变化后重标定。对一个 query row，把第 \(b\) 个 key block 的 scaled、masked scores 写成 \(s_{b,j}\)，维护 running maximum \(m_b\)、相对该 maximum 的 normalizer \(\ell_b\) 与未归一化 value accumulator \(o_b\)。初值为 \(m_0=-\infty,\ell_0=0,o_0=0\)：
+
+\[
+m_b=\max\left(m_{b-1},\max_j s_{b,j}\right),
+\]
+
+\[
+\ell_b=e^{m_{b-1}-m_b}\ell_{b-1}+\sum_j e^{s_{b,j}-m_b},
+\]
+
+\[
+o_b=e^{m_{b-1}-m_b}o_{b-1}+\sum_j e^{s_{b,j}-m_b}v_{b,j}.
+\]
+
+最后输出 \(o_B/\ell_B\)。第一项把旧 block 的分子和分母从旧 maximum 坐标系缩放到新坐标系；第二项加入当前 block。对不可见位置令 \(s=-\infty\)。若此前还没有任何可见 key，旧 \(\ell/o\) 本来就是 0，实现应直接把旧贡献定义为 0，不能真的计算 \(-\infty-(-\infty)\)；这样前几个 block 全被 mask、后续才出现可见 key 也不会产生 NaN。若处理完全部 blocks 后整行仍不可见，则 \(\ell_B=0\)，实现必须拒绝。
+
+在实数算术下，这和一次性计算 dense softmax 完全等价；有限精度下，block 划分与归约顺序可能造成微小误差，不能要求逐 bit 相同。仓库的 `blockwise_online_attention` 使用 float64 累积，只构造当前 score tile 与每行状态，不返回完整 probability matrix。它报告的 `logical_peak_score_elements` 只是最大逻辑 tile，不包含 Q/K/V、输出、NumPy temporary 或 allocator，因此不是进程峰值内存测量；这个 CPU oracle 也不证明 CUDA kernel、FlashAttention backend、HBM traffic、速度或 vLLM 行为。
+
+~~~powershell
+python projects/transformers-basics/online_softmax_demo.py
+python -m pytest tests/test_attention_numpy.py tests/test_online_softmax_project.py -q
+~~~
 
 ## 4. 概率：模型输出究竟是什么
 

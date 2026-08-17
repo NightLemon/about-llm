@@ -1,5 +1,18 @@
 # Transformer：从张量契约到增量解码
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：需要实现、调试或部署 decoder-only 模型的工程师。
+- **先修**：[Tokenization](tokenization.md)、矩阵乘法、softmax 和因果语言建模。
+- **首次阅读**：Decoder-only 数据流 → Attention shape → 四类 mask → KV Cache。
+- **完成信号**：能手算两 token attention，并验证 cached/full logits 等价。
+- **卡住时**：回到[数学基础](../foundations/math.md)的 shape 与矩阵乘法。
+
+</div>
+
 ## 学习目标
 
 读完本章，你应能：
@@ -9,6 +22,7 @@
 - 解释 Pre-Norm、RMSNorm、RoPE、SwiGLU 和残差路径；
 - 从 `num_attention_heads` 与 `num_key_value_heads` 判断 MHA/GQA/MQA；
 - 证明增量 KV Cache attention 与完整 causal attention 的目标等价；
+- 推导 online softmax 的 running-max、normalizer 与加权 value recurrence；
 - 识别教学公式、优化 kernel、checkpoint 配置和生产服务之间的证据边界。
 
 ## 1. Decoder-only 数据流
@@ -202,22 +216,26 @@ assert concat(step_0, ..., step_T_minus_1) == full
 - 数值稳定 softmax 与 fully-masked-row 拒绝；
 - 支持 past length 的 causal mask；
 - scaled dot-product attention；
+- 不物化完整 score/probability 的 blockwise online-softmax oracle；
 - float64 累积的 RMSNorm reference；
 - interleaved-pair RoPE；
 - 通过显式 K/V head repeat 定义的 GQA reference。
 
 ~~~powershell
 python -m pytest tests/test_attention_numpy.py -q
-python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py -q
+python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py `
+  tests/test_gpt_cross_framework_parity.py -q
 ~~~
 
-NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 分别验证模型 forward/训练等路径。当前没有声称 NumPy、PyTorch 和 JAX 三套完整模型逐层或逐梯度等价，也没有目标大模型/GPU kernel 的精度与性能证据。
+NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 分别验证模型 forward/训练等路径。新增 cross-framework control 说明跨框架等价不是同名模块等价：只有显式统一 affine LayerNorm/epsilon、tanh-GELU、mask、tied embedding、loss 与 SGD 后，才对账 logits、20 个参数梯度和一步更新；原生 JAX RMSNorm 反事实 logits 最大差为 `0.37747739627957344`。
+
+`blockwise_online_attention` 支持广播 leading dimensions、causal prefill、带 past keys 的单 token decode 与任意 boolean visibility mask；任一 query row 没有可见 key 时 fail closed。Parity 仍不覆盖 NumPy 完整模型、默认 PyTorch LayerNorm 与默认 JAX RMSNorm 的等价、AdamW/RNG/JIT、目标大模型或 GPU kernel 精度与性能。
 
 ## 10. 复杂度和 kernel 边界
 
 标准 dense attention 的 score/probability 张量有 (T_qT_k) 项，每头 score 与 value aggregation 的主要算术随 (T_qT_kD) 增长。投影与 MLP 通常含 (Td^2) 量级项。短序列/大 hidden 时线性层可能主导；长序列时 attention 与 KV 读写更突出。Big-O 不能直接替代实测延迟。
 
-FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返及完整中间矩阵存储；它针对的是精确 attention 数学，而不是稀疏 attention 近似，但浮点归约顺序可能使结果不逐 bit 相同。使用优化 kernel 时要记录实际 backend，并验证 head dim、dtype、mask、dropout、GQA、RoPE/ALiBi 和硬件支持；配置声称启用不证明没有 fallback。
+FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返及完整中间矩阵存储；它针对的是精确 attention 数学，而不是稀疏 attention 近似，但浮点归约顺序可能使结果不逐 bit 相同。[数学基础](../foundations/math.md#attention-storage-online-softmax)给出 recurrence，`projects/transformers-basics/online_softmax_demo.py` 逐块和 dense reference 对照。NumPy oracle 的 logical tile 元素数不是进程峰值内存或 HBM 流量测量，更不等于 FlashAttention kernel 已执行。使用优化 kernel 时要记录实际 backend，并验证 head dim、dtype、mask、dropout、GQA、RoPE/ALiBi 和硬件支持；配置声称启用不证明没有 fallback。
 
 ## 11. 架构类型
 

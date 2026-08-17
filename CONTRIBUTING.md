@@ -12,11 +12,13 @@
 
 新章节可从 `docs/_templates/topic.md` 复制，通常包含：
 
-1. 学习目标与先修知识
-2. 一句话结论和核心直觉
+1. 页面顶部的学习契约：适合读者、先修、首次阅读路径、完成信号和卡住时入口
+2. 学习目标、一句话结论和核心直觉
 3. 机制、公式与最小例子
 4. 工程选择、权衡和失败模式
 5. 自测题与延伸阅读
+
+`models/`、`foundations/`、`core/`、`training/`、`systems/`、`applications/`、`quality/` 和 `frontier/` 下的每篇教学正文必须且只能包含一个 `<!-- learning-contract -->`。`python scripts/check_docs.py` 会验证标记、五个字段、链接和锚点。
 
 ## 状态标记
 
@@ -30,9 +32,16 @@
 
 优先引用论文原文、官方文档、标准和可信的一手工程资料。论文用“作者，标题，会议/期刊或 arXiv，年份，链接”的格式。对存在争议的结论至少展示两方证据。
 
+## 贡献许可
+
+提交贡献即表示你有权提供相应内容，并同意按仓库的双许可证规则发布：源码、配置、测试和 Notebook 代码单元采用 [MIT License](LICENSE-CODE)；正文、图表和 Notebook Markdown 单元采用 [CC BY 4.0](LICENSE-DOCS)。第三方内容必须保留来源、许可证和必要的归属信息；无法确认授权范围时不要提交。
+
 ## 提交前检查
 
 ```powershell
 mkdocs build --strict
 python scripts/check_docs.py
+python -m pytest tests/test_check_docs.py -q
 ```
+
+`docs/`、`mkdocs.yml` 与 `overrides/` 是站点源码；`site/` 是 `mkdocs build` 的生成物，不直接编辑或提交。部署前 `python scripts/check_built_site.py` 会检查 sitemap、资源引用以及关键新手页面的当前内容 token，防止上传陈旧构建。

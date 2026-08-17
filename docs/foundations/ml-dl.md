@@ -1,5 +1,18 @@
 # 机器学习与深度学习
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：第一次系统理解训练、泛化和评测的工程师。
+- **先修**：基本代数、均值与概率直觉；不要求先学完整微积分。
+- **首次阅读**：问题定义 → 数据划分 → 损失与优化 → 评价与不确定性。
+- **完成信号**：能发现数据泄漏，并为一个任务设计 train/validation/test 切分。
+- **卡住时**：回到[数学基础](math.md)对应的概率、导数或统计小节。
+
+</div>
+
 这一章不试图把传统机器学习课程压缩成术语表，而是建立一套能迁移到 LLM 的判断框架：**模型在什么分布上、用什么代理目标、从什么数据中学习，最后又在什么约束下被验收**。训练损失只是这个闭环中的一个量。
 
 ## 1. 从问题定义到统计学习
@@ -107,7 +120,22 @@ LLM 还多一层污染：评测题或其等价改写可能出现在预训练、S
 
 ### 4.2 聚合方式会改变问题
 
-“先对每个序列求平均，再对 batch 平均”和“对 batch 内所有有效 token 求总和后除以有效 token 数”并不等价：前者让短序列和长序列拥有相同权重，后者让每个 token 同权。在梯度累积或数据并行中，若各 micro-batch 的有效 token 数不同，简单平均 micro-batch loss 会引入权重偏差。
+“先对每个序列求平均，再对 batch 平均”和“对 batch 内所有有效 token 求总和后除以有效 token 数”是两个不同的 estimand：前者让每条序列同权，后者让每个监督 token 同权。设第 \(i\) 个 micro-batch 有 \(n_i\) 个有效 token、token loss 为 \(\ell_{ij}\)，全窗口共有 \(N=\sum_i n_i\) 个有效 token。若目标是 token mean：
+
+\[
+L_{token}=\frac{1}{N}\sum_i\sum_{j=1}^{n_i}\ell_{ij}
+=\sum_i\frac{n_i}{N}\bar L_i.
+\]
+
+把 \(M\) 个 micro-batch mean 直接平均得到 \(M^{-1}\sum_i\bar L_i\)，使第 \(i\) 批每个 token 的系数变成 \(1/(Mn_i)\)，通常已换了训练目标。Padding、prompt 或其他 `ignore_index` 位置既不进 numerator，也不进 denominator。正确实现可先累积每批 `loss_sum`，再以整个 accumulation window 的有效 token 数缩放；数据并行还必须显式适配 reducer 是 sum 还是 mean，不能把 rank-local mean 再等权平均。
+
+可运行反例：`python projects/single-gpu-finetuning/gradient_accumulation_toy.py`。固定有效 token 数 `[1,3]` 时，精确 token-mean class-aggregate logit gradient 为 `(23/40,-23/40)`，等权 micro-batch mean 却是 `(7/20,-7/20)`。该 CPU Float64 toy 只核对 reduction，不证明目标 LLM、随机层、optimizer、分布式 runtime、CUDA、性能或质量；工程条件详见[分布式训练](../systems/distributed-training.md#global-batch-loss-normalization)。
+
+仓库另有独立的双进程 DDP control：`python projects/single-gpu-finetuning/ddp_token_mean_control.py`。在 `D=2,N=4` 且两个 rank 的有效 token 数为 `[1,3]` 时，默认 DDP gradient mean 要求每个 rank 对 local loss sum 乘 `D/N=1/2`，同步后的共享参数梯度才是 full-batch 的 `(23/40,-23/40)`。若漏掉 world-size 只乘 `1/N=1/4`，梯度变为 `(23/80,-23/80)`，恰好多缩小 `1/D`；若每个 rank 先取 local mean，结果是 `(7/20,-7/20)`。这条 CPU/Gloo 证据真实执行了 count `all_reduce` 与 DDP backward，但仍没有 optimizer、accumulation + `no_sync`、AMP、FSDP/ZeRO、GPU、多节点或目标模型证据。
+
+`ddp_accumulation_no_sync_control.py` 再补两个 micro-batch/rank 的 update window：有效 token counts 为 `[[1,2],[3,1]]`，`D=2,N=7`，所以每次 local loss-sum backward 都乘 `D/N=2/7`。精确 pre-clip gradient 是 `(+19/35,-19/35)`；真实 built-in DDP 在首批 forward+backward 同置于 `no_sync`、末批同步后，与单进程 full batch 的 gradient、global-norm clip 和一次 plain SGD 参数更新完全一致。带 PyTorch reference all-reduce hook 的计数对照中，正确 scope 为 1 次 hook；只把 backward 放进 `no_sync` 已经太晚，仍有 2 次 hook。后者在这个线性 fixture 上数值仍正确，只是没有省通信。该证据仍只有一个两元素参数/单 bucket，不含 AMP、随机层、目标 Trainer、GPU 或性能测量。
+
+独立的 `amp_grad_scaler_control.py` 隔离验证混合精度顺序，而不是把单进程结果借给 DDP。CPU FP16 autocast 下，两批 scaled gradient 为 24；先 `scaler.unscale_(optimizer)` 再做 `max_norm=0.5` 的 global-norm clip，optimizer 看到约 0.5，与 full batch 相同。若先 clip scaled gradient 再 unscale，optimizer 只看到约 0.0625。三个含 `inf` 的 accumulation window 又使 scale `8→4→2→1`，同时 AdamW 参数、step=1 和 moments 均不动。进程内复制 model/optimizer/scaler 后，恢复 scale=1 的边界梯度 10000 会执行 step=2；遗漏 scaler、回到 scale=8 时 scaled gradient 溢出并跳步。这证明 scaler 是恢复状态的一部分，但没有把它写入 MiniGPT 文件格式，也未执行进程重启、DDP、CUDA 或目标模型。
 
 ## 5. 神经网络是可微分的程序
 

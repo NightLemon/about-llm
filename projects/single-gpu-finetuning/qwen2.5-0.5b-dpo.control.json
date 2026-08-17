@@ -1,0 +1,98 @@
+{
+  "control_version": "about-llm.target-dpo-control.v1",
+  "checked_at": "2026-08-13",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "source_checkpoint_manifest_fingerprint": "sha256:ddf41f2cff963bc2a8fc186c28369abba8a920b850152fc815e2b17c7d037876",
+  "source_checkpoint_report_fingerprint": "sha256:56528a3e02ed6ef9d205dcf83ba456658d639d7681ab6a1ad9eb110211edba62",
+  "training_artifact": {
+    "filename": "preference.train.example.jsonl",
+    "size_bytes": 1325,
+    "sha256": "sha256:43c7d8d18f85f66c5aabaa5a172dc846913172d5e1a4d1d28177015c6a1821c7",
+    "ordered_dataset_fingerprint": "sha256:e8629f3eafbd8fae1bd14cfcd51accc876c10ca32dbab176bf5f790ffa85fa3c",
+    "manifest_fingerprint": "sha256:d69dd1fe04edbd31091871136ff854299bec8bb1ddc88de21d6e585e4a5593d2",
+    "record_ids": [
+      "pref-train-alpha",
+      "pref-train-beta"
+    ]
+  },
+  "readiness_artifact": {
+    "filename": "preference-training-readiness.example.json",
+    "size_bytes": 2895,
+    "sha256": "sha256:36bad637b7ae6aa9024d20864f2ff4735a3c9fded4e025fa7ec398bee2489c9f",
+    "manifest_fingerprint": "sha256:ee78a9544ff2e0cebe3b0272e4ea50dca5f6eb371d81ed6d9d95c6e4ebd7a5cf"
+  },
+  "model_contract": {
+    "expected_model_class": "Qwen2ForCausalLM",
+    "expected_model_type": "qwen2",
+    "num_hidden_layers": 24,
+    "hidden_size": 896,
+    "base_parameter_count": 494032768,
+    "config_bos_token_id": 151643,
+    "config_eos_token_id": 151645,
+    "config_pad_token_id": null,
+    "tokenizer_bos_token_id": null,
+    "tokenizer_eos_token_id": 151645,
+    "tokenizer_pad_token_id": 151643,
+    "generation_config_bos_token_id": 151643,
+    "generation_config_eos_token_ids": [151645, 151643],
+    "generation_config_pad_token_id": 151643
+  },
+  "runtime": {
+    "python_implementation": "CPython",
+    "python_version": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "torch_version": "2.13.0+cpu",
+    "transformers_version": "4.57.6",
+    "peft_version": "0.20.0",
+    "device": "cpu",
+    "dtype": "float32",
+    "attention_implementation": "eager",
+    "torch_num_threads": 8
+  },
+  "adapter": {
+    "task_type": "CAUSAL_LM",
+    "target_modules": [
+      "q_proj",
+      "v_proj"
+    ],
+    "rank": 4,
+    "alpha": 8,
+    "dropout": 0.0,
+    "bias": "none",
+    "expected_trainable_parameters": 270336,
+    "expected_trainable_tensor_count": 96,
+    "expected_a_tensor_count": 48,
+    "expected_b_tensor_count": 48,
+    "expected_b_element_count": 98304
+  },
+  "trainer": {
+    "trl_version": "0.29.1",
+    "loss_type": "sigmoid",
+    "beta": 0.1,
+    "max_length": 32,
+    "batch_size": 2,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 0.001,
+    "max_steps": 1,
+    "gradient_checkpointing": false,
+    "optimizer": "adamw_torch",
+    "reference_mode": "disable_current_peft_adapter"
+  },
+  "torch_seed": 20260813,
+  "expected_pairs": [
+    {
+      "record_id": "pref-train-alpha",
+      "prompt_ids": [151644, 8948, 198, 24051, 279, 803, 13382, 4226, 13, 151645, 198, 151644, 872, 198, 3379, 2033, 8287, 13, 151645, 198, 151644, 77091, 198],
+      "chosen_ids": [18536, 8287, 4226, 151645, 198],
+      "rejected_ids": [13855, 8287, 4226, 151645, 198]
+    },
+    {
+      "record_id": "pref-train-beta",
+      "prompt_ids": [151644, 8948, 198, 24051, 279, 803, 13382, 4226, 13, 151645, 198, 151644, 872, 198, 3379, 2033, 13440, 13, 151645, 198, 151644, 77091, 198],
+      "chosen_ids": [18536, 13440, 4226, 151645, 198],
+      "rejected_ids": [13855, 13440, 4226, 151645, 198]
+    }
+  ],
+  "evidence_boundary": "This control rehashes one immutable-revision Qwen checkpoint snapshot and two authored preference/readiness artifacts, loads the verified local checkpoint with trust_remote_code disabled, normalizes Trainer-facing model/generation special-token config to tokenizer semantics before the baseline, and executes one CPU FP32 TRL 0.29.1 sigmoid-DPO optimizer step with a PEFT adapter-disabled frozen-base reference. It verifies exact target tokenization and completion masks, initial log(2), finite LoRA gradients, bitwise-unchanged frozen-base parameters and non-adapter state/config, adapter layers disabled during reference forwards, reported reference replay drift, and the one-batch chosen-relative margin after the step. It does not authenticate the model publisher, artifact author, labels, or trainer; eliminate verification-to-loader-reopen TOCTOU; establish human preference validity, annotator agreement, semantic deduplication, alignment quality, generalization, safety, convergence, or production readiness; execute QLoRA/CUDA/vLLM; export optimizer/RNG/resume state; or benchmark memory, throughput, latency, or cost."
+}

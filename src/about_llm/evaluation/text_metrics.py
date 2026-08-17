@@ -16,6 +16,12 @@ def normalize_text(text: str) -> str:
     return " ".join(normalized.split())
 
 
+def literal_exact_match(case: EvaluationCase, output: str) -> float:
+    """Compare decoded strings without Unicode, case, or whitespace normalization."""
+
+    return float(output == case.expected)
+
+
 def normalized_exact_match(case: EvaluationCase, output: str) -> float:
     return float(normalize_text(output) == normalize_text(case.expected))
 

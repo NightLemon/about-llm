@@ -1,8 +1,25 @@
-Creative Commons Attribution 4.0 International
+About LLM licensing
 
-Copyright (c) 2026 about-llm contributors
+This repository uses separate licenses for software and documentation.
 
-This work is licensed under the Creative Commons Attribution 4.0
-International License. To view a copy of this license, visit
-https://creativecommons.org/licenses/by/4.0/ or send a letter to
-Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
+1. Software: MIT
+
+Source code, executable examples, tests, configuration, CI definitions,
+stylesheets, JavaScript, and templates are licensed under the MIT License in
+LICENSE-CODE. This includes code under src/, scripts/, tests/, projects/,
+docs/javascripts/, docs/stylesheets/, and docs/overrides/.
+
+2. Documentation: CC BY 4.0
+
+Prose, diagrams, and other instructional content are licensed under the
+Creative Commons Attribution 4.0 International License described in
+LICENSE-DOCS. This includes Markdown documentation in docs/, README files,
+CONTRIBUTING.md, and CHANGELOG.md.
+
+3. Mixed files and third-party material
+
+In Jupyter notebooks, code cells use the MIT License and Markdown cells use
+CC BY 4.0. When a file contains both software and prose, each portion follows
+the corresponding rule above. A file-specific notice overrides this routing.
+Third-party dependencies, models, datasets, images, quotations, and other
+materials remain subject to their own licenses and terms.

@@ -1,5 +1,20 @@
 # LLM 评测方法、统计与发布决策
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：评测、数据、统计和发布门禁负责人。
+- **先修**：[评测总览](evaluation.md)、均值/比例、置信区间和基本抽样概念。
+- **首次阅读**：决策问题 → case schema → 切片/指标 → 配对比较 → 发布门槛。
+- **完成信号**：能固定 estimand、配对单位、effect threshold 和完整失败清单。
+- **卡住时**：先完成[评测最小验收路径](../practice/project-index.md#acceptance-evaluation)。
+
+</div>
+
+本页属于进阶评测。尚未建立 case、评分规则和错误分类时，先完成[评测总览](evaluation.md)；不要从显著性检验或复杂 bootstrap 开始建设评测体系。
+
 评测不是在几个例子上“感觉更好”，而是把产品目标转成 case、指标、切片、统计比较和发布门禁。对 RAG、Agent、微调和模型升级使用同一 case identity 与报告协议，才能知道变化来自系统还是样本。
 
 ## 从决策开始
@@ -43,6 +58,29 @@ created_at, version, annotator metadata
 ### 确定性指标
 
 JSON Schema、单元测试、数据库最终状态、权限、引用 ID、exact match、数值容差。只要适用，优先于 judge。
+
+“Exact” 仍需把比较层写清，至少区分：
+
+| 层 | 示例定义 | 适用与风险 |
+|---|---|---|
+| artifact byte identity | 对固定 encoding/serialization 的 bytes 比长度与 digest | 适合文件与 wire artifact；不等于文本语义相同，也不认证来源 |
+| literal string exact | decoded string 直接做 code-point sequence equality，例如 Python `output == expected` | 适合必须保留大小写、标点、空格的协议；它不是未解码原始响应 bytes 的同一性 |
+| normalized exact | 明确固定 Unicode normalization、大小写、首尾/连续 whitespace 等规则后再相等比较 | 适合允许表面变体的短答案；每条 normalization 都可能吞掉任务错误 |
+| token F1 | 用固定 tokenizer/regex 得到 token multiset，再算 overlap precision/recall 的调和平均 | 适合抽取覆盖率；通常不保留顺序、标点、完整结构或否定作用域 |
+
+本仓库的 `about-llm.normalized-exact-match.v1` 使用 NFKC、`casefold()`、`strip()` 和 whitespace collapse；`about-llm.token-f1.v1` 在相同归一化后只提取 `[A-Za-z0-9_]+` 或单个 `U+3400–U+9FFF` 字符。于是 `LLM-2026 → llm-2026` 的 literal/normalized/F1 为 `0/1/1`，`{"answer":42} → {"answer": 42}` 为 `0/0/1`。前者暴露 case-folding 对大小写复制任务的 construct mismatch，后者暴露 token F1 忽略 JSON 标点/空白；它们不是“一个指标更准确”的普遍结论。
+
+`about-llm.literal-exact-match.v1` 已作为通用 scorer 的 opt-in `literal_exact_match` 暴露；默认仍是 normalized `exact_match` + `token_f1`，避免静默改变已有 run manifest。显式选择 metric 是实验协议的一部分，不能因某个分数更高就在运行后换口径。
+
+指标应由任务契约选择：ID、代码和协议字段通常保留大小写；JSON 先 parse，再验证 schema、未知字段、类型和值；自然语言抽取才考虑明确归一化后的 exact/F1。报告必须同时保存 raw output 和 metric revision，避免升级 normalization 后把历史分数伪装成同一指标。
+
+JSON 的“相等”也需版本化。`about-llm.json-schema-metric.v2` 先 strict parse，拒绝 duplicate object key 和 `NaN/Infinity`；schema 仅允许 local `$ref/$dynamicRef`，拒绝 `$id` 与 external resolution，无效 schema 作为 case 配置错误中止。当前 `format` 仍是 annotation，没有启用 `FormatChecker`，也不 coercion、不应用 `default`。`about-llm.json-value-exact.v1` 则比较 canonical parsed value：忽略 object key order 与 JSON whitespace，保留 array order、string/scalar type 和 parser 的 integer/float distinction；invalid expected JSON 是 case 错误，invalid output 得 0。
+
+Value exact 不是广义 semantic correctness。`{"amount":100,"currency":"USD"}` 即使逐字段等于 gold，也未验证汇率、账户归属、库存、当前数据库状态或授权；开放任务可能有多个等价正确对象，也不适合单一 gold exact。相反，wrong value 可以完全 schema-valid。设计结构化评测时把 syntax/schema/value/domain policy 四层分别保存，只有任务确实要求唯一 parsed value 时才使用 value exact。
+
+RAG citation 也需要分层。`citation_syntax` 只把已知 ID precision 与段落 coverage 合成局部分数；`about-llm.citation-evidence-span-metric.v1` 则对 strict JSON claim artifact 做 binary identity gate：case metadata 的 `citation_sources` 提供 source ID→decoded text，输出的每个 evidence 必须给出该 source 中零基、end-exclusive Python string offsets 和 exact quote。它会拒绝 duplicate key、未知字段/来源、空 claim/evidence、重复 claim/span、bool/越界 offset 和 quote mismatch。Case 配置错误中止评分，malformed model output 得 0。
+
+Span identity 仍不是 citation correctness。固定 fixture 故意让 claim “The moon is cheese.” 精确引用 `Earth is round.` 的 `Earth`，span v1 得 1；这证明实现没有偷偷把 lexical/semantic judge 混进 identity 指标。完整评测还要独立保存 ACL/source snapshot provenance、atomic-claim segmentation、`supported/contradicted/insufficient` verdict、judge/人工来源及其误判率、source quality/currentness、答案完整性与最终 publication decision。
 
 ### 文本相似
 
@@ -202,6 +240,28 @@ python projects/evaluation-gate/holm_correction_toy.py
 固定输入顺序 `[0.04, 0.01, 0.03, 0.20]` 排序后 multiplier 为 `[4,3,2,1]`，scaled value 为 `[0.04,0.09,0.08,0.20]`，running maximum 得到 sorted adjusted `[0.04,0.09,0.09,0.20]`；映回输入顺序为 `[0.09,0.04,0.09,0.20]`，所以 \(\alpha=0.05\) 只拒绝原索引 1。仓库 tie 按原输入顺序稳定排序，但相同 p-value 经 running maximum 后得到相同 adjustment。
 
 Holm 不会修复无效的 component p-value，也不会让“先试很多再挑一个好看的 family”、反复窥视/可选停止或测试集调参变得有效；这些属于 selection/sequential protocol。FWER 控制也不是 effect size、置信区间、业务重要性或因果证明。必须同时报告原始/adjusted p-value、family 定义、全部测试、effect 与实际阈值，不能只展示被拒绝项。
+
+### 反复窥视与可选停止
+
+多重比较控制“同一时点看多个 hypothesis”，sequential testing 处理“同一 hypothesis 在多个时点反复看”。把固定样本检验每周重跑一次，一旦 `p <= 0.05` 就停止，并不会因为每次检验本身 exact 而保持总体 5% 假阳性率。
+
+透明反例只保留无 tie 的 paired sign。令第 \(n\) 个 look 中 candidate−baseline 为正的数量是 \(X_n\)，在本 oracle 的 null 下每个 informative sign 独立且以 1/2 概率为正。双侧 p-value 明确定义为较小 inclusive binomial tail 的两倍并 cap 到 1：
+
+\[
+p_n=\min\left(1,\;2\min\{P(X_n\le x_n),P(X_n\ge x_n)\}\right).
+\]
+
+运行：
+
+~~~powershell
+python projects/evaluation-gate/sequential_peeking_toy.py
+~~~
+
+预先固定 looks=`[10,20,30,40,50]`。若每次都按 \(\alpha=0.05\) 判断并在首次拒绝时停止，exact familywise null rejection probability 是 `7109832616777/70368744177664 ≈ 0.1010367984`。只在最终 \(n=50\) 看一次时，离散双侧检验的实际 null rejection probability 是 `18486790962201/562949953421312 ≈ 0.0328391376`；它小于 0.05 不等于五次窥视仍安全。
+
+Reference 不枚举 \(2^{50}\) 条逻辑 sign sequence，而是在每个 \((n,\text{positive count})\) 状态上传播精确 `Fraction` 概率，并在每个 look 移除首次拒绝路径。若事前确认最多五次 look，并把 0.05 用 Bonferroni 均分成每次 0.01，同一 fixture 的 exact familywise error 是 `2142139082367/140737488355328 ≈ 0.0152208136`，由 union bound 保证不超过 0.05；离散性和 looks 相关使实际值更保守。这个简单方案不是唯一选择，正式实验也可按设计使用 group-sequential boundary、alpha spending、always-valid p-value/e-process 或 confidence sequence，但分析方法必须在看 outcome 前固定。
+
+本例与带任意 magnitude 的 paired randomization test 不是同一个检验。它只处理无 tie、i.i.d. fair sign null，不验证 pair/cluster exchangeability、case 抽样、标签、干扰或指标有效性；Bonferroni 也不允许临时增加第六次 look，不消除停止后 effect estimate 的选择偏差，不提供 power、样本量、置信区间或业务重要性。线上 A/B 还应绑定最大样本/时长、随机化单位、guardrail、流量 ramp、异常停止规则和完整 look ledger。
 
 ## 多次采样
 

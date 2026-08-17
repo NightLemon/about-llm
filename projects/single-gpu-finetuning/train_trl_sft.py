@@ -8,9 +8,10 @@ from importlib.metadata import version
 from pathlib import Path
 
 from about_llm.finetuning import (
-    audit_assistant_masks,
+    audit_assistant_label_projection,
     load_sft_records,
     load_sft_training_readiness,
+    prepare_assistant_mask_features,
     validate_sft_training_readiness,
 )
 
@@ -73,8 +74,6 @@ def main() -> None:
     from transformers import AutoTokenizer
     from trl import SFTConfig, SFTTrainer
 
-    dataset = Dataset.from_list([record.to_training_row() for record in records])
-
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id,
         revision=args.revision,
@@ -91,10 +90,11 @@ def main() -> None:
         if tokenizer.eos_token_id is None:
             raise ValueError("tokenizer needs a PAD or EOS token")
         tokenizer.pad_token = tokenizer.eos_token
-    mask_audit = audit_assistant_masks(
+    mask_preparation = prepare_assistant_mask_features(
         records,
-        render=lambda messages: tokenizer.apply_chat_template(
+        render=lambda messages, tools: tokenizer.apply_chat_template(
             messages,
+            tools=tools,
             tokenize=True,
             return_dict=True,
             return_assistant_tokens_mask=True,
@@ -112,11 +112,13 @@ def main() -> None:
         },
         max_length=args.max_length,
     )
+    mask_audit = mask_preparation.audit_report
     (args.output_dir / "sft-template-mask-audit.json").write_text(
         json.dumps(mask_audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
         newline="\n",
     )
+    dataset = Dataset.from_list(mask_preparation.to_training_rows())
 
     target_modules = [item.strip() for item in args.target_modules.split(",") if item.strip()]
     if not target_modules:
@@ -135,7 +137,11 @@ def main() -> None:
             "trust_remote_code": False,
         },
         max_length=args.max_length,
-        assistant_only_loss=True,
+        # Masks were materialized before Arrow. TRL 0.29.1 rejects its
+        # conversational-preprocessing flag on an already-tokenized dataset,
+        # while the collator still applies the supplied assistant_masks.
+        assistant_only_loss=False,
+        completion_only_loss=False,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation,
         learning_rate=args.learning_rate,
@@ -153,6 +159,22 @@ def main() -> None:
         train_dataset=dataset,
         processing_class=tokenizer,
         peft_config=peft_config,
+    )
+    prepared_dataset = trainer.train_dataset
+    if prepared_dataset is None:
+        raise RuntimeError("TRL did not preserve the pre-tokenized training dataset")
+    label_audit = audit_assistant_label_projection(
+        mask_preparation,
+        prepared_features=(
+            dict(prepared_dataset[index]) for index in range(len(prepared_dataset))
+        ),
+        collate=trainer.data_collator,
+        pad_token_id=int(tokenizer.pad_token_id),
+    )
+    (args.output_dir / "sft-final-label-audit.json").write_text(
+        json.dumps(label_audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model()

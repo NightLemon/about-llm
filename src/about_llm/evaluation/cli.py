@@ -45,20 +45,35 @@ from about_llm.evaluation.statistics import (
     clustered_paired_bootstrap,
     paired_bootstrap,
 )
-from about_llm.evaluation.structured import citation_syntax_metric, json_schema_metric
-from about_llm.evaluation.text_metrics import normalized_exact_match, token_f1
+from about_llm.evaluation.structured import (
+    citation_evidence_span_metric,
+    citation_syntax_metric,
+    json_schema_metric,
+    json_value_exact_metric,
+)
+from about_llm.evaluation.text_metrics import (
+    literal_exact_match,
+    normalized_exact_match,
+    token_f1,
+)
 from about_llm.llmops import artifact_fingerprint
 
 METRICS: Mapping[str, Metric] = {
+    "literal_exact_match": literal_exact_match,
     "exact_match": normalized_exact_match,
     "token_f1": token_f1,
     "json_schema": json_schema_metric,
+    "json_value_exact": json_value_exact_metric,
+    "citation_evidence_span": citation_evidence_span_metric,
     "citation_syntax": citation_syntax_metric,
 }
 METRIC_REVISIONS: Mapping[str, str] = {
+    "literal_exact_match": "about-llm.literal-exact-match.v1",
     "exact_match": "about-llm.normalized-exact-match.v1",
     "token_f1": "about-llm.token-f1.v1",
-    "json_schema": "about-llm.json-schema-metric.v1",
+    "json_schema": "about-llm.json-schema-metric.v2",
+    "json_value_exact": "about-llm.json-value-exact.v1",
+    "citation_evidence_span": "about-llm.citation-evidence-span-metric.v1",
     "citation_syntax": "about-llm.citation-syntax-metric.v1",
 }
 SCORER_REVISION = "about-llm.evaluation-cli.score.v1"

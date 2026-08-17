@@ -33,12 +33,13 @@ from about_llm.finetuning.near_duplicate import (
 )
 from about_llm.llmops import artifact_fingerprint
 
-SFT_TRAINING_READINESS_VERSION = "about-llm.sft-training-readiness.v2"
+SFT_TRAINING_READINESS_VERSION = "about-llm.sft-training-readiness.v3"
 _FINGERPRINT_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _EVIDENCE_BOUNDARY = (
     "This artifact binds one train identity to passing exact/group split gates and "
     "one declared lexical candidate policy and one source/sensitive-candidate "
-    "governance audit. It contains no held-out plaintext. "
+    "governance audit over message text, tool calls, and tool schemas. It contains "
+    "no held-out plaintext. "
     "Its unkeyed SHA-256 fingerprints detect accidental drift but provide neither "
     "origin authentication nor authorization: a party able to replace the artifact "
     "can recompute them. A passing gate does not prove semantic deduplication, legal "

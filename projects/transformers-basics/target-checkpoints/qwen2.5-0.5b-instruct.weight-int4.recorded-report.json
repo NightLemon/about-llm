@@ -1,0 +1,127 @@
+{
+  "artifact": {
+    "bundle_schema_version": "about-llm.quantized-matrix-bundle.v1",
+    "ideal_packed_weight_bytes": 401408,
+    "reference_fp32_weight_bytes": 3211264,
+    "round_trip_codes_equal": true,
+    "round_trip_scales_equal": true,
+    "scale_dtype": "float32",
+    "scale_metadata_bytes": 25088,
+    "serialized_bundle_bytes": 427328,
+    "serialized_bundle_sha256": "sha256:006cc9a2abdd62b8513926fe822f892b58fc309ab4141fd7a3d6a1acac470bf7",
+    "serialized_compression_ratio": 7.514752134192002,
+    "tamper_rejected_before_decode": true,
+    "tensor_count": 1
+  },
+  "checked_at": "2026-08-15",
+  "evidence_boundary": "This control verifies the reviewed immutable Qwen snapshot, loads it on CPU in FP32 with trust_remote_code disabled, captures one real activation, and quantizes only model.layers.0.self_attn.o_proj.weight with the repository's symmetric group-wise packed INT4 reference. It reloads that one-matrix artifact, executes the selected dequantized linear projection, and runs one full-model forward after replacing only that matrix with dequantized FP32 values. It does not produce or load a full low-bit checkpoint, execute a fused low-bit kernel, GPTQ, AWQ, SmoothQuant, calibration, generation, GPU, CUDA, vLLM, or a quality/performance evaluation. Selected-layer compression and two forward observations do not establish whole-model storage, runtime memory, latency, accuracy, effective context, licensing, provenance, or production safety.",
+  "execution": {
+    "baseline_hook_vs_direct_max_abs_error": 0.0,
+    "baseline_last_argmax_token_id": 17,
+    "baseline_last_logits_sha256": "sha256:3f2e70636dc3641573307398d725906f02a1da020555dc993e00b1481ea932e4",
+    "captured_input_shape": [
+      1,
+      31,
+      896
+    ],
+    "captured_output_shape": [
+      1,
+      31,
+      896
+    ],
+    "in_memory_vs_reloaded_selected_output_exact": true,
+    "last_argmax_match": true,
+    "last_logits_error": {
+      "maximum_absolute_error": 1.6255179643630981,
+      "mean_absolute_error": 0.25352928070691805,
+      "relative_l2_error": 0.08513807180570929,
+      "root_mean_squared_error": 0.31289500008630833
+    },
+    "last_logits_shape": [
+      1,
+      31,
+      151936
+    ],
+    "partial_quantized_last_argmax_token_id": 17,
+    "partial_quantized_last_logits_sha256": "sha256:8fa28444d33a3870ccd7e56bd989531add578451bad0e42114b7def430457800",
+    "prompt_token_count": 31,
+    "selected_output_error": {
+      "maximum_absolute_error": 0.010923892259597778,
+      "mean_absolute_error": 0.0007734432154596776,
+      "relative_l2_error": 0.07000153078579582,
+      "root_mean_squared_error": 0.001028042275133491
+    },
+    "source_weight_restored_exactly": true,
+    "weight_error": {
+      "maximum_absolute_error": 0.0400739386677742,
+      "mean_absolute_error": 0.0013338017693400866,
+      "relative_l2_error": 0.1323337087062499,
+      "root_mean_squared_error": 0.0017374120243639493
+    }
+  },
+  "manifest_fingerprint": "sha256:ddf41f2cff963bc2a8fc186c28369abba8a920b850152fc815e2b17c7d037876",
+  "report_fingerprint": "sha256:df9ee045be4bf2e2ab4441bacfe24ffd1f903e9a0715bda0f35219ac3928f5cb",
+  "report_version": "about-llm.transformers-target-weight-quantization-report.v1",
+  "runtime": {
+    "attention_implementation": "eager",
+    "cuda_executed": false,
+    "device": "cpu",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python_implementation": "CPython",
+    "python_version": "3.12.10",
+    "source_dtype": "torch.float32",
+    "torch_num_threads": 8,
+    "torch_version": "2.13.0+cpu",
+    "transformers_version": "4.57.6"
+  },
+  "scope": {
+    "dequantized_selected_linear_executed": true,
+    "full_checkpoint_quantized": false,
+    "fused_low_bit_kernel_executed": false,
+    "generation_executed": false,
+    "gptq_awq_or_calibration_executed": false,
+    "gpu_cuda_or_vllm_executed": false,
+    "license_compatibility_proven": false,
+    "model_quality_or_effective_context_proven": false,
+    "partial_quantized_full_model_forward_executed": true,
+    "performance_benchmark_performed": false,
+    "production_safety_proven": false,
+    "publisher_authenticated_by_signature": false,
+    "quantized_artifact_reloaded": true,
+    "quantized_runtime_loaded": false,
+    "real_target_activation_captured": true,
+    "selected_target_weight_quantized_and_packed": true,
+    "target_checkpoint_weights_loaded": true,
+    "whole_model_storage_or_runtime_memory_proven": false
+  },
+  "selection": {
+    "bias_present": false,
+    "bit_width": 4,
+    "code_range": [
+      -7,
+      7
+    ],
+    "group_size": 128,
+    "groups_per_row": 7,
+    "module_class": "Linear",
+    "module_name": "model.layers.0.self_attn.o_proj",
+    "parameter_name": "model.layers.0.self_attn.o_proj.weight",
+    "quantizer": "symmetric absmax per contiguous row group",
+    "selected_parameter_fraction": 0.0016250258120530175,
+    "selected_parameters": 802816,
+    "source_dtype": "torch.float32",
+    "total_model_parameters": 494032768,
+    "weight_shape": [
+      896,
+      896
+    ]
+  },
+  "source": {
+    "all_selected_file_bytes_verified_before_load": true,
+    "loader_input": "verified_local_snapshot_directory",
+    "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+    "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "selected_file_bytes": 999586347,
+    "selected_file_count": 7
+  }
+}

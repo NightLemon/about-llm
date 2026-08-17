@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,8 +7,9 @@ name = "about-llm"
 version = "0.1.0"
 description = "Executable Chinese curriculum for LLM developers and algorithm engineers"
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "CC-BY-4.0" }
+requires-python = ">=3.10,<3.13"
+license = "MIT"
+license-files = ["LICENSE-CODE"]
 authors = [{ name = "about-llm contributors" }]
 dependencies = [
   # NumPy 2.5 stubs use Python 3.12-only type statements. Keep the core
@@ -27,8 +28,11 @@ about-llm-rag = "about_llm.rag.cli:main"
 about-llm-synthetic-audit = "about_llm.synthetic_data_cli:main"
 
 [project.optional-dependencies]
-docs = ["mkdocs-material>=9.5,<10"]
+docs = ["Markdown>=3.8,<4", "mkdocs>=1.6,<2", "mkdocs-material>=9.5,<10"]
 dev = [
+  "Markdown>=3.8,<4",
+  "mkdocs>=1.6,<2",
+  "build>=1.2,<2",
   "pytest>=8,<9",
   "pytest-cov>=5,<7",
   "ruff>=0.9,<1",
@@ -52,20 +56,33 @@ rag = [
   "rank-bm25>=0.2.2,<1",
   "faiss-cpu>=1.9,<2; platform_system != 'Windows'",
 ]
-langchain = ["langchain>=0.3,<2", "langchain-community>=0.3,<2"]
+langchain = [
+  "langchain>=0.3,<2",
+  "langchain-community>=0.3,<2",
+  "langgraph>=1,<2",
+]
 llamaindex = ["llama-index-core>=0.12,<1"]
 api = [
+  "cryptography>=46,<50",
   "httpx>=0.28,<1",
   "pydantic>=2.10,<3",
   "python-dotenv>=1,<2",
-  # Keep the ASGI stack inside the compatibility family exercised by the
-  # service tests; early FastAPI 0.115 and Starlette 1.x are incompatible.
+  # Keep FastAPI/Starlette in the exercised family. MCP 1.29 requires
+  # Uvicorn >=0.31.1; the 0.52 line is covered by the service controls.
   "fastapi>=0.115.6,<0.116",
   "starlette>=0.40,<0.42",
-  "uvicorn>=0.30,<0.31",
+  "uvicorn>=0.52,<0.53",
 ]
 evaluation = ["jsonschema>=4.23,<5"]
-agents = ["jsonschema>=4.23,<5"]
+agents = [
+  "a2a-sdk>=1.1,<1.2",
+  "httpx>=0.28,<1",
+  "jsonschema>=4.23,<5",
+  "mcp>=1.29,<1.30",
+  "sse-starlette>=2.4,<3",
+  "starlette>=0.40,<0.42",
+  "uvicorn>=0.52,<0.53",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

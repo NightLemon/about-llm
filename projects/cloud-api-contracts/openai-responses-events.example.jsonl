@@ -1,0 +1,15 @@
+{"response":{"id":"resp_authored_001","model":"gpt-reviewed-snapshot","output":[],"status":"in_progress"},"sequence_number":0,"type":"response.created"}
+{"response":{"id":"resp_authored_001","model":"gpt-reviewed-snapshot","output":[],"status":"in_progress"},"sequence_number":1,"type":"response.in_progress"}
+{"item":{"content":[],"id":"msg_authored_001","role":"assistant","status":"in_progress","type":"message"},"output_index":0,"sequence_number":2,"type":"response.output_item.added"}
+{"content_index":0,"item_id":"msg_authored_001","output_index":0,"part":{"annotations":[],"logprobs":[],"text":"","type":"output_text"},"sequence_number":3,"type":"response.content_part.added"}
+{"content_index":0,"delta":"天气：","item_id":"msg_authored_001","logprobs":[],"output_index":0,"sequence_number":4,"type":"response.output_text.delta"}
+{"content_index":0,"delta":"晴。","item_id":"msg_authored_001","logprobs":[],"output_index":0,"sequence_number":5,"type":"response.output_text.delta"}
+{"content_index":0,"item_id":"msg_authored_001","logprobs":[],"output_index":0,"sequence_number":6,"text":"天气：晴。","type":"response.output_text.done"}
+{"content_index":0,"item_id":"msg_authored_001","output_index":0,"part":{"annotations":[],"logprobs":[],"text":"天气：晴。","type":"output_text"},"sequence_number":7,"type":"response.content_part.done"}
+{"item":{"content":[{"annotations":[],"logprobs":[],"text":"天气：晴。","type":"output_text"}],"id":"msg_authored_001","role":"assistant","status":"completed","type":"message"},"output_index":0,"sequence_number":8,"type":"response.output_item.done"}
+{"item":{"arguments":"","call_id":"call_authored_001","id":"fc_authored_001","name":"lookup_weather","status":"in_progress","type":"function_call"},"output_index":1,"sequence_number":9,"type":"response.output_item.added"}
+{"delta":"{\"city\":","item_id":"fc_authored_001","output_index":1,"sequence_number":10,"type":"response.function_call_arguments.delta"}
+{"delta":"\"上海\"}","item_id":"fc_authored_001","output_index":1,"sequence_number":11,"type":"response.function_call_arguments.delta"}
+{"arguments":"{\"city\":\"上海\"}","item_id":"fc_authored_001","name":"lookup_weather","output_index":1,"sequence_number":12,"type":"response.function_call_arguments.done"}
+{"item":{"arguments":"{\"city\":\"上海\"}","call_id":"call_authored_001","id":"fc_authored_001","name":"lookup_weather","status":"completed","type":"function_call"},"output_index":1,"sequence_number":13,"type":"response.output_item.done"}
+{"response":{"error":null,"id":"resp_authored_001","incomplete_details":null,"model":"gpt-reviewed-snapshot","output":[{"content":[{"annotations":[],"logprobs":[],"text":"天气：晴。","type":"output_text"}],"id":"msg_authored_001","role":"assistant","status":"completed","type":"message"},{"arguments":"{\"city\":\"上海\"}","call_id":"call_authored_001","id":"fc_authored_001","name":"lookup_weather","status":"completed","type":"function_call"}],"status":"completed","usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":0},"output_tokens":9,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":21}},"sequence_number":14,"type":"response.completed"}

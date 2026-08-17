@@ -1,5 +1,18 @@
 # Agent 架构、规划与记忆
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：Agent 架构、平台和状态管理工程师。
+- **先修**：[Agent 总览](agents.md)和基本状态机；无框架前置要求。
+- **首次阅读**：Agent/Workflow → 控制循环 → 状态与记忆 → 停止 → verifier。
+- **完成信号**：能画 typed state machine，并写可测试的完成判定。
+- **卡住时**：先用[Safe Agent 最小路径](../practice/projects/safe-agent.md#run)观察 trace。
+
+</div>
+
 Agent 的核心不是更长的 prompt，而是一个把不确定决策放进确定性控制面的系统。语言模型可以建议下一步，runtime 决定是否允许、如何执行、何时停止以及如何恢复。先把工作流画成状态机，再决定哪些状态转换真的需要模型。
 
 ## Agent、Workflow 与普通程序

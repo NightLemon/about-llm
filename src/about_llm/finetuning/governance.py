@@ -17,12 +17,12 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 from about_llm.finetuning.data import DataSplit, SFTRecord
-from about_llm.llmops import artifact_fingerprint
+from about_llm.llmops import artifact_fingerprint, canonical_json_bytes
 
 SFT_GOVERNANCE_POLICY_VERSION = "about-llm.sft-governance-policy.v1"
-SFT_GOVERNANCE_AUDIT_VERSION = "about-llm.sft-governance-audit.v1"
+SFT_GOVERNANCE_AUDIT_VERSION = "about-llm.sft-governance-audit.v2"
 SFT_SENSITIVE_CANDIDATE_DETECTOR_VERSION = (
-    "about-llm.sft-sensitive-regex-checksum.v1"
+    "about-llm.sft-sensitive-regex-checksum.v2"
 )
 _TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 _FINGERPRINT_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -306,6 +306,7 @@ class SFTGovernanceAuditReport:
                 "exact_source_license_match": True,
                 "unknown_source_or_license_fails_closed": True,
                 "limited_regex_checksum_candidate_scan": True,
+                "message_tool_calls_and_tool_schemas_scanned": True,
                 "matched_plaintext_in_report": False,
                 "legal_permission_verified": False,
                 "consent_verified": False,
@@ -316,8 +317,9 @@ class SFTGovernanceAuditReport:
             "evidence_boundary": (
                 "The source registry records an internal allow/deny decision under one "
                 "declared purpose and time; it is not a legal opinion. The scanner only "
-                "generates candidates for a fixed subset of email, key/token, private-key "
-                "header, JWT, and Luhn-valid card-like patterns. No candidate is not proof "
+                "generates candidates over message text, serialized tool calls, and tool "
+                "schemas for a fixed subset of email, key/token, private-key header, JWT, "
+                "and Luhn-valid card-like patterns. No candidate is not proof "
                 "that personal data or secrets are absent. Findings omit matched plaintext, "
                 "but record identity and span metadata can still be sensitive."
             ),
@@ -528,22 +530,42 @@ def _decide_source(
 def _sensitive_candidates(
     records: tuple[SFTRecord, ...], *, exception_ids: set[str]
 ) -> Iterable[SensitiveCandidateFinding]:
-    surfaces = tuple(
+    message_surfaces = tuple(
         SensitiveTextSurface(
             record_id=record.record_id,
             record_fingerprint=record.record_fingerprint,
             surface_index=message_index,
             role=message.role.value,
-            content=message.content,
+            content=_message_sensitive_surface(message),
         )
         for record in records
         for message_index, message in enumerate(record.messages, 1)
     )
+    tool_surfaces = tuple(
+        SensitiveTextSurface(
+            record_id=record.record_id,
+            record_fingerprint=record.record_fingerprint,
+            surface_index=len(record.messages) + tool_index,
+            role="tool_schema",
+            content=canonical_json_bytes(tool.to_dict()).decode("utf-8"),
+        )
+        for record in records
+        for tool_index, tool in enumerate(record.tools, 1)
+    )
     return scan_sensitive_text_surfaces(
-        surfaces,
+        (*message_surfaces, *tool_surfaces),
         exception_ids=exception_ids,
         detector_version=SFT_SENSITIVE_CANDIDATE_DETECTOR_VERSION,
     )
+
+
+def _message_sensitive_surface(message: Any) -> str:
+    if not message.tool_calls:
+        return cast(str, message.content)
+    tool_calls = canonical_json_bytes(
+        [call.to_dict() for call in message.tool_calls]
+    ).decode("utf-8")
+    return f"{message.content}\n<tool_calls>\n{tool_calls}"
 
 
 def scan_sensitive_text_surfaces(

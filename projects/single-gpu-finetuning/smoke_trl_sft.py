@@ -20,11 +20,11 @@ from trl import SFTConfig, SFTTrainer
 from about_llm.finetuning import (
     NearDuplicateProfile,
     SFTTrainingReadinessReport,
-    audit_assistant_masks,
     audit_sft_governance,
     audit_sft_near_duplicates,
     load_sft_governance_policy,
     load_sft_records,
+    prepare_assistant_mask_features,
     validate_training_subset,
 )
 
@@ -137,10 +137,11 @@ def run_smoke(steps: int = 12) -> dict[str, object]:
     if not readiness.gate_passed:
         raise AssertionError("offline fixture unexpectedly failed lexical candidate gate")
     tokenizer = _tokenizer(records)
-    mask_audit = audit_assistant_masks(
+    mask_preparation = prepare_assistant_mask_features(
         records,
-        render=lambda messages: tokenizer.apply_chat_template(
+        render=lambda messages, tools: tokenizer.apply_chat_template(
             messages,
+            tools=tools,
             tokenize=True,
             return_dict=True,
             return_assistant_tokens_mask=True,
@@ -153,7 +154,8 @@ def run_smoke(steps: int = 12) -> dict[str, object]:
         },
         max_length=MAX_LENGTH,
     )
-    dataset = Dataset.from_list([record.to_training_row() for record in records])
+    mask_audit = mask_preparation.audit_report
+    dataset = Dataset.from_list(mask_preparation.to_training_rows())
     model = GPT2LMHeadModel(
         GPT2Config(
             vocab_size=len(tokenizer),
@@ -177,7 +179,10 @@ def run_smoke(steps: int = 12) -> dict[str, object]:
         config = SFTConfig(
             output_dir=directory,
             max_length=MAX_LENGTH,
-            assistant_only_loss=True,
+            # The pre-tokenized rows already carry assistant_masks; TRL's
+            # collator consumes them independently of this preprocessing flag.
+            assistant_only_loss=False,
+            completion_only_loss=False,
             per_device_train_batch_size=len(records),
             learning_rate=5e-3,
             max_steps=steps,

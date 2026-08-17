@@ -4,6 +4,7 @@
 
 | 术语 | 含义 |
 |---|---|
+| A2A | Agent2Agent Protocol，描述独立 Agent 的发现、消息、任务状态与 artifact 交换；协议状态不等于业务完成。 |
 | Abstain | 证据不足或风险过高时明确不作答/转交，而非猜测。 |
 | Activation | 神经网络某层对当前输入产生的中间数值；也指激活函数。 |
 | Agent | 模型在状态—动作—观察循环中调用工具完成任务的系统。 |
@@ -50,6 +51,7 @@
 | LoRA | 用低秩矩阵参数化权重增量的 PEFT 方法。 |
 | LLM-as-judge | 使用另一个模型按 rubric 评价输出；需做人类校准。 |
 | Masked LM | 遮住部分 token 并利用双向上下文恢复它们的训练范式。 |
+| MCP | Model Context Protocol，连接 AI host/client 与提供 tools/resources/prompts 的 server；能力发现不等于授权。 |
 | MHA/MQA | 每个 query 头独立 K/V，或所有 query 头共享一组 K/V。 |
 | Mixed precision | 不同算子/状态用不同数值精度以兼顾速度、内存和稳定性。 |
 | MoE | Mixture of Experts，每个 token 只路由到部分专家的稀疏模型。 |
@@ -72,6 +74,7 @@
 | RMSNorm/LayerNorm | 稳定隐藏状态尺度的归一化方法。 |
 | RoPE | 旋转 Q/K 分量以编码相对位置信息的位置方法。 |
 | SFT | Supervised Fine-Tuning，使用理想输入输出对的监督微调。 |
+| Self-consistency | 对同一输入采样多个候选并按规范化答案投票；收益依赖候选相关性与 canonicalization，不能只由边缘单样本准确率推出。 |
 | Softmax | 将任意 logits 归一化成总和为 1 的概率分布。 |
 | Speculative decoding | 小模型草拟、大模型批量验证以减少串行解码步骤。 |
 | SSM | State Space Model，以状态递推处理序列的模型族。 |

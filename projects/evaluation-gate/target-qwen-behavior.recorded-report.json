@@ -1,0 +1,300 @@
+{
+  "aggregates": {
+    "by_slice": {
+      "abstention": {
+        "case_count": 1,
+        "exact_match_mean": 1.0,
+        "exact_match_pass_count": 1,
+        "literal_exact_match_mean": 1.0,
+        "literal_exact_match_pass_count": 1,
+        "token_f1_mean": 1.0
+      },
+      "arithmetic": {
+        "case_count": 2,
+        "exact_match_mean": 0.5,
+        "exact_match_pass_count": 1,
+        "literal_exact_match_mean": 0.5,
+        "literal_exact_match_pass_count": 1,
+        "token_f1_mean": 0.5
+      },
+      "en": {
+        "case_count": 2,
+        "exact_match_mean": 0.5,
+        "exact_match_pass_count": 1,
+        "literal_exact_match_mean": 0.5,
+        "literal_exact_match_pass_count": 1,
+        "token_f1_mean": 0.5
+      },
+      "factual": {
+        "case_count": 2,
+        "exact_match_mean": 1.0,
+        "exact_match_pass_count": 2,
+        "literal_exact_match_mean": 1.0,
+        "literal_exact_match_pass_count": 2,
+        "token_f1_mean": 1.0
+      },
+      "instruction": {
+        "case_count": 1,
+        "exact_match_mean": 1.0,
+        "exact_match_pass_count": 1,
+        "literal_exact_match_mean": 0.0,
+        "literal_exact_match_pass_count": 0,
+        "token_f1_mean": 1.0
+      },
+      "structured": {
+        "case_count": 1,
+        "exact_match_mean": 0.0,
+        "exact_match_pass_count": 0,
+        "literal_exact_match_mean": 0.0,
+        "literal_exact_match_pass_count": 0,
+        "token_f1_mean": 1.0
+      },
+      "zh": {
+        "case_count": 5,
+        "exact_match_mean": 0.8,
+        "exact_match_pass_count": 4,
+        "literal_exact_match_mean": 0.6,
+        "literal_exact_match_pass_count": 3,
+        "token_f1_mean": 1.0
+      }
+    },
+    "case_count": 7,
+    "exact_match_mean": 0.7142857142857143,
+    "exact_match_pass_count": 5,
+    "literal_exact_match_mean": 0.5714285714285714,
+    "literal_exact_match_pass_count": 4,
+    "token_f1_mean": 0.8571428571428571
+  },
+  "checked_at": "2026-08-15",
+  "checkpoint_manifest_fingerprint": "sha256:ddf41f2cff963bc2a8fc186c28369abba8a920b850152fc815e2b17c7d037876",
+  "evidence_boundary": "This control verifies and loads the reviewed immutable Qwen2.5-0.5B-Instruct snapshot on CPU in FP32 with trust_remote_code disabled, then performs greedy Transformers generation for seven fixed authored cases. It records raw decoded outputs, token identities, literal and normalized exact match, token F1, and deterministic slice aggregates. The suite is not externally preregistered, independently sampled, held out from prompt selection, representative of a language, domain, task distribution, safety policy, or user population, or statistically powered. It does not use a judge model, estimate uncertainty, compare systems, execute GPU, CUDA, vLLM, tools, RAG, training, or a performance benchmark, authenticate the publisher, establish licensing, quality, generalization, calibration, effective context, production safety, or eliminate verification-to-loader-reopen TOCTOU.",
+  "generation": {
+    "batch_size": 1,
+    "chat_template_applied": true,
+    "do_sample": false,
+    "framework": "transformers.GenerationMixin.generate",
+    "max_new_tokens": 12,
+    "skip_special_tokens": true,
+    "trust_remote_code": false,
+    "use_cache": true
+  },
+  "model": {
+    "class": "Qwen2ForCausalLM",
+    "eval_mode": true,
+    "model_type": "qwen2",
+    "parameter_dtypes": [
+      "torch.float32"
+    ],
+    "parameter_storage_bytes": 1976131072,
+    "total_parameters": 494032768,
+    "trainable_parameters": 0,
+    "verified_raw_config_semantic_fingerprint": "sha256:ee6f9831a4c4729cf094af9a76a53dfe1dde8e34a8251889f527d2179c7d918d"
+  },
+  "report_fingerprint": "sha256:dd30a278cbc076c973c0b0babc9e752b1063d8bfb114c852b34ea42b2cd85c43",
+  "report_version": "about-llm.target-qwen-behavior-evaluation-report.v1",
+  "results": [
+    {
+      "case_id": "zh-arithmetic",
+      "ended_with_eos": true,
+      "exact_match": 1.0,
+      "generated_token_count": 3,
+      "generated_token_ids": [
+        19,
+        17,
+        151645
+      ],
+      "hit_length_limit": false,
+      "literal_exact_match": 1.0,
+      "output": "42",
+      "output_sha256": "sha256:73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049",
+      "prompt_token_count": 46,
+      "prompt_token_ids_sha256": "sha256:a7fe49525a58c38c5ceccd93796eaa701136dd87741028753a9df2b1322b5e1e",
+      "slices": [
+        "zh",
+        "arithmetic"
+      ],
+      "token_f1": 1.0
+    },
+    {
+      "case_id": "en-arithmetic",
+      "ended_with_eos": true,
+      "exact_match": 0.0,
+      "generated_token_count": 4,
+      "generated_token_ids": [
+        16,
+        16,
+        17,
+        151645
+      ],
+      "hit_length_limit": false,
+      "literal_exact_match": 0.0,
+      "output": "112",
+      "output_sha256": "sha256:b1556dea32e9d0cdbfed038fd7787275775ea40939c146a64e205bcb349ad02f",
+      "prompt_token_count": 47,
+      "prompt_token_ids_sha256": "sha256:1fdbe590e2e66a954db0b6ce7b21b8d05ec85f5999814b17b8ab31ab214ced1a",
+      "slices": [
+        "en",
+        "arithmetic"
+      ],
+      "token_f1": 0.0
+    },
+    {
+      "case_id": "zh-factual",
+      "ended_with_eos": true,
+      "exact_match": 1.0,
+      "generated_token_count": 2,
+      "generated_token_ids": [
+        68990,
+        151645
+      ],
+      "hit_length_limit": false,
+      "literal_exact_match": 1.0,
+      "output": "北京",
+      "output_sha256": "sha256:68c77e155132565e1cbbace574552fedbb9e769c147d0e9e5ed64701f0cdf82d",
+      "prompt_token_count": 45,
+      "prompt_token_ids_sha256": "sha256:52f5f934d84a3172d00888392b617bffefa34b9852f0c558fe2b0f9b96c5bea3",
+      "slices": [
+        "zh",
+        "factual"
+      ],
+      "token_f1": 1.0
+    },
+    {
+      "case_id": "en-factual",
+      "ended_with_eos": true,
+      "exact_match": 1.0,
+      "generated_token_count": 2,
+      "generated_token_ids": [
+        59604,
+        151645
+      ],
+      "hit_length_limit": false,
+      "literal_exact_match": 1.0,
+      "output": "Paris",
+      "output_sha256": "sha256:5dd272b4f316b776a7b8e3d0894b37e1e42be3d5d3b204b8a5836cc50597a6b1",
+      "prompt_token_count": 47,
+      "prompt_token_ids_sha256": "sha256:96a40d6279256c3fcedacf75cd86bef39269df86ddf13e7a0f86f535c27752c3",
+      "slices": [
+        "en",
+        "factual"
+      ],
+      "token_f1": 1.0
+    },
+    {
+      "case_id": "zh-abstention",
+      "ended_with_eos": true,
+      "exact_match": 1.0,
+      "generated_token_count": 3,
+      "generated_token_ids": [
+        101068,
+        102104,
+        151645
+      ],
+      "hit_length_limit": false,
+      "literal_exact_match": 1.0,
+      "output": "无法回答",
+      "output_sha256": "sha256:8fbc3d0d993c1a599f459a7c221d5f7926c5db5bc8f559305c69d0558260c9e2",
+      "prompt_token_count": 55,
+      "prompt_token_ids_sha256": "sha256:5b0d29d9a6d54c24bf3e83baf34af9339a0a16b75912270aa484ebe5eb4c7b7e",
+      "slices": [
+        "zh",
+        "abstention"
+      ],
+      "token_f1": 1.0
+    },
+    {
+      "case_id": "zh-copy",
+      "ended_with_eos": true,
+      "exact_match": 1.0,
+      "generated_token_count": 8,
+      "generated_token_ids": [
+        654,
+        76,
+        12,
+        17,
+        15,
+        17,
+        21,
+        151645
+      ],
+      "hit_length_limit": false,
+      "literal_exact_match": 0.0,
+      "output": "llm-2026",
+      "output_sha256": "sha256:3c701d20c0dfe2ee897f6b8c04ed510933d2b205a3e5ceac90dd629f3f98a83d",
+      "prompt_token_count": 50,
+      "prompt_token_ids_sha256": "sha256:1ea04f2561ceacd9999e6dbd9cb925e5f03ab1042cc8778735c1e100cfe28090",
+      "slices": [
+        "zh",
+        "instruction"
+      ],
+      "token_f1": 1.0
+    },
+    {
+      "case_id": "zh-json",
+      "ended_with_eos": true,
+      "exact_match": 0.0,
+      "generated_token_count": 8,
+      "generated_token_ids": [
+        4913,
+        9217,
+        788,
+        220,
+        19,
+        17,
+        92,
+        151645
+      ],
+      "hit_length_limit": false,
+      "literal_exact_match": 0.0,
+      "output": "{\"answer\": 42}",
+      "output_sha256": "sha256:f85ee2859e7757b5bcf33d720ead3c508e04e0d997845cfab9bf5aebe6569086",
+      "prompt_token_count": 52,
+      "prompt_token_ids_sha256": "sha256:d5beb1bc4bbcb924a072155dc71977730dab9ccb4309ab429f3e7e45df85f93a",
+      "slices": [
+        "zh",
+        "structured"
+      ],
+      "token_f1": 1.0
+    }
+  ],
+  "runtime": {
+    "attention_implementation": "eager",
+    "cuda_executed": false,
+    "device": "cpu",
+    "dtype": "float32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python_implementation": "CPython",
+    "python_version": "3.12.10",
+    "torch_num_threads": 8,
+    "torch_version": "2.13.0+cpu",
+    "transformers_version": "4.57.6"
+  },
+  "scope": {
+    "all_authored_cases_generated": true,
+    "deterministic_metrics_and_slices_recomputed": true,
+    "externally_preregistered_or_held_out_suite": false,
+    "framework_generate_executed": true,
+    "gpu_cuda_or_vllm_executed": false,
+    "judge_model_or_human_raters_executed": false,
+    "license_compatibility_proven": false,
+    "performance_benchmark_performed": false,
+    "production_safety_proven": false,
+    "publisher_authenticated_by_signature": false,
+    "raw_outputs_recorded": true,
+    "representative_benchmark_or_quality_proven": false,
+    "statistical_uncertainty_estimated": false,
+    "system_comparison_or_release_gate_executed": false,
+    "target_checkpoint_weights_loaded": true,
+    "tools_rag_or_training_executed": false,
+    "verification_to_loader_reopen_toctou_eliminated": false
+  },
+  "source": {
+    "all_selected_file_bytes_verified_before_load": true,
+    "loader_input": "verified_local_snapshot_directory",
+    "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+    "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "selected_file_bytes": 999586347,
+    "selected_file_count": 7
+  },
+  "suite_fingerprint": "sha256:27ada9b1b16cebca8dd9135a5b875de11f412fc9a0f10c6acc462ff76b316201"
+}

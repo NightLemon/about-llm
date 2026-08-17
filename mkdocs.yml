@@ -1,14 +1,18 @@
 site_name: About LLM
 site_description: 从基础原理到生产实践的大语言模型中文学习手册
+site_url: https://nightlemon.github.io/about-llm/
 repo_name: about-llm
+repo_url: https://github.com/NightLemon/about-llm
+edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
 use_directory_urls: true
 
 theme:
-  name: material
-  language: zh
-  features:
+    name: material
+    custom_dir: overrides
+    language: zh
+    features:
     - navigation.tabs
     - navigation.sections
     - navigation.top
@@ -16,7 +20,7 @@ theme:
     - search.highlight
     - search.suggest
     - content.code.copy
-  palette:
+    palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: indigo
@@ -52,16 +56,13 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.tasklist:
       custom_checkbox: true
 
-extra_javascript:
-  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
-  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
-  - javascripts/mermaid.js
+extra_css:
+    - stylesheets/extra.css
 
 plugins:
   - search:
@@ -73,6 +74,7 @@ nav:
   - 首页: index.md
   - 使用指南:
       - 如何使用: guide/how-to-use.md
+      - 新手知识地图: guide/beginner-map.md
       - 学习路径: guide/learning-paths.md
       - 完整知识地图: guide/knowledge-map.md
       - 仓库地图与实现契约: guide/repo-map.md
@@ -93,7 +95,9 @@ nav:
   - 核心原理:
       - Tokenization: core/tokenization.md
       - Transformer: core/transformer.md
-      - 生成与解码: core/generation.md
+      - 生成与解码:
+          - 入门: core/generation-basics.md
+          - 完整协议与工程: core/generation.md
       - 规模化规律: core/scaling.md
       - 架构谱系与可解释性: core/architectures-interpretability.md
   - 数据与训练:
@@ -104,13 +108,15 @@ nav:
           - 总览: training/finetuning.md
           - SFT 数据、模板与闭环: training/sft-data-pipeline.md
           - LoRA、QLoRA 与单卡工程: training/peft-qlora-engineering.md
-      - 对齐与偏好优化: training/alignment.md
+      - 对齐与偏好优化:
+          - 入门: training/alignment-basics.md
+          - 方法、实验与证据: training/alignment.md
       - 持续学习与模型合并: training/continual-learning.md
       - JAX、Optax 与函数式训练: training/jax-optax.md
   - 推理与系统:
       - 推理:
-          - 推理基础: systems/inference.md
-          - 算子、KV Cache 与量化优化: systems/inference-optimization.md
+          - 推理基础（基础）: systems/inference.md
+          - 算子、KV Cache 与量化优化（进阶）: systems/inference-optimization.md
           - vLLM 与单卡服务: systems/vllm-serving.md
       - 高效与分布式训练: systems/distributed-training.md
       - 服务与可观测性: systems/serving.md
@@ -132,19 +138,39 @@ nav:
       - AI 产品设计与人机协作: applications/product-design.md
   - 质量与责任:
       - 评测:
-          - 总览: quality/evaluation.md
-          - 方法、统计与发布决策: quality/evaluation-methodology.md
+          - 总览（基础）: quality/evaluation.md
+          - 方法、统计与发布决策（进阶）: quality/evaluation-methodology.md
           - Agent 仿真与红队: quality/agent-evaluation.md
       - 安全、隐私与治理: quality/safety.md
+      - Opaque Reasoning 工件与轨迹安全: quality/reasoning-artifact-security.md
       - 法规与社会影响: quality/governance-impact.md
       - 治理工件模板: quality/governance-templates.md
   - 前沿:
       - 多模态: frontier/multimodal.md
       - 推理、长上下文与 MoE: frontier/reasoning-long-context-moe.md
       - 具身、计算机使用与小模型: frontier/embodied-small-models.md
+  - 论文解读:
+      - 板块说明: papers/index.md
+      - 2026 年 8 月: papers/2026-08.md
   - 实践:
-      - 实验与项目: practice/labs.md
-      - 工程项目索引: practice/project-index.md
+      - 实验与项目:
+          - 总览: practice/labs.md
+          - 0A 从 logits 到采样: practice/labs/lab-0a-sampling.md
+          - 0B 生成、停止与流式协议: practice/labs/lab-0b-generation-protocol.md
+          - 0C 云 API 预算与对账: practice/labs/lab-0c-cloud-budget.md
+          - 0D Opaque Reasoning 工件安全: practice/labs/lab-0d-reasoning-artifact-security.md
+      - 工程项目:
+          - 项目索引: practice/project-index.md
+          - RAG Foundations: practice/projects/rag-foundations.md
+          - RAG Framework Adapters: practice/projects/rag-framework-adapters.md
+          - Safe Agent: practice/projects/safe-agent.md
+          - Single-GPU Finetuning: practice/projects/single-gpu-finetuning.md
+          - Transformers Basics: practice/projects/transformers-basics.md
+          - JAX MiniGPT: practice/projects/jax-minigpt.md
+          - Cloud API Contracts: practice/projects/cloud-api-contracts.md
+          - Inference Serving: practice/projects/inference-serving.md
+          - Evaluation Gate: practice/projects/evaluation-gate.md
+          - Synthetic Data Audit: practice/projects/synthetic-data-audit.md
       - 生产检查表: practice/production-checklist.md
   - 求职:
       - 岗位路线: career/roadmap.md

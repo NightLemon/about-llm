@@ -1,5 +1,20 @@
 # LLM 推理优化：从算子到 KV Cache
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：推理性能、kernel、KV 和量化工程师。
+- **先修**：[推理基础](inference.md)、attention 复杂度和显存单位。
+- **首次阅读**：两阶段 → Roofline → attention/KV 容量 → KV 管理 → profiling。
+- **完成信号**：能先定位 compute、memory 或 scheduler 瓶颈，再选择优化。
+- **卡住时**：回到[硬件性能模型](hardware-edge.md)的单位与容量账本。
+
+</div>
+
+本页属于进阶性能分析。尚不能区分 prefill、decode、TTFT、TPOT 和 KV Cache 时，先完成[推理基础](inference.md)，再按实际瓶颈选择本页小节。
+
 LLM 推理不是一个统一工作负载。prefill 对整段 prompt 并行计算，通常更偏计算；decode 每步只产生一个 token、反复读取权重和 KV cache，通常更偏内存带宽。优化前先分阶段测量，否则“平均 tokens/s”会掩盖瓶颈。
 
 ## 两个阶段
@@ -22,6 +37,14 @@ LLM 推理不是一个统一工作负载。prefill 对整段 prompt 并行计算
 ## Attention 复杂度
 
 训练/朴素 prefill self-attention 的 score 矩阵随序列长度约为 \(O(L^2)\)，KV/投影计算另计。FlashAttention 通过分块和在线 softmax 减少 HBM 往返，不改变精确 attention 数学结果（浮点顺序会有微差），也没有把理论计算量普遍变成线性。
+
+仓库提供一个不依赖 CUDA 的可运行 recurrence oracle：
+
+~~~powershell
+python projects/transformers-basics/online_softmax_demo.py
+~~~
+
+固定 fixture 的 dense score 有 35 个元素，key block size 为 3 时最大 logical score tile 有 15 个元素，三个 block 的最终输出与 dense reference 在 float64 容差内一致。这里的 15 是按 shape 推导的单个逻辑 tile 上界，不是 Python RSS、allocator peak、HBM bytes 或 kernel workspace 实测；脚本还为了对照而单独运行了会物化 dense score/probability 的 reference。该结果不表示执行了 FlashAttention、CUDA、vLLM，也不能推出 latency 或 throughput。
 
 decode 使用 KV cache 后不再重算历史 K/V，每层每步 attention 对历史长度近似 \(O(L)\)。没有 KV cache 会重复前缀计算，成本巨大。
 
@@ -175,6 +198,21 @@ python projects/inference-serving/minigpt_checkpoint_toy.py `
 Loader 在构造 PyTorch model 前验证 artifact/manifest/parameter/tokenizer 数量、每个参数 byte、模型总参数量、canonical JSON、完整 name/shape/kind/order/offset/length/digest、architecture revision、tokenizer vocab 与 tied contract；随后把低位矩阵反量化为 FP32 参数并执行仓库 `MiniGPT.forward`。因此 artifact bytes 小于 FP32 参数 bytes **不等于 resident memory 更小或执行低位 kernel**。
 
 这里的“完整”严格限定为“可由本仓库固定 revision loader 恢复推理所需 config、Byte-BPE payload 和全部 MiniGPT 参数”。Forward 源码没有嵌入 artifact，格式也不支持 normalization、special token、chat template、optimizer、RNG、训练 resume、shard/device map、GGUF、safetensors、Transformers、vLLM 或任意 Llama/Qwen checkpoint。Architecture revision 是人工维护的兼容契约，不是源码证明；unkeyed SHA-256 仍不认证来源。文件写入的 crash/durability 边界与上面的 bundle 相同。
+
+#### 固定 Qwen 的真实单矩阵 INT4 control
+
+仓库进一步把同一 packed reference 用到已验证的 Qwen2.5-0.5B-Instruct 权重，但只量化第一层 `o_proj.weight`，不声称生成完整 checkpoint。矩阵 `[896,896]` 含 802,816 个参数；group size 128、码域 `[-7,7]` 时，3,211,264-byte FP32 weight 变成 401,408-byte codes + 25,088-byte FP32 scales，含 strict bundle framing 后是 427,328 bytes，即该 selected matrix 为 7.514752134192002×。
+
+~~~powershell
+python projects/transformers-basics/run_qwen_weight_quantization_control.py `
+  --local-files-only
+python projects/transformers-basics/run_qwen_weight_quantization_control.py `
+  --verify projects/transformers-basics/target-checkpoints/qwen2.5-0.5b-instruct.weight-int4.recorded-report.json
+~~~
+
+Control 捕获真实 `[1,31,896]` activation，重载 artifact 后执行 dequantized linear，并以仅替换这一个矩阵的模型再跑完整 forward。Weight/selected-output/last-logits relative-L2 分别为 0.1323337087/0.0700015308/0.0851380718；last-logits max-abs 是 1.6255179644，尽管这个 prompt 的 argmax 仍为 17。Argmax 单点相同不能覆盖其余 151,935 个 logits，更不能推断另一 prompt、autoregressive rollout 或任务质量。
+
+该实验的关键分账是：427,328-byte **selected-weight artifact** 不等于整模型文件，artifact compression 不等于 resident/peak memory，反量化 FP32 matmul 不等于 INT4 kernel，单 prompt logits 不等于 quality gate。其余模型权重仍为 FP32；没有 NF4/GPTQ/AWQ/SmoothQuant、校准集、完整量化 loader、generation、GPU/CUDA/vLLM 或性能测量。
 
 ### Activation/KV
 

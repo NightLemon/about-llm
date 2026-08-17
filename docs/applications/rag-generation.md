@@ -1,5 +1,18 @@
 # RAG 上下文构造、引用与忠实度
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：RAG 上下文、生成、引用和忠实度工程师。
+- **先修**：[RAG 检索](rag-retrieval.md)输出结构与[生成](../core/generation.md)基础。
+- **首次阅读**：上下文协议 → 注入边界 → packing → 引用 → 拒答与忠实度。
+- **完成信号**：能生成授权上下文，并逐 claim 验证 source span 与引用。
+- **卡住时**：回到[RAG 总览](rag.md)，先分开检索、答案和引用三个指标。
+
+</div>
+
 检索结果不是答案。生成阶段要把授权证据压入有限上下文，告诉模型如何区分指令与资料，产出可解析引用，并在证据不足时拒绝猜测。本章关注“模型看到什么”和“我们能证明什么”。
 
 ## 上下文是一种协议
@@ -114,6 +127,21 @@ python -m about_llm.rag.cli pack-tokenized `
 
 复杂问题可先生成 answer plan：列出子问题和所需来源，再逐项回答。计划必须受最大步骤和 token 预算限制，失败时返回部分结果与缺口。
 
+### 把生成与发布拆成两个权限边界
+
+模型输出不是默认可发布的答案。一个最小 fail-closed policy 应显式区分 stage 与 action：
+
+1. 授权后的 `CitationContext.sources` 为空：在 `pre_generation` 返回 `abstain`，不调用模型；
+2. context 非空：只允许一次 generation，原样记录 raw output；
+3. raw output 的本地引用语法通过：在 `post_generation` 返回 `publish`；
+4. 漏引、未知短 ID 或有事实段落漏引：在 `post_generation` 返回 `reject`，raw output 只留在受限审计面，用户面返回固定拒绝文案。
+
+仓库的 `guard_rag_generation` 实现了这条局部边界。generator 抛异常或返回非字符串/超限文本时会失败，不会合成一个 `publish` decision；服务层还应把 timeout、取消和用量未知分别映射为 typed error，并保留 all-attempt 分母。最终授权应读取 `action`，不能靠比较答案字符串猜状态，因为模型 raw output 可能恰好等于固定拒绝文案。
+
+不要直接把整个 decision 序列化给客户端。`to_dict()` 是审计投影，故意保留被拒绝的 raw output、unknown IDs 和 uncited paragraph；`to_public_dict()` 才是 allowlist 用户投影，只发布 `response_text` 与 typed decision 元数据，并显式声明 `raw_output_included=false`、`audit_findings_included=false`。这只能降低误序列化泄露风险；审计库、trace、异常和 APM 仍需独立访问控制与脱敏。
+
+这仍不是语义忠实度 gate。当前 `publish` 只表示引用短 ID 合法且需要引用的段落都有 citation，所有 decision 都明确保存 `semantic_entailment_verified=false`；claim 是否被 evidence 支持仍需独立 judge/人工集。固定 Qwen attempt-1 的 publication-policy report 是反事实回放：answerable raw output 漏引，所以调用 1 次后 reject；empty-evidence case 在生成前 abstain，所以回放中的 generator call count 为 0。report `sha256:ed4d16ad…b13239` 不表示录制 Qwen 时 guard 已真实运行，也不证明节省了真实调用、总体安全或生产接入。
+
 ## 引用语法
 
 一个实用规则是每个外部可验证段落至少一个 `[S1]`，多个来源写 `[S1][S3]`。引用应紧跟 claim，而不是文末堆一串。代码、纯建议或明确标记为推断的内容可有不同策略，但规则必须在评测中显式。
@@ -131,6 +159,12 @@ python -m about_llm.rag.cli pack-tokenized `
 - completeness：是否遗漏相反或必要证据。
 
 前两项可较可靠地程序化；correctness 需要 claim segmentation 加 entailment judge 或人工标注。judge 输入只包含一个 claim 与对应 evidence，允许 `supported / contradicted / insufficient`，并在人工集上校准。
+
+### 把 source ID 再绑定到 exact evidence span
+
+只保存 `claim → S1` 仍不足以重放：同一文档可能很长、版本会变化，reviewer 也不知道模型指的是哪句话。通用 Evaluation Gate 的 opt-in `citation_evidence_span` 要求 strict JSON `claims[]`；每个 evidence 保存 `source_id`、零基/end-exclusive Python string `start_char/end_char` 与 `quote`。`about-llm.citation-evidence-span-metric.v1` 只在 ID 位于 supplied `citation_sources` 且 `source_text[start:end] == quote` 时通过，并拒绝 duplicate key、未知字段/来源、空 claim/evidence、重复 span、bool/越界 offset。
+
+这是一层 provenance/identity control，不是 entailment judge。仓库固定反例把“The moon is cheese.”绑定到 `Earth is round.` 的 exact `Earth`，指标仍为 1；因此不能把 span pass 写成 groundedness。生产 artifact 还应绑定 corpus snapshot/chunk version/content hash、tenant/principal/policy revision，并把 atomic claim 的 `supported/contradicted/insufficient` judgment、judgment source、人工校准误差和最终 publish/reject 决策分开记录。
 
 ## Claim 分解
 
@@ -184,6 +218,8 @@ API 场景推荐结构化输出：
 ~~~
 
 用 JSON Schema 校验字段、枚举和额外属性；失败可有限次数 repair，但 repair 模型不能新增上下文外来源。UI 渲染前仍需 HTML/Markdown 安全处理。
+
+评测时再拆四层：strict JSON syntax、schema、expected parsed value、RAG domain semantics。Strict syntax 应拒绝 duplicate object key 与 `NaN/Infinity`；schema-valid 仍可能把 `answer` 从 42 写成 43；object key order/whitespace 可以不重要，但 claim/source array order 是否重要要由协议决定。即使 value exact，仍要独立验证每个 `source_id` 在授权 context 中、claim 被相应 span 支持、`insufficient_evidence` 与证据状态一致。通用 Evaluation Gate 的 `json_schema` v2 / `json_value_exact` v1 可做前两类确定性门禁，但不替代 citation entailment、ACL 或拒答判断。
 
 ## 评测设计
 
@@ -242,6 +278,25 @@ python -m about_llm.rag.cli audit-traces `
 ~~~
 
 审计从**当前** corpus 重建 chunk 和 ACL，所以能发现 query/security context、chunk id/version/bytes、source order、rendered context 或 answer fingerprint 不一致；它不能证明历史时刻也能取回相同 corpus。prompt fields 与 raw output 被纳入 trace fingerprint，但该命令不重新 tokenize、不向可信 registry 核验 revision，也不做 raw-output→claim 的解析或语义蕴含。fixture 是手写协议样例，不是模型执行证据；unsigned hash 若没有外部可信 manifest/签名，也不能阻止攻击者协同重写所有文件。
+
+### 真实权重 control：失败也是证据 { #real-weight-rag-control }
+
+仓库另有一条与 authored trace 分开的真实模型路径：固定 Qwen2.5-0.5B-Instruct revision `7ae5576…9a775` 的 7 个文件（999,586,347 bytes），加载前重哈希，在 CPU FP32 eager 下执行 authorization-first BM25、目标 tokenizer 完整 prompt packing、逐 token greedy logits/KV cache 和 `generate()` 对照。运行入口与离线录制报告如下：
+
+~~~powershell
+python projects/rag-foundations/run_qwen_rag_control.py --local-files-only
+python -m pytest tests/test_rag_transformers_control.py -q
+~~~
+
+attempt-1 没有为了得到漂亮答案而调 prompt 或 repair output。answerable case 的 209-token prompt 检索到两条授权证据；模型复述了核心事实并以 EOS 结束，却漏掉 `[S1]`，citation syntax gate 失败。no-answer case 在 tenant/ACL 过滤后没有任何检索结果和 context；模型仍编造 Kubernetes 灾难恢复步骤，64 token 后因 generation cap 停止，exact abstention gate 失败。录制报告 fingerprint 为 `sha256:829663e2…e5b60`，行为门禁为 **0/2**。
+
+由此可得的结论很窄但很重要：ACL-before-ranking 和 zero retrieval 可以成立，最终答案仍可能失败；低温/greedy 与清晰拒答指令也不保证 groundedness；“内容碰巧正确”不能替代 citation contract。closed-schema verifier 能重算 corpus context、packing/token 账本、raw output、citation/exact-abstention 判断及 case/report fingerprint，但引用语法仍不等于语义蕴含。无密钥 hash 不认证录制者，verify→loader reopen 没有消除 TOCTOU，两条 authored case 也不是总体质量、许可、GPU/vLLM、延迟或生产安全证据。
+
+### 从反事实到真实 guarded runtime
+
+`run_qwen_guarded_rag_control.py` 用不同于 attempt-1 的 case/query，让 `guard_rag_generation` 真实包住 Qwen 的 callback。2026-08-13 的 CPU FP32 录制中，有证据 case 的 callback 与 `GenerationMixin.generate` API invocation 都是 1；208-token prompt 生成“无权文档不得进行排序”，但因为漏引而被 `post_generation/reject`。空证据 case 的授权 retrieval/context 为空，callback 与 framework generate invocation 都是 0，直接得到 `pre_generation/abstain`。manifest 为 `sha256:9ead4c06…40778a`，report 为 `sha256:00706d00…f29ede`，publish=0，public projection 不含 rejected raw output。
+
+这个计数边界必须准确表述：它观察的是 `GenerationMixin.generate()` 方法是否进入，不是内部 `forward()`/kernel 次数，也不是远端 provider 请求、取消或计费。两个新 query 仍与旧 control 共用 authored corpus/checkpoint，不是独立代表性质量集。离线 verifier 会重建 BM25、context、packing 关系、policy/public projection 与计数，但不会重放生成、token IDs 或 decode；因此它能发现账本漂移，不能独立复现模型行为，更不能证明语义蕴含、GPU/vLLM、性能或生产集成。
 
 建立以下对抗集：
 

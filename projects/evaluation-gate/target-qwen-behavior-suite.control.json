@@ -1,0 +1,79 @@
+{
+  "cases": [
+    {
+      "case_id": "zh-arithmetic",
+      "expected": "42",
+      "input": "只输出整数：17 + 25 =",
+      "slices": [
+        "zh",
+        "arithmetic"
+      ]
+    },
+    {
+      "case_id": "en-arithmetic",
+      "expected": "42",
+      "input": "Output only the integer: 19 + 23 =",
+      "slices": [
+        "en",
+        "arithmetic"
+      ]
+    },
+    {
+      "case_id": "zh-factual",
+      "expected": "北京",
+      "input": "只输出城市中文名：中国的首都是哪里？",
+      "slices": [
+        "zh",
+        "factual"
+      ]
+    },
+    {
+      "case_id": "en-factual",
+      "expected": "Paris",
+      "input": "Output only the city name: What is the capital of France?",
+      "slices": [
+        "en",
+        "factual"
+      ]
+    },
+    {
+      "case_id": "zh-abstention",
+      "expected": "无法回答",
+      "input": "只根据证据回答。证据为空。问题：项目的上线日期是什么？只输出“无法回答”。",
+      "slices": [
+        "zh",
+        "abstention"
+      ]
+    },
+    {
+      "case_id": "zh-copy",
+      "expected": "LLM-2026",
+      "input": "只输出以下字符串并保持大小写：LLM-2026",
+      "slices": [
+        "zh",
+        "instruction"
+      ]
+    },
+    {
+      "case_id": "zh-json",
+      "expected": "{\"answer\":42}",
+      "input": "只输出合法 JSON，不要 Markdown：键 answer 的整数值为 42。",
+      "slices": [
+        "zh",
+        "structured"
+      ]
+    }
+  ],
+  "checked_at": "2026-08-15",
+  "checkpoint_manifest_fingerprint": "sha256:ddf41f2cff963bc2a8fc186c28369abba8a920b850152fc815e2b17c7d037876",
+  "control_version": "about-llm.target-qwen-behavior-evaluation-control.v1",
+  "evidence_boundary": "This control verifies and loads the reviewed immutable Qwen2.5-0.5B-Instruct snapshot on CPU in FP32 with trust_remote_code disabled, then performs greedy Transformers generation for seven fixed authored cases. It records raw decoded outputs, token identities, literal and normalized exact match, token F1, and deterministic slice aggregates. The suite is not externally preregistered, independently sampled, held out from prompt selection, representative of a language, domain, task distribution, safety policy, or user population, or statistically powered. It does not use a judge model, estimate uncertainty, compare systems, execute GPU, CUDA, vLLM, tools, RAG, training, or a performance benchmark, authenticate the publisher, establish licensing, quality, generalization, calibration, effective context, production safety, or eliminate verification-to-loader-reopen TOCTOU.",
+  "max_new_tokens": 12,
+  "metric_revisions": {
+    "exact_match": "about-llm.normalized-exact-match.v1",
+    "literal_exact_match": "about-llm.literal-exact-match.v1",
+    "token_f1": "about-llm.token-f1.v1"
+  },
+  "suite_id": "about-llm.qwen2.5-0.5b-authored-behavior.v1",
+  "system_prompt": "严格遵守用户要求，只输出所请求的最终答案；不要解释，不要添加前后缀。"
+}

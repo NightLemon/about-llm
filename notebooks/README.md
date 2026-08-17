@@ -5,16 +5,29 @@ Notebook 用于观察现象，不承载唯一实现。核心逻辑位于 src/abo
 执行约定：
 
 - 从仓库根目录启动 Jupyter。
-- 先安装 README 中对应依赖组。
+- 安装 Notebook profile：`python -m pip install -c constraints/ci.txt -e ".[dev,torch,jax]"`。
+- 先运行 `python scripts/doctor.py --profile notebooks`。
 - 每本必须能 Restart & Run All。
 - 默认不访问网络、不下载模型、不使用付费 API。
 - 输出只展示小型结果，不提交大型二进制或模型权重。
 
-当前顺序：
+## 逐本要求与成功特征
 
-1. 01_attention_three_ways.ipynb：NumPy、PyTorch、JAX 的缩放点积注意力与因果 mask。
-2. 02_minigpt_forward.ipynb：字节 tokenizer、PyTorch/JAX 微型 GPT、loss 与因果性。
-3. 03_rag_retrieval_and_evaluation.ipynb：BM25、dense、RRF、ACL 与检索指标。
+| Notebook | 直接依赖 | 当前 Windows CPU 参考时间 | 成功特征 |
+|---|---|---:|---|
+| `01_attention_three_ways.ipynb` | NumPy、PyTorch、JAX、about_llm | 约 17 秒 | PyTorch/JAX 输出与 NumPy 容差一致；causal future probability 为 0 |
+| `02_minigpt_forward.ipynb` | PyTorch、JAX、about_llm | 约 18 秒 | byte round-trip 与两种 logits shape 断言通过；未来 token 不改变过去 logits |
+| `03_rag_retrieval_and_evaluation.ipynb` | NumPy、about_llm | 约 5 秒 | 融合结果只含目标 tenant；Recall@2 与 MRR@2 都为 1.0 |
+
+时间是 2026-08-11 在 Windows 11、Python 3.12.10、无 CUDA 的当前仓库环境实测，不是性能承诺；首次 JAX/PyTorch 导入、CPU 和杀毒软件都会改变耗时。逐本执行：
+
+~~~powershell
+python scripts/execute_notebooks.py --pattern "notebooks/01_attention_three_ways.ipynb"
+python scripts/execute_notebooks.py --pattern "notebooks/02_minigpt_forward.ipynb"
+python scripts/execute_notebooks.py --pattern "notebooks/03_rag_retrieval_and_evaluation.ipynb"
+~~~
+
+全量执行使用 `python scripts/execute_notebooks.py`，每本默认超时 180 秒。Windows 上 pyzmq 可能打印 Proactor selector thread 或本机未加密 TCP kernel 警告；本地受信机器上的这类警告不等于单元执行失败，但共享主机或远程 kernel 必须使用受保护的连接配置。
 
 ## 覆盖边界与下一步
 

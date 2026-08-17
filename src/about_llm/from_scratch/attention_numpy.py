@@ -2,12 +2,30 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 FloatArray = NDArray[np.floating]
+
+
+@dataclass(frozen=True)
+class OnlineAttentionResult:
+    """Output and bounded diagnostics from the online-softmax oracle.
+
+    ``logical_peak_score_elements`` counts one largest logical score tile, not
+    the Python process's measured peak memory. The implementation is a NumPy
+    algebra oracle and makes no claim about a fused GPU kernel or HBM traffic.
+    """
+
+    output: FloatArray
+    running_row_max: FloatArray
+    row_normalizer: FloatArray
+    key_block_count: int
+    logical_peak_score_elements: int
+    full_score_elements: int
 
 
 def rms_norm(
@@ -203,6 +221,157 @@ def scaled_dot_product_attention(
 
     probabilities = softmax(scores, axis=-1)
     return np.matmul(probabilities, value), probabilities
+
+
+def blockwise_online_attention(
+    query: FloatArray,
+    key: FloatArray,
+    value: FloatArray,
+    *,
+    block_size: int,
+    mask: NDArray[np.bool_] | None = None,
+) -> OnlineAttentionResult:
+    """Compute exact dense attention with blockwise online softmax.
+
+    Expected shapes are ``(..., query_length, head_dim)`` for query,
+    ``(..., key_length, head_dim)`` for key, and
+    ``(..., key_length, value_dim)`` for value. Leading dimensions broadcast.
+    The recurrence accumulates in float64 and never constructs the complete
+    score or probability matrix. Real-arithmetic results match ordinary dense
+    attention; floating-point reduction order can cause small differences.
+    """
+
+    if isinstance(block_size, bool) or not isinstance(block_size, int):
+        raise ValueError("block_size must be a positive integer")
+    if block_size <= 0:
+        raise ValueError("block_size must be a positive integer")
+    tensors = (("query", query), ("key", key), ("value", value))
+    for name, tensor in tensors:
+        if not isinstance(tensor, np.ndarray) or tensor.ndim < 2:
+            raise ValueError(f"{name} must be a NumPy array with at least two dimensions")
+        if not np.issubdtype(tensor.dtype, np.floating):
+            raise ValueError(f"{name} must have a floating dtype")
+        if not np.all(np.isfinite(tensor)):
+            raise ValueError(f"{name} must contain only finite values")
+
+    query_length, head_dim = query.shape[-2:]
+    key_length, key_dim = key.shape[-2:]
+    value_length, value_dim = value.shape[-2:]
+    if query_length <= 0 or key_length <= 0 or head_dim <= 0 or value_dim <= 0:
+        raise ValueError("attention sequence and feature dimensions must be non-empty")
+    if head_dim != key_dim:
+        raise ValueError("query and key head dimensions must match")
+    if key_length != value_length:
+        raise ValueError("key and value sequence lengths must match")
+
+    try:
+        leading_shape = np.broadcast_shapes(
+            query.shape[:-2], key.shape[:-2], value.shape[:-2]
+        )
+    except ValueError as error:
+        raise ValueError("query, key and value leading dimensions cannot broadcast") from error
+
+    score_shape = (*leading_shape, query_length, key_length)
+    mask_view: NDArray[np.bool_] | None = None
+    if mask is not None:
+        if not isinstance(mask, np.ndarray) or not np.issubdtype(mask.dtype, np.bool_):
+            raise ValueError("mask must be a NumPy boolean array")
+        try:
+            mask_view = np.broadcast_to(mask, score_shape)
+        except ValueError as error:
+            raise ValueError(
+                f"mask shape {mask.shape} cannot broadcast to scores shape {score_shape}"
+            ) from error
+
+    query64 = np.broadcast_to(
+        query, (*leading_shape, query_length, head_dim)
+    ).astype(np.float64, copy=False)
+    key64 = np.broadcast_to(key, (*leading_shape, key_length, head_dim)).astype(
+        np.float64, copy=False
+    )
+    value64 = np.broadcast_to(
+        value, (*leading_shape, key_length, value_dim)
+    ).astype(np.float64, copy=False)
+
+    row_shape = (*leading_shape, query_length)
+    running_max = np.full(row_shape, -np.inf, dtype=np.float64)
+    running_normalizer = np.zeros(row_shape, dtype=np.float64)
+    running_numerator = np.zeros((*row_shape, value_dim), dtype=np.float64)
+    scale = float(head_dim) ** -0.5
+
+    for start in range(0, key_length, block_size):
+        stop = min(start + block_size, key_length)
+        key_block = key64[..., start:stop, :]
+        value_block = value64[..., start:stop, :]
+        with np.errstate(over="ignore", invalid="ignore"):
+            scores = np.matmul(query64, np.swapaxes(key_block, -1, -2)) * scale
+        if not np.all(np.isfinite(scores)):
+            raise ValueError("finite inputs produced non-finite attention scores")
+        if mask_view is not None:
+            scores = np.where(mask_view[..., start:stop], scores, -np.inf)
+
+        block_max = np.max(scores, axis=-1)
+        updated_max = np.maximum(running_max, block_max)
+
+        previous_scale = np.zeros_like(running_max)
+        previous_delta = np.zeros_like(running_max)
+        previous_visible = np.isfinite(running_max)
+        np.subtract(
+            running_max,
+            updated_max,
+            out=previous_delta,
+            where=previous_visible,
+        )
+        with np.errstate(under="ignore"):
+            np.exp(
+                previous_delta,
+                out=previous_scale,
+                where=previous_visible,
+            )
+
+        shifted_scores = np.full_like(scores, -np.inf)
+        updated_visible = np.isfinite(updated_max)
+        np.subtract(
+            scores,
+            updated_max[..., None],
+            out=shifted_scores,
+            where=updated_visible[..., None],
+        )
+        with np.errstate(under="ignore"):
+            block_weights = np.exp(shifted_scores)
+        with np.errstate(over="ignore", invalid="ignore"):
+            running_numerator = (
+                previous_scale[..., None] * running_numerator
+                + np.matmul(block_weights, value_block)
+            )
+            running_normalizer = (
+                previous_scale * running_normalizer
+                + np.sum(block_weights, axis=-1)
+            )
+        running_max = updated_max
+
+    if np.any(running_normalizer == 0):
+        raise ValueError("every query row must have at least one visible key")
+    if not (
+        np.all(np.isfinite(running_max))
+        and np.all(np.isfinite(running_normalizer))
+        and np.all(np.isfinite(running_numerator))
+    ):
+        raise ValueError("online attention accumulation became non-finite")
+
+    output64 = running_numerator / running_normalizer[..., None]
+    output_dtype = np.result_type(query.dtype, key.dtype, value.dtype)
+    output = cast(FloatArray, output64.astype(output_dtype, copy=False))
+    attention_lanes = int(np.prod(leading_shape, dtype=np.int64)) if leading_shape else 1
+    largest_block = min(block_size, key_length)
+    return OnlineAttentionResult(
+        output=output,
+        running_row_max=cast(FloatArray, running_max),
+        row_normalizer=cast(FloatArray, running_normalizer),
+        key_block_count=(key_length + block_size - 1) // block_size,
+        logical_peak_score_elements=attention_lanes * query_length * largest_block,
+        full_score_elements=attention_lanes * query_length * key_length,
+    )
 
 
 def _rotate_interleaved(

@@ -8,6 +8,8 @@ import pytest
 from about_llm.finetuning.data import (
     ChatMessage,
     DataSplit,
+    FunctionToolCall,
+    FunctionToolDefinition,
     MessageRole,
     SFTRecord,
     validate_training_subset,
@@ -77,6 +79,47 @@ def _governance(records: tuple[SFTRecord, ...]):
         records,
         policy=policy,
         evaluated_at=datetime(2026, 8, 6, 12, tzinfo=timezone.utc),
+    )
+
+
+def _tool_record(
+    record_id: str,
+    split: DataSplit,
+    *,
+    city: str,
+    description: str = "Get weather.",
+) -> SFTRecord:
+    return SFTRecord(
+        record_id,
+        (
+            ChatMessage(MessageRole.USER, "weather"),
+            ChatMessage(
+                MessageRole.ASSISTANT,
+                "",
+                tool_calls=(FunctionToolCall("call-1", "weather", {"city": city}),),
+            ),
+            ChatMessage(
+                MessageRole.TOOL,
+                "sunny",
+                tool_call_id="call-1",
+                name="weather",
+            ),
+            ChatMessage(MessageRole.ASSISTANT, "done"),
+        ),
+        "unit-test",
+        "test-only",
+        "near-duplicate",
+        "en",
+        "normal",
+        f"group-{record_id}",
+        split,
+        tools=(
+            FunctionToolDefinition(
+                "weather",
+                description,
+                {"type": "object", "properties": {"city": {"type": "string"}}},
+            ),
+        ),
     )
 
 
@@ -185,6 +228,45 @@ def test_multiple_views_are_independent_comparisons() -> None:
     assert [finding.view for finding in report.findings] == [
         NearDuplicateView.USER_CONTENT
     ]
+
+
+def test_assistant_view_identity_includes_serialized_tool_calls() -> None:
+    records = (
+        _tool_record("train", DataSplit.TRAIN, city="Hangzhou"),
+        _tool_record("test", DataSplit.TEST, city="Shanghai"),
+    )
+
+    report = audit_sft_near_duplicates(
+        records,
+        profile=NearDuplicateProfile.NFC_WHITESPACE,
+        ngram_size=3,
+        threshold=1,
+        views=(NearDuplicateView.ASSISTANT_CONTENT,),
+    )
+
+    # The visible assistant content is identical; only tool-call arguments differ.
+    assert report.gate_passed
+    assert report.findings == ()
+
+
+def test_full_conversation_identity_includes_tool_schemas() -> None:
+    records = (
+        _tool_record("train", DataSplit.TRAIN, city="Hangzhou"),
+        _tool_record(
+            "test", DataSplit.TEST, city="Hangzhou", description="Weather lookup v2."
+        ),
+    )
+
+    report = audit_sft_near_duplicates(
+        records,
+        profile=NearDuplicateProfile.NFC_WHITESPACE,
+        ngram_size=3,
+        threshold=1,
+        views=(NearDuplicateView.FULL_CONVERSATION,),
+    )
+
+    assert report.gate_passed
+    assert report.findings == ()
 
 
 def test_aggressive_profile_can_merge_width_and_case_variants() -> None:

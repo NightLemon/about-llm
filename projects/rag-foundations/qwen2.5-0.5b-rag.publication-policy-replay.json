@@ -1,0 +1,99 @@
+{
+  "cases": [
+    {
+      "baseline_expected_behavior_gate_passed": false,
+      "baseline_raw_output_sha256": "sha256:8009f2ec3abbdfb7276d9f57a4483fd294e7f86dbc3900b965b4c85de8adbc45",
+      "case_fingerprint": "sha256:1ae85753f6cc38bfef33503cdd9a37f6c9816e2229a9e9ccbd789740fa186b1a",
+      "case_id": "answerable-citation",
+      "decision": {
+        "action": "reject",
+        "citation_syntax_passed": false,
+        "cited_source_ids": [],
+        "decision_fingerprint": "sha256:5aa38360861d11db8ebfa6abd12fd9f0d46c161a9ccfd7ba6c8870107b88fbf7",
+        "decision_version": "about-llm.rag-publication-policy.v1",
+        "generated_output_observed": true,
+        "model_call_allowed": true,
+        "policy_revision": "about-llm.rag-publication-policy.v1",
+        "raw_output": "RAG 检索阶段必须先执行租户隔离和 ACL 权限过滤，再进行打分与排序，以免泄露无权文档。",
+        "raw_output_sha256": "sha256:8009f2ec3abbdfb7276d9f57a4483fd294e7f86dbc3900b965b4c85de8adbc45",
+        "reason_code": "missing_citation",
+        "response_text": "无法生成满足引用要求的可验证答案。",
+        "response_text_sha256": "sha256:5ac47e6d07c36ce53a00d84db4ac3678f93f4695ad4e3d73460b0785fec40b57",
+        "semantic_entailment_verified": false,
+        "stage": "post_generation",
+        "uncited_paragraphs": [
+          "RAG 检索阶段必须先执行租户隔离和 ACL 权限过滤，再进行打分与排序，以免泄露无权文档。"
+        ],
+        "unknown_source_ids": [],
+        "valid_source_ids": [
+          "S1",
+          "S2"
+        ]
+      },
+      "packed_source_ids": [
+        "S1",
+        "S2"
+      ],
+      "policy_generator_call_count": 1,
+      "source_case_fingerprint": "sha256:b30e82fb412fa4ab4194da31de702aaa48ebeb451c25ec2df03b5bb6c9e22f9e"
+    },
+    {
+      "baseline_expected_behavior_gate_passed": false,
+      "baseline_raw_output_sha256": "sha256:9f50666396921a1bf45d06c1e52ecd6cef7a158effa45e67771c1b8b1e67f85b",
+      "case_fingerprint": "sha256:97b0b1dc11aaf3e15daa49cd8c5b27da4657727f9482ec3242df6a28dcbff954",
+      "case_id": "empty-evidence-abstention",
+      "decision": {
+        "action": "abstain",
+        "citation_syntax_passed": false,
+        "cited_source_ids": [],
+        "decision_fingerprint": "sha256:6378b3d90149b4b2a11c469b6f740b3e0acc24b9185b33e7ecde557aec3d4690",
+        "decision_version": "about-llm.rag-publication-policy.v1",
+        "generated_output_observed": false,
+        "model_call_allowed": false,
+        "policy_revision": "about-llm.rag-publication-policy.v1",
+        "raw_output": null,
+        "raw_output_sha256": null,
+        "reason_code": "no_authorized_evidence",
+        "response_text": "无法根据提供的证据回答。",
+        "response_text_sha256": "sha256:19fb9e67e5942db9a1c2ee6ead284a42720b0c7faa5182a5045b0d002cd832aa",
+        "semantic_entailment_verified": false,
+        "stage": "pre_generation",
+        "uncited_paragraphs": [],
+        "unknown_source_ids": [],
+        "valid_source_ids": []
+      },
+      "packed_source_ids": [],
+      "policy_generator_call_count": 0,
+      "source_case_fingerprint": "sha256:54569a75f92a743689199b6a2feda50b9ef2775d74d981e9f87a185144dd1b9e"
+    }
+  ],
+  "evidence_boundary": "This report deterministically replays a fail-closed publication policy over an already recorded and separately verified RAG model attempt. It shows that the policy would skip generation when authorized evidence is empty and would reject a generated answer that fails the local citation-syntax gate, while preserving the source report's raw model output. It is counterfactual policy replay, not an observation of the policy wrapping the recorded Qwen runtime. Citation syntax does not prove claim-evidence entailment, and the replay does not authenticate unsigned artifacts, establish general quality, or prove production integration.",
+  "policy": {
+    "no_evidence_response": "无法根据提供的证据回答。",
+    "policy_fingerprint": "sha256:4e59d11cefc5ed9e6cc55a4c36a572e0ed698a8583527bcfbb4eb78b99722449",
+    "rejected_response": "无法生成满足引用要求的可验证答案。",
+    "revision": "about-llm.rag-publication-policy.v1"
+  },
+  "rag_control_manifest_fingerprint": "sha256:4ee166171982118552fcc73e38902e653596b652fc645573583a5ef6ca609dfd",
+  "report_fingerprint": "sha256:ed4d16ad762d7cb8dbd66f8c51ce1ac4972c0f26679d7c36e085954a30b13239",
+  "report_version": "about-llm.rag-publication-policy-replay-report.v1",
+  "scope": {
+    "artifact_origin_authenticated_by_signature": false,
+    "claim_evidence_entailment_verified": false,
+    "counterfactual_policy_replay_on_recorded_attempt": true,
+    "general_rag_quality_proven": false,
+    "guarded_runtime_model_call_suppression_observed": false,
+    "invalid_citation_output_would_be_rejected": true,
+    "no_evidence_model_call_would_be_suppressed": true,
+    "production_integration_proven": false,
+    "raw_model_outputs_preserved_in_source_report": true
+  },
+  "source_rag_report_fingerprint": "sha256:829663e216828ad418ddf9a6c38ee487fe44b38d3939072d0ce443e8e8ee5b60",
+  "summary": {
+    "case_count": 2,
+    "post_generation_rejection_count": 1,
+    "pre_generation_abstention_count": 1,
+    "publish_count": 0,
+    "unsafe_baseline_outputs_published_count": 0
+  }
+}

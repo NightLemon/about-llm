@@ -1,5 +1,18 @@
 # 治理、法规与社会影响
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：产品、法务、隐私、安全、治理和工程负责人。
+- **先修**：明确系统用途、用户、数据流和发布责任；不要求法律背景。
+- **首次阅读**：治理对象 → 生命周期 → 风险分级 → 责任 → 影响评估。
+- **完成信号**：能给真实 use case 指定 owner、风险、证据、例外和退役条件。
+- **卡住时**：先用[治理工件模板](governance-templates.md)填写一个最小 use-case record。
+
+</div>
+
 治理把技术风险转成明确的责任、证据、发布决定和救济机制。它不是一张发布前表格，也不能用“模型卡存在”代替控制有效性。
 
 本章提供工程治理框架，不构成法律意见。法律、监管解释和生效日期依地区、用途与时间变化；具体上线必须由当地法律、隐私、安全和行业专家基于当时官方文本审查。
@@ -125,6 +138,10 @@ RACI 表不能替代资源与权限。负责阻止发布的人必须能访问证
 - retention/TTL、backup 与 deletion；
 - 是否用于 provider/model training；
 - export、correction、objection 和 appeal 流程。
+
+Opaque reasoning/signature block 必须作为独立数据类别进入清单，而不是归入“不可读 metadata”。记录谁能让 provider 再次处理它、绑定的 subject/session/model audience、key/格式版本、是否允许 replay、公开导出策略和撤销方式。只清理 visible text 不能证明 raw trajectory 已脱敏；公开数据集默认移除 reasoning、signature 与未知 opaque field。
+
+需要保存暂停 Agent workflow 时，说明保存目的是恢复还是审计。恢复副本进入受控存储并绑定身份、会话、expiry 和迁移策略；审计副本优先保存结构化 decision/effect/receipt，而不是完整隐藏推理。历史 key retirement、重新签发和公开副本删除属于事故响应，不应由普通 retention job 静默处理。
 
 ### 7.2 删除与衍生物
 

@@ -1,5 +1,18 @@
 # 架构谱系与机制可解释性
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：比较架构或设计机制可解释性实验的工程师与研究者。
+- **先修**：[Transformer](transformer.md)、残差流、注意力和因果实验直觉。
+- **首次阅读**：信息流分类 → 公平架构比较 → Activation patching → checkpoint 审计。
+- **完成信号**：能区分相关性、干预结果和机制性结论。
+- **卡住时**：先用 [Transformer](transformer.md) 的最小模型建立 hook 与 shape 心智模型。
+
+</div>
+
 架构决定信息在 token、层和状态之间怎样流动；可解释性研究模型内部表示与输出之间有什么证据关系。两者经常一起讨论，但必须区分：**知道一层的结构，不等于知道它学到了什么；观察到一个相关模式，也不等于证明模型依赖该模式。**
 
 ## 1. 用信息流而不是品牌名分类
@@ -144,7 +157,17 @@ g_e(x)E_e(x).
 
 训练还需要考虑 load balancing、expert capacity、token dropping/padding、router precision 与 expert parallel all-to-all。总参数决定权重存储，active parameters 影响 token 计算，但通信和共享层不随 active count 简单缩放。
 
-仓库 NumPy oracle 把一份具体协议钉死：padding 不进 capacity，top-k 同分按 expert id，expert 内按 probability/token/rank 竞争容量，分别报告 dropped assignment 与整 token drop，并显式选择 drop 后是否重归一化。它能执行 sparse linear expert combine，但不是训练过的 MoE、目标 checkpoint 或 expert-parallel kernel；不同模型的 capacity 与 auxiliary loss 仍须查对应实现。
+仓库 NumPy oracle 把一份具体协议钉死：padding 不进 capacity，top-k 同分按 expert id，expert 内按 probability/token/rank 竞争容量，分别报告 dropped assignment 与整 token drop，并显式选择 drop 后是否重归一化。PyTorch CPU Float64 control 又在同一训练图中执行 trainable top-2 router/三组 MLP experts 与 score-priority capacity/drop，并让 selected-only sparse dispatch 与 dense masked oracle 对齐 forward/backward；detach gate 的负例证明 hard expert index 不会自行把 task gradient 送回 router，collapsed top-1 control 则展示 stop-gradient count/可微 probability 的 balance signal 可在 route 尚未改变时先下降。固定 fixtures 还区分 post-drop 重归一化/保留丢失 mass、验证全丢 token 的 routed expert 输出为零，并以 token mask 与两个 CPU-local group 证明 padding 不进 output/gradient/aux、capacity competition 按组改变 assignments。逐组 balance/z diagnostics 按 active-token 数加权。
+
+v3 另用固定拥塞 fixture 执行三种 authored policy：`drop` 后 counts 为 `[2,0,0]`；full-ranking、token 内去重的 deterministic `reroute` 后为 `[2,0,2]` 且无 capacity excess；`dropless` 后为 `[4,0,0]` 并报告 expert 0 超额 2。Reroute 的重归一化与保留 selected mass 产生不同 gate mass/output，reroute/dropless 的 sparse—dense forward/backward 仍对账。两条 oracle 使用不同 fixture；整数 group label 不是 distributed collective，v3 policy 也不是 DeepSeek/Qwen/PyTorch 默认语义。目标模型的 routing group、capacity、auxiliary loss、shared/fine-grained expert、expert-parallel/all-to-all/GPU、收敛、质量与性能仍须从对应实现和实测建立。
+
+另一条 two-process Gloo control 用真实 `all_gather` 构造 4-token global routing batch，并以 `all_reduce` 核对 active/selected counts。它让 local-only 的两个 kept assignments 与 global capacity=1 的单一 winner 构成输出反事实，证明 collective competition 确实改变结果。由于两 rank 复制 router/experts、没有 expert ownership 与 `all_to_all`，这仍不是 expert parallel；解释架构时必须把“capacity group collective”“expert dispatch collective”和“gradient collective”分别报告。
+
+再一条独立 control 才真实执行 token-to-owner `all_to_all_single`：两个 rank 各放置一组 owner-only experts，replicated router 产生 source→owner variable splits `[[1,2],[1,0]]`，再把 expert output/gate 与 metadata 返回 source。Rank 0 的 arrival row 顺序与 local token 顺序不同，必须 metadata scatter；这证明 authored forward placement/dispatch/order recovery，不证明 capacity、backward、CUDA/NCCL、目标模型或性能。三条 fixtures 的不同证据不能相加成一个端到端生产 MoE。
+
+独立 training fixture 又把 forward 与 backward 放入同一个 authored autograd 图：reverse all-to-all 返回 hidden/gate gradient；owner expert gradient 留在 owner，replicated router gradient 则跨 source ranks 做 SUM all-reduce。Local loss sum 必须除同一个 global-token mean 分母，否则 expert/router 的梯度尺度会各自漂移。它与单进程 oracle 对齐一步 SGD，但仍没有 capacity、DDP、CUDA/NCCL、目标模型或收敛证据。
+
+另一条 capacity-aware training fixture 才把全局 score-priority drop、owner-only kept dispatch 与 reverse all-to-all backward 接进同一图。固定 mask `[F,T,T,F]` 下，dropped token 的 routed output 与 task hidden gradient 都为 0；rank 1 source 没有幸存 assignment，仍须通过 zero-size graph edge 参加 collective backward。它与单进程 capacity oracle 对齐，不等于证明目标模型的 routing policy、reroute/dropless、shared expert、CUDA/NCCL、收敛或性能。
 
 Router 选择是输入依赖的，因而可解释性分析还要区分“专家本身做什么”和“哪些 token 被路由到它”。专家名称或平均激活主题不证明专家具有单一功能。
 
@@ -280,6 +303,29 @@ python -m pytest tests/test_activation_patching.py -q
 
 这组数字只证明 seeded random model 上的 tensor contract、hook 确实进入 forward、causal negative control 与恢复分数实现。它没有训练语言行为，batch 只有 1，metric 还是 post-hoc 选择；完整 prefix patch 恢复 clean output 在计算图上近乎构造性成立，不能写成“发现了模型的自然 circuit”。对目标 checkpoint 的研究仍需预注册 behavior/metric、独立 clean-corrupt pairs、多个模板与 seed、逐样本分布、无关/随机 source 负对照，并确认 hook 对应真实实现中的 pre/post norm/projection site。
 
+### 14.4 固定 Qwen checkpoint 的 source-position control
+
+toy hook 通过后，仓库还有一条更窄但确实加载目标权重的 control：`run_qwen_activation_patching_control.py` 复用 Qwen2.5-0.5B-Instruct 的 immutable revision 与 7-file/999,586,347-byte selected snapshot，在加载前重哈希，随后以 `trust_remote_code=False`、CPU FP32 eager 执行 10 次短序列 forward。固定 chat template 后，clean/corrupt 输入都是 26 tokens，仅位置 19 从单 token ` France` 变为 ` Germany`；在最后一个 prompt position 25 上使用单 token `Paris`（59604）减 `Berlin`（94409）的 logit difference。这里的城市 token 边界在查看 **templated baseline** 后、运行 patch conditions 前校准；代码和报告固定 protocol fingerprint `sha256:e34b2bfe…d6702`，但没有外部可信时间戳，所以只称 authored fixed protocol，不称正式 preregistration。
+
+~~~powershell
+python projects/transformers-basics/run_qwen_activation_patching_control.py `
+  --local-files-only
+python -m pytest tests/test_transformers_activation_patching_control.py -q
+~~~
+
+2026-08-13 的录制环境与 checkpoint control 相同。clean prompt 的 top-1 是 `Paris`，metric 为 9.210311；corrupt prompt 的 top-1 是 `Berlin`，metric 为 -7.700302，分母为 16.910613。层位不是扫描后挑选，而按 first/lower-middle/final 固定为 0/11/23：
+
+| post-layer residual patch | recovery | 正确解释 |
+|---|---:|---|
+| source position 19，layer 0 | 1.000024 | 整个 896-d source residual 被替换后，固定 metric 略微越过 clean 值；recovery 不裁剪 |
+| source position 19，layer 11 | 0.992244 | 在这一个 pair/intervention 上几乎恢复 metric，不等于“事实存储在第 11 层” |
+| source position 19，layer 23 | 0 | 最后一层的 source-position post-residual 之后没有跨位置混合，不能改 position 25 的 logits |
+| 全部 position，layer 0 | 1.0 | 构造性正对照：把第一层完整 clean 输出带入后，后续确定性路径复现 clean metric |
+| readout position 25，layer 23 | 1.0 | 构造性正对照：最终 readout residual 被替换后复现 clean logits |
+| future position 26，layer 0 | 0 | 因果负对照：未来位置 patch 不能改变 position 25；追加 token 引起的两个历史 metric 数值漂移均小于 `1e-5` |
+
+这组对照同时排除了“hook 根本没进入 forward”和“patch 任意位置都会改过去”两类低级错误，但远未识别自然 circuit。source patch 一次替换了 896 个维度，可能同时搬运国家身份、词形、位置相关和其他纠缠特征；只有一个英文事实、一个模板、一个 clean source、batch 1，也没有 random-source、unrelated-country、paraphrase、跨语言、组件/path patch 或 held-out replication。layer 0/11 的高恢复不能区分 lookup、复制、attention routing、MLP 变换或冗余路径；layer 23 的零恢复是 hook site 与计算图位置的结构结果，不是该层总体因果贡献为零。报告 `sha256:3f8410f5…ebb18c` 只绑定本次机器投影；无密钥 hash 不认证执行者或发布者，离线 verifier 也不重放 10 次 forward。
+
 ## 15. Path patching 与 circuit
 
 Path patching 尝试只让 source component 对指定 downstream component 的影响被替换，同时阻断其他传播，从而定位组件间的因果路径。Circuit hypothesis 应明确：
@@ -371,7 +417,7 @@ SAE feature 不是保证真实、唯一的 ontology。不同 seed、宽度和正
 7. 明确 intervention、normalization 和失败案例。
 8. 不把局部机制结论升级成总体安全证明。
 
-仓库的 `projects/transformers-basics/inspect_checkpoint.py` 用真实 checkpoint config/shape 检查参数契约；六个模型家族章节则明确区分公开架构证据与闭源未知项。仓库已有 seeded random MiniGPT residual patching 的可执行控制实验，但当前仓库还没有对目标大模型执行 activation patching/SAE 实验，因此机制可解释性成熟度仍应标为“理论、实验协议与 hook correctness fixture 已成文，目标模型因果实证待补”。
+仓库的 `projects/transformers-basics/inspect_checkpoint.py` 用真实 checkpoint config/shape 检查参数契约；六个模型家族章节则明确区分公开架构证据与闭源未知项。仓库既有 seeded random MiniGPT hook correctness fixture，也有固定 Qwen2.5-0.5B-Instruct 的单事实、单模板 source-position activation-patching control。后者把证据从 toy graph 推进到真实目标权重，却仍不是预注册的多样本机制研究，也没有 SAE、component/path patch、随机 source 或 held-out replication；因此成熟度仍应标为“协议完整、toy 与单点目标 control 已执行，稳健目标机制实证待补”。
 
 ## 20. 安全与治理边界
 

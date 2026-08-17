@@ -1,5 +1,18 @@
 # 硬件性能模型与端侧部署
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：性能分析、容量规划和端侧部署工程师。
+- **先修**：推理阶段、字节/FLOPs 单位和基础硬件组成。
+- **首次阅读**：单位口径 → 容量账本 → Roofline → prefill/decode → benchmark。
+- **完成信号**：能为目标设备写可复现 benchmark，而不是只引用峰值规格。
+- **卡住时**：先读[推理基础](inference.md)的两个阶段和 KV Cache。
+
+</div>
+
 “模型能运行”只证明容量可能足够，不证明延迟、吞吐、能耗或稳定性满足目标。硬件分析要把权重/KV 容量、计算、内存带宽、互联、kernel、调度和温控分别建模，再用真实 workload 验证。
 
 ## 1. 单位与口径

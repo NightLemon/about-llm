@@ -1,5 +1,18 @@
 # 合成数据、蒸馏与反馈环
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：合成数据、蒸馏和评测工程师。
+- **先修**：[训练数据工程](data.md)、基本采样和离线评测。
+- **首次阅读**：七类机制 → 供应链 → verifier → rejection sampling → 评测矩阵。
+- **完成信号**：能解释接受率如何改变分布，并保留来源和真实锚点。
+- **卡住时**：先运行[合成数据审计项目](../practice/projects/synthetic-data-audit.md#run)。
+
+</div>
+
 合成数据是由模型、规则、模拟器或程序生成的训练/评测候选。它能扩大任务覆盖、提供可验证轨迹和传递 teacher 行为，也会复制错误、风格、隐私风险与 verifier 漏洞。关键问题不是“是否使用合成数据”，而是：生成了什么分布、由谁验证、与真实数据怎样混合、经过几代反馈，以及结论如何被独立证据支持。
 
 本章不把“模型输出”自动视为数据。候选只有在 lineage、许可/隐私、质量 gate、去重、split 和 mixture 契约完成后，才能进入指定训练版本。
@@ -285,7 +298,7 @@ report = audit_synthetic_records(
 )
 ```
 
-它报告 verifier missing/fail、generator–verifier 同 revision、unresolved parent、generation round、human review 和 exact duplicate。`eligible_record_ids` 只表示所有 required verifier 存在且 pass；重复内容仍显式保留在报告中，不会被“通过率”隐藏。
+它报告 verifier missing/fail、generator–verifier exact revision overlap、unresolved parent、内部 parent round 非单调、lineage cycle、human review 和 exact duplicate。`eligible_record_ids` 只表示所有 required verifier 存在且 pass；重复内容与 lineage finding 仍显式保留，不会被“通过率”隐藏。当前 `self_verified_record_ids` 只是 revision-string overlap，不证明同一模型真的执行生成和验证；没有 overlap 也不证明 judge 独立。
 
 离线项目：
 
@@ -299,7 +312,23 @@ python -m about_llm.synthetic_data_cli `
   --output artifacts/synthetic-data/audit.json
 ~~~
 
-样例故意包含重复、self-verification、missing verifier 和 failed verifier，用来验证审计约定，不代表真实模型数据质量。
+输出 schema 是 `about-llm.synthetic-data-audit.v2`。它绑定 records/mixture 的 exact byte size 与 SHA-256，也绑定 required verifiers、known parents、fingerprint profile、完整 audit/mixture、scope 与 canonical report fingerprint。`--output` 默认 exclusive-create；显式 `--overwrite` 才覆盖旧文件。File `fsync` 不等于 directory entry durable、断电原子发布或 verify-use TOCTOU 已解决。
+
+不要只检查报告携带的 self-hash。用 caller-supplied 输入与 policy 完整复算固定 artifact：
+
+~~~powershell
+python -m about_llm.synthetic_data_cli `
+  --records projects/synthetic-data-audit/records.example.jsonl `
+  --required-verifier schema `
+  --required-verifier grounding `
+  --known-parent-id real-anchor-001 `
+  --mixture projects/synthetic-data-audit/mixture.example.json `
+  --verify-report projects/synthetic-data-audit/audit.example.json
+~~~
+
+固定 records 为 1,457 bytes，mixture 为 341 bytes，report fingerprint 是 `sha256:202d8db97b704c5542e8516c5bd0c945da1c1022100f6ecbfb828f2d2bb6f4cd`。验证成功的 scope 为 `full_local_recomputation`：重读输入、重跑审计并比较完整 canonical JSON。因此 input drift、policy drift，以及同时篡改结果与无密钥 hash 的 cooperative rehash 都会相对可信 caller 输入失败。若 caller 也接受攻击者替换的 inputs/policy，无密钥 SHA-256 仍不能认证来源。
+
+Loader 还会拒绝 duplicate JSON keys、non-finite number、invalid UTF-8、unknown/missing fields、boolean 冒充 integer、重复 ID 与超限输入。样例故意包含 exact duplicate、revision overlap、missing verifier 和 failed verifier，用来验证审计约定；它没有运行 teacher/student、verifier model、训练或 observed-token ledger，不代表真实模型数据质量。
 
 ## 17. 发布门禁
 
@@ -307,6 +336,7 @@ python -m about_llm.synthetic_data_cli `
 
 - generator/prompt/verifier/parent/round 可解析；
 - raw candidate 与所有失败保留在受控 artifact；
+- internal/external parent、cycle 与 round monotonicity 分账；
 - fingerprint profile、dedup/split/mixture 明确；
 - candidate、eligible、unique 和 consumed 数分别报告。
 
@@ -326,7 +356,7 @@ python -m about_llm.synthetic_data_cli `
 
 ## 18. 当前仓库证据边界
 
-仓库已有 provenance/verifier/duplicate audit、mixture exposure 数学、CLI fixture 和解析测试。它没有调用真实 teacher、训练 student、执行多代反馈、做近似去重 benchmark、人工标注或证明任何模型避免 collapse。因此现有证据只支持数据契约与计算约定，不支持合成数据能提高目标模型、通过法律审查或保持长期分布。
+仓库已有 strict JSON、lineage/verifier/duplicate audit、mixture exposure 数学、v2 input/policy-bound artifact、full-local-recomputation CLI fixture 和 40 个专项测试。它没有调用真实 teacher/verifier、训练 student、执行多代反馈、做近似去重 benchmark、人工标注或证明任何模型避免 collapse。因此现有证据只支持离线数据契约、计算约定与可信 caller 输入下的复算，不支持合成数据能提高目标模型、通过法律审查、保持长期分布或来自所声明发布者。
 
 ## 19. 常见错误结论
 

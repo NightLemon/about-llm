@@ -19,6 +19,7 @@
 - 可注入完整 prompt cost 的 greedy context packer、去重、per-source quota 与逐候选决策账本；
 - 目标 tokenizer/chat template 的完整 prospective prompt 重计数、输出 token 预留、模板 identity 与最终 token IDs；
 - packing→raw output→recorded answer 的 generation trace：query/security binding、逐 chunk version/content hash、canonical context、prompt/output identity 与严格审计；
+- 固定 Qwen2.5-0.5B-Instruct 真实权重的 retrieval→packing→greedy generation control：逐步 logits、GenerationMixin 对照，以及不修补的漏引/拒答失败记录；
 - 端到端非 LLM extractive answer baseline：授权检索、byte-budget packing、逐字 span、短引用、lexical coverage 拒答和独立 artifact fingerprint；
 - persistent extractive FastAPI/ASGI service：body 外身份解析、每请求 SQLite 重开、ACL-before-score、closed request schema、结构化错误、readiness、request id、并发/排队/执行 deadline 与完整 artifact response；
 - 授权上下文的规范化 `[S1]` 来源编号、未知引用和漏引段落审计；
@@ -297,6 +298,52 @@ python -m about_llm.rag.cli audit-traces `
 
 样例 trace 是 authored non-execution fixture：其中 regex-hash token IDs 只用于验证 artifact plumbing，**不是任何部署模型的 tokenization**。审计不会重新 tokenize prompt、不会把 tokenizer/model revision 与可信 registry 比对，也不会判断 raw output 是否在语义上蕴含 parsed claims。无密钥 SHA-256 只能发现相对某个已信任 manifest 的字节变化；单独拿到一组可共同重写的 unsigned 文件，不能证明它们来自真实调用、未被协同篡改或具有生产 provenance。
 
+### 固定 Qwen 的真实生成失败控制
+
+下面的 control 复用 Transformers Basics 中固定 revision `7ae5576…9a775`、7 个文件和 999,586,347 bytes 的 Qwen2.5-0.5B-Instruct snapshot。它先逐文件重哈希，再在 CPU FP32 eager 下执行 authorization-first BM25、目标 tokenizer 完整 prompt packing、逐步 argmax/KV cache 和 `GenerationMixin.generate()`；没有 `LogitsProcessor` 强制 token，也不在生成后 repair：
+
+~~~powershell
+python projects/rag-foundations/run_qwen_rag_control.py --local-files-only
+python -m pytest tests/test_rag_transformers_control.py -q
+~~~
+
+manifest fingerprint 为 `sha256:4ee16617…09dfd`，录制报告 fingerprint 为 `sha256:829663e2…e5b60`。attempt-1 冻结后不再为追求漂亮结果调 prompt。answerable case 检索并装入 `acl-order-v1`、`citation-boundary-v1`，209-token prompt 的 greedy 输出复述了正确证据并以 EOS 结束，但没有任何 `[S1]`，因此 citation syntax gate 失败。no-answer case 在 tenant/ACL 过滤后检索和 context 均为空，115-token prompt 却生成了无来源的 Kubernetes 步骤，64 token 后因上限停止，没有输出固定拒答句；abstention gate 同样失败。总体行为门禁是 **0/2**。
+
+这组失败比手写“成功答案”更重要：它直接证明检索零结果不等于最终拒答、事实内容看似正确不等于引用合格，也说明 prompt 指令不能替代输出验证和 no-evidence policy。closed-schema verifier 会重算 report/case/raw-output hash、当前 corpus context、citation audit、exact abstention、token/packing 账本和 scope；攻击者即使协同重算无密钥 self-hash，嵌套字段或本地审计漂移仍会被拒绝。不过本地引用检查只证明语法，不证明 claim-evidence entailment；unsigned hash 不认证发布者/录制者，verify→loader reopen 仍有 TOCTOU。两个 authored case 也不能外推总体质量、许可、安全、GPU/vLLM、延迟或生产表现。
+
+### 模型外发布策略的反事实回放
+
+`generation_policy.py` 把 failure control 暴露出的两个问题变成 fail-closed 发布边界，而不修改 attempt-1 的 raw output：授权 context 为空时在 `pre_generation` 阶段确定性 abstain，generator 不得调用；context 非空时只调用一次 generator，随后用本地 citation audit 决定 `publish` 或 `reject`。`reject` 会保留 raw output 供受限审计，但对调用方只给固定拒绝文案。这里的 citation gate 仍只检查短 ID 和段落引用语法，`semantic_entailment_verified` 固定为 false。
+
+代码还把两个序列化面分开：`decision.to_dict()` 是包含 raw output、未知 ID 与未引用段落的**审计投影**，不得直接作为 HTTP response；`decision.to_public_dict()` 是 allowlist 用户面，不包含 `raw_output` 或 finding text，只包含可发布的 `response_text`、typed action/stage 和边界标志。即使 action 是 reject 且模型输出含敏感/注入文本，public projection 也不会因调试字段把它重新带回用户面；受限审计存储仍要单独做访问控制、保留期与脱敏。
+
+先严格验证原 Qwen report，再重建或验证 replay：
+
+~~~powershell
+python projects/rag-foundations/replay_qwen_rag_publication_policy.py `
+  --verify projects/rag-foundations/qwen2.5-0.5b-rag.publication-policy-replay.json
+python -m pytest tests/test_rag_generation_policy.py -q
+~~~
+
+冻结 replay fingerprint 为 `sha256:ed4d16ad…b13239`。answerable case 的既有 raw output 没有引用，因此策略回放为 `post_generation/reject`，generator call count 为 1；empty-evidence case 回放为 `pre_generation/abstain`，call count 为 0。两条原始 behavior gate 都是 false，但没有任何 baseline failure 被策略判为 publish。
+
+必须把这份报告称为 **counterfactual policy replay**：它说明这套确定性代码若包裹相同已录制输入/输出会作出什么决策，不是观察到 guard 当时真实包裹了 Qwen runtime，也不是实际测得 provider/GPU 调用被省掉。报告先依赖原 report 的独立严格验证，再绑定其 self-fingerprint、case fingerprint、packed IDs 和 raw-output hash；unsigned SHA-256 仍不认证来源，语法 gate 仍不证明语义忠实、总体质量或生产集成。
+
+### 真实运行时 guarded control
+
+反事实回放之后还有一条独立证据链：`guarded_transformers_control.py` 让同一 fail-closed policy **真实包裹** `GenerationMixin.generate()` callback。它复用相同的固定 checkpoint 与 authored corpus，但换成不同的 case ID 和 query，避免把 attempt-1 输出伪装成新运行；这两个 query 仍共享语料与设计过程，**不是代表性质量集**。
+
+~~~powershell
+python projects/rag-foundations/run_qwen_guarded_rag_control.py --local-files-only
+python -m pytest tests/test_rag_guarded_transformers_control.py -q
+~~~
+
+guarded manifest fingerprint 为 `sha256:9ead4c06…40778a`，真实报告 fingerprint 为 `sha256:00706d00…f29ede`。有授权证据的 case 完成 BM25 与 272-token 总账本，其中 prompt 为 208 tokens、输出预留为 64；guard callback 与 `GenerationMixin.generate` API 各调用 1 次。Qwen 实际生成“无权文档不得进行排序”并以 EOS 结束，但没有 `[S1]`，所以 `post_generation/reject`。空证据 case 的 retrieval、packing 与 source map 都为空，prompt 虽在本地为审计而计算出 116 tokens，却没有传给模型；`generator_callback_invocation_count=0`、`framework_generate_invocation_count=0`，策略直接给出 `pre_generation/abstain`。总计 publish=0。
+
+这里的“1 次”只指 Python 层 `GenerationMixin.generate` API invocation，不是底层 `forward()` 次数、kernel 数、provider 请求或计费次数。空证据的“0 次”是该受控本地 callback 路径的观察，不证明远端取消语义。报告同时保存受限 audit projection 与 allowlist public projection；后者没有 `raw_output`、未知引用或未引用段落，因此 rejected text 不会因直接序列化 decision 再次暴露。
+
+离线 verifier 重建 authorization-first BM25、source/context identity、packing 决策关系、policy decision、public projection、调用计数、summary、scope 和所有 canonical hash，并拒绝协同 rehash 后的 count/cost/reason/chat-template/raw-output 漂移。它不重放模型生成、token IDs 或 decode；unsigned hash 不认证录制者，verify→loader reopen TOCTOU 仍存在。这条 CPU FP32 控制也不证明 claim-evidence entailment、总体质量、GPU/vLLM、性能、provider billing/cancellation 或生产集成。
+
 引用语法与段落覆盖审计：
 
 ~~~powershell
@@ -309,7 +356,7 @@ python -m about_llm.rag.cli audit `
 安装后也可使用 `about-llm-rag` 命令。完整回归测试：
 
 ~~~powershell
-python -m pytest tests/test_rag.py tests/test_rag_ingestion.py tests/test_rag_sqlite_store.py tests/test_rag_citations.py tests/test_rag_reranking.py tests/test_rag_cli.py tests/test_rag_answer_eval.py tests/test_rag_trace.py
+python -m pytest tests/test_rag.py tests/test_rag_ingestion.py tests/test_rag_sqlite_store.py tests/test_rag_citations.py tests/test_rag_reranking.py tests/test_rag_cli.py tests/test_rag_answer_eval.py tests/test_rag_trace.py tests/test_rag_transformers_control.py tests/test_rag_generation_policy.py tests/test_rag_guarded_transformers_control.py
 ~~~
 
 ### JSONL schema
@@ -368,7 +415,7 @@ store 重载 heading/ACL/metadata 时使用 strict JSON，拒绝 duplicate key�
 
 `build_citation_context` 在渲染前再次检查 tenant，去重后分配短来源 id。`audit_citations` 只验证引用是否存在、id 是否已授权以及段落是否漏引；即使它返回成功，也不代表来源在语义上支持 claim。claim-evidence entailment 应使用人工标注集、NLI/LLM judge 和抽样审计，并报告误判率。
 
-仍需在目标语料上完成 embedding/reranker 消融、真实向量库事务、受认证的在线 generation trace 采集与语义忠实度评测。SQLite 回滚证据不能外推到远端向量库。仓库已实现离线 packing→output→recorded-answer identity binding，但 authored fixture、无密钥 hash 和重建当前 corpus 都不能证明真实模型执行、历史 corpus 可用或 claim-evidence entailment；这些依赖部署环境，不能由离线单测代替。
+仍需在目标语料上完成 embedding/reranker 消融、真实向量库事务、受认证的在线 generation trace 采集与语义忠实度评测。SQLite 回滚证据不能外推到远端向量库。仓库的 authored trace 只验证离线 identity binding；新增固定 Qwen control 确实执行了真实权重，却在两条 case 上同时暴露漏引与拒答失败。后续 publication-policy replay 证明当前代码能对已录制 attempt 确定性地产生 reject/abstain，但它是反事实重放，不是 guard 与真实生成同时执行的观测。两者都不能证明历史 corpus 可用、claim-evidence entailment、总体质量或生产安全；这些仍依赖部署环境和代表性评测。
 
 ## 安全不变量
 

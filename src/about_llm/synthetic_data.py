@@ -100,6 +100,8 @@ class SyntheticAuditReport:
     missing_verifier_record_ids: tuple[str, ...]
     failed_verifier_record_ids: tuple[str, ...]
     unresolved_parent_pairs: tuple[tuple[str, str], ...]
+    nonmonotonic_parent_pairs: tuple[tuple[str, str], ...]
+    lineage_cycle_record_ids: tuple[str, ...]
     duplicate_content_groups: tuple[tuple[str, ...], ...]
     eligible_record_ids: tuple[str, ...]
     rounds: tuple[GenerationRoundSummary, ...]
@@ -124,6 +126,45 @@ def content_fingerprint(text: str, *, profile: FingerprintProfile) -> str:
     if profile is FingerprintProfile.NFC_WHITESPACE:
         normalized = " ".join(unicodedata.normalize("NFC", text).split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _lineage_cycle_record_ids(
+    records_by_id: dict[str, SyntheticRecord],
+) -> tuple[str, ...]:
+    """Return only records that participate in a synthetic-parent cycle."""
+
+    parents_by_id = {
+        record_id: tuple(
+            sorted(
+                parent_id
+                for parent_id in record.parent_ids
+                if parent_id in records_by_id
+            )
+        )
+        for record_id, record in records_by_id.items()
+    }
+    state: dict[str, int] = {record_id: 0 for record_id in records_by_id}
+    stack: list[str] = []
+    stack_index: dict[str, int] = {}
+    cycle_ids: set[str] = set()
+
+    def visit(record_id: str) -> None:
+        state[record_id] = 1
+        stack_index[record_id] = len(stack)
+        stack.append(record_id)
+        for parent_id in parents_by_id[record_id]:
+            if state[parent_id] == 0:
+                visit(parent_id)
+            elif state[parent_id] == 1:
+                cycle_ids.update(stack[stack_index[parent_id] :])
+        stack.pop()
+        del stack_index[record_id]
+        state[record_id] = 2
+
+    for record_id in sorted(records_by_id):
+        if state[record_id] == 0:
+            visit(record_id)
+    return tuple(sorted(cycle_ids))
 
 
 def audit_synthetic_records(
@@ -151,16 +192,21 @@ def audit_synthetic_records(
     record_ids = [record.record_id for record in materialized]
     if len(record_ids) != len(set(record_ids)):
         raise ValueError("record_id must be unique")
-    known = set(known_parent_ids)
-    if any(not item or item.isspace() for item in known):
+    known_values = tuple(known_parent_ids)
+    if any(not item or item.isspace() for item in known_values):
         raise ValueError("known_parent_ids must not contain empty values")
+    if len(known_values) != len(set(known_values)):
+        raise ValueError("known_parent_ids must be unique")
+    known = set(known_values)
 
     record_id_set = set(record_ids)
+    records_by_id = {record.record_id: record for record in materialized}
     missing: list[str] = []
     failed: list[str] = []
     eligible: list[SyntheticRecord] = []
     self_verified: list[str] = []
     unresolved: list[tuple[str, str]] = []
+    nonmonotonic: list[tuple[str, str]] = []
     digest_groups: dict[str, list[str]] = defaultdict(list)
 
     for record in materialized:
@@ -182,6 +228,11 @@ def audit_synthetic_records(
         for parent_id in record.parent_ids:
             if parent_id not in record_id_set and parent_id not in known:
                 unresolved.append((record.record_id, parent_id))
+            elif parent_id in records_by_id and (
+                record.generation_round
+                <= records_by_id[parent_id].generation_round
+            ):
+                nonmonotonic.append((record.record_id, parent_id))
         digest_groups[
             content_fingerprint(record.content, profile=fingerprint_profile)
         ].append(record.record_id)
@@ -218,6 +269,8 @@ def audit_synthetic_records(
         missing_verifier_record_ids=tuple(sorted(missing)),
         failed_verifier_record_ids=tuple(sorted(failed)),
         unresolved_parent_pairs=tuple(sorted(unresolved)),
+        nonmonotonic_parent_pairs=tuple(sorted(nonmonotonic)),
+        lineage_cycle_record_ids=_lineage_cycle_record_ids(records_by_id),
         duplicate_content_groups=duplicate_groups,
         eligible_record_ids=tuple(sorted(eligible_ids)),
         rounds=rounds,
@@ -235,6 +288,8 @@ class MixtureComponent:
 
     def __post_init__(self) -> None:
         _nonempty("name", self.name)
+        if not isinstance(self.source_kind, SourceKind):
+            raise TypeError("source_kind must be a SourceKind")
         if isinstance(self.unique_tokens, bool) or not isinstance(self.unique_tokens, int):
             raise TypeError("unique_tokens must be an integer")
         if self.unique_tokens <= 0:

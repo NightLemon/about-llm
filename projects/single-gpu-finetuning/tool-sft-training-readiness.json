@@ -1,0 +1,37 @@
+{
+  "artifact_version": "about-llm.sft-training-readiness.v3",
+  "gate_passed": true,
+  "training_ordered_dataset_fingerprint": "sha256:a79963e0ff44cbc2b522978a9b4540ac650be696fb0bd01e82528c8e65d84e78",
+  "training_manifest_fingerprint": "sha256:e807c238b025e9840e3aa74534c8f6d32c8d5f850a2ab98177cd6356f5f069cd",
+  "combined_ordered_dataset_fingerprint": "sha256:12fd5d89433693c5076a018fd9c22b94a5361b3b16ac31af6c2f78aa609f462e",
+  "combined_manifest_fingerprint": "sha256:4e8ae888413be306372e1c409d93cc1d9d914b4927123fbe3e45b309186b8d84",
+  "binding_fingerprint": "sha256:603371f109cec258f165f2f41167fde988015988504fbd7c5afb0f6154cd7efa",
+  "near_duplicate_audit_version": "about-llm.char-ngram-near-duplicate.v2",
+  "near_duplicate_manifest_fingerprint": "sha256:d91729b080352b2da60081ff27ba3f287ff217b2eee1d6a76f2215e47264ff62",
+  "near_duplicate_profile": "nfc_whitespace",
+  "near_duplicate_ngram_size": 5,
+  "near_duplicate_threshold": 0.9,
+  "near_duplicate_cross_split_only": true,
+  "near_duplicate_views": [
+    "full_conversation",
+    "user_content",
+    "assistant_content"
+  ],
+  "near_duplicate_candidate_count": 0,
+  "governance_audit_version": "about-llm.sft-governance-audit.v2",
+  "governance_policy_fingerprint": "sha256:0a60f89bd8e7b9aedab94ad65a72392bc77b95c87043a79019543879ad6aaafe",
+  "governance_manifest_fingerprint": "sha256:1a8ffe859adbb0f8f11f77717d44e72d09348f8cd2ad8213b81c786000ad3635",
+  "governance_blocking_finding_count": 0,
+  "manifest_fingerprint": "sha256:f4bd2ba0da65f5e8928e22679bf7a7134ab7b75974304f2bb8364fc81b35f045",
+  "evidence_boundary": "This artifact binds one train identity to passing exact/group split gates and one declared lexical candidate policy and one source/sensitive-candidate governance audit over message text, tool calls, and tool schemas. It contains no held-out plaintext. Its unkeyed SHA-256 fingerprints detect accidental drift but provide neither origin authentication nor authorization: a party able to replace the artifact can recompute them. A passing gate does not prove semantic deduplication, legal permission, consent, comprehensive PII/secret detection, or absence of contamination.",
+  "scope": {
+    "held_out_plaintext_embedded": false,
+    "trainer_needs_held_out_access": false,
+    "cryptographic_origin_authenticated": false,
+    "lexical_candidates_are_semantic_duplicates": false,
+    "license_legality_verified": false,
+    "limited_sensitive_candidate_scan_executed": true,
+    "comprehensive_pii_or_secret_detection": false,
+    "tokenizer_or_assistant_mask_verified": false
+  }
+}

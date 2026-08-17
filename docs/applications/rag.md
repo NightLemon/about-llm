@@ -1,5 +1,18 @@
 # RAG：检索增强生成
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：第一次构建或评审 RAG 的工程师与产品人员。
+- **先修**：文本表示、基本检索和模型生成直觉；无向量库前置要求。
+- **首次阅读**：问题边界 → 摄取 → 检索 → 上下文 → 引用 → 分层评测。
+- **完成信号**：能把失败归因到语料、召回、packing、生成或引用。
+- **卡住时**：先跑[RAG Foundations 最小路径](../practice/projects/rag-foundations.md#run)。
+
+</div>
+
 本章建立端到端概念图。重点进阶内容分为[数据摄取与索引生命周期](rag-ingestion.md)、[召回/混合检索/重排](rag-retrieval.md)、[上下文/引用/忠实度](rag-generation.md)和[生产架构与运维](rag-production.md)四章；阅读本章后按这个顺序深入。
 
 ## 它解决什么
@@ -76,6 +89,8 @@ RRF 常用：
 仓库的 RAG CLI 可分别重放 source-level 检索 qrels 和 recorded answer/abstain/error artifact。后者会复查上下文权限并聚合外部提供的 atomic-claim verdict，但不会自行判断语义蕴含；fixture 通过只证明离线协议和分母正确，不证明真实模型忠实度。
 
 CLI 另有 `answer-extractive` / `evaluate-extractive` 非 LLM 基线：先做 tenant/principal 授权检索和 context packing，再从 packed chunk 逐字复制 span；distinct lexical coverage 不足时即使召回到主题相关文档也拒答。它让 retrieval→packing→answer/abstain→artifact/evaluation 的控制路径可运行，并证明输出 claim 是授权原文的 exact substring；它不证明语义相关、来源真实、答案完整、阈值校准或 LLM 生成质量，byte budget 也不是模型 token budget。
+
+项目另有固定 Qwen2.5-0.5B-Instruct 的真实权重 control：逐文件重哈希后执行 ACL-before-BM25、目标 tokenizer packing、greedy logits/KV cache 与 `generate()`。attempt-1 的 answerable case 复述正确但漏引，empty-context case 编造步骤且没有拒答，behavior gate 为 0/2。该结果被原样保留，用来说明真实执行、检索正确和生成质量是三种不同证据；详见[生成、引用与忠实度](rag-generation.md#real-weight-rag-control)。
 
 同一 CLI 既提供 UTF-8 byte-budget 演示，也提供 `pack-tokenized`：加载明确 tokenizer/revision 与 chat template，对每个 prospective 完整 prompt 重计数、预留输出并记录最终 token IDs。它仍不自动验证 tokenizer 与部署权重匹配、模型实际 context window、生成忠实度或目标硬件吞吐；本地 WordLevel 测试只证明控制路径。
 

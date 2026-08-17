@@ -39,6 +39,10 @@ CANDIDATE_MANIFEST = PROJECT / "run.candidate.manifest.example.json"
 COMPARISON = PROJECT / "comparison.example.json"
 CALIBRATION_RECORDS = PROJECT / "calibration.example.jsonl"
 CALIBRATION_MANIFEST = PROJECT / "calibration.manifest.example.json"
+STRUCTURED_CASES = PROJECT / "structured-metrics.cases.jsonl"
+STRUCTURED_ANSWERS = PROJECT / "structured-metrics.answers.jsonl"
+CITATION_SPAN_CASES = PROJECT / "citation-evidence-span.cases.jsonl"
+CITATION_SPAN_ANSWERS = PROJECT / "citation-evidence-span.answers.jsonl"
 
 
 @pytest.mark.parametrize(
@@ -308,6 +312,172 @@ def test_score_cli_writes_results_and_slice_report(
     manifest = load_evaluation_run_manifest(manifest_path)
     assert manifest.system_id == "fixture-candidate@v1"
     assert set(manifest.metric_revisions) == {"exact_match", "token_f1"}
+
+
+def test_score_cli_exposes_literal_exact_as_opt_in_metric(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cases = tmp_path / "literal.cases.jsonl"
+    answers = tmp_path / "literal.answers.jsonl"
+    results = tmp_path / "literal.results.jsonl"
+    report = tmp_path / "literal.report.md"
+    manifest = tmp_path / "literal.manifest.json"
+    cases.write_text(
+        json.dumps(
+            {
+                "case_id": "case-sensitive-id",
+                "input": "copy",
+                "expected": "LLM-2026",
+                "slices": ["instruction"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    answers.write_text(
+        json.dumps(
+            {
+                "case_id": "case-sensitive-id",
+                "output": "llm-2026",
+                "latency_seconds": 0.01,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            [
+                "score",
+                "--cases",
+                str(cases),
+                "--answers",
+                str(answers),
+                "--results",
+                str(results),
+                "--report",
+                str(report),
+                "--manifest",
+                str(manifest),
+                "--system-id",
+                "literal-fixture@v1",
+                "--metric",
+                "literal_exact_match",
+                "--metric",
+                "exact_match",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    loaded = load_results(results)
+    assert loaded[0].scores == {
+        "literal_exact_match": 0.0,
+        "exact_match": 1.0,
+    }
+    run_manifest = load_evaluation_run_manifest(manifest)
+    assert run_manifest.metric_revisions == {
+        "literal_exact_match": "about-llm.literal-exact-match.v1",
+        "exact_match": "about-llm.normalized-exact-match.v1",
+    }
+
+
+def test_score_cli_distinguishes_strict_schema_from_json_value_equality(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    results = tmp_path / "structured.results.jsonl"
+    report = tmp_path / "structured.report.md"
+    manifest = tmp_path / "structured.manifest.json"
+
+    assert (
+        main(
+            [
+                "score",
+                "--cases",
+                str(STRUCTURED_CASES),
+                "--answers",
+                str(STRUCTURED_ANSWERS),
+                "--results",
+                str(results),
+                "--report",
+                str(report),
+                "--manifest",
+                str(manifest),
+                "--system-id",
+                "authored-structured-fixture@v1",
+                "--metric",
+                "json_schema",
+                "--metric",
+                "json_value_exact",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    loaded = load_results(results)
+    assert [row.scores["json_schema"] for row in loaded] == [1.0, 1.0, 0.0, 0.0, 1.0]
+    assert [row.scores["json_value_exact"] for row in loaded] == [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ]
+    run_manifest = load_evaluation_run_manifest(manifest)
+    assert run_manifest.metric_revisions == {
+        "json_schema": "about-llm.json-schema-metric.v2",
+        "json_value_exact": "about-llm.json-value-exact.v1",
+    }
+
+
+def test_score_cli_keeps_evidence_span_identity_separate_from_entailment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    results = tmp_path / "citation-span.results.jsonl"
+    report = tmp_path / "citation-span.report.md"
+    manifest = tmp_path / "citation-span.manifest.json"
+
+    assert (
+        main(
+            [
+                "score",
+                "--cases",
+                str(CITATION_SPAN_CASES),
+                "--answers",
+                str(CITATION_SPAN_ANSWERS),
+                "--results",
+                str(results),
+                "--report",
+                str(report),
+                "--manifest",
+                str(manifest),
+                "--system-id",
+                "authored-citation-span-fixture@v1",
+                "--metric",
+                "citation_evidence_span",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    loaded = load_results(results)
+    assert [row.scores["citation_evidence_span"] for row in loaded] == [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ]
+    run_manifest = load_evaluation_run_manifest(manifest)
+    assert run_manifest.metric_revisions == {
+        "citation_evidence_span": (
+            "about-llm.citation-evidence-span-metric.v1"
+        )
+    }
 
 
 def test_compare_cli_runs_paired_gate_and_protected_slice(

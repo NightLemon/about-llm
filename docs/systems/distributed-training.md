@@ -1,5 +1,18 @@
 # 高效与分布式训练
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：多 GPU 训练、平台和正确性验收工程师。
+- **先修**：[预训练](../training/pretraining.md)、显存状态和基本集合通信。
+- **首次阅读**：资源账本 → DP → ZeRO/FSDP → TP/PP → 正确性验证。
+- **完成信号**：能按参数、梯度、优化器和激活列账，并设计多卡验收矩阵。
+- **卡住时**：回到[硬件性能模型](hardware-edge.md)和[预训练预算](../training/pretraining.md)。
+
+</div>
+
 ## 学习目标与证据边界
 
 读完本章应能建立参数、梯度、optimizer state、activation 与通信的资源账本；解释 DP、ZeRO/FSDP、TP、PP、sequence/context parallel 与 expert parallel；根据节点拓扑组合并行维度，并设计单卡到多卡的正确性与故障恢复验证。
@@ -28,7 +41,7 @@ Activation 取决于 micro-batch \(B\)、sequence length \(T\)、hidden size \(H
 
 OOM 诊断要分项测峰值，不能只用 parameter count。allocator reserved、已分配张量和设备驱动显示值也不是同一指标。
 
-## Global batch 与 loss 归一化
+## Global batch 与 loss 归一化 { #global-batch-loss-normalization }
 
 设每个 data-parallel rank 的 micro-batch 为 \(B_\mu\)，梯度累积次数 \(A\)，数据并行度 \(D\)：
 
@@ -44,11 +57,66 @@ N_{tokens}=\sum_{rank,microbatch,t}m_{rank,microbatch,t}
 
 不能用 \(B_{global}\times T_{max}\) 替代。
 
-### Mean 还是 sum
+### Mean 还是 sum { #mean-or-sum }
 
-若每个 rank 先对本地有效 token 求 mean，再简单平均 rank，当各 rank 有效 token 数不同，会让短/高 padding rank 权重过大。严格 global token mean 应 all-reduce loss numerator 和有效 token denominator，或对梯度使用等价缩放。
+若第 \(i\) 个 micro-batch/rank shard 有 \(n_i\) 个有效 token、loss sum 为 \(S_i\)，global token mean 是
 
-梯度累积也要明确每个 micro-batch loss 是否除以 \(A\)。框架可能在 backward、optimizer 或 distributed wrapper 不同位置处理缩放；用一个可手算 batch 对照单卡结果最可靠。
+\[
+L=\frac{\sum_i S_i}{N},\qquad N=\sum_i n_i.
+\]
+
+先算 local mean \(S_i/n_i\) 再等权平均，会让短批或高 padding rank 权重过大；它只有在所有 \(n_i\) 相同或梯度恰好抵消等特殊情况下才与 global token mean 相同。严格实现应聚合 numerator 与 count，或对梯度使用数学等价缩放。单进程 accumulation 可对每批 `reduction="sum"` 做 backward，窗口结束后把累计梯度除以 \(N\)，随后才做 gradient clipping 与 optimizer step。
+
+DDP 需要再核对 reducer 语义。若默认对 \(D\) 个 rank 的梯度取平均，每个 rank 直接 backward `local_loss_sum / global_N`，最终会额外少一个 \(D\)；可在 backward 前按 `D/global_N` 缩放 local sum，或改用能得到全局 sum 的等价路径。`global_N` 必须来自整个 accumulation window、所有 data-parallel ranks 的有效 token count；不能用 \(A\)、batch size 或 max length 代替。AMP 下还要把 `GradScaler` 的 scale/unscale、手工归一化和 clipping 顺序写进契约。
+
+仓库把证据拆成两层。`gradient_accumulation_toy.py` 固定两个 micro-batch 的有效 token 数为 `[1,3]`；`Fraction` oracle 得到正确 class-aggregate logit gradient `(23/40,-23/40)`，等权 micro-batch mean 为 `(7/20,-7/20)`。PyTorch CPU Float64 的 full batch 与单进程 sum/count 梯度逐元素相同，三个 ignored/padding 位置梯度为零；这只是 reducer 集成的单进程 reference。
+
+`ddp_token_mean_control.py` 再把两个 shard 分给 `D=2` 个真实 OS 进程，并使用 temporary FileStore、Gloo、count `all_reduce` 和 PyTorch `DistributedDataParallel` backward。rank-local loss-sum gradient 分别为 `(-1/10,+1/10)` 与 `(+12/5,-12/5)`，全局 `N=4`：
+
+| backward 路径 | 每 rank loss 定义 | 默认 DDP mean 后梯度 |
+|---|---:|---:|
+| 正确 global token mean | `(D/N)S_r=(1/2)S_r` | `(+23/40,-23/40)` = `(0.575,-0.575)` |
+| 漏掉 world size | `(1/N)S_r=(1/4)S_r` | `(+23/80,-23/80)` = `(0.2875,-0.2875)` |
+| rank-local mean | `S_r/n_r` | `(+7/20,-7/20)` = `(0.35,-0.35)` |
+
+两个 rank 都观察到 count 4 和相同同步梯度；正确路径相对单进程 full-batch 的最大绝对误差约 `1.11e-16`，漏 world-size 路径相对 full/2 的误差约 `5.55e-17`。这是当前 PyTorch 2.13.0+cpu/Gloo/default reducer 固定 control 的执行证据，不是所有框架或版本的规范证明。它没有执行 optimizer/parameter update/clipping、gradient accumulation + `no_sync`、AMP/scaler、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点、目标 LLM/tokenizer/dataset、性能或质量评测。
+
+### Accumulation、`no_sync` 与 update control
+
+`ddp_accumulation_no_sync_control.py` 将证据推进到一个完整但极小的 optimizer update。两个 rank 各有两个 micro-batch，valid-token counts 为 `[[1,2],[3,1]]`，global `N=7`。四个 local loss-sum class gradients 是 `(-1/10,+1/10)`、`(+8/5,-8/5)`、`(+12/5,-12/5)`、`(-1/10,+1/10)`；rank sums 为 `(+3/2,-3/2)` 与 `(+23/10,-23/10)`。默认 DDP mean 下每批乘 `D/N=2/7`，无论每批同步还是只在末批同步，精确结果都是：
+
+```
+pre-clip gradient = (+19/35,-19/35)
+unclipped plain-SGD lr=7/20 parameter delta = (-19/100,+19/100)
+```
+
+真实 CPU Float64/Gloo control 分三条路径。第一条使用未注册 hook 的 built-in DDP：首批的 **forward 与 backward** 都在 `ddp.no_sync()` 内，末批正常同步。第二条注册 PyTorch `default_hooks.allreduce_hook` 的透明 reference hook以计数，同样正确包裹，观察 1 次两元素 bucket hook。第三条是负对照：forward 在 context 外、只把 backward 放进 `no_sync`；DDP 已在 forward 决定需要同步，因此观察 2 次 hook。三条路径的 pre-clip gradient 都是约 `(0.542857,-0.542857)`；同步归一化后执行 `max_grad_norm=0.5`，clip 后约 `(0.353553,-0.353553)`，plain SGD `lr=0.35` 后 bias 约 `(-0.123744,+0.123744)`，都与单进程 full batch 逐项相同。
+
+这里的 backward-only 负对照证明“没有减少 collective”，不证明它在此 fixture 上改变数学结果。built-in 路径没有直接插桩 collective count；计数来自另一个使用官方 reference hook 的独立路径。control 只有一个两元素参数和一个 bucket，没有 dropout/BatchNorm/RNG、AMP/scaler/overflow、多参数或多 bucket、AdamW/optimizer state、checkpoint resume、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点、目标 Trainer/LLM、通信字节、性能或质量证据。
+
+### AMP scale、unscale、clip 与 skip control
+
+混合精度是独立状态机，不能仅凭上面的 Float64 DDP control 推断。仓库的 `amp_grad_scaler_control.py` 真实执行 CPU FP16 autocast 与 `torch.amp.GradScaler("cpu")`。两个 micro-batch 的 unscaled sum-gradient 是 3，初始 scale=8 时内存中的 scaled gradient 是 24。正确路径先 `unscale_` 再以 `max_norm=0.5` 做 global-norm clip，得到约 0.5 并与 full batch/SGD update 相同；负对照先 clip 24 再 unscale，optimizer-visible gradient 约为 0.0625。
+
+同一 control 先做一次真实 AdamW step 建立 step=1、`exp_avg` 与 `exp_avg_sq`，再让三个两批窗口中的第二批产生 `inf`。GradScaler 逐次把 scale 从 8 降到 4、2、1，三次都跳过整个 optimizer update，参数与 AdamW state exact 不变。进程内复制 model/optimizer/scaler 后，恢复 scale=1 的 10000 边界梯度执行 step=2，并与不中断路径 exact；故意不加载 scaler、回到 scale=8 时 FP16 scaled gradient overflow，scale 降到 4 且 step 仍为 1。
+
+这条证据只覆盖 PyTorch 2.13.0+cpu、单 FP32 参数、FP16 autocast、单进程和 in-memory state replay；没有把 scaler 纳入 strict 文件 artifact，也没有执行真实进程退出/重启、scheduler/RNG/DataLoader、DDP/FSDP/ZeRO、CUDA kernel、目标 Trainer/model、吞吐、收敛或质量。
+
+### DDP + AMP overflow 共识控制
+
+`ddp_amp_overflow_consensus_control.py` 把 default DDP reducer、`no_sync`、CPU FP16 GradScaler、AdamW 和 StepLR 放进同一条真实双进程 CPU/Gloo control。每条路径先做一次相同的 finite warm-up，建立 parameter≈0.99、AdamW step=1、scheduler epoch=1/LR=0.005、scale=8 和 growth tracker=1，再比较：
+
+| 故障位置与决策 | rank 0 | rank 1 | 结果 |
+|---|---|---|---|
+| 首批 `no_sync` 内 rank 0 产生 non-finite，末批用 built-in DDP 同步 | 末批后 non-finite | 末批前 local scaled grad=8，末批后 non-finite | 两边都 skip，scale `8→4`、tracker `1→0`；model/AdamW/StepLR 保持一致 |
+| DDP 已得到两边 finite scaled grad=8 后，仓库故意在 rank 0 的 `unscale_` **之前**把 grad 改成 Inf；无额外共识 | skip，scale=4、step=1 | unscaled grad=1，scale=8、step=2 | 参数、moments、scheduler、LR、scale/tracker 全部分叉 |
+| 同样的 post-reduction fault，`unscale_` 后对 local non-finite flag 做 `all_reduce(MAX)` | local flag=1，global=1 | local flag=0，global=1 | 两边都不调用 `scaler.step`/optimizer/scheduler，并用显式共同 scale policy 回退到 4，训练状态保持一致 |
+
+第一条说明：在这个默认 reducer、单参数/单 bucket fixture 中，**reduction 之前**产生的 Inf 会随梯度同步传播，所以不能据此宣称 vanilla DDP 总要再做一次 finite-flag collective。第二条是 authored fault injection，不是“DDP 正常会在 reduction 后损坏一个 rank”；它代表 per-rank gradient transform、条件参数、自定义 communication path、硬件/内存故障等可能绕开共同 reduction 的风险。finite 共识必须放在所有可能生成 non-finite 的 gradient transform 之后、任何 optimizer mutation 之前；step 后才发现 mismatch 已经无法撤销另一个 rank 的更新。
+
+第三条只证明这个 optimizer-pre gate 阻止了当前故障分叉，不是可直接复制到所有框架的 distributed scaler。`GradScaler.update(new_scale=4)` 是仓库显式 scale policy：两 rank 的完整已序列化 scaler state 一致，但 growth tracker 保持 1；native found-inf transition 则会把 tracker 重置为 0。生产实现应优先使用目标框架公开的 distributed scaler/overflow 协议，或明确定义并测试 scale、growth tracker、optimizer、scheduler、clip 与 checkpoint 的全状态共识，不能修改私有 found-inf 字段，也不能用 `scaler.step()`/`optimizer.step()` 的返回值冒充通用 `did_step`。
+
+该控制仍只有一个 FP32 参数、单 bucket、同机 CPU/Gloo 和人为 Inf；built-in collective count 未直接插桩，也没有 clipping、随机层、自然 overflow、custom hook、conditional graph、checkpoint/elastic restart、CUDA/NCCL、多节点、FSDP/ZeRO、目标 LLM/Trainer、性能、收敛或质量证据。
 
 ## 数据并行（DP）
 
@@ -160,6 +228,22 @@ MoE 将专家分布到设备。Router 为 token 选择 top-k expert，token 经 
 
 本仓库 `route_topk_capacity` 只在单进程 CPU 上物化 expert ids、capacity keep/drop 与 combine weights，并执行 bias-free linear experts。它可验证 padding、tie-break、assignment count 和 drop 后归一化，不能验证 token packing、rank-to-expert placement、all-to-all bytes/order、grouped GEMM、反向传播或同步 straggler。把该 toy 的 expert count 当通信量或 GPU throughput 属于证据越界。
 
+独立的 `moe_distributed_capacity_control.py` 只把证据向前推进一层：两个 same-host CPU/Gloo ranks 用真实 tensor `all_gather` 形成 replicated 4-token global routing input，并用两个 `all_reduce(SUM)` 对账 active count=4、selected counts `[4,0]`。Local-only capacity competition 跨 ranks 合计 kept=2；global score-priority capacity=1 只 kept=1，mask `[F,F,T,F]`，rank-0 output 因失去 local winner 而改变 `0.9640275800758169`。因此它确实执行了 collective capacity-group 反事实，不是只给单进程 group IDs 换名称。
+
+但 hidden `all_gather` 让每个 rank 复制 global batch，router 与 experts 也完全复制；这不具备 scalable EP 的 expert ownership，且没有 token-to-expert `all_to_all`/return combine、distributed backward、optimizer 或性能测量。它用于教学上分开三类 process group：capacity/routing group、expert dispatch group、gradient synchronization group；不能外推到 NCCL、多节点、DeepSeek/Qwen、通信 bytes/tail 或 GPU throughput。
+
+第二条 `moe_all_to_all_control.py` 单独验证 expert dispatch group：expert 0/1 分别只驻留 rank 0/1；source→owner variable splits 为 `[[1,2],[1,0]]`。每 rank 的五次 `all_to_all_single` 依次交换 counts，发送 hidden/gate 与 source metadata，再做 owner→source return 的 output/gate 与 metadata。Rank 0 的 arrival global IDs 是 `[1,0,2]`，按 source-local index scatter 才与单进程 forward oracle 完全相等；忽略 metadata 会产生 `0.8958737432590591` 最大差。
+
+报告的 256/160、合计 416 logical tensor-payload bytes 只是当前 int64/float64 authored tensors 的 `numel × element_size`；不等于 wire bytes，也没有测 collective latency。该控制不含 capacity/drop、backward/optimizer、CUDA/NCCL、多节点、target checkpoint 或性能；不能把它与 replicated-capacity control 的独立证据相加成完整、可扩展或可训练的 EP runtime。
+
+第三条 `moe_all_to_all_training_control.py` 把训练图也做成可执行对照。Authored autograd binding 在 backward 用 reverse-split `all_to_all_single` backward：先把 output/gate gradients送回 owner，再把 hidden/gate gradients送回 source。每 rank 的 local loss sum 都除 global token count；owner expert gradient 不做 data-parallel all-reduce，因为 owner 已处理来自所有 sources 的本 expert tokens；replicated router gradient 做 SUM all-reduce，保证两个副本更新一致。
+
+当前 global MSE `20.78017329703821→19.41091750734501`，gradients、一步 SGD 参数和 post-step forward 都与单进程 oracle exact。但 custom autograd Function 不是 DDP/生产 EP，call ledger 不是 profiler；fixture仍无 capacity、mixed precision、optimizer state、CUDA/NCCL、多节点、目标模型、收敛或性能证据。
+
+第四条 `moe_all_to_all_capacity_training_control.py` 在另一张图中把 global score-priority drop、owner-only dispatch 与 backward 合并。四个 active tokens 的 selected counts `[2,2]` 在 capacity=1 下变为 keep mask `[F,T,T,F]`；kept-only source→owner splits 为 `[[1,1],[0,0]]`，其中 rank 1 的全零 source→owner splits `[0,0]` 仍通过 empty-payload graph edge 触发 reverse collective。Dropped tokens 的 task hidden gradient 为 0；router SUM gradient、owner expert gradients、一步参数和 post-step forward 均与单进程 capacity oracle exact。
+
+该 fixture 的 global MSE 是 `15.253670387373656→14.530264380025987`。每 rank authored ledger 为 payload forward/backward 4/2、count+metadata 6、capacity-route all-gather 4、router reduce 1；仍不是 backend profiler。它没有验证 Gloo 以外 backend、DDP/FSDP/ZeRO/TP/PP、mixed precision、optimizer state、reroute/dropless、shared/fine-grained experts、目标模型、扩展性、收敛或性能。
+
 ## 组合并行与拓扑映射
 
 设备总数常满足：
@@ -254,9 +338,19 @@ Loss scaler 的 overflow 决策应在相关 ranks 一致，否则部分 rank ste
 
 浮点 collective 顺序可导致微差，应先定义 atol/rtol 和累积步数，不能要求所有硬件 bitwise 相等，也不能无限放宽容差。
 
+“full batch 与 gradient accumulation 等价”还要求：监督 token/mask 相同；窗口中只在末尾 step/zero-grad；clip 与 scheduler 按 optimizer update 执行；模型没有跨样本 BatchNorm 等 batch-coupled 运算；dropout、gradient checkpoint 等随机路径按已定义的 RNG 契约比较；AMP overflow、`no_sync` 与 collective 边界一致。即使数学目标相同，浮点求和顺序也通常只支持容差等价，不自动支持 bitwise 等价。
+
+本仓库第一条双进程 DDP token-mean control 只覆盖“一次 local backward 后立即同步”的三种 reduction 路径；第二条 accumulation control 已补两个 micro-batch、built-in `no_sync`、同步后 clipping 和 plain SGD update；第三条 DDP+AMP control 再以 AdamW/StepLR 验证同步前 non-finite 的共同 skip、同步后单 rank 故障的分叉和 optimizer-pre flag 共识。三者合起来仍不能证明随机模型、多参数/bucket、自然 overflow、目标 Trainer、FSDP/ZeRO、GPU 或多节点下的 optimizer-update 等价。
+
 ### 2. 数据等价
 
 记录每 rank sample/source id，验证一个 global step 不重不漏；gradient accumulation、worker 重启和 resume 后同样检查。Distributed sampler 的 `set_epoch`/等价状态与 shuffle RNG 要保存。
+
+还要区分 sampler-emitted、main-loop-consumed 与 optimizer-committed cursor。`dataloader_prefetch_resume_control.py` 在单进程训练控制面内真实启动两个 spawn workers；`prefetch_factor=2` 时，主循环收完 3 条，sampler 已发到 7。从 emitted cursor 重启会漏掉 4 个 queue 中未消费 IDs，从 consumed cursor 重启可恢复顺序；但 fresh worker RNG tail 仍不同。这个 control 没有 DistributedSampler/DDP，也没有把 sample consumption 与 optimizer commit 做原子事务，因此分布式训练仍须为每 rank/global update 明确 cursor 聚合、drop/replay policy 和失败边界。
+
+独立 `optimizer_commit_resume_control.py` 再执行 main-process inverted-Bernoulli mask、真实两步 accumulation、backward、SGD momentum 与 StepLR：崩溃时 emitted/consumed/committed=`7/3/2`。base 不含 `.grad`，但保存 commit-boundary scheduler/Torch RNG；从 committed=2 恢复 RNG并重放，与 uninterrupted 的 model/optimizer/scheduler/RNG bit-exact。第一个隔离负例从 consumed=3 恢复正确 crash RNG却漏 gradients/sample `1`：未来 RNG 相同，5 次 optimizer/scheduler step 与 LR `0.0125` 也相同，参数仍漂移 `0.005767858566116724`。第五个 PID 加载绑定 base digest 的 pending `[1]`、position/divisor、逐参数 gradients与 crash RNG sidecar，从 consumed=3 继续也 bit-exact；第六个 PID 保留 gradients/ledger 却错误使用 commit-boundary RNG，参数漂移 `0.017878893573032573` 且终态 RNG 不同。sidecar 路径先要求最后发布的 canonical manifest 完整绑定 base/sidecar identity；base-only、payloads-without-manifest、manifest-without-sidecar 与 post-manifest tamper 四种快照均 fail closed，但 base-only 仍可用于 commit replay。
+
+它仍只证明单训练进程的两种恢复协议与两个隔离负例，未执行 DDP/DistributedSampler、rank 间 ledger 共识、collective、sharded optimizer 或 elastic membership；manifest-last 不会让 base+sidecar+manifest 与所有 rank update 原子提交，也没有 directory `fsync`、断电、原子目录/远程快照或来源认证证据。它覆盖 main-process Torch RNG/StepLR，不覆盖 worker/Python/NumPy/CUDA RNG、GradScaler 或原生任意随机层。分布式实现仍须定义全局 commit receipt、sidecar/shard manifest completeness、失败 rank 的共同回滚/重放以及重复样本是否可接受。
 
 ### 3. 随机性
 

@@ -1,5 +1,18 @@
 # SFT 数据、模板与训练闭环
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：SFT 数据、模板和训练验收工程师。
+- **先修**：[训练数据工程](data.md)、tokenization 和 chat template。
+- **首次阅读**：是否需要微调 → 数据契约 → chat template → loss mask → 验证。
+- **完成信号**：能证明模板、标签 mask、切分和训练输入完全一致。
+- **卡住时**：回到[Tokenization](../core/tokenization.md)的模板与 special token。
+
+</div>
+
 监督微调（Supervised Fine-tuning, SFT）看起来只是 next-token loss，真正困难的是让数据、chat template、loss mask、推理格式和评测保持同一契约。模型经常不是“没学会”，而是训练了错误 token 或部署时换了模板。
 
 ## 先判断是否需要微调
@@ -35,7 +48,30 @@
 }
 ~~~
 
-仓库的 `about-llm.sft-jsonl.v1` 契约要求除可选 `metadata` 外的上述字段全部存在，并拒绝未知字段、重复 JSON key、`NaN`/`Infinity`、空字符串、无配对 Unicode surrogate 和不合法对话顺序。system 只能可选地出现在开头，第一个非 system 消息必须是 user，最后一条必须是 assistant，确保至少有明确监督目标。
+仓库的 `about-llm.sft-jsonl.v2` 契约要求除可选 `metadata/tools` 外的上述字段全部存在，并拒绝未知字段、重复 JSON key、`NaN`/`Infinity`、空治理字符串、无配对 Unicode surrogate 和不合法对话顺序。system 只能可选地出现在开头，第一个非 system 消息必须是 user，最后一条必须是 assistant，确保至少有明确监督目标。
+
+v2 的 tool 子集采用显式 function schema。assistant 可用空 `content` 加一个或多个 `tool_calls`，但每个 call ID 在整段对话中必须唯一、name 必须有对应 definition；紧随其后的 tool response 必须同时携带匹配的 `tool_call_id/name`，并在用户或 assistant 继续前逐个清空全部 pending calls：
+
+~~~json
+{
+  "messages": [
+    {"role": "user", "content": "杭州天气?"},
+    {"role": "assistant", "content": "", "tool_calls": [
+      {"id": "call-1", "type": "function", "function": {
+        "name": "weather", "arguments": {"city": "Hangzhou"}
+      }}
+    ]},
+    {"role": "tool", "content": "sunny", "tool_call_id": "call-1", "name": "weather"},
+    {"role": "assistant", "content": "晴天。"}
+  ],
+  "tools": [{"type": "function", "function": {
+    "name": "weather", "description": "Get weather.",
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}
+  }}]
+}
+~~~
+
+该 contract 是本仓库固定子集，不声称等于所有 provider 的 wire schema。arguments/parameters 必须是 strict JSON object，programmatic 构造也会做不可变深快照，避免调用方后续 mutation 让 fingerprint 漂移。
 
 `id/source/license` 用于治理，`task/language/risk` 用于切片，`group_id` 用于防泄漏划分，`split` 只能是 `train/validation/test`。不要只保存渲染后的长字符串；原始结构让模板可升级和检查。审计进程要求全为 train 的单独文件和包含三种 split 的 combined artifact，并验证前者按顺序逐记录等于后者的 train 子集；trainer 只接收 train 文件和审计进程签发的 readiness artifact。这样可以让训练身份绑定跨 split 审计，同时不把 validation/test 原文访问权交给训练进程。
 
@@ -61,7 +97,7 @@
 python -m about_llm.finetuning_cli audit --jsonl projects/single-gpu-finetuning/audit.example.jsonl --require-splits train,validation,test --output outputs/sft-split-audit.json
 ~~~
 
-门禁检查 required split、重复 id、规范序列化后完全相同的 `messages`、跨 split `group_id` 和跨 split exact content。输出同时给有序数据 fingerprint、保留重复次数但忽略行顺序的 fingerprint，以及绑定契约版本、split policy 和 gate 规则的 manifest fingerprint。字符统计单位是 Unicode code point，**不是 tokenizer token**。
+门禁检查 required split、重复 id、规范序列化后完全相同的 `messages + tools`、跨 split `group_id` 和跨 split exact content。输出同时给有序数据 fingerprint、保留重复次数但忽略行顺序的 fingerprint，以及绑定契约版本、split policy 和 gate 规则的 manifest fingerprint；另报告 tool definition/call/response 数。字符统计单位是 Unicode code point，**不是 tokenizer token**。
 
 这个 exact gate 故意不把范围说大：它不判断 lexical/semantic near duplicate，也不判断许可是否合法，不扫描 PII/secret，也没有运行目标 tokenizer、chat template 或 assistant mask。空白、标点或等义改写不同就不会被 exact hash 捕获。hash 只证明显式 canonical 字段在该序列化规则下的身份，不证明数据正确、安全或可合法使用。
 
@@ -127,7 +163,21 @@ template 定义 BOS/EOS、role token、turn 分隔和 generation prompt。同一
 
 不能靠字符串查找 `<assistant>` 生成 mask：tokenizer 会合并空格或特殊 token。使用 template 提供的 assistant mask；模板不支持时明确实现 token-level span，并用小样本可视化每个 token、id、role、label。
 
+截至 2026-08-13，TRL 0.29.1 的 `assistant_only_loss=True` 是 conversational preprocessing 开关：它要求 chat template 提供 generation mask，并会拒绝已经只含 `input_ids/assistant_masks` 的预分词 Dataset。若为避免 Arrow 改写 nested tool arguments 而在 Dataset 前生成 masks，应显式设 `assistant_only_loss=False`、保留 `assistant_masks` 列，并实际调用同一个 configured collator 检查 final labels；该 collator 会独立按 masks 投影 `-100`。对 prompt-completion 数据，`completion_only_loss=None` 默认只监督 completion，设为 `False` 才监督完整序列。无论走哪条路径，都不能只相信配置名。
+
 多轮对话要决定监督所有 assistant turn 还是只监督最后一轮。前者数据更多，后者避免早期答案上下文与训练目标混淆；选择进入实验配置。
+
+### 从模板 mask 到 TRL 最终 labels 的固定证据 { #target-qwen-sft-final-label-control }
+
+仓库为固定 `Qwen/Qwen2.5-0.5B-Instruct` revision 保留一条独立 control。它先证明 checkpoint 原生模板不含 `{% generation %}`，并在多轮、并行 tool calls、tool preamble 三条 authored fixture 上实际返回全零 assistant mask；再加载审核模板，要求 47 / 301 / 200 个 input IDs 与原生完全相同，并让 8 / 51 / 31 个 mask tokens 精确等于 control 独立保存的 assistant serialization，包括所有 assistant turn、Qwen tool-call markup 和 `<|im_end|>\n`。
+
+raw `Dataset.from_list` 会把并行调用中异构的 `{"city":...}` / `{"expression":...}` arguments 合并成一个 Arrow struct，并向各自缺少的 key 注入 `null`，使 rendered prompt 漂移。因此入口先在 Python 中渲染 token/mask，再把纯整数列交给 Dataset。真实 TRL 0.29.1 configured collator 必须得到 `[3, 301]`：548 attention token、355 padding token、90 个监督 label 与 813 个 `-100`，监督位置等于 input IDs，其余有效 token 与 padding 全部忽略。固定 Qwen CPU FP32 no-grad loss `1.251716` 只说明该 batch 能进入目标权重；它不执行 backward 或 optimizer，也不是训练、收敛和质量证据。
+
+~~~powershell
+python projects/single-gpu-finetuning/run_qwen_target_sft_label_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-sft-label.recorded-report.json
+~~~
+
+这条证据只覆盖固定 Qwen schema 下的三条多轮/tool 记录，不能外推到任意 provider schema、multimodal、任意新消息或 tool 执行/结果真实性；“审核模板与原生 input IDs 相同”也只对该 fixture 成立。authored fixture/readiness/hash 不证明数据合法性、语义质量或来源认证，离线 verifier 不重放 tokenizer/model，verify→loader reopen TOCTOU 仍在。运行入口与机器边界见[站内项目页](../practice/projects/single-gpu-finetuning.md#run)。
 
 ## Packing 与 padding
 
@@ -149,6 +199,30 @@ python projects/single-gpu-finetuning/train_trl_sft.py --model-id <model> --revi
 readiness 不含 held-out 原文，但不是签名凭证。其无密钥 SHA-256 只能在文件未被攻击者整体替换的前提下发现意外漂移；能替换 artifact 的主体也能重算 hash。生产环境仍需最小权限、受控发布通道，必要时使用签名/证明和独立审计日志。readiness 也不是 tokenizer/mask 验证报告。目标 tokenizer 加载后还会执行结构化 assistant-mask preflight、拒绝静默右截断并写 `sft-template-mask-audit.json`；后者仍不独立证明 mask 语义或最终 collator labels 正确。只有 adapter 文件不能精确恢复中断训练。
 
 梯度裁剪前记录 norm；监控 loss、学习率、token/s、step time、显存和有效 token 数。train loss 下降只证明拟合训练 token，不证明任务质量。
+
+### Assistant mask 会改变 accumulation 分母
+
+SFT 中每条序列的监督 token 数不只是由长度决定，还受多轮 assistant span、tool call serialization、padding、truncation 与 `-100` mask 影响。若目标是 assistant token mean，不能对每个 micro-batch 的 masked mean loss 等权平均；应累积 masked loss sum 与 `labels != -100` 的 count，并以整个 optimizer-update window 的全局有效 count 缩放。Sequence mean 或 task-balanced weighting 可以是合理目标，但必须显式命名、实现和评测，不能把它误报为 token mean。
+
+运行 `python projects/single-gpu-finetuning/gradient_accumulation_toy.py` 可看到 `[1,3]` 有效 token 反例：sum/count 路径与 full batch 一致，等权 micro-batch mean 改变 loss 和梯度，ignored positions 的梯度为零。迁移到真实 Trainer 前，还要核对 framework 是否已经除以 accumulation steps、DDP 是 sum 还是 mean、何时 all-reduce count，以及 AMP unscale、clip、`no_sync`、optimizer/scheduler 的顺序。该 toy 没有执行目标 tokenizer/model、optimizer、CUDA 或分布式 runtime。
+
+`python projects/single-gpu-finetuning/ddp_token_mean_control.py` 是与上述 toy 分开的 reducer 集成证据：两个 CPU/Gloo rank 真实 `all_reduce` 得到全局 count 4，并执行默认 DDP backward。对 `[1,3]` rank counts，local loss sum 乘 `D/N=1/2` 得到 full-batch `(0.575,-0.575)`；只乘 `1/N=1/4` 得到 `(0.2875,-0.2875)`，rank-local mean 得到 `(0.35,-0.35)`。它没有执行 accumulation window、`no_sync`、AMP、optimizer、目标 Trainer/tokenizer/model、GPU 或多节点，不能替代真实 SFT 集成测试。
+
+`ddp_accumulation_no_sync_control.py` 进一步执行两个 micro-batch/rank 的 accumulation、正确 `no_sync` scope、同步后的 global-norm clipping 与 plain SGD step。固定 counts `[[1,2],[3,1]]` 时，`D/N=2/7` 得到 pre-clip `(+19/35,-19/35)`，built-in DDP 的 pre/post-clip gradient 和参数更新均与 full batch 一致。计数 hook 证明 `no_sync` 必须包住 forward 和 backward：正确 scope 只有一次 reference all-reduce hook，只包 backward 有两次；本 fixture 后者数值仍相同，不能把“通信多了”误写成“梯度一定错”。它仍没有执行真实 TRL collator/model、AMP、随机层、多 bucket、AdamW、GPU、多节点或质量评测。
+
+`python projects/single-gpu-finetuning/amp_grad_scaler_control.py` 是另一条单进程数值控制：scaled accumulation gradient 24 必须先 unscale 为 3，再 clip 到约 0.5；反向顺序会把 optimizer gradient 错缩为约 0.0625。含 `inf` 的任一 micro-batch 会使整个 AdamW update 被跳过，不能推进 scheduler 或把该窗口记成完成更新。报告还用 scale=1/8 的边界梯度证明漏恢复 GradScaler 会改变下一步 execute/skip 决策。它没有接入当前 SFT collator、TRL、DDP、磁盘 checkpoint 或 CUDA，因此训练入口仍要做目标路径集成测试。
+
+### DataLoader prefetch 与恢复 cursor
+
+多 worker loader 会提前向 worker queue 发 index。仓库的 `dataloader_prefetch_resume_control.py` 在真实 CPU spawn workers 上固定 `num_workers=2,prefetch_factor=2,batch_size=1,in_order=True`：主循环只收到 `[8,3,1]` 时 sampler cursor 已从 0 走到 7，`[7,0,9,4]` 已发出但未交付。把 emitted cursor 直接保存为“已训练位置”后，resume 只见 `[2,6,5]`；保存应用实际 consumed cursor=3，重建后才得到完整顺序。
+
+这仍只恢复 sample identity。fresh workers 的 local Torch RNG 从头开始，tail 不同；按 `(namespace,sample_id)` 构造局部 generator 的 authored transform 则逐位重放。真实增强 key 通常还要绑定数据/变换版本、epoch、重复访问序号，并审计 collision；若变换依赖邻样本、时间、外部服务或全局状态，sample-keyed RNG 也不够。control 没有执行 collator、model、optimizer、IterableDataset、persistent worker、pin memory、distributed sampler 或 queue-state serialization；consumed 也不是 optimizer-committed。生产 resume 应逐 batch 记录 source/sample IDs 并做 kill/reload 对照，不凭 sampler 的当前整数猜进度。
+
+`optimizer_commit_resume_control.py` 进一步执行 main-process inverted-Bernoulli mask、真实 Float64 backward、SGD momentum、StepLR 与两步 accumulation：第三条 `[8,3,1]` 已被 main loop 消费并 stochastic backward 时，只有 `[8,3]` 已提交，故 emitted/consumed/committed=`7/3/2`。base checkpoint 不含 `.grad`，但保存 commit-boundary model/optimizer/scheduler/Torch RNG；从 2 恢复 RNG 并重放 sample `1` 与 uninterrupted bit-exact。第一个负例从 3 起步并使用正确 crash RNG，却漏 gradients/sample `1`；即使 partial-window 缩放保持同为 5 次 optimizer/StepLR step、LR 同为 `0.0125`，参数最大差仍约 `0.0057678586`，而未来 RNG 轨迹相同。
+
+第二条正确路径从 consumed=3 加载绑定 base digest 的 sidecar；它恢复 pending `[1]`、position/divisor、两个逐参数 gradients 与 crash-observed Torch RNG，首个完成窗口为 `[1,7]`，终态也 bit-exact。sidecar 协议现在要求最后发布 strict canonical manifest，先核对 complete state、数据 identity、base/sidecar name/schema/size/hash 与发布顺序，再按同一 identity 加载 bytes。另一个隔离负例恢复 gradients/ledger 却使用 commit-boundary RNG：step/LR 相同，参数最大差约 `0.0178788936`，终态 RNG 不同。base-only、两 payload 无 manifest、manifest 缺 sidecar、sidecar post-manifest tamper 四种快照均在 `torch.load` 前拒绝；base-only 仍能走 commit-boundary replay。
+
+真实 SFT 还要把有效-token分母、assistant mask、GradScaler、Python/NumPy/CUDA/worker RNG 与 adapter/optimizer state 纳入同一协议；tiny CPU control 只覆盖 main-process Torch RNG 与 StepLR。manifest-last 只检测当前 incomplete/mismatched bundle，base+sidecar+manifest 仍非 sample/optimizer 原子发布，也无 directory `fsync`、断电/filesystem 故障、来源认证或不可变目录证据，因此不证明目标 Trainer 恢复。
 
 ## 验证与早停
 

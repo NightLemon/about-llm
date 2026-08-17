@@ -1,5 +1,18 @@
 # vLLM 与 OpenAI-compatible 单卡服务
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：在 Linux/GPU 上部署和验收 vLLM 的工程师。
+- **先修**：[推理基础](inference.md)、Linux、GPU 显存和 HTTP 流式协议。
+- **首次阅读**：适用边界 → 最小启动 → 容量参数 → tokenizer → 单卡验收。
+- **完成信号**：能在目标环境记录 revision、VRAM、TTFT/TPOT 和失败样例。
+- **卡住时**：先用[环境矩阵](../guide/environment.md)确认平台与 wheel，不在 Windows 原生环境硬装。
+
+</div>
+
 vLLM 的价值不只是“启动一个 API”，而是 PagedAttention、continuous batching、prefix caching 和调度把多个变长请求高效放到 GPU。生产部署仍需模型许可、容量、限流、观测、升级和回滚。
 
 ## 适用边界
@@ -92,11 +105,19 @@ vLLM 支持的 AWQ/GPTQ/FP8/bitsandbytes 等依版本和硬件变化。选择“
 
 OpenAI-compatible 并不保证所有扩展完全相同。契约测试覆盖：model id、messages/content、多模态结构、tools、response_format、logprobs、usage、finish reason、错误 schema 和 SSE `[DONE]`。
 
+本仓库的 target-service control 是对这份契约测试方法的窄 reference：固定 Qwen2.5-0.5B-Instruct revision，逐文件重哈希后用 Transformers CPU FP32 eager 加载，真实启动 loopback subprocess，并验证 Bearer、models、unknown field、wrong model、non-stream/SSE、精确 usage/finish 与后端两次 `generate()`。它没有运行 vLLM，接口只实现 closed chat subset；不能把 Uvicorn 0.52.1 重录报告 `sha256:63e566ca…617ddb` 写成 vLLM compatibility、GPU 性能或生产安全结论。迁移到 vLLM 时应以同一 checkpoint/prompt/token trace 重跑，而不是继承 reference 的通过状态。
+
 流式客户端要处理：一个 TCP chunk 多个 event、一个 event 跨 chunk、空 keepalive、多行 data、UTF-8 分片、错误事件和提前断开。仓库 `about_llm.inference.sse` 用增量 parser 验证这些边界。
 
 SSE framing 与 stop matching 仍是两层：前者还原 event，后者在 decoded output text 上匹配可能跨 event/token 的 stop。仓库 `IncrementalStopMatcher` 通过 longest partial-prefix withholding 避免提前泄露 stop 前缀，并固定 first-completion/配置顺序 overlap 语义；它不是 vLLM stop 实现，也不能从客户端截断推断服务端 finish reason、usage、KV release 或计费停止。目标版本必须用 token/event trace 单独做契约测试。
 
 客户端取消后服务端应尽快停止 decode 并释放 KV；监控 disconnect-to-release 延迟。代理层必须关闭会破坏 SSE 的缓冲。
+
+还要辨认“post-completion SSE”：若 backend 先生成完整答案再返回 `StreamingResponse`，client 虽然看见多个合法 event 和 `[DONE]`，首个 event 已经发生在模型计算结束后，既没有增量 TTFT 优势，也无法用断流证明取消 model work。仓库 reference 明确属于这一类，只把它用于协议投影对账。
+
+仓库的第二条 incremental control 使用 authored cooperative async iterator 和真实 Uvicorn loopback subprocess：它验证 content 在 backend 完成前可见，且 client close 会把 `CancelledError` 传播到 ASGI stream task/backend iterator，后续 scripted token 不再产生。Uvicorn 0.52.1 重录 report `sha256:25846822…2b5d00` 没有加载 vLLM、模型、CUDA 或 KV；迁移到 vLLM 时必须重新关联 request id、scheduler sequence、decode step、block allocator release 与 client disconnect，分别验收“停止调度”和“资源已释放”，不能继承这个 control 的通过状态。
+
+第三条 control 真实执行随机 tiny GPT-2 的 CPU `GenerationMixin.generate()` thread，并用 authored streamer pause + `threading.Event` + `StoppingCriteria` 让断连在第一次 forward/首 token 后终止 generation、join thread；Uvicorn 0.52.1 重录报告为 `sha256:eadcab54…f62bc7`。这比纯 async iterator 多证明了一层真实 Transformers loop，但 cooperative hook 与暂停窗口都是 control 自己植入的；它没有 vLLM scheduler、CUDA kernel、Paged KV block 或目标模型。vLLM 验收仍须看目标版本自己的 abort API、scheduler trace 和 block-release trace，不能把 Python thread join 等同于 engine sequence/KV 已释放。
 
 ## 指标定义
 

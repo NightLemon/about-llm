@@ -95,7 +95,9 @@ def test_runtime_control_cli_emits_same_evidence() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=60,
+        # Cold Transformers imports on Windows can exceed 60 seconds while
+        # the full coverage suite is retaining other large runtime modules.
+        timeout=120,
     )
     report = json.loads(completed.stdout)
 

@@ -1,5 +1,18 @@
 # Agent 评测、仿真与红队
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：Agent 评测、simulation、红队和发布工程师。
+- **先修**：[Agent 架构](../applications/agent-architecture.md)和[评测方法](evaluation-methodology.md)。
+- **首次阅读**：case → outcome/trajectory 指标 → 模拟工具 → 故障注入 → 发布门禁。
+- **完成信号**：能在隔离环境验证任务结果、安全约束、预算和恢复行为。
+- **卡住时**：先跑[Safe Agent 最小路径](../practice/projects/safe-agent.md#run)取得可审计 trace。
+
+</div>
+
 Agent 的最终回答可能看起来正确，但中间越权读取、重复副作用或浪费百次调用。评测必须同时覆盖 outcome、trajectory、policy、恢复和成本，并用可重置环境避免回归测试触发真实影响。
 
 ## 任务 case

@@ -1,0 +1,5 @@
+{"case_id":"json-object-order","output":"{\"ok\": true, \"answer\": 42}","latency_seconds":0.0}
+{"case_id":"json-wrong-value","output":"{\"answer\":43}","latency_seconds":0.0}
+{"case_id":"json-duplicate-key","output":"{\"answer\":0,\"answer\":42}","latency_seconds":0.0}
+{"case_id":"json-nonfinite","output":"{\"answer\":NaN}","latency_seconds":0.0}
+{"case_id":"json-array-order","output":"{\"items\":[2,1]}","latency_seconds":0.0}

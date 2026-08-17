@@ -1,0 +1,105 @@
+{
+  "audit": {
+    "candidate_count": 4,
+    "duplicate_content_groups": [
+      [
+        "syn-001",
+        "syn-002"
+      ]
+    ],
+    "eligibility_rate": 0.5,
+    "eligible_count": 2,
+    "eligible_human_reviewed_count": 1,
+    "eligible_record_ids": [
+      "syn-001",
+      "syn-002"
+    ],
+    "eligible_unique_content_count": 1,
+    "failed_verifier_record_ids": [
+      "syn-004"
+    ],
+    "fingerprint_profile": "byte_exact",
+    "human_reviewed_count": 1,
+    "lineage_cycle_record_ids": [],
+    "missing_verifier_record_ids": [
+      "syn-003"
+    ],
+    "nonmonotonic_parent_pairs": [],
+    "rounds": [
+      {
+        "candidate_count": 3,
+        "eligible_count": 2,
+        "generation_round": 1
+      },
+      {
+        "candidate_count": 1,
+        "eligible_count": 0,
+        "generation_round": 2
+      }
+    ],
+    "self_verified_record_ids": [
+      "syn-002"
+    ],
+    "unresolved_parent_pairs": []
+  },
+  "evidence_boundary": "Eligibility means only that declared verifier gates passed. It does not prove semantic correctness, verifier independence or calibration, diversity, safety, licensing, privacy, absence of leakage or collapse, observed training exposure, or downstream training benefit. Unkeyed hashes do not authenticate provenance.",
+  "inputs": {
+    "mixture": {
+      "sha256": "sha256:4bef57e8ca23e35b8f3953bb442779f9d706ee2e9570ef5d4090a956c3669bc0",
+      "size_bytes": 341
+    },
+    "records": {
+      "sha256": "sha256:7b1fe32811b835aa20c579c0ed351311a617a0ec70cd582a5f5313b2b78d8530",
+      "size_bytes": 1457
+    }
+  },
+  "mixture": {
+    "exposures": [
+      {
+        "expected_consumed_tokens": 1500000.0,
+        "expected_repetition_factor": 1.875,
+        "generation_round": null,
+        "name": "real-anchor",
+        "normalized_fraction": 0.75,
+        "source_kind": "real"
+      },
+      {
+        "expected_consumed_tokens": 500000.0,
+        "expected_repetition_factor": 5.0,
+        "generation_round": 1,
+        "name": "synthetic-round-1",
+        "normalized_fraction": 0.25,
+        "source_kind": "synthetic"
+      }
+    ],
+    "synthetic_fraction": 0.25,
+    "total_consumed_tokens": 2000000
+  },
+  "policy": {
+    "duplicate_content_affects_verifier_eligibility": false,
+    "fingerprint_profile": "byte_exact",
+    "known_parent_ids": [
+      "real-anchor-001"
+    ],
+    "required_verifiers": [
+      "grounding",
+      "schema"
+    ],
+    "revision_overlap_affects_verifier_eligibility": false,
+    "unresolved_lineage_affects_verifier_eligibility": false
+  },
+  "report_fingerprint": "sha256:202d8db97b704c5542e8516c5bd0c945da1c1022100f6ecbfb828f2d2bb6f4cd",
+  "schema_version": "about-llm.synthetic-data-audit.v2",
+  "scope": {
+    "atomic_directory_publication_or_verify_use_toctou_prevented": false,
+    "full_local_recomputation_verifier_available": true,
+    "input_bytes_and_external_policy_bound": true,
+    "license_consent_privacy_or_secret_review_executed": false,
+    "quality_diversity_collapse_or_downstream_benefit_proved": false,
+    "semantic_near_duplicate_detector_executed": false,
+    "source_authentication_or_signature_verified": false,
+    "strict_json_duplicate_nonfinite_unknown_field_rejection": true,
+    "teacher_student_or_verifier_model_executed": false,
+    "training_or_observed_token_ledger_executed": false
+  }
+}

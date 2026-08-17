@@ -1,5 +1,18 @@
 # 治理工件模板
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：需要把治理要求变成可审计工件的跨职能团队。
+- **先修**：[治理生命周期](governance-impact.md)和一个具体系统用途。
+- **首次阅读**：Use-Case Record → Impact Assessment → Control Evidence → Release Decision。
+- **完成信号**：能用真实 owner、revision 和 evidence 填写工件，而不是复制占位文本。
+- **卡住时**：回到[治理、法规与社会影响](governance-impact.md)确定风险和责任边界。
+
+</div>
+
 这些模板把治理原则变成可审阅的记录。它们是工程起点，不构成法律意见，也不会因为“填完表格”自动产生合规性。具体字段、签署角色、保留期和监管报告必须由适用地区、行业和组织制度确定。
 
 使用原则：

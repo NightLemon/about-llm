@@ -1,5 +1,18 @@
 # RAG 数据摄取、切分与索引生命周期
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：文档解析、数据管道和搜索索引工程师。
+- **先修**：[RAG 总览](rag.md)、文档 metadata 和基本存储概念。
+- **首次阅读**：来源契约 → 解析 → chunking → 增量更新 → 删除与备份。
+- **完成信号**：能重放同一 snapshot，并证明更新、删除和 lineage 正确。
+- **卡住时**：先回到[训练数据工程](../training/data.md)的数据契约与版本思想。
+
+</div>
+
 RAG 的上限通常在生成之前就被数据管道决定。解析丢了一张表、chunk 切断了定义、旧版本没有删除，后面的 embedding、reranker 和更强模型都无法可靠补救。本章把 ingestion 当作可重放的数据产品，而不是一次性的“把文件塞进向量库”。
 
 ## 从来源到可检索单元

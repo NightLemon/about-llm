@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -10,6 +11,8 @@ from about_llm.finetuning.data import (
     SFT_DATA_CONTRACT_VERSION,
     ChatMessage,
     DataSplit,
+    FunctionToolCall,
+    FunctionToolDefinition,
     MessageRole,
     SFTRecord,
     audit_sft_records,
@@ -45,6 +48,63 @@ def _record(
         group_id=group_id or f"group-{record_id}",
         split=split,
         metadata={} if metadata is None else metadata,
+    )
+
+
+def _tool_definition(name: str) -> FunctionToolDefinition:
+    property_name = "city" if name == "weather" else "expression"
+    return FunctionToolDefinition(
+        name=name,
+        description=f"Call {name}.",
+        parameters={
+            "type": "object",
+            "properties": {property_name: {"type": "string"}},
+            "required": [property_name],
+            "additionalProperties": False,
+        },
+    )
+
+
+def _tool_call(call_id: str, name: str, **arguments: Any) -> FunctionToolCall:
+    return FunctionToolCall(call_id=call_id, name=name, arguments=arguments)
+
+
+def _tool_record(*, metadata: dict[str, Any] | None = None) -> SFTRecord:
+    return SFTRecord(
+        record_id="tools-train",
+        messages=(
+            ChatMessage(MessageRole.USER, "杭州天气和 2+2 分别是什么?"),
+            ChatMessage(
+                MessageRole.ASSISTANT,
+                "",
+                tool_calls=(
+                    _tool_call("call-weather", "weather", city="Hangzhou"),
+                    _tool_call("call-calculator", "calculator", expression="2+2"),
+                ),
+            ),
+            ChatMessage(
+                MessageRole.TOOL,
+                '{"temperature_c":30}',
+                tool_call_id="call-weather",
+                name="weather",
+            ),
+            ChatMessage(
+                MessageRole.TOOL,
+                '{"value":4}',
+                tool_call_id="call-calculator",
+                name="calculator",
+            ),
+            ChatMessage(MessageRole.ASSISTANT, "杭州 30°C, 2+2=4。"),
+        ),
+        source="unit-test",
+        license_id="test-only",
+        task="tool-use",
+        language="zh",
+        risk="normal",
+        group_id="tools-group",
+        split=DataSplit.TRAIN,
+        metadata={} if metadata is None else metadata,
+        tools=(_tool_definition("weather"), _tool_definition("calculator")),
     )
 
 
@@ -109,6 +169,68 @@ def test_loader_rejects_unknown_fields(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match=r"unknown=\['unexpected'\]"):
+        load_sft_records(path)
+
+
+def test_tool_aware_loader_accepts_parallel_calls_and_empty_assistant_content(
+    tmp_path: Path,
+) -> None:
+    expected = _tool_record(metadata={"private_note": "audit only"})
+    path = tmp_path / "tools.jsonl"
+    path.write_text(
+        json.dumps(expected.to_dict(), ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    (loaded,) = load_sft_records(path)
+    report = audit_sft_records((loaded,), required_splits=(DataSplit.TRAIN,))
+
+    assert loaded.to_dict() == expected.to_dict()
+    assert loaded.messages[1].content == ""
+    assert report.gate_passed
+    assert report.tool_definition_count == 2
+    assert report.tool_call_count == 2
+    assert report.tool_response_count == 2
+    assert set(loaded.to_training_row()) == {"messages", "tools"}
+    assert "metadata" not in loaded.to_training_row()
+    assert loaded.to_training_row()["tools"] == expected.to_dict()["tools"]
+
+
+@pytest.mark.parametrize("surface", ["tool_definition", "tool_call"])
+def test_tool_loader_rejects_unknown_nested_fields(
+    tmp_path: Path, surface: str
+) -> None:
+    payload = _tool_record().to_dict()
+    if surface == "tool_definition":
+        payload["tools"][0]["function"]["unexpected"] = True
+    else:
+        payload["messages"][1]["tool_calls"][0]["function"]["unexpected"] = True
+    path = tmp_path / f"unknown-{surface}.jsonl"
+    path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"unknown=\['unexpected'\]"):
+        load_sft_records(path)
+
+
+@pytest.mark.parametrize(
+    ("arguments_json", "expected"),
+    [
+        ('{"city":"Hangzhou","city":"Shanghai"}', "duplicate JSON object key"),
+        ('{"temperature":NaN}', "non-standard JSON constant"),
+    ],
+)
+def test_tool_loader_rejects_non_strict_nested_arguments(
+    tmp_path: Path, arguments_json: str, expected: str
+) -> None:
+    line = json.dumps(
+        _tool_record().to_dict(), ensure_ascii=False, separators=(",", ":")
+    )
+    original = '{"city":"Hangzhou"}'
+    assert original in line
+    path = tmp_path / "bad-tool-arguments.jsonl"
+    path.write_text(line.replace(original, arguments_json, 1) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=expected):
         load_sft_records(path)
 
 
@@ -190,6 +312,220 @@ def test_training_row_excludes_governance_metadata() -> None:
 
     assert set(record.to_training_row()) == {"messages"}
     assert record.to_dict()["metadata"] == {"private_note": "audit only"}
+
+
+def test_tool_values_are_deep_snapshots_and_fingerprints_cannot_drift() -> None:
+    arguments = {"location": {"city": "Hangzhou", "coordinates": [30.3, 120.2]}}
+    parameters = {
+        "type": "object",
+        "properties": {"location": {"type": "object"}},
+    }
+    call = FunctionToolCall("call-1", "weather", arguments)
+    definition = FunctionToolDefinition("weather", "Get weather.", parameters)
+    record = SFTRecord(
+        "tool-snapshot",
+        (
+            ChatMessage(MessageRole.USER, "weather"),
+            ChatMessage(MessageRole.ASSISTANT, "", tool_calls=(call,)),
+            ChatMessage(
+                MessageRole.TOOL,
+                "sunny",
+                tool_call_id="call-1",
+                name="weather",
+            ),
+            ChatMessage(MessageRole.ASSISTANT, "Sunny."),
+        ),
+        "unit-test",
+        "test-only",
+        "tool-use",
+        "en",
+        "normal",
+        "tool-snapshot-group",
+        DataSplit.TRAIN,
+        tools=(definition,),
+    )
+    fingerprint = record.record_fingerprint
+
+    arguments["location"]["city"] = "Shanghai"
+    arguments["location"]["coordinates"].append(0.0)
+    parameters["properties"]["location"]["type"] = "string"
+
+    assert call.to_dict()["function"]["arguments"] == {
+        "location": {"city": "Hangzhou", "coordinates": [30.3, 120.2]}
+    }
+    assert definition.to_dict()["function"]["parameters"] == {
+        "type": "object",
+        "properties": {"location": {"type": "object"}},
+    }
+    assert record.record_fingerprint == fingerprint
+    frozen_location = cast(dict[str, Any], call.arguments["location"])
+    with pytest.raises(TypeError):
+        frozen_location["city"] = "Nanjing"
+
+
+def test_programmatic_tool_values_require_strict_json_objects() -> None:
+    with pytest.raises(ValueError, match="strict JSON"):
+        FunctionToolCall("call-1", "weather", {"temperature": float("nan")})
+    with pytest.raises(ValueError, match="strict JSON"):
+        FunctionToolDefinition(
+            "weather", "Get weather.", {"type": "object", "limit": float("inf")}
+        )
+    with pytest.raises(ValueError, match=r"parameters\.type must be 'object'"):
+        FunctionToolDefinition("weather", "Get weather.", {"type": "array"})
+
+
+def test_message_rejects_duplicate_parallel_call_ids() -> None:
+    call = _tool_call("same", "weather", city="Hangzhou")
+    with pytest.raises(ValueError, match="message tool call ids must be unique"):
+        ChatMessage(MessageRole.ASSISTANT, "", tool_calls=(call, call))
+
+
+@pytest.mark.parametrize(
+    ("messages", "tools", "expected"),
+    [
+        (
+            (
+                ChatMessage(MessageRole.USER, "first"),
+                ChatMessage(
+                    MessageRole.ASSISTANT,
+                    "",
+                    tool_calls=(_tool_call("same", "weather", city="Hangzhou"),),
+                ),
+                ChatMessage(
+                    MessageRole.TOOL,
+                    "sunny",
+                    tool_call_id="same",
+                    name="weather",
+                ),
+                ChatMessage(MessageRole.ASSISTANT, "first done"),
+                ChatMessage(MessageRole.USER, "again"),
+                ChatMessage(
+                    MessageRole.ASSISTANT,
+                    "",
+                    tool_calls=(_tool_call("same", "weather", city="Shanghai"),),
+                ),
+                ChatMessage(
+                    MessageRole.TOOL,
+                    "rainy",
+                    tool_call_id="same",
+                    name="weather",
+                ),
+                ChatMessage(MessageRole.ASSISTANT, "second done"),
+            ),
+            (_tool_definition("weather"),),
+            "unique across the conversation",
+        ),
+        (
+            (
+                ChatMessage(MessageRole.USER, "weather"),
+                ChatMessage(
+                    MessageRole.ASSISTANT,
+                    "",
+                    tool_calls=(_tool_call("call-1", "weather", city="Hangzhou"),),
+                ),
+                ChatMessage(
+                    MessageRole.TOOL,
+                    "sunny",
+                    tool_call_id="unknown",
+                    name="weather",
+                ),
+                ChatMessage(MessageRole.ASSISTANT, "done"),
+            ),
+            (_tool_definition("weather"),),
+            "unknown or already-resolved",
+        ),
+        (
+            (
+                ChatMessage(MessageRole.USER, "weather"),
+                ChatMessage(
+                    MessageRole.ASSISTANT,
+                    "",
+                    tool_calls=(_tool_call("call-1", "weather", city="Hangzhou"),),
+                ),
+                ChatMessage(
+                    MessageRole.TOOL,
+                    "sunny",
+                    tool_call_id="call-1",
+                    name="weather",
+                ),
+                ChatMessage(MessageRole.ASSISTANT, "done"),
+            ),
+            (),
+            "no matching tool definition",
+        ),
+        (
+            (
+                ChatMessage(MessageRole.USER, "weather"),
+                ChatMessage(
+                    MessageRole.ASSISTANT,
+                    "",
+                    tool_calls=(_tool_call("call-1", "weather", city="Hangzhou"),),
+                ),
+                ChatMessage(
+                    MessageRole.TOOL,
+                    "sunny",
+                    tool_call_id="call-1",
+                    name="calculator",
+                ),
+                ChatMessage(MessageRole.ASSISTANT, "done"),
+            ),
+            (_tool_definition("weather"),),
+            "does not match call",
+        ),
+        (
+            (
+                ChatMessage(MessageRole.USER, "weather"),
+                ChatMessage(
+                    MessageRole.ASSISTANT,
+                    "",
+                    tool_calls=(_tool_call("call-1", "weather", city="Hangzhou"),),
+                ),
+            ),
+            (_tool_definition("weather"),),
+            "must be followed by tool responses",
+        ),
+        (
+            (
+                ChatMessage(MessageRole.USER, "both"),
+                ChatMessage(
+                    MessageRole.ASSISTANT,
+                    "",
+                    tool_calls=(
+                        _tool_call("call-1", "weather", city="Hangzhou"),
+                        _tool_call("call-2", "calculator", expression="2+2"),
+                    ),
+                ),
+                ChatMessage(
+                    MessageRole.TOOL,
+                    "sunny",
+                    tool_call_id="call-1",
+                    name="weather",
+                ),
+                ChatMessage(MessageRole.ASSISTANT, "done"),
+            ),
+            (_tool_definition("weather"), _tool_definition("calculator")),
+            "one response each",
+        ),
+    ],
+)
+def test_conversation_rejects_invalid_tool_call_lifecycle(
+    messages: tuple[ChatMessage, ...],
+    tools: tuple[FunctionToolDefinition, ...],
+    expected: str,
+) -> None:
+    with pytest.raises(ValueError, match=expected):
+        SFTRecord(
+            "bad-tools",
+            messages,
+            "unit-test",
+            "test-only",
+            "tool-use",
+            "en",
+            "normal",
+            "bad-tools-group",
+            DataSplit.TRAIN,
+            tools=tools,
+        )
 
 
 def test_metadata_is_a_deep_snapshot_and_fingerprint_cannot_drift() -> None:

@@ -45,7 +45,7 @@ python projects/single-gpu-finetuning/continual_replay_toy.py --benchmark
 
 ## 单卡数据契约
 
-每条样本严格保留 `id/messages/source/license/task/language/risk/group_id/split`，可选 `metadata`。训练只对 assistant 区域计算 loss；padding、system、user、tool 是否 mask 必须通过 token 级检查。按来源或用户划分测试，禁止近重复跨集合。
+每条样本严格保留 `id/messages/source/license/task/language/risk/group_id/split`，可选 `metadata/tools`。tool-aware v2 还要求 function definition、call ID/name、并行 response 和 pending-call lifecycle 完整匹配。训练只对 assistant 区域计算 loss；padding、system、user、tool response 是否 mask 必须通过 token 级检查。按来源或用户划分测试，禁止近重复跨集合。
 
 先审计包含 train/validation/test 的 combined artifact：
 
@@ -86,6 +86,143 @@ python projects/single-gpu-finetuning/minhash_lsh_toy.py
 - 显存优化：4-bit 基座、gradient checkpointing、paged optimizer；
 - 完整实验：数据卡、seed、checkpoint、早停、回归和合并/加载测试。
 
+## 变长 masked token 的 gradient accumulation 控制
+
+先用一个不依赖目标 checkpoint 的精确反例检查 loss reduction：
+
+~~~powershell
+python projects/single-gpu-finetuning/gradient_accumulation_toy.py
+python -m pytest tests/test_gradient_accumulation.py -q
+~~~
+
+两个 micro-batch 分别有 1 和 3 个监督 token，另有 3 个 ignored/padding 位置。若目标是全窗口 token mean，micro-batch mean 的正确权重是 `1/4` 与 `3/4`；把两个 mean 等权平均则错误地给成 `1/2` 与 `1/2`。`Fraction` oracle 的正确 class-aggregate logit gradient 为 `(+23/40,-23/40)`，错误路径为 `(+7/20,-7/20)`，差为 `(-9/40,+9/40)`。
+
+同一脚本真实执行 PyTorch CPU Float64 `cross_entropy.backward()`：full batch 与逐 micro-batch `reduction="sum"`、最后除以全局有效 token count 的梯度 `torch.equal`；等权 micro-batch mean 与 full batch 不同，ignored rows 的梯度严格为零。这个结果只证明 authored logits/targets/mask 下的单进程 reduction。脚本没有 optimizer step、dropout/BatchNorm、AMP、DDP/FSDP/ZeRO collective、`no_sync`、CUDA、目标 tokenizer/model、性能或质量评测；生产训练还必须核对 reducer 的 sum/mean 与 world-size scaling。
+
+### 双进程 CPU/Gloo DDP token-mean 控制
+
+这条 control 与上面的单进程 toy 是两层独立证据；它不把项目改写成多 GPU 训练项目，只在 CPU 上实测默认 DDP reducer：
+
+~~~powershell
+python projects/single-gpu-finetuning/ddp_token_mean_control.py
+python -m pytest tests/test_ddp_token_mean.py -q
+~~~
+
+固定 `world_size=2`、全局有效 token 数 `N=4`、rank counts `[1,3]`。精确 oracle 表明，默认 DDP 对 rank gradient 取 mean 时，每 rank 应把 local loss sum 乘 `D/N=1/2`；真实 Gloo/DDP 得到 `(+23/40,-23/40)` = `(0.575,-0.575)`，与单进程 full batch 的最大误差约 `1.11e-16`。漏乘 world size、只用 `1/N=1/4` 时结果为 `(+23/80,-23/80)` = `(0.2875,-0.2875)`，恰为 full 的一半；rank-local mean 则为 `(+7/20,-7/20)` = `(0.35,-0.35)`。两个真实 OS 进程都通过 count `all_reduce` 观察到 4，并看到相同同步梯度。
+
+这只证明当前 PyTorch 2.13.0+cpu、Gloo、temporary FileStore、`spawn`、默认 `DistributedDataParallel` 和 authored shared-bias fixture。它没有执行 optimizer/parameter update/clipping、gradient accumulation + `no_sync`、AMP/scaler、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点/远端、目标 tokenizer/model/dataset、性能、传输安全或质量评测；跨硬件/world-size bitwise 等价也未证明。
+
+### 双进程 DDP accumulation、`no_sync`、clip 与 SGD 控制
+
+在单次同步 reduction 通过后，再运行完整的极小 update window：
+
+~~~powershell
+python projects/single-gpu-finetuning/ddp_accumulation_no_sync_control.py
+python -m pytest tests/test_ddp_accumulation_no_sync.py -q
+~~~
+
+两个 rank 各处理两个 micro-batch，监督 token counts 为 `[[1,2],[3,1]]`，全局 `N=7`，所以 local loss sum 统一乘 `D/N=2/7`。精确 oracle 的 full/one-final-sync/sync-every-microbatch pre-clip gradient 都为 `(+19/35,-19/35)`；若不裁剪，plain SGD `lr=7/20` 的参数 delta 是 `(-19/100,+19/100)`。
+
+真实 CPU Float64/Gloo 运行先用未改写的 built-in DDP，将首批 forward+backward 一起放入 `no_sync`，末批同步；再用 PyTorch 官方 `default_hooks.allreduce_hook` reference 路径计数。正确 scope 观察 1 次两元素 bucket hook；故意把 forward 留在 context 外、只包 backward，观察 2 次 hook。三条路径的 pre-clip gradient 均约为 `(0.542857,-0.542857)`，同步后以 `max_grad_norm=0.5` clipping，再做 plain SGD `lr=0.35`，最终 bias 约 `(-0.123744,+0.123744)`；pre/post-clip gradient 和 update 与单进程 full batch 的最大误差均为 0。
+
+backward-only 负对照在这个线性 fixture 上仍保持数值正确，只是没有省通信。built-in reducer 本身没有被直接插桩计数；计数来自另一个语义等价的官方 reference hook 路径。该 control 只有一个两元素参数/单 bucket，无 dropout/BatchNorm/RNG、AMP/scaler、AdamW/optimizer state、checkpoint resume、FSDP/ZeRO/TP/PP/EP、CUDA/GPU、多节点、目标 tokenizer/model/Trainer、通信字节、性能或质量证据。
+
+### CPU AMP/GradScaler overflow、clip 顺序与 state resume 控制
+
+下面的控制与 DDP 实验独立，真实执行 CPU FP16 autocast、CPU GradScaler、SGD/AdamW，而不是模拟 scale 数值：
+
+~~~powershell
+python projects/single-gpu-finetuning/amp_grad_scaler_control.py
+python -m pytest tests/test_amp_grad_scaler.py -q
+~~~
+
+两个 micro-batch 的 scaled accumulated gradient 为 24。正确顺序 `scaler.unscale_(optimizer) → clip_grad_norm_(max_norm=0.5)` 先得到 3，再 clip 为约 0.5，SGD 参数与 full batch reference exact；负对照先对 24 clipping，再 unscale，optimizer-visible gradient 只有约 0.0625，参数更新随之改变。报告用 strict JSON 表示 intentional non-finite：`finite=false,value=null`，不会输出非标准 `Infinity/NaN`。
+
+AdamW 路径先做一次 finite step，得到 step=1、`exp_avg=0.1`、`exp_avg_sq=0.001`。随后三个包含一个 finite 和一个 `inf` micro-batch 的窗口使 scale `8→4→2→1`；每次都跳过整个 update，参数与 AdamW moments/step exact 不变。进程内 split point 同时深拷贝 model、optimizer 与 scaler。恢复 scale=1 后，unscaled gradient 10000 保持 finite、执行 step=2，并与不中断路径的参数/moments/scaler exact；漏恢复 scaler、回到 initial scale=8 时 FP16 scaled gradient overflow，scale `8→4`，参数和 step=1 不动。
+
+范围只到当前 PyTorch 2.13.0+cpu、单 FP32 scalar 参数、CPU FP16 autocast 和进程内 state replay。没有 strict 文件 checkpoint、真实进程重启、scheduler/RNG/DataLoader、DDP/FSDP/ZeRO、CUDA/GPU kernel、目标 tokenizer/model/Trainer、性能、收敛或质量证据。MiniGPT 文件 resume control 与本 control 是互补但独立的证据；它们本身没有被事后拼接。
+
+### 双进程 DDP + AMP overflow 共识控制
+
+这条 control 在同一 update path 中真实组合 built-in DDP reducer、`no_sync`、CPU FP16 autocast/GradScaler、AdamW 与 StepLR：
+
+~~~powershell
+python projects/single-gpu-finetuning/ddp_amp_overflow_consensus_control.py
+python -m pytest tests/test_ddp_amp_overflow_consensus.py -q
+~~~
+
+三条路径都先执行一次 finite warm-up，建立 parameter≈0.99、AdamW step=1、scheduler epoch=1/LR=0.005、scale=8、growth tracker=1。第一条让 rank 0 在首个 `no_sync` micro-batch 产生 non-finite；末批 built-in DDP reduction 后两个 rank 都 non-finite，均跳过 AdamW/StepLR，scale `8→4`、tracker `1→0`，训练状态保持一致。
+
+第二、三条先让 DDP 在两边得到 finite scaled gradient=8，再由脚本在 rank 0 的 `unscale_` **之前**把 gradient 改成 Inf。这是明确的 authored post-reduction fault，不是 DDP 正常行为。无额外共识时，rank 0 skip、保持 step=1/parameter≈0.99/LR=0.005/scale=4；rank 1 update 到 step=2/parameter≈0.985/LR=0.0025/scale=8，moments 与 scheduler 也分叉。加入 optimizer-pre `all_reduce(MAX)` finite gate 后，local flags `[1,0]` 变成两个 global flag 1；两边都不调用 scaler/optimizer/scheduler step，并显式把 scale 统一到 4，parameter/optimizer/scheduler/scaler state 保持一致。non-finite value 仍只以 `finite=false,value=null` 写 strict JSON。
+
+这里的 `scaler.update(new_scale=4)` 是仓库定义的共同 scale policy，不等于同步了 GradScaler 的 native found-inf transition：两边 growth tracker 都保留为 1，而 native overflow 会重置为 0。生产代码应使用目标框架公开的 distributed overflow/scaler 协议，或定义并验证完整 scaler state；不能把这个单参数示例当 drop-in wrapper。第一条也说明当前默认 reducer 会传播 reduction 前的 Inf，不能反向声称 vanilla DDP 在所有情况下都缺一次 flag collective。control 没有 clipping、自然 overflow、多参数/bucket、custom hook、conditional graph、checkpoint/elastic restart、FSDP/ZeRO、CUDA/NCCL、多节点、目标 Trainer/model、性能、收敛或质量证据；built-in collective count 未直接插桩。
+
+### 跨进程 AMP checkpoint、scheduler、RNG 与数据游标控制
+
+第三条 control 在同一条训练轨迹中统一验证这些状态，而不是借用前两条实验的结论：
+
+~~~powershell
+python projects/single-gpu-finetuning/checkpoint_resume_control.py
+python -m pytest tests/test_training_resume_process_control.py -q
+~~~
+
+固定 6 参数线性模型使用 CPU FP16 autocast、真实 GradScaler/AdamW/`StepLR(step_size=2,gamma=0.5)`、Torch 全局 RNG 生成的显式 inverted-dropout mask、Python RNG loss factor，以及独立 generator 驱动的 8-example stateful shuffle。attempt 0 成功，attempt 1–3 intentional non-finite，使 scale `8→4→2→1`，但 AdamW step 保持 1、scheduler `last_epoch/step_count` 保持 `1/2`。phase-1 随后把 model/optimizer/scheduler/scaler、Torch CPU/Python RNG、permutation/cursor/epoch/generator、attempt/update progress 与 dataset hash 写入 21,747-byte checkpoint 并退出；不同 PID 的进程重开后完成 attempt 4–7。resume tail 的 batch、随机因子、mask、loss、gradient norm、scale、optimizer/scheduler/LR trace 和最终所有组件 fingerprint 与独立 uninterrupted worker exact。
+
+五条负对照分别在同一个 split point 错误地：overflow 仍推进 scheduler、漏 scheduler、漏 scaler、漏 RNG、漏 data stream。它们依次造成 scheduler 与 optimizer update 数脱钩、LR 衰减错位、scale=8 的边界 overflow、同 batch 不同随机 trace、同 RNG 不同 batch。完整 checkpoint schema 不允许缺字段；“漏状态”是 loader 验证字段存在后故意不恢复该组件的 counterfactual，不是生产 loader 的宽松行为。
+
+该 fixture 只证明 PyTorch 2.13.0+cpu、本机不同 Python PID、authored tiny model、custom shuffle 与 zero-grad boundary。`torch.save` 是 pickle-backed 容器；`weights_only=True`、16 MiB 上限和 closed fields 不能认证或保护不可信文件。same-directory temp/file `fsync`/replace 没有经过 crash/power-loss 注入，也没有目录 `fsync`。没有真实 DataLoader worker/prefetch、NumPy/CUDA RNG、gradient accumulation 中间态、DDP/FSDP/ZeRO、目标 tokenizer/model/Trainer、CUDA、质量、性能或远程 checkpoint 证据。
+
+### 跨进程 DataLoader prefetch、cursor 与 worker RNG 控制
+
+这条数据控制不训练模型，而是隔离 custom shuffle 尚未覆盖的真实 worker/prefetch 语义：
+
+~~~powershell
+python projects/single-gpu-finetuning/dataloader_prefetch_resume_control.py
+python -m pytest tests/test_dataloader_prefetch_resume_control.py -q
+~~~
+
+四个不同顶层 PID 分别执行 uninterrupted、phase-1、正确 resume 和错误 resume；每段用 `DataLoader(num_workers=2,prefetch_factor=2,batch_size=1,multiprocessing_context="spawn",in_order=True)` 启动真实 CPU workers。固定 permutation 为 `[8,3,1,7,0,9,4,2,6,5]`。phase-1 主循环只收到前三条时，tracking sampler 已 emitted 到 cursor 7，所以 `[7,0,9,4]` 虽已送进 worker 队列，却尚未交付给训练循环。
+
+490-byte 左右的 canonical strict-JSON checkpoint 同时保存 consumed/committed cursor=3 与 observed emitted cursor=7；具体大小会随 PID 位数变化。不同 PID 从 3 重建得到完整 sequence `[8,3,1,7,0,9,4,2,6,5]`，从 7 重建的负对照只得到组合 `[8,3,1,2,6,5]`，静默漏四条。这里的 ahead=4 是当前 PyTorch 2.13.0+cpu fixture 的观察值；脚本没有读私有 queue 字段，不能把它当任意版本/配置的公开 prefetch 深度保证。
+
+顺序 exact 仍不等于数据 tensor exact。同一 loader seed 的独立 phase-1 可重放 prefix worker RNG；restart 后 fresh workers 从各自 RNG 序列开头继续，resume tail 相对 uninterrupted 的最大差约 0.654431。脚本同时计算 `(namespace,sample_id)` 派生的局部 generator，tail 最大差为 0。该 sample-key 只适用于当前单 epoch fixture；生产多 epoch/重复采样应加入 dataset/transform revision、epoch/visit 等，否则每次同 ID 都会得到同一增强。控制未保存 queue payload/worker state，也没有 persistent workers、pin memory、IterableDataset、collator、model、optimizer、DistributedSampler、CUDA、吞吐或质量证据；“主循环收到 sample”更不等于 optimizer 已原子提交。不能与前一 model checkpoint 事后拼成完整 exact-resume 声明。
+
+### 跨进程 consumed—optimizer-committed 崩溃窗口控制
+
+下一条 control 把上一节未知的 optimizer cursor 变成真实训练事件：
+
+~~~powershell
+python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
+python -m pytest tests/test_optimizer_commit_resume_control.py -q
+~~~
+
+六个不同顶层 PID 分别执行 uninterrupted、phase-1、从 optimizer-committed cursor 正确恢复、从 consumed cursor 只恢复 crash RNG 却漏 gradients、从 consumed cursor 加载完整 sidecar 正确恢复，以及 gradients 完整但误用 commit-boundary RNG 的隔离负例；每段仍启动两个 spawn DataLoader workers。CPU Float64 `Linear(2,1)` 的输入先乘 main-process inverted-Bernoulli mask（固定 seed `20260815`），再执行 MSE、`SGD(momentum=0.9)`、`StepLR(step_size=2,gamma=0.5)` 和 accumulation steps=2。phase-1 在第三个 microbatch `[8,3,1]` 已交付且 stochastic forward/backward 后模拟崩溃：sampler emitted=7、main loop consumed=3，但只有 `[8,3]` 已进入 optimizer step/scheduler step，所以 committed cursor=2，模型上还有两个未提交 gradient tensors。
+
+当前 8,985-byte `torch.save` base checkpoint 保存 commit-boundary model/SGD momentum/StepLR、commit-boundary Torch CPU RNG、两种应用 cursor、sampler cursor、sample ledger、数据与 loader contract，故意不把 `.grad` 混入普通 model/optimizer state。第一种正确协议从 committed=2 同时恢复 RNG 并重放 sample `1`，其 mask tail、完整 ledger、model/optimizer/scheduler/RNG fingerprint 与 uninterrupted bit-exact、参数最大差为 0。第一个隔离负例从 sidecar 恢复正确 crash RNG，却故意不恢复 pending gradients并从 consumed=3 起步；未来 mask trace 与终态 RNG 仍和 baseline 相同，ledger 漏 `1`。即使末尾 singleton 重缩放后仍是 5 次 optimizer/StepLR step、终态 LR 同为 `0.0125`，参数最大差仍为 `0.005767858566116724`，因此差异可归因于漏掉半窗口而不是 RNG shift 或 step 数。
+
+第二种正确协议另发布当前 7,905-byte gradient sidecar：它绑定 base checkpoint SHA-256、数据/permutation、三种 cursor、pending window `[1]`、accumulation position=1、steps/loss divisor=2、crash-observed Torch RNG，并按参数名保存两个 finite Float64 gradient tensors。随后最后发布当前 827-byte strict canonical JSON bundle manifest；closed schema 同时绑定数据 identity、两个固定文件名/schema/size/SHA-256、sidecar→base digest 与 `base→sidecar→manifest` 顺序。第五个 PID 必须先看到 `publication_state=complete`，在任何 `torch.load` 前校验 manifest 与两个文件 identity，再对实际送入 `BytesIO` 反序列化的 bytes 重查相同 size/hash，之后才从 consumed=3 恢复；首个 optimizer window 是 `[1,7]`，mask tail、完整 ledger 与 model/optimizer/scheduler/RNG fingerprint 同样和 uninterrupted bit-exact、参数最大差为 0。
+
+第六个 PID 恢复同一完整 gradients 与 sample ledger，却故意保留 base 的 commit-boundary RNG、不加载 sidecar 的 crash RNG。它仍执行 5 次 optimizer/StepLR step并得到 LR `0.0125`，但新样本从错误 mask offset 开始；终态 RNG 不同、参数最大差为 `0.017878893573032573`。这个负例把“state inventory 不完整”与“漏 sample/gradients”分开：只看 ledger、global step、LR 或 gradient sidecar 完整都不足以声称 exact resume。
+
+父进程另构造四种 publication fault snapshots：仅 base、base+sidecar 但无 manifest、manifest 存在但 sidecar 缺失，以及 manifest 发布后 sidecar 同长度篡改；sidecar 协议分别因缺完成标记、缺 artifact 或 digest drift 在反序列化前 fail closed，完整 bundle 则通过。仅 base 仍可用于第一种 commit-boundary replay，不能把“sidecar bundle 未完成”误写成“base checkpoint 无效”。当前 8 个测试还覆盖 duplicate/non-canonical/unknown manifest、manifest no-overwrite、base digest mismatch、loader contract drift、non-finite model 与 missing momentum。
+
+这个实验执行了真实 worker/prefetch、stochastic forward、backward、gradient accumulation、SGD momentum、StepLR、Torch CPU RNG commit/crash snapshots，以及两种跨 PID exact-resume 协议，但 manifest-last 只是完整性门禁，仍不是“消费 sample 与 optimizer/checkpoint 原子提交”的实现。base、sidecar、manifest 分别 temp-file + file-`fsync` + `os.replace`；最后发布 manifest 可识别当前进程故障快照，却没有目录 `fsync`、断电/文件系统故障注入、原子目录切换或远程对象存储语义。无密钥 hashes 不认证来源，协同替换整套 internally consistent bundle 仍可能通过；也没有证明并发目录替换/不可变快照。它未保存 queue/worker RNG、Python/NumPy/CUDA RNG，也没有原生 Dropout/任意随机模型、随机数据增强、多 epoch、GradScaler/CUDA AMP、DistributedSampler/DDP/FSDP/ZeRO、目标 LLM/Trainer、质量或性能证据。
+
+## 固定 Qwen SFT token/mask/final-label 控制 { #target-qwen-sft-label-control }
+
+`qwen2.5-0.5b-sft-label.control.json` 将固定 `Qwen/Qwen2.5-0.5B-Instruct` revision、tool-aware 训练 fixture、held-out-free readiness 和审核后的本地 Jinja template 绑定到同一 closed contract。原生 Qwen 模板不含 `{% generation %}`；在多轮、并行 tool calls、带 preamble 的 tool call 三条 fixture 上真实请求 mask 时，47 / 301 / 200 个 input token 的 assistant mask 均全零，不能直接用于 assistant-only supervision。
+
+审核模板 `qwen2.5-generation-aware-sft.jinja` 保留 checkpoint 原生 system/tool schema/tool response 序列化，只给 assistant payload 加 generation span。对三条固定记录，它与原生模板的 input IDs 逐 token 相同，并把所有 assistant turn 的正文、Qwen tool-call markup 与 `<|im_end|>\n` 精确圈成 8 / 51 / 31 个 assistant token。该结果证明这组三条固定 Qwen schema/fixture，不证明任意 provider tool schema、multimodal、任意新消息或 tool 执行/结果真实。
+
+异构 tool arguments 若先进入 `Dataset.from_list`，Arrow 会把对象统一为 struct 并向其他调用注入 `null` 字段，从而改变 Qwen prompt。因此入口先在 Python 中得到整数 `input_ids/assistant_masks`，再构造只含这两列的 Dataset。TRL 0.29.1 对已预分词数据会拒绝 `assistant_only_loss=True`；这里显式设置 `assistant_only_loss=False`，但真实 configured collator 仍独立消费预计算 masks，并在训练前做 final-label audit。固定 batch 为 `[3, 301]`，共 548 attention token、355 padding token、90 个监督 label 和 813 个 `-100`；每个监督 label 等于对应 input ID，其他有效 token 与 padding 全为 `-100`。固定 Qwen CPU FP32 eager no-grad loss 为 `1.251716136932373`。control manifest 为 `sha256:b1c1a6b3…936e6`，recorded report 为 `sha256:8b61fa58…10421a`。
+
+~~~powershell
+python projects/single-gpu-finetuning/run_qwen_target_sft_label_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-sft-label.recorded-report.json
+python -m pytest tests/test_target_sft_label_control.py -q
+~~~
+
+这条 control 不执行 backward、optimizer、adapter export、LoRA、QLoRA、CUDA、vLLM 或 serving，也不证明 loss 会下降、训练会收敛、数据能泛化或系统可生产使用。训练 fixture/readiness/template 都是仓库 authored artifact；size/SHA-256 和严格 verifier 能发现已定义范围内的漂移，但不证明数据合法性、语义质量、发布者/审核者身份或来源真实性，无密钥 hash 可被有写权限的攻击者协同重算，verify→loader reopen 的 TOCTOU 也没有消除。
+
 ## PEFT 离线保存、重载与合并验证
 
 `smoke_peft.py` 用随机初始化 tiny GPT-2 实际训练 PEFT LoRA，不下载模型。它先保存 exact base safetensors，再保存 adapter safetensors，从独立重载的 base 加载 adapter，执行 `safe_merge`，保存 merged full weights 并再次从磁盘重载：
@@ -100,6 +237,23 @@ python projects/single-gpu-finetuning/smoke_peft.py --steps 8 --artifact-root ar
 `about-llm-export-manifest.json` 是 strict canonical manifest。默认目录共有 13 个被覆盖文件、payload 236,589 bytes、manifest 2,297 bytes；descriptor 按 POSIX relative path 排序并绑定每个文件的 size/SHA-256，再绑定整个 descriptor set。Verifier 在 published-artifact reload 前运行，要求三个 safetensors 均可解析、base/merged 的完整 config payload 与 tensor key/dtype/shape signature 一致，并确认每个 target module 同时存在 LoRA A/B tensor；它拒绝额外或缺失文件、symlink、路径穿越、duplicate/non-canonical manifest、资源上限、size/hash 漂移，以及协同重算 hash 后的 weight/config/adapter/tokenizer 漂移。已有输出目录和已有 manifest 均拒绝覆盖。
 
 这是标准 Transformers/PEFT artifact 加仓库 fail-closed verifier 的 CPU 控制，不是通用 checkpoint。adapter config 使用 immutable base identity string，manifest 另绑定 exact base 文件；但路径或 identity string 不是内容认证，PEFT 自身仍不会自动强制仓库 manifest，调用方必须先执行 verifier。可解析、同 key/dtype/shape 和 LoRA A/B tensor 覆盖都只是结构证据，不证明权重数值正确或确由声明的训练产生。目录没有 optimizer/scheduler/RNG/training-resume state；未执行量化基座 merge、目标 checkpoint 或 CUDA。随机 tiny loss 下降、hash 一致和数值等价不证明 license、runtime 兼容、任务质量、跨版本可移植性、来源认证或断电原子发布；unkeyed SHA-256 可被攻击者协同重算，单文件 exclusive-create+`fsync` 也不构成目录级原子发布。当前 verifier 也没有锁住随后由 Transformers 打开的文件，不能防止 verify 与 load 之间的并发替换（TOCTOU）；生产消费要配合不可变目录、访问控制、lease/content-addressed handle 或等价机制。
+
+## 固定 Qwen 真实权重 LoRA 单步控制
+
+`run_qwen_target_lora_control.py` 把上述 tiny artifact plumbing 推进到固定的 `Qwen/Qwen2.5-0.5B-Instruct` revision `7ae5576…9a775`。它复用 Transformers Basics 已审核的 7-file、999,586,347-byte checkpoint manifest 与真实 forward report，在每次模型加载前重新核对全部选定 bytes；随后以 `trust_remote_code=False`、CPU FP32 eager、8 threads 加载 494,032,768 个基座参数。
+
+~~~powershell
+python projects/single-gpu-finetuning/run_qwen_target_lora_control.py --local-files-only --artifact-directory projects/single-gpu-finetuning/target-adapters/qwen2.5-0.5b-instruct-step1 --output-report artifacts/qwen-target-lora-report.json
+python projects/single-gpu-finetuning/run_qwen_target_lora_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-lora.recorded-report.json
+~~~
+
+控制用目标 chat template 分别渲染 user-only generation prefix 与 user+assistant 完整对话；完整 44 tokens 必须逐 token 以前 41-token prefix 开头，loss 只保留 3 个 assistant-side tokens。LoRA 只注入 24 层的 `q_proj/v_proj`，`r=4, alpha=8, dropout=0`，得到 270,336 个 trainable parameters，占带 adapter 总参数的约 0.05469%。B 零初始化使注入后、step 前的 last-token logits 与基座 exact 相同。
+
+2026-08-13 的录制运行真实执行一次 backward 与 AdamW step。96 个 trainable tensors 都得到 finite gradient，frozen base 没有 gradient；基座全参数 byte fingerprint 前后均为 `sha256:716454a9…e7092`。48 个 A 与 48 个 B tensors 完整导出，全部 B tensors 非零，共 98,304 个非零 B elements。标准 PEFT payload 为 README 5,404 bytes、adapter config 1,161 bytes、safetensors 1,093,728 bytes；strict artifact manifest 为 1,488 bytes，指纹 `sha256:ffab4958…c96c46`。重新核对 checkpoint bytes、重新加载基座并用 PEFT 加载 adapter 后，last-token logits 与训练态保存前 bit-exact，最大误差为 0。recorded report 指纹为 `sha256:8a3897b1…026230`。
+
+这个结果**不证明 loss 改善**。固定单样本单步的 initial loss 约为 0.003864，step 后反而升到约 0.584557；控制保留该结果，不事后换样本或只展示好看的曲线。它证明 target checkpoint 上的 assistant-only mask、PEFT backward、optimizer、frozen-base、adapter save/reload 链路确实执行；不证明收敛、任务/通用质量、代表性数据或合理超参数。
+
+Artifact verifier 会拒绝额外/缺失文件、symlink、duplicate/non-canonical manifest、size/hash、base revision、PEFT config、layer/module、A/B coverage、shape/dtype 和非有限/全零 tensor 漂移；测试还覆盖攻击者同步重算无密钥 manifest 后的 config、tensor、report 与 scope 漂移。但无密钥 hash 不认证模型发布者或训练者，framework verify 后按路径 reopen 的 TOCTOU 仍存在。该目录没有 optimizer/scheduler/RNG/resume state，也没有 merged full weights；没有执行量化基座、QLoRA、CUDA、AMP、vLLM、峰值内存/性能或生产发布。1.09 MB adapter 大小也不能当作训练峰值内存或部署 resident memory。
 
 ## TRL 单卡入口
 
@@ -239,6 +393,19 @@ python projects/single-gpu-finetuning/smoke_trl_dpo.py
 
 fixture 中的 `good/bad` 是作者构造的控制信号，不是人类偏好、对齐质量或安全标签。该闭环不证明目标模型 DPO、CUDA、真实域 length/position bias、annotator agreement 或生产收敛；tie/invalid 只被保留用于审计，不会被静默转成 DPO winner。
 
+## 固定 Qwen 真实权重 TRL DPO 单步控制
+
+`qwen2.5-0.5b-dpo.control.json` 把同一套 binary train/readiness artifact 与固定 Qwen2.5-0.5B-Instruct revision 绑定。它先重哈希 7-file/999,586,347-byte checkpoint、1,325-byte train JSONL 与 2,895-byte readiness JSON，再以目标 tokenizer 逐 token 核对两条 prompt/chosen/rejected。TRL collator 必须得到 `[4,28]`，四条 completion mask 各只覆盖 5 个 completion token，不能静默截断。
+
+~~~powershell
+python projects/single-gpu-finetuning/run_qwen_target_dpo_control.py --verify projects/single-gpu-finetuning/qwen2.5-0.5b-dpo.recorded-report.json
+python -m pytest tests/test_target_dpo_control.py -q
+~~~
+
+2026-08-13 的 recorded control 在 CPU FP32 eager、TRL 0.29.1/PEFT 0.20.0 下，为 24 层 `q_proj/v_proj` 注入 `r=4, alpha=8` LoRA，共 270,336 个 trainable parameters。一次真实 backward/AdamW step 的 96 个梯度张量全部 finite，48 个 B tensors 从全零变为全非零，共 98,304 个非零 elements；同 batch loss 从 `0.693147` 降至 `0.333352`，两条 chosen-relative margin 为 `8.566292/10.016453`。基座参数、排除 LoRA 后的完整 `state_dict`、规范化后的 model config 与 generation config 前后指纹分别 exact；report 指纹为 `sha256:3cafbade…b549b7bc`。
+
+Transformers 4.57 会在 `train()` 前把 model/generation 的 BOS/PAD/EOS 对齐到 tokenizer；control 在 baseline 前显式执行并核对这一步，避免把配置变化误当训练效果。两次 reference forward 内 PEFT adapter layer 状态都实测为 disabled，但前后 reference log-prob replay 的 max-abs drift 为 `0.547077`，并非 bitwise equal；由于冻结参数、non-adapter state 与 config 指纹均未变，报告把它作为数值 replay drift 单列，**不能**改写成 reference 权重改变或确定性复现。该结果仍只使用 authored `good/bad` pair；不证明人类偏好有效、数据代表性、收敛、泛化、安全、QLoRA/CUDA/vLLM 或生产就绪，也没有导出 adapter/optimizer/RNG/resume artifact。
+
 真实 LoRA/QLoRA DPO 入口只读取 binary train JSONL 与 preference readiness。加 `--data-preflight-only` 时不会导入训练依赖、下载 tokenizer 或加载模型；正式运行会先下载固定 revision 的 tokenizer，再复现 TRL 0.29 conversational tokenization：prompt 使用 `add_generation_prompt=True`，prompt+chosen/rejected 各自完整渲染。仓库把 TRL 只记录 warning 的 prompt-prefix mismatch 升级为失败，并拒绝空 completion、chosen/rejected token 完全相同以及任何会触发 `max_length` 截断的 pair；通过仍不证明 template 的语义正确或目标模型质量。`--qlora` 使用 NF4/double quant 与单模型 PEFT adapter-disabled reference 路径，当前无 CUDA 环境未实跑：
 
 ~~~powershell
@@ -248,9 +415,9 @@ python projects/single-gpu-finetuning/train_trl_dpo.py --model-id <model> --revi
 
 Preference readiness 绑定 exact/group split audit、binary train identity、声明的 lexical candidate policy 与 source/sensitive governance 决策。正式数据仍需由有权限的人复核候选，并执行 consent、法律许可、语义近重复、position/length bias 和人工一致性审查；不能把 readiness pass 写成“数据已获法律许可”“无敏感信息”或“没有语义污染”。
 
-SFT 数据准备与训练同样是两个权限域。SFT `prepare-training` 接受严格的 train-only JSONL、combined JSONL、显式 near-duplicate policy、governance policy 和固定 decision time，在可读 validation/test 的审计进程验证有序 train 子集绑定并生成 readiness v2；两个 SFT trainer 只接受 train JSONL 与 readiness，不读取 combined 原文。readiness 严格拒绝重复/未知字段、错误版本、失败 gate、指纹篡改和与当前 train 不一致的陈旧 artifact。通过只说明声明 lexical/governance 规则下没有阻断项，不等于语义无重复、法律许可或无敏感信息；未签名 SHA-256 也只能检测意外漂移，不能认证 readiness 的签发者。TRL 0.29 要求所用 SFT 模板能通过 `{% generation %}` / `{% endgeneration %}` 等机制返回 assistant mask；不能假设某个模型族名称自动满足条件。
+SFT 数据准备与训练同样是两个权限域。SFT `prepare-training` 接受严格的 train-only JSONL、combined JSONL、显式 near-duplicate policy、governance policy 和固定 decision time，在可读 validation/test 的审计进程验证有序 train 子集绑定并生成 readiness v3；v3 的 exact identity、lexical view 与有限 sensitive-candidate surface 都纳入 tool calls 和 tool schemas。两个 trainer 只接受 train JSONL 与 readiness，不读取 combined 原文。readiness 严格拒绝重复/未知字段、错误版本、失败 gate、指纹篡改和陈旧绑定；通过不等于语义无重复、法律许可或无敏感信息，无密钥 SHA-256 也不认证签发者。
 
-tokenizer 下载后、模型权重加载前，入口会对每条样本实际调用目标 `apply_chat_template(..., return_assistant_tokens_mask=True)`，拒绝缺失/全零/错长/非二值 mask 以及会被 `max_length` 静默右截断的样本，并写出 `sft-template-mask-audit.json`。报告绑定有序数据身份、model/revision、Transformers 版本、template/special-token ids 以及逐样本 token+mask hash。它证明目标 tokenizer **报告了**结构合法的 mask，不独立证明模板作者标记了语义正确的 token，也没有检查 trainer collator 生成的最终 labels；正式训练仍应抽样可视化 token/mask/label。
+tokenizer 下载后、模型权重加载前，入口对每条 Python record 调用目标 `apply_chat_template(..., tools=..., return_assistant_tokens_mask=True)`，拒绝缺失/全零/错长/非二值 mask 与静默右截断，并写出 `sft-template-mask-audit.json`。随后只把预计算整数特征交给 Arrow；Trainer 建立后，入口实际调用 configured collator，逐位置核对监督 label、非 assistant 与 padding 的 `-100`，写出 `sft-final-label-audit.json` 后才开始训练。报告仍不能独立证明模板作者选择了语义正确的 span，正式数据应继续抽样可视化 token/mask/label。
 
 若 checkpoint 模板不支持 generation mask，先审核并版本化一个本地 Jinja template，再通过 `--chat-template-path <template.jinja>` 同时交给 preflight 与 trainer；不要在代码里临时拼接另一个格式。自定义模板仍必须匹配该 checkpoint 的 special tokens 和部署格式。
 
@@ -273,7 +440,7 @@ QLoRA 不是全部 4-bit；adapter、梯度、optimizer、激活和部分算子�
 python projects/single-gpu-finetuning/train_qlora.py --model-id <model> --revision <commit> --num-parameters 7000000000 --num-layers 32 --hidden-size 4096 --max-length 1024 --estimate-only
 ~~~
 
-真实训练去掉 `--estimate-only` 并增加 `--train-jsonl`、`--readiness-json` 与 `--output-dir`；readiness 先由上面的 `prepare-training` 生成。入口固定 NF4、double quant、BF16/FP16 compute、gradient checkpointing、assistant-only loss 和显式 target modules。本仓库当前环境没有 CUDA，因此只验证了估算、参数路径和 CPU 测试；真实 QLoRA 成功与峰值显存仍必须在目标消费级 GPU 上记录。
+真实训练去掉 `--estimate-only` 并增加 `--train-jsonl`、`--readiness-json` 与 `--output-dir`；readiness 先由上面的 `prepare-training` 生成。入口固定 NF4、double quant、BF16/FP16 compute、gradient checkpointing、预计算 assistant-only labels 和显式 target modules。当前环境没有 CUDA，因此只验证了估算、参数路径、Arrow 前预分词与 CPU collator 测试；真实 QLoRA 成功与峰值显存仍必须在目标消费级 GPU 上记录。
 
 OOM 降级顺序是：micro-batch 降到 1（用梯度累积保持有效 batch）、启用 checkpoint/高效 attention、基于长度分布缩短序列、减少 target/rank，最后才换小模型。每次变化都要进入实验配置，不能一边降级一边沿用旧基线名称。
 
@@ -281,7 +448,7 @@ OOM 降级顺序是：micro-batch 降到 1（用梯度累积保持有效 batch�
 
 ## MiniGPT 精确训练恢复控制
 
-在接入目标 LoRA/QLoRA checkpoint 前，先运行一个状态面可完整枚举的 CPU control：
+在把目标 LoRA/QLoRA 扩展为可恢复训练前，先运行一个状态面可完整枚举的 CPU control：
 
 ~~~powershell
 python projects/single-gpu-finetuning/minigpt_resume_toy.py
@@ -294,7 +461,7 @@ python projects/single-gpu-finetuning/minigpt_resume_toy.py --artifact-path arti
 
 ## 后续里程碑
 
-1. 目标模型 SFT token/mask/label 与 DPO prompt/chosen/rejected 可视化和固定 artifact；
+1. 把已完成的固定 Qwen 多轮/tool SFT final-label 与 DPO 机制控制扩展到代表性真实数据、更多 provider schema 和独立 held-out 评测；
 2. 在目标 CUDA 环境记录 QLoRA 实测峰值和 OOM 降级曲线；
-3. 把已有 tiny CPU exact-resume 与 PEFT save/reload/merge/export control 扩展到目标 LoRA/QLoRA/CUDA，并完成 tokenizer/runtime 一体化发布；
+3. 在已完成的目标 Qwen CPU LoRA 单步 save/reload 之上补 optimizer/RNG exact-resume、merge、QLoRA/CUDA 和 tokenizer/runtime 一体化发布；tiny CPU control 已证明 consumed 领先 committed 时必须 replay，并为 gradient sidecar 增加 manifest-last completeness gate，但尚未实现 worker/adapter/optimizer/sample 的原子一致提交；
 4. 与 RAG/Prompt 基线的统一评测报告。

@@ -1,5 +1,18 @@
 # Tokenization：从 Unicode 到模型契约
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：模型接入、数据处理和上下文预算工程师。
+- **先修**：理解文本序列和 UTF-8 的基本概念；可先读 [NLP](../foundations/nlp.md)。
+- **首次阅读**：五层对象 → BPE 训练与编码 → special token → chat template。
+- **完成信号**：能复现 round trip，并诊断 normalization、offset 或模板漂移。
+- **卡住时**：运行[30 分钟 Byte-BPE 实验](../guide/beginner-map.md#30-minutes)。
+
+</div>
+
 ## 一句话结论
 
 Tokenizer 不是可以随意替换的文本工具，而是模型参数语义的一部分：它确定原始输入怎样变成整数 id、角色和边界怎样序列化、哪些位置参与 loss，以及“上下文长度”和计费中的 token 到底是什么。模型只看到 id；同一段可见文本经过不同 normalization、pre-tokenizer、merge ranks、special tokens 或 chat template，可能成为完全不同的序列。

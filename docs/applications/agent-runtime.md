@@ -1,5 +1,18 @@
 # Agent 工具协议、幂等与故障恢复
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：Agent runtime、安全、授权和恢复工程师。
+- **先修**：[Agent 架构](agent-architecture.md)、JSON Schema、身份与幂等基础。
+- **首次阅读**：tool contract → 验证顺序 → policy/approval → effect identity → 恢复。
+- **完成信号**：能通过未授权、重复执行、超时未知和崩溃恢复测试。
+- **卡住时**：回到[系统安全](../quality/safety.md)先画主体、资源和信任边界。
+
+</div>
+
 工具调用把自然语言的不确定性连接到真实副作用，是 Agent 最危险也最值得工程化的边界。本章从 schema、授权、幂等、并发、超时和 reconciliation 建立一个可审计 runtime。
 
 ## Tool contract
@@ -41,6 +54,10 @@
 这仍不是业务 validator：JSON Schema 不 coercion、不应用 `default`，也不能验证 authenticated subject、tenant ownership、数据库当前 version、审批或副作用。复杂跨资源条件应在 server-owned resolver/semantic validator 中完成，并保持 schema → resolver → policy 的顺序。手写 Planner contract 与 callback 仍可能漂移；只有从共享 contract factory 派生的工具具有这里的同源保证。External reference 被拒绝意味着当前实现不适合需要远程 schema registry 的系统；生产 registry 必须固定内容 hash、缓存/availability、授权和迁移策略，不能让 validator 临时访问模型提供的 URL。
 
 仓库 `model_planner_control.py` 用 exact recorded request replay 运行两步正例，并运行 request drift、fenced JSON、runtime schema rejection 和 missing capability 四条负例。无密钥 fingerprint 只证明 canonical bytes 相等，不认证真实 provider；recorded response metadata 也不是账单或线上模型证据。生产 trace 若保留 raw response，必须把 prompt injection、secret/PII、访问控制、加密和 retention 纳入数据治理。
+
+Provider 返回的 opaque reasoning/thinking/signature block 还多一层风险：它可能是客户端代管、后续会被模型再次解释的状态工件。不能因为 ciphertext 或 signature 未被修改，就把它当作当前 subject/session/model 已授权的历史。恢复前需要验证 authenticated subject、tenant、session/branch、predecessor、model audience、expiry、key status 与 replay identity；外部下载或公开 trajectory 中的 block 默认不恢复执行。协议与离线反例见 [Opaque Reasoning 工件与轨迹安全](../quality/reasoning-artifact-security.md)。
+
+Recorded fixture 应由 allowlist projection 从原始响应生成。公开 trajectory 默认移除 reasoning/signature/未知 opaque block；只对 visible text 做 secret scrub 不足，因为使用者既无法检查 opaque 内容，也无法判断它是否包含隐藏 instruction。需要长期暂停/恢复的企业 workflow 应使用受控存储、身份绑定和版本化迁移，而不是把 raw provider transcript 当作可移植 checkpoint。
 
 ## 验证顺序
 

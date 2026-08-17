@@ -1,5 +1,18 @@
 # RAG 召回、混合检索与重排
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：搜索、召回、排序和 RAG 评测工程师。
+- **先修**：[RAG 总览](rag.md)、token/向量和基本排序指标。
+- **首次阅读**：相关性定义 → BM25 → dense → hybrid → rerank → Recall/nDCG。
+- **完成信号**：能用固定 qrels 比较召回与重排，并保存失败 query。
+- **卡住时**：先用[实验 5](../practice/labs.md#lab-5)的 BM25 基线建立分母。
+
+</div>
+
 检索的任务不是找“看起来相似的文字”，而是在有限候选预算内覆盖回答所需证据。一个 query 可能同时需要精确产品号、同义概念、时间过滤和两段跨文档证据，因此生产 RAG 通常是多路召回、过滤、融合、重排和去重的组合。
 
 ## 先定义相关性

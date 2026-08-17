@@ -6,7 +6,7 @@ import argparse
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -23,7 +23,18 @@ from about_llm.integrations.cloud_api import (
     parse_gemini_response,
     parse_openai_compatible_response,
 )
+from about_llm.integrations.reasoning_artifact import (
+    InMemoryConsumptionLedger,
+    InMemoryNonceLedger,
+    ReasoningArtifactClaims,
+    ReasoningArtifactError,
+    ReasoningEnvelope,
+    ReasoningReplayContext,
+    consume_reasoning_envelope,
+    issue_reasoning_envelope,
+)
 from about_llm.integrations.retry import RetryPolicy, decide_retry
+from about_llm.integrations.trajectory_release import build_trajectory_release_report
 
 Provider = Literal[
     "openai-compatible",
@@ -231,6 +242,288 @@ def build_retry_matrix() -> dict[str, Any]:
     }
 
 
+def build_reasoning_replay_matrix() -> dict[str, Any]:
+    """Compare content-only authentication with context-bound replay checks."""
+    key = bytes(range(32))
+    key_id = "fixture-key-2026-08"
+    predecessor = "1" * 64
+    claims = ReasoningArtifactClaims(
+        artifact_id="fixture-artifact-001",
+        provider="fixture-provider",
+        key_id=key_id,
+        subject_id="subject-a",
+        tenant_id="tenant-a",
+        session_id="session-a",
+        branch_id="main",
+        predecessor_digest=predecessor,
+        model_audience=("model-strong",),
+        issued_at_epoch_seconds=100,
+        expires_at_epoch_seconds=200,
+    )
+    exact_context = ReasoningReplayContext(
+        provider="fixture-provider",
+        subject_id="subject-a",
+        tenant_id="tenant-a",
+        session_id="session-a",
+        branch_id="main",
+        predecessor_digest=predecessor,
+        model_id="model-strong",
+        now_epoch_seconds=150,
+    )
+    nonce_ledger = InMemoryNonceLedger()
+    content_only = issue_reasoning_envelope(
+        key=key,
+        claims=claims,
+        plaintext=b"authored local reasoning with no real user data",
+        binding_mode="content-only",
+        nonce=b"\x01" * 12,
+        nonce_ledger=nonce_ledger,
+    )
+    context_bound = issue_reasoning_envelope(
+        key=key,
+        claims=claims,
+        plaintext=b"authored local reasoning with no real user data",
+        binding_mode="context-bound",
+        nonce=b"\x02" * 12,
+        nonce_ledger=nonce_ledger,
+    )
+    keys = {key_id: key}
+    cases: tuple[
+        tuple[
+            str,
+            ReasoningEnvelope,
+            ReasoningReplayContext,
+            bool,
+            str | None,
+            frozenset[str],
+            bool,
+        ],
+        ...,
+    ] = (
+        (
+            "content-only-exact-context",
+            content_only,
+            exact_context,
+            True,
+            None,
+            frozenset(),
+            False,
+        ),
+        (
+            "content-only-cross-subject",
+            content_only,
+            replace(exact_context, subject_id="subject-b"),
+            True,
+            None,
+            frozenset(),
+            True,
+        ),
+        (
+            "content-only-cross-tenant",
+            content_only,
+            replace(exact_context, tenant_id="tenant-b"),
+            True,
+            None,
+            frozenset(),
+            True,
+        ),
+        (
+            "content-only-cross-session",
+            content_only,
+            replace(exact_context, session_id="session-b"),
+            True,
+            None,
+            frozenset(),
+            True,
+        ),
+        (
+            "content-only-cross-model",
+            content_only,
+            replace(exact_context, model_id="model-weak"),
+            True,
+            None,
+            frozenset(),
+            True,
+        ),
+        (
+            "context-bound-exact-context",
+            context_bound,
+            exact_context,
+            True,
+            None,
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-cross-subject",
+            context_bound,
+            replace(exact_context, subject_id="subject-b"),
+            False,
+            "subject_mismatch",
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-cross-tenant",
+            context_bound,
+            replace(exact_context, tenant_id="tenant-b"),
+            False,
+            "tenant_mismatch",
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-cross-session",
+            context_bound,
+            replace(exact_context, session_id="session-b"),
+            False,
+            "session_mismatch",
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-cross-branch",
+            context_bound,
+            replace(exact_context, branch_id="fork-b"),
+            False,
+            "branch_mismatch",
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-wrong-predecessor",
+            context_bound,
+            replace(exact_context, predecessor_digest="2" * 64),
+            False,
+            "predecessor_mismatch",
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-cross-model",
+            context_bound,
+            replace(exact_context, model_id="model-weak"),
+            False,
+            "model_not_allowed",
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-expired",
+            context_bound,
+            replace(exact_context, now_epoch_seconds=200),
+            False,
+            "expired",
+            frozenset(),
+            False,
+        ),
+        (
+            "context-bound-retired-key",
+            context_bound,
+            exact_context,
+            False,
+            "retired_key",
+            frozenset({key_id}),
+            False,
+        ),
+        (
+            "context-bound-tampered-claims",
+            replace(context_bound, claims=replace(claims, subject_id="subject-b")),
+            exact_context,
+            False,
+            "authentication_failed",
+            frozenset(),
+            False,
+        ),
+    )
+    rows: list[dict[str, Any]] = []
+    for (
+        case_id,
+        envelope,
+        replay_context,
+        expected_accepted,
+        expected_reason,
+        retired_key_ids,
+        unsafe_acceptance,
+    ) in cases:
+        actual_reason: str | None = None
+        try:
+            consume_reasoning_envelope(
+                envelope,
+                keys=keys,
+                retired_key_ids=retired_key_ids,
+                context=replay_context,
+            )
+            actual_accepted = True
+        except ReasoningArtifactError as error:
+            actual_accepted = False
+            actual_reason = error.reason
+        rows.append(
+            {
+                "case_id": case_id,
+                "binding_mode": envelope.binding_mode,
+                "expected_accepted": expected_accepted,
+                "actual_accepted": actual_accepted,
+                "expected_reason": expected_reason,
+                "actual_reason": actual_reason,
+                "unsafe_acceptance_demonstrated": unsafe_acceptance
+                and actual_accepted,
+                "passed": actual_accepted == expected_accepted
+                and actual_reason == expected_reason,
+            }
+        )
+
+    consumption_ledger = InMemoryConsumptionLedger()
+    consume_reasoning_envelope(
+        context_bound,
+        keys=keys,
+        retired_key_ids=frozenset(),
+        context=exact_context,
+        consumption_ledger=consumption_ledger,
+    )
+    replay_reason: str | None = None
+    try:
+        consume_reasoning_envelope(
+            context_bound,
+            keys=keys,
+            retired_key_ids=frozenset(),
+            context=exact_context,
+            consumption_ledger=consumption_ledger,
+        )
+        replay_accepted = True
+    except ReasoningArtifactError as error:
+        replay_accepted = False
+        replay_reason = error.reason
+    rows.append(
+        {
+            "case_id": "context-bound-second-consumption",
+            "binding_mode": "context-bound",
+            "expected_accepted": False,
+            "actual_accepted": replay_accepted,
+            "expected_reason": "replay_detected",
+            "actual_reason": replay_reason,
+            "unsafe_acceptance_demonstrated": False,
+            "passed": not replay_accepted and replay_reason == "replay_detected",
+        }
+    )
+    return {
+        "passed": all(row["passed"] for row in rows),
+        "network_performed": False,
+        "real_provider_artifacts_used": False,
+        "plaintext_reasoning_emitted": False,
+        "cryptographic_primitive": "AES-256-GCM via cryptography",
+        "case_count": len(rows),
+        "unsafe_acceptance_count": sum(
+            bool(row["unsafe_acceptance_demonstrated"]) for row in rows
+        ),
+        "evidence_boundary": (
+            "Authored bytes and an in-memory ledger demonstrate protocol invariants only; "
+            "this does not reproduce or validate any provider implementation."
+        ),
+        "cases": rows,
+    }
+
+
 def _build_request(case: ContractCase) -> RequestSpec:
     base_url = _config_string(case, "base_url")
     model = _config_string(case, "model")
@@ -351,6 +644,32 @@ def _strict_json_loads(line: str) -> Any:
     )
 
 
+def load_trajectory_release_candidates(path: Path) -> tuple[dict[str, Any], ...]:
+    """Load strict JSON or JSONL publication candidates without coercion."""
+    text = path.read_text(encoding="utf-8")
+    values: list[Any]
+    if path.suffix.casefold() == ".jsonl":
+        values = []
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                values.append(_strict_json_loads(line))
+            except (json.JSONDecodeError, ValueError) as error:
+                raise ValueError(f"{path}:{line_number}: invalid JSON") from error
+    else:
+        try:
+            root = _strict_json_loads(text)
+        except (json.JSONDecodeError, ValueError) as error:
+            raise ValueError(f"{path}: invalid JSON") from error
+        values = root if isinstance(root, list) else [root]
+    if not values:
+        raise ValueError(f"{path} contains no trajectory release candidates")
+    if any(not isinstance(value, dict) for value in values):
+        raise ValueError(f"{path}: every trajectory release candidate must be an object")
+    return tuple(cast(dict[str, Any], value) for value in values)
+
+
 def _run_verify(args: argparse.Namespace) -> int:
     payload = verify_contracts(load_contracts(args.contracts))
     return _render_payload(payload, output=args.output)
@@ -358,6 +677,18 @@ def _run_verify(args: argparse.Namespace) -> int:
 
 def _run_retry_matrix(args: argparse.Namespace) -> int:
     return _render_payload(build_retry_matrix(), output=args.output)
+
+
+def _run_reasoning_replay_matrix(args: argparse.Namespace) -> int:
+    return _render_payload(build_reasoning_replay_matrix(), output=args.output)
+
+
+def _run_trajectory_release_gate(args: argparse.Namespace) -> int:
+    trajectories = load_trajectory_release_candidates(args.input)
+    return _render_payload(
+        build_trajectory_release_report(trajectories),
+        output=args.output,
+    )
 
 
 def _render_payload(payload: Mapping[str, Any], *, output: Path | None) -> int:
@@ -384,6 +715,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     retry.add_argument("--output", type=Path)
     retry.set_defaults(handler=_run_retry_matrix)
+    reasoning = commands.add_parser(
+        "reasoning-replay-matrix",
+        help="compare content-only and context-bound opaque reasoning envelopes",
+    )
+    reasoning.add_argument("--output", type=Path)
+    reasoning.set_defaults(handler=_run_reasoning_replay_matrix)
+    release = commands.add_parser(
+        "trajectory-release-gate",
+        help="reject reasoning, signature, opaque, and unknown trajectory blocks",
+    )
+    release.add_argument("--input", type=Path, required=True)
+    release.add_argument("--output", type=Path)
+    release.set_defaults(handler=_run_trajectory_release_gate)
     return parser
 
 

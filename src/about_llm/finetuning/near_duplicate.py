@@ -14,9 +14,9 @@ from about_llm.finetuning.data import (
     MessageRole,
     SFTRecord,
 )
-from about_llm.llmops import artifact_fingerprint
+from about_llm.llmops import artifact_fingerprint, canonical_json_bytes
 
-SFT_NEAR_DUPLICATE_AUDIT_VERSION = "about-llm.char-ngram-near-duplicate.v1"
+SFT_NEAR_DUPLICATE_AUDIT_VERSION = "about-llm.char-ngram-near-duplicate.v2"
 
 
 class NearDuplicateProfile(str, Enum):
@@ -269,4 +269,19 @@ def _record_view_text(record: SFTRecord, view: NearDuplicateView) -> str:
         messages = tuple(
             message for message in record.messages if message.role is MessageRole.ASSISTANT
         )
-    return "\n".join(f"<{message.role.value}>\n{message.content}" for message in messages)
+    fragments: list[str] = []
+    if view is NearDuplicateView.FULL_CONVERSATION and record.tools:
+        fragments.append(
+            "<tools>\n"
+            + canonical_json_bytes([tool.to_dict() for tool in record.tools]).decode(
+                "utf-8"
+            )
+        )
+    for message in messages:
+        fragment = f"<{message.role.value}>\n{message.content}"
+        if message.tool_calls:
+            fragment += "\n<tool_calls>\n" + canonical_json_bytes(
+                [call.to_dict() for call in message.tool_calls]
+            ).decode("utf-8")
+        fragments.append(fragment)
+    return "\n".join(fragments)

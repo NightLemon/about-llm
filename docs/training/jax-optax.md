@@ -1,10 +1,23 @@
 # JAX、Optax 与函数式训练闭环
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：用 JAX/Optax 实现可复现训练步的工程师。
+- **先修**：Python、线性代数、自动微分和优化器状态基础。
+- **首次阅读**：纯函数与 pytree → 显式随机 key → loss/grad → Optax/JIT。
+- **完成信号**：能写一个可 JIT、显式传递参数和 RNG 的训练步。
+- **卡住时**：先读[机器学习与深度学习](../foundations/ml-dl.md)，再跑[JAX MiniGPT](../practice/projects/jax-minigpt.md#run)。
+
+</div>
+
 ## 学习目标与证据边界
 
 读完本章应能把 decoder-only Transformer 写成参数 PyTree 上的纯函数，解释 `value_and_grad`、Optax transformation 与 optimizer state，构造一个 `jax.jit` 训练步，并正确测量异步执行时间。还应能判断“单设备可训练”与“多设备分片可扩展”之间缺少哪些证据。
 
-本仓库的 `gpt_jax.py` 与 `projects/jax-minigpt` 已在当前 **CPU JAX device** 完成 tiny-batch overfit；这证明前向、梯度、参数更新和 JIT 路径可运行，不证明 CUDA/TPU、混合精度、多机网络或大模型吞吐。JAX、jaxlib、Optax 与 accelerator plugin 的兼容矩阵随平台变化，安装时应使用官方说明并记录实际版本。
+本仓库的 `gpt_jax.py` 与 `projects/jax-minigpt` 已在当前 **CPU JAX device** 完成 tiny-batch overfit；独立 PyTorch↔JAX 同权重 parity control 又在强制 CPU 的 Float32 contract 下对账 forward、masked loss、全部 unique parameter gradients 与 plain-SGD 单步。这证明两条明确路径可运行，不证明 CUDA/TPU、混合精度、多机网络或大模型吞吐。JAX、jaxlib、Optax 与 accelerator plugin 的兼容矩阵随平台变化，安装时应使用官方说明并记录实际版本。
 
 ## 为什么 JAX 看起来不像传统 Module
 
@@ -195,6 +208,22 @@ JAX 默认 dtype、是否启用 x64、accelerator kernel 和 matmul precision �
 
 与 PyTorch 对齐时，先固定相同权重、输入、mask、GELU 近似、norm epsilon 和 tied embeddings，比较 logits/loss，再比较单步梯度与更新。只比较最终生成文本无法定位数值差异。
 
+### 已执行的 PyTorch↔JAX 同权重 parity control
+
+“同为 decoder-only Transformer”不是充分契约。仓库原生 PyTorch MiniGPT 使用 affine LayerNorm/epsilon=`1e-5`，原生 JAX MiniGPT 使用无 bias RMSNorm/epsilon=`1e-6`；LayerNorm 的 mean subtraction 本身就会改变函数。因此 control 不修改这两份默认身份，而是把 PyTorch 参数显式映射到一条 JAX LayerNorm parity forward，并统一 tanh-GELU、causal mask、tied embedding、一个 `-100` masked target 和 plain SGD。
+
+固定 2-layer/8-dim Float32 fixture 的初始 logits/loss 最大差为 `7.636845111846924e-08/0`，20 个 parameter gradients 的全局最大差为 `2.384185791015625e-07`。一步 `lr=0.025` 后参数/logits/loss 最大差为 `7.450580596923828e-09`、`7.450580596923828e-08`、`2.384185791015625e-07`，都通过 `2e-6` authored tolerance。若把同一主干权重直接送入原生 RMSNorm 路径，logits 最大差为 `0.37747739627957344`；这个反事实防止把“参数 shape 可映射”误写成“架构等价”。
+
+此处没有比较框架 RNG、AdamW moments/state、weight-decay mask、schedule、dropout、JIT executable、异步 timing 或 accelerator kernel。数值容差是当前 CPU Float32 fixture 的回归门槛，不是所有设备/dtype 的通用精度保证。
+
+### 已执行的三步 AdamW trajectory parity
+
+`cross_framework_training_parity.py` 在上述架构契约之上对账三步真实更新。为了隔离框架 RNG 算法，NumPy PCG64 先生成三张相同的 embedding inverted-dropout mask，再把同一 Float32 mask bytes 分别传给 PyTorch/JAX；这叫共享随机输入，不叫原生 RNG 等价。每步都比较 masked loss、raw gradients、pre-clip norm、global-norm clipped gradients、AdamW **first/second moments** 与 count、参数和 post-step forward。学习率固定为 `0.02→0.01→0.005`，beta 为 `0.9/0.95`、epsilon=`1e-8`、全参数 weight decay=`0.03`、clip threshold=`0.08`。
+
+固定三步的 raw/clipped gradient 最大差为 `3.129243850708008e-07/1.862645149230957e-08`，moments 为 `2.561137080192566e-09/8.003553375601768e-11`，参数和 post-step logits 为 `2.5480985641479492e-06/1.564621925354004e-07`；Adam/schedule count 两边逐步都是 `[1,2,3]`。所有 pre-clip norm 都大于 1.3，证明 clip 路径实际生效。循环移位 JAX mask 的反事实产生 `0.06900620367377996` 最终参数差；两次独立进程报告 fingerprint 同为 `sha256:68ffa8093a1f2b98…`。
+
+这个 control 的 weight decay 故意作用于所有参数，因此不覆盖生产中常见的 norm/bias mask；它也不对账 PyTorch/JAX native PRNG state、JIT/异步执行、checkpoint、混合精度、CUDA/TPU、sharding、长训练收敛或性能。`5e-6` 是当前 pinned CPU Float32 contract 的回归门槛，不是跨硬件普适误差保证。
+
 ## Checkpoint 必须包含完整训练状态
 
 可恢复训练至少保存：
@@ -212,6 +241,14 @@ code/dependency/data manifest versions
 
 保存后要在独立进程加载，运行相同 batch 并检查 loss/下一步更新。跨设备拓扑恢复可能需要重新分片；“文件能打开”不等于训练语义连续。
 
+### 已执行的独立进程 bit-exact resume control
+
+`projects/jax-minigpt/checkpoint_resume_control.py` 把上述清单变成一条可重放实验。`ALLMJAX1` 单文件工件用 canonical manifest 固定模型、optimizer 和数据身份，并逐叶绑定 name、shape、dtype、offset、size 与 SHA-256；连续 little-endian payload 保存参数 PyTree、Optax state、typed PRNG key data、dropout/data key、shuffle permutation/cursor 和 global step。loader 会在创建 JAX array 前拒绝非 canonical/重复字段、叶子顺序、shape/dtype、内外 digest、截断和多余 bytes；writer 采用 exclusive create 与 file `fsync`。
+
+固定 7 条样本、batch 2、embedding dropout 0.2、clip + AdamW 的 6 步 CPU fixture 在 step 3 交接：第一个 spawn process 写出 **13,476 bytes** 的工件（`sha256:e9252e5dddfa4aa5…`）后退出，第二个独立进程恢复。split-run 与 uninterrupted 的 sample IDs、逐步 loss/pre-clip gradient norm、最终参数/Optax/PRNG/data state 均 bit-exact，终态 fingerprint 为 `sha256:720817cca4c067cf…`。只把 dropout key 重置到初始 seed，或只把 cursor 从 6 改回 0，会让最终参数最大差分别变成 `0.037261832505464554` 与 `0.03700308472616598`；因此只恢复 params/optimizer 不能推出训练连续。
+
+这个 control 不是 Orbax、Flax 或 TensorStore，也没有 directory `fsync`/断电原子性、来源认证、Python/NumPy/worker/accelerator RNG、CUDA/TPU、多设备 sharding、目标模型、收敛或性能证据。跨拓扑恢复还必须另外验证 treedef、sharding、global array 语义和重新分片。
+
 ## 可运行实验与验收
 
 运行：
@@ -219,7 +256,9 @@ code/dependency/data manifest versions
 ```powershell
 python -m pip install -e ".[jax]"
 python projects/jax-minigpt/train_tiny.py --steps 60 --learning-rate 0.02 --seed 11
-python -m pytest tests/test_gpt_jax.py
+python projects/jax-minigpt/cross_framework_parity.py
+python projects/jax-minigpt/checkpoint_resume_control.py
+python -m pytest tests/test_gpt_jax.py tests/test_gpt_cross_framework_parity.py tests/test_jax_training_resume.py
 ```
 
 验收项：
@@ -231,8 +270,9 @@ python -m pytest tests/test_gpt_jax.py
 5. 固定 tiny batch 的 final loss 显著低于 initial loss；
 6. 输出 backend/device 和同步计时边界；
 7. 未安装 Optax 时测试不能被宣称为通过。
+8. parity control 的 LayerNorm 路径通过，而原生 RMSNorm 反事实保持显著非零。
 
-tiny-batch overfit 只验训练闭环，不验泛化。下一步应使用独立 validation batch，并做 PyTorch/JAX 同权重对照。
+tiny-batch overfit 只验训练闭环，不验泛化；跨框架 parity 只验当前显式相同契约，不验两个默认模型或训练栈整体等价。三步 control 已对账 AdamW state、schedule 与共享的 embedding dropout masks，但仍应增加独立 validation batch、多 seed、全部 dropout site、norm/bias decay mask，并分别验证两个框架的 native PRNG state 与恢复语义。
 
 ## 常见错误
 

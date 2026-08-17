@@ -1,5 +1,18 @@
 # LLM 系统安全、隐私与公平
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：LLM 安全、隐私、RAG/Agent 和平台工程师。
+- **先修**：理解系统组件、身份、数据流和外部副作用。
+- **首次阅读**：信任边界 → injection/jailbreak → RAG → Agent/tool → secrets → 响应。
+- **完成信号**：能画数据流/信任边界，并为高风险路径设计 fail-closed 负例。
+- **卡住时**：先从当前系统的一条请求链开始，不必一次覆盖所有威胁类别。
+
+</div>
+
 LLM 安全不是“让模型更听话”，而是让整个系统在恶意输入、错误模型输出、第三方内容、工具失败和内部误操作下，仍把损害限制在可接受范围。模型输出应被视为**不可信建议或数据**，不能直接成为权限凭证、SQL、shell、支付或删除授权。
 
 ## 1. 先画系统与信任边界
@@ -182,6 +195,12 @@ URL allowlist 要在解析、DNS resolution 和每次 redirect 后检查。阻�
 - model/provider telemetry。
 
 做 data-flow inventory，按字段标注目的、访问者、位置、TTL、加密和删除路径。数据最小化比“收集后再脱敏”更可靠。
+
+### 8.1 Opaque reasoning 与共享轨迹
+
+某些 API 把客户端不可读的 reasoning/thinking block 交给客户端保存，并在后续请求中回传。不可读不代表低敏感：它可能吸收 prompt、工具 observation、PII、secret 或隐藏 instruction，也可能影响后续生成和工具 proposal。签名或 AEAD tag 证明的范围取决于被认证字段；若 authenticated subject、tenant、session、predecessor 和 model audience 没有绑定，合法 ciphertext 仍可能在错误上下文中被重放。
+
+公开 Agent trajectory 应从 typed allowlist 重新生成，默认删除 reasoning、signature 和未知 opaque block，并要求 `opaque_reasoning_block_count == 0`。从外部取得的 trajectory 是不可信序列化状态，不能直接继续调用模型或工具。详见 [Opaque Reasoning 工件与轨迹安全](reasoning-artifact-security.md)和[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
 
 ## 9. 模型隐私
 

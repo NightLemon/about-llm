@@ -2,6 +2,57 @@
 
 目标：用同一组 workload 比较 Transformers 与 vLLM，并正确区分 TTFT、TPOT、端到端延迟和系统吞吐。
 
+## 固定 Qwen 的真实 HTTP reference control
+
+先用已录制报告做离线复核；这条命令不会加载模型或启动服务：
+
+~~~powershell
+python projects/inference-serving/run_qwen_target_service.py `
+  --verify projects/inference-serving/qwen2.5-0.5b-service.recorded-report.json
+~~~
+
+需要重放真实 control 时，安装 `torch`、`transformers` 与 `api` 依赖，并使用本机已有的固定 checkpoint cache：
+
+~~~powershell
+python projects/inference-serving/run_qwen_target_service.py --local-files-only
+~~~
+
+这条路径先按 immutable revision manifest 对 7 个文件、999,586,347 bytes 逐文件重哈希，再以 `trust_remote_code=False` 加载 `Qwen2ForCausalLM`。父进程生成一次性 Bearer token，子进程只监听 `127.0.0.1`；client 真实执行受保护的 health/models、unknown-field/wrong-model 负例，以及 `/v1/chat/completions` 的一次 non-stream 与一次 SSE。两次都得到 31-token prompt、completion IDs `[17,151645]`、`2<|im_end|>`、`finish_reason=stop` 和相同 usage；后端 audit 记录两次 `GenerationMixin.generate()`。Uvicorn 0.52.1 重录 report fingerprint 是 `sha256:63e566ca…617ddb`，不保存 Bearer、raw request、raw response 或 completion 原文。
+
+这是为教学与证据核验设计的 **Transformers CPU FP32 eager reference service**，不是 vLLM，也不声称完整 OpenAI API compatibility。它是单进程、单 admission slot、HTTP loopback，未使用 TLS、proxy、OAuth/JWT/IAM、CUDA、多 worker 或远程 client。SSE 在模型完成完整 generation 后才发出两个文本 delta，因此 `[DONE]`/usage 通过不证明 incremental decode streaming、client disconnect cancellation、KV 释放、容量、SLO 或性能。文件 hash 没有密钥，不认证发布者；verify 后 loader 重新打开路径仍有 TOCTOU。
+
+## 增量 SSE 与断连协作取消 control
+
+先离线复核录制报告，再按需重放轻量真实 TCP control：
+
+~~~powershell
+python projects/inference-serving/incremental_streaming_control.py `
+  --verify projects/inference-serving/incremental-streaming.recorded-report.json
+
+python projects/inference-serving/incremental_streaming_control.py
+~~~
+
+这条独立 control 使用 authored async pseudo-token backend，不加载 tokenizer 或模型。完整 case 在 backend 完成前依次让 client 收到 `甲`、`🙂`、`终`，随后核对 finish、usage 与 `[DONE]`；取消 case 先发 `首`，client 在 server audit 仍显示 active=1/backend 未完成时显式关闭 response。真实 Uvicorn subprocess 随后记录 ASGI stream task 与 backend iterator 都观察到 `asyncio.CancelledError`、active 回到 0、cancelled 变为 1，且 emitted token IDs 仍只有 `[201]`。Uvicorn 0.52.1 重录 report fingerprint 为 `sha256:25846822…2b5d00`。
+
+它证明的只是当前协作式 async iterator 在单进程 IPv4 loopback HTTP 上能接收断连取消，并在后续 authored delta 前停止。它没有执行 Transformers blocking generation thread、模型 forward、vLLM、CUDA、KV/GPU 分配或释放，也没有 TLS/proxy/IAM、远程 client、多 worker、provider billing、质量、性能或 SLO 证据。不要把这个结果写成“任意模型 runtime 都会停算”或“云 API 取消后不计费”。
+
+### Tiny Transformers thread 的显式协作退出
+
+下一条 control 把证据推进到真实 Transformers generation loop，但仍保持模型极小且不下载 checkpoint：
+
+~~~powershell
+python projects/inference-serving/transformers_thread_cancellation_control.py `
+  --verify projects/inference-serving/transformers-thread-cancellation.recorded-report.json
+
+python projects/inference-serving/transformers_thread_cancellation_control.py
+~~~
+
+子进程构造随机 1,272 参数 `GPT2LMHeadModel`，在一个 Python thread 中真实调用 `GenerationMixin.generate()`。Authored logits processor 强制首 token ID 7；custom streamer 把它投影为 `首` 并故意暂停 generation thread。Client 收到首 delta 时，audit 必须同时显示一次真实 forward、thread alive、`generate()` 尚未返回。Client 断连后 backend 捕获 `CancelledError` 并设置 `threading.Event`；authored `StoppingCriteria` 在下一次 termination check 观察事件，`generate()` 以唯一 continuation `[7]` 返回，thread exit/join，第二个 token 未产生。Uvicorn 0.52.1 重录 report 为 `sha256:eadcab54…f62bc7`。
+
+这里的 streamer pause 是为了把竞争条件变成可复核的 control synchronization，不是生产 scheduler。证据只覆盖**显式植入 cooperative event/StoppingCriteria 的随机 tiny CPU 路径**：没有 tokenizer/chat template、公开 checkpoint、目标模型 logits、未修改的 Transformers call、vLLM/CUDA、KV/CPU/GPU memory-release 观测、远程 provider 或计费。已进入某个不可中断 kernel/driver 的 thread 是否退出，仍需目标 runtime 单独验证。
+
+无 `--verify` 的 live execution 会记录当次 UTC 日期与当前 Python/Torch/Transformers/HTTP runtime identity，并按这组显式身份验证行为投影；`--verify` 则只接受仓库中经审阅的固定日期、固定 runtime artifact。两类报告不可互换：依赖升级后的 live 通过只说明新环境观察到同一受限行为，不会自动把旧录制证据升级为已审阅；若要重录，必须同时复核 runtime、报告内容、fingerprint 与上述证据边界。
+
 ## vLLM 服务
 
 vLLM 的平台和版本兼容变化较快。先按官方说明在 Linux/WSL2 安装，再选择适合显存和许可证的模型。示例：
@@ -117,6 +168,25 @@ python projects/inference-serving/sampling_toy.py
 固定原始概率 `[0.4,0.3,0.2,0.1]`、top-k=3、top-p=0.7：top-k 阶段为 `[4/9,3/9,2/9,0]`，top-p 最终为 `[4/7,3/7,0,0]`，uniform=0.6 在 token-id-order CDF 中选择 token 1。另一个 signed-logit fixture 对历史 token 0/1 使用 penalty=2，将 `[2,-2,0.5]` 变为 `[1,-4,0.5]`；重复出现 token 1 不会重复施加，因为这不是 frequency penalty。
 
 测试还覆盖 top-p exact/crossing boundary、top-k/top-p tie、temperature 改变 nucleus、inverse-CDF 边界、大 logits 稳定性、平移不变性、不可变数组和失败输入。该策略是教学契约，不是 Transformers/vLLM/provider 的通用默认；固定 uniform/seed 也不保证跨 RNG/kernel bitwise replay。脚本没有模型 forward、tokenizer、多 token EOS/stop、KV/batching、质量、延迟或吞吐证据。
+
+## Binary self-consistency correlation oracle
+
+运行两个边缘单样本成功率都为 0.6 的 exact majority-vote 场景：
+
+~~~powershell
+python projects/inference-serving/self_consistency_correlation_toy.py
+~~~
+
+独立场景只有一个 \(p=3/5\) regime。相关场景则每题先等概率抽 easy \((p=9/10)\) 或 hard \((p=3/10)\)，再在该 regime 内 conditional i.i.d. 生成 N 个 binary correctness votes；共享 regime 使边缘 pairwise correlation 精确为 \(3/8\)，但跨题单样本平均仍为 \(3/5\)。程序对奇数 N 计算每个 regime 的 binomial upper tail，不枚举 `2^N` 序列：
+
+| N | independent majority | latent-correlated majority |
+|---:|---:|---:|
+| 1 | 0.60000000000 | 0.60000000000 |
+| 3 | 0.64800000000 | 0.59400000000 |
+| 5 | 0.68256000000 | 0.57726000000 |
+| 11 | 0.75349813248 | 0.53896454244 |
+
+测试用小 N 显式枚举对照闭式结果，并覆盖 deterministic boundary、undefined correlation、odd-N 契约、重复 ID、类型和资源上限。这个 counterexample 只处理两个 canonical answer labels，不处理开放文本中多个错误答案的 plurality/canonicalization。它没有执行 model、tokenizer、dataset、judge、GPU 或 provider，也没有测量 temperature、质量、latency 或 cost；不能据此声称真实 self-consistency 一定下降。
 
 ## Deterministic beam-search oracle
 
@@ -296,6 +366,20 @@ python projects/inference-serving/speculative_decoding_toy.py `
 block fixture 的第一个 proposal 必然接受、第二个以 0.25 概率接受但由固定 uniform 强制拒绝；输出改从 residual 取 token，后续 draft 被丢弃且不使用 bonus distribution。另一个单元测试覆盖全接受时额外发一个 target token。所有位置必须使用相同 vocabulary、相同 prefix 和应用 sampling transform 后的真实 \(p,q\)。
 
 这里没有 model forward/tokenizer、draft generation latency、batched target verification、KV rollback 或 GPU kernel。解析恒等式通过不证明某个 runtime 实现正确，更不证明 throughput/TPOT 加速；真实验收还需对固定 target 做 baseline/speculative 同 seed 分布检验、逐请求 accepted-token trace、target calls、峰值显存和端到端负载测试。
+
+## Verifier-guided best-of-N exact oracle
+
+运行一个有限 authored candidate distribution 上的精确选择反例：
+
+~~~powershell
+python projects/inference-serving/verifier_best_of_n_toy.py
+~~~
+
+每次抽样 i.i.d. 来自 `wrong/correct/verifier_hack`，sampling weight 为 `5/4/1`，deterministic verifier score 为 `20/80/99`，只有 `correct` 的 target label 为 true。选择规则固定为最大 `(verifier_score, candidate_id)`。候选按该规则由弱到强排序后，程序用 `P(select i)=F_i^N-F_{i-1}^N` 和 `oracle@N=1-(1-p_success)^N` 做精确 `Fraction` 闭式计算。
+
+N=1/4/16 的 `(oracle@N, selected@N, expected verifier score)` 分别为 `(0.4, 0.4, 51.9)`、`(0.8704, 0.5936, 82.7841)`、`(0.9997178890, 0.1852867601, 95.4783461)`。因此 proxy 分数严格上升并不推出 target success 单调上升；oracle@N 也不等于 verifier-selected@N。测试还用小规模显式序列枚举对照闭式公式，并覆盖 score tie、输入资源上限和失败契约。
+
+N=16 的 `3^16=43,046,721` 只是 logical candidate sequences；实现没有逐序列枚举。报告里的 N 次 logical model samples/scores 也不是 wall-clock、费用或并行度测量。这里没有执行 model、tokenizer、PRM、GPU、provider 或真实 reward pipeline，不证明 verifier calibration、语义正确、目标模型质量、latency、cost 或生产中的 optimizer's curse。
 
 ## Paged KV block allocator state-machine toy
 

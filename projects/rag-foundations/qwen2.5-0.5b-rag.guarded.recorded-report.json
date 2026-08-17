@@ -1,0 +1,298 @@
+{
+  "cases": [
+    {
+      "case_fingerprint": "sha256:25e033e43a038706b698dcba98cb7cc4f4ac8363788cfece7e3c97850b8d007e",
+      "case_id": "guarded-answerable-citation",
+      "decision": {
+        "action": "reject",
+        "citation_syntax_passed": false,
+        "cited_source_ids": [],
+        "decision_fingerprint": "sha256:e268f72199271b4e013463b69547289c34d6f85974d6d2cdb19b4804c35138f4",
+        "decision_version": "about-llm.rag-publication-policy.v1",
+        "generated_output_observed": true,
+        "model_call_allowed": true,
+        "policy_revision": "about-llm.rag-publication-policy.v1",
+        "raw_output": "无权文档不得进行排序",
+        "raw_output_sha256": "sha256:1274ea23cecd94f6cb3a78efc4dd72d22c883f08fdabc282aa406a4447d56904",
+        "reason_code": "missing_citation",
+        "response_text": "无法生成满足引用要求的可验证答案。",
+        "response_text_sha256": "sha256:5ac47e6d07c36ce53a00d84db4ac3678f93f4695ad4e3d73460b0785fec40b57",
+        "semantic_entailment_verified": false,
+        "stage": "post_generation",
+        "uncited_paragraphs": [
+          "无权文档不得进行排序"
+        ],
+        "unknown_source_ids": [],
+        "valid_source_ids": [
+          "S1",
+          "S2"
+        ]
+      },
+      "expected_behavior": "answer_with_citations",
+      "generation": {
+        "decoded_with_special_tokens": "无权文档不得进行排序<|im_end|>",
+        "do_sample": false,
+        "framework_generate_invocation_count": 1,
+        "generated_ended_with_eos": true,
+        "generated_token_ids": [
+          42192,
+          40981,
+          111116,
+          99925,
+          71817,
+          74661,
+          151645
+        ],
+        "generator_callback_invocation_count": 1,
+        "max_new_tokens": 64,
+        "raw_output": "无权文档不得进行排序",
+        "raw_output_sha256": "sha256:1274ea23cecd94f6cb3a78efc4dd72d22c883f08fdabc282aa406a4447d56904",
+        "stop_reason": "eos",
+        "use_cache": true
+      },
+      "packing": {
+        "base_cost_units": 183,
+        "budget_units": 384,
+        "cost_unit": "chat_tokens_including_output_reservation",
+        "decisions": [
+          {
+            "cost_if_selected_units": 232,
+            "document_id": "acl-order-v1",
+            "rank": 1,
+            "reason": "selected",
+            "selected": true,
+            "stable_source_id": "acl-order"
+          },
+          {
+            "cost_if_selected_units": 272,
+            "document_id": "citation-boundary-v1",
+            "rank": 2,
+            "reason": "selected",
+            "selected": true,
+            "stable_source_id": "citation-boundary"
+          }
+        ],
+        "document_ids": [
+          "acl-order-v1",
+          "citation-boundary-v1"
+        ],
+        "max_chunks_per_source": 2,
+        "rendered_context_sha256": "sha256:a2cc476e2fcfe54bfca328a24c49d6b835231e1e9a88cc8e736c685bcda2cd23",
+        "source_short_ids": [
+          "S1",
+          "S2"
+        ],
+        "used_cost_units": 272
+      },
+      "principals": [
+        "engineering"
+      ],
+      "prompt": {
+        "chat_template_sha256": "sha256:cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f",
+        "prompt_token_count": 208,
+        "prompt_token_ids_sha256": "sha256:b7a098aeca7f19ec33fc805e14b62223f7460399d770d1d5a0ecc003c29aee22",
+        "prompt_transmitted_to_model": true,
+        "system_prompt_sha256": "sha256:ed7110e1c268c285e6db052ad7cc44bb3e30110b5ceb1988d147489a77bc452a",
+        "user_prompt_template_sha256": "sha256:ce0982a6dab6feb07b2d335c9c0a589084839b6134499b8d5672328c046085fe"
+      },
+      "public_decision": {
+        "action": "reject",
+        "audit_findings_included": false,
+        "citation_syntax_passed": false,
+        "decision_version": "about-llm.rag-publication-policy.v1",
+        "policy_revision": "about-llm.rag-publication-policy.v1",
+        "public_decision_fingerprint": "sha256:6c5b50b7951f88bf74686846800fb4281f4e373e5c202eeb019c5ac139fa57a4",
+        "raw_output_included": false,
+        "reason_code": "missing_citation",
+        "response_text": "无法生成满足引用要求的可验证答案。",
+        "response_text_sha256": "sha256:5ac47e6d07c36ce53a00d84db4ac3678f93f4695ad4e3d73460b0785fec40b57",
+        "semantic_entailment_verified": false,
+        "stage": "post_generation"
+      },
+      "query_sha256": "sha256:d0c2b912614236b336b51dfb6c38e6e715f982ab642fe4e5a283913135efb4f7",
+      "retrieval": {
+        "authorization_filtered_before_scoring": true,
+        "document_ids": [
+          "acl-order-v1",
+          "citation-boundary-v1"
+        ],
+        "implementation": "about_llm.rag.BM25Index",
+        "results": [
+          {
+            "document_id": "acl-order-v1",
+            "rank": 1,
+            "score": 9.27956082668418,
+            "source": "bm25"
+          },
+          {
+            "document_id": "citation-boundary-v1",
+            "rank": 2,
+            "score": 1.2516773175606914,
+            "source": "bm25"
+          }
+        ],
+        "top_k": 4
+      },
+      "tenant_id": "tenant-a"
+    },
+    {
+      "case_fingerprint": "sha256:f84daec6fdd3c42c2a099e6de0c1026295fe7531a686b40c190bea5c88c9765e",
+      "case_id": "guarded-empty-evidence",
+      "decision": {
+        "action": "abstain",
+        "citation_syntax_passed": false,
+        "cited_source_ids": [],
+        "decision_fingerprint": "sha256:6378b3d90149b4b2a11c469b6f740b3e0acc24b9185b33e7ecde557aec3d4690",
+        "decision_version": "about-llm.rag-publication-policy.v1",
+        "generated_output_observed": false,
+        "model_call_allowed": false,
+        "policy_revision": "about-llm.rag-publication-policy.v1",
+        "raw_output": null,
+        "raw_output_sha256": null,
+        "reason_code": "no_authorized_evidence",
+        "response_text": "无法根据提供的证据回答。",
+        "response_text_sha256": "sha256:19fb9e67e5942db9a1c2ee6ead284a42720b0c7faa5182a5045b0d002cd832aa",
+        "semantic_entailment_verified": false,
+        "stage": "pre_generation",
+        "uncited_paragraphs": [],
+        "unknown_source_ids": [],
+        "valid_source_ids": []
+      },
+      "expected_behavior": "abstain",
+      "generation": {
+        "decoded_with_special_tokens": null,
+        "do_sample": false,
+        "framework_generate_invocation_count": 0,
+        "generated_ended_with_eos": false,
+        "generated_token_ids": [],
+        "generator_callback_invocation_count": 0,
+        "max_new_tokens": 64,
+        "raw_output": null,
+        "raw_output_sha256": null,
+        "stop_reason": "pre_generation_abstention",
+        "use_cache": true
+      },
+      "packing": {
+        "base_cost_units": 180,
+        "budget_units": 384,
+        "cost_unit": "chat_tokens_including_output_reservation",
+        "decisions": [],
+        "document_ids": [],
+        "max_chunks_per_source": 2,
+        "rendered_context_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_short_ids": [],
+        "used_cost_units": 180
+      },
+      "principals": [
+        "engineering"
+      ],
+      "prompt": {
+        "chat_template_sha256": "sha256:cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f",
+        "prompt_token_count": 116,
+        "prompt_token_ids_sha256": "sha256:9fe3989b9518f896bb74205656b6742d1439ac838c2d47dba188cfd4c81a4c0e",
+        "prompt_transmitted_to_model": false,
+        "system_prompt_sha256": "sha256:ed7110e1c268c285e6db052ad7cc44bb3e30110b5ceb1988d147489a77bc452a",
+        "user_prompt_template_sha256": "sha256:ce0982a6dab6feb07b2d335c9c0a589084839b6134499b8d5672328c046085fe"
+      },
+      "public_decision": {
+        "action": "abstain",
+        "audit_findings_included": false,
+        "citation_syntax_passed": false,
+        "decision_version": "about-llm.rag-publication-policy.v1",
+        "policy_revision": "about-llm.rag-publication-policy.v1",
+        "public_decision_fingerprint": "sha256:e12790e441e251a0ef96795bef50e5ab6d5f95b726e7953402f3b44fdc715908",
+        "raw_output_included": false,
+        "reason_code": "no_authorized_evidence",
+        "response_text": "无法根据提供的证据回答。",
+        "response_text_sha256": "sha256:19fb9e67e5942db9a1c2ee6ead284a42720b0c7faa5182a5045b0d002cd832aa",
+        "semantic_entailment_verified": false,
+        "stage": "pre_generation"
+      },
+      "query_sha256": "sha256:92bd739d89415b6aa4e95e23dba4301b59b38a7cc82c6c63a02122f752ddb460",
+      "retrieval": {
+        "authorization_filtered_before_scoring": true,
+        "document_ids": [],
+        "implementation": "about_llm.rag.BM25Index",
+        "results": [],
+        "top_k": 4
+      },
+      "tenant_id": "tenant-a"
+    }
+  ],
+  "checked_at": "2026-08-13",
+  "checkpoint": {
+    "all_selected_file_bytes_verified_before_load": true,
+    "loader_input": "verified_local_snapshot_directory",
+    "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+    "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "selected_file_count": 7,
+    "selected_total_bytes": 999586347
+  },
+  "checkpoint_manifest_fingerprint": "sha256:ddf41f2cff963bc2a8fc186c28369abba8a920b850152fc815e2b17c7d037876",
+  "evidence_boundary": "This control verifies selected bytes from one immutable checkpoint revision, then executes authorization-filtered BM25 retrieval and tokenizer-measured packing for two fixed queries distinct from the earlier failure-control queries. A fail-closed policy wraps the generation callback: the control observes one GenerationMixin.generate API invocation when packed authorized evidence exists and zero when it is empty. It records audit and public projections separately. The offline verifier does not replay model generation, tokenizer token IDs, or decoding. The control does not count internal model forward calls, execute a manual-greedy logits cross-check, or prove claim-evidence entailment. The queries share the earlier authored corpus and checkpoint and are not a representative quality evaluation. Unkeyed hashes do not authenticate the publisher or recorder, verification does not eliminate loader-reopen TOCTOU, and this CPU control does not prove provider billing/cancellation, GPU/vLLM behavior, performance, or production integration.",
+  "manifest_fingerprint": "sha256:9ead4c0655673117f62e154ac78f7fed8a3f0da6acec1ed874b80e17cf40778a",
+  "model": {
+    "class": "Qwen2ForCausalLM",
+    "eval_mode": true,
+    "model_type": "qwen2",
+    "parameter_dtypes": [
+      "torch.float32"
+    ],
+    "parameter_storage_bytes": 1976131072,
+    "total_parameters": 494032768,
+    "trainable_parameters": 0
+  },
+  "policy": {
+    "no_evidence_response": "无法根据提供的证据回答。",
+    "policy_fingerprint": "sha256:4e59d11cefc5ed9e6cc55a4c36a572e0ed698a8583527bcfbb4eb78b99722449",
+    "rejected_response": "无法生成满足引用要求的可验证答案。",
+    "revision": "about-llm.rag-publication-policy.v1"
+  },
+  "report_fingerprint": "sha256:00706d003921282625e7c8ad89291c64493d35c13faf4ad7e7553a1388f29ede",
+  "report_version": "about-llm.rag-guarded-transformers-control-report.v1",
+  "runtime": {
+    "attention_implementation": "eager",
+    "cuda_executed": false,
+    "device": "cpu",
+    "dtype": "float32",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python_implementation": "CPython",
+    "python_version": "3.12.10",
+    "torch_num_threads": 8,
+    "torch_version": "2.13.0+cpu",
+    "transformers_version": "4.57.6"
+  },
+  "scope": {
+    "audit_public_projection_separation_executed": true,
+    "authorization_filtered_before_bm25_scoring": true,
+    "claim_evidence_entailment_verified": false,
+    "framework_generate_invocation_executed_for_evidence": true,
+    "framework_generate_invocation_suppression_observed_for_empty_evidence": true,
+    "general_rag_quality_proven": false,
+    "gpu_vllm_or_production_service_executed": false,
+    "manual_greedy_logits_cross_check_executed": false,
+    "production_integration_proven": false,
+    "provider_billing_or_cancellation_verified": false,
+    "publication_policy_wrapped_generation_callback": true,
+    "publisher_or_recorder_authenticated_by_signature": false,
+    "selected_checkpoint_files_verified_before_load": true,
+    "target_checkpoint_weights_loaded": true,
+    "tokenizer_measured_context_packing_executed": true,
+    "verification_to_loader_reopen_toctou_eliminated": false
+  },
+  "summary": {
+    "case_count": 2,
+    "framework_generate_invocation_count": 1,
+    "post_generation_rejection_count": 1,
+    "pre_generation_abstention_count": 1,
+    "public_raw_output_field_count": 0,
+    "publish_count": 0
+  },
+  "tokenizer": {
+    "chat_template_sha256": "sha256:cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f",
+    "class": "Qwen2TokenizerFast",
+    "eos_token_id": 151645,
+    "pad_token_id": 151643,
+    "vocabulary_size_with_added_tokens": 151665
+  }
+}

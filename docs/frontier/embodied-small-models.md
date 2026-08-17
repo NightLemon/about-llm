@@ -1,5 +1,18 @@
 # 具身、计算机使用、小模型与本地智能
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：机器人、computer-use Agent 和端侧模型工程师。
+- **先修**：Agent 控制循环、服务安全和基本控制系统直觉。
+- **首次阅读**：闭环决策 → 系统分层 → GUI Agent → routing/cascade → 发布门禁。
+- **完成信号**：能定义动作确认、状态验证、降级和人工接管边界。
+- **卡住时**：先读[Agent Runtime](../applications/agent-runtime.md)和[产品状态设计](../applications/product-design.md)。
+
+</div>
+
 这些方向把语言模型放进闭环环境：机器人动作改变物理世界，GUI Agent 改变账户状态，小模型在资源受限设备上持续响应。评价重点从“回答像不像”转为任务成功、状态估计、权限、恢复、延迟和现实副作用。
 
 ## 1. 闭环决策与部分可观测性

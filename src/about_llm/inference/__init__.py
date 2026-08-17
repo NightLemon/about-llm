@@ -1,5 +1,7 @@
 """Inference measurement and sampling utilities."""
 
+from typing import TYPE_CHECKING, cast
+
 from about_llm.inference.beam_search import (
     BeamPrefix,
     BeamSearchResult,
@@ -55,19 +57,6 @@ from about_llm.inference.metrics import (
     summarize_attempts,
     summarize_measurements,
 )
-from about_llm.inference.minigpt_checkpoint import (
-    MINIGPT_ARCHITECTURE_ID,
-    MINIGPT_ARCHITECTURE_REVISION,
-    MINIGPT_CHECKPOINT_FORMAT_VERSION,
-    MINIGPT_CHECKPOINT_SCHEMA_VERSION,
-    LoadedMiniGPTCheckpoint,
-    MiniGPTCheckpointIdentity,
-    MiniGPTCheckpointLimits,
-    load_quantized_minigpt_checkpoint,
-    read_quantized_minigpt_checkpoint,
-    serialize_quantized_minigpt_checkpoint,
-    write_quantized_minigpt_checkpoint_new,
-)
 from about_llm.inference.prefix_cache import (
     PrefixCache,
     PrefixCacheCapacityError,
@@ -102,6 +91,12 @@ from about_llm.inference.sampling import (
     greedy_next_token,
     sample_next_token,
 )
+from about_llm.inference.self_consistency import (
+    BinaryMajorityAnalysis,
+    BinaryVoteRegime,
+    RegimeMajorityContribution,
+    analyze_latent_regime_binary_majority,
+)
 from about_llm.inference.speculative import (
     SpeculativeBlockResult,
     SpeculativeDistributionAudit,
@@ -116,11 +111,56 @@ from about_llm.inference.stop_matching import (
     StopMatcherStateError,
     StopMatchUpdate,
 )
+from about_llm.inference.verifier_selection import (
+    BestOfNAnalysis,
+    CandidateSelectionProbability,
+    VerifierCandidate,
+    analyze_verifier_guided_best_of_n,
+)
 from about_llm.inference.workload import (
     ArrivalProcess,
     ArrivalSchedule,
     build_arrival_schedule,
 )
+
+if TYPE_CHECKING:
+    from about_llm.inference.minigpt_checkpoint import (
+        MINIGPT_ARCHITECTURE_ID,
+        MINIGPT_ARCHITECTURE_REVISION,
+        MINIGPT_CHECKPOINT_FORMAT_VERSION,
+        MINIGPT_CHECKPOINT_SCHEMA_VERSION,
+        LoadedMiniGPTCheckpoint,
+        MiniGPTCheckpointIdentity,
+        MiniGPTCheckpointLimits,
+        load_quantized_minigpt_checkpoint,
+        read_quantized_minigpt_checkpoint,
+        serialize_quantized_minigpt_checkpoint,
+        write_quantized_minigpt_checkpoint_new,
+    )
+
+_MINIGPT_CHECKPOINT_EXPORTS = frozenset(
+    {
+        "MINIGPT_ARCHITECTURE_ID",
+        "MINIGPT_ARCHITECTURE_REVISION",
+        "MINIGPT_CHECKPOINT_FORMAT_VERSION",
+        "MINIGPT_CHECKPOINT_SCHEMA_VERSION",
+        "LoadedMiniGPTCheckpoint",
+        "MiniGPTCheckpointIdentity",
+        "MiniGPTCheckpointLimits",
+        "load_quantized_minigpt_checkpoint",
+        "read_quantized_minigpt_checkpoint",
+        "serialize_quantized_minigpt_checkpoint",
+        "write_quantized_minigpt_checkpoint_new",
+    }
+)
+
+
+def __getattr__(name: str) -> object:
+    if name in _MINIGPT_CHECKPOINT_EXPORTS:
+        from about_llm.inference import minigpt_checkpoint
+
+        return cast(object, getattr(minigpt_checkpoint, name))
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "MINIGPT_ARCHITECTURE_ID",
@@ -137,6 +177,10 @@ __all__ = [
     "BeamSearchResult",
     "BeamSearchStep",
     "BeamSequence",
+    "BestOfNAnalysis",
+    "BinaryMajorityAnalysis",
+    "BinaryVoteRegime",
+    "CandidateSelectionProbability",
     "ConstrainedDecodingResult",
     "ConstrainedDecodingStep",
     "ConstraintDeadEndError",
@@ -178,6 +222,7 @@ __all__ = [
     "QuantizedBundleLimits",
     "QuantizedKVCache",
     "QuantizedMatrixBundle",
+    "RegimeMajorityContribution",
     "RequestOutcome",
     "RequestSchedule",
     "RooflineBound",
@@ -188,8 +233,11 @@ __all__ = [
     "StopMatchUpdate",
     "StopMatcherReport",
     "StopMatcherStateError",
+    "VerifierCandidate",
     "WorkloadSLO",
     "WorkloadSummary",
+    "analyze_latent_regime_binary_majority",
+    "analyze_verifier_guided_best_of_n",
     "audit_speculative_distribution",
     "beam_search_from_probabilities",
     "build_arrival_schedule",

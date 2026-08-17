@@ -48,6 +48,52 @@ JSONL loader 拒绝 duplicate key、`NaN`/`Infinity`、未知或缺失的顶层�
 
 这证明 adapter 对固定 fixture 的构建、解析和脱敏行为，不证明 DNS、TLS、认证、配额、区域、SDK 兼容或真实端点当前可用。
 
+## OpenAI Responses typed-event 离线 replay
+
+旧的 `OpenAICompatibleTextStream` 只建模 Chat Completions 风格的单 choice text delta。本项目另提供一条**独立**的 Responses reviewed subset，不把 `response.output[]`、content part、refusal 和 function call 压成一个字符串：
+
+~~~powershell
+python projects/cloud-api-contracts/openai_responses_replay.py `
+  --events projects/cloud-api-contracts/openai-responses-events.example.jsonl
+~~~
+
+固定 3,208-byte JSONL 的 SHA-256 为 `f2947212c1f67adf6f35bc976264db28c30abe1a32310daa284df42ca5a54686`。15 个 SDK-shaped events 形成 2 个 output items，重建 `天气：晴。` 和 `lookup_weather({"city":"上海"})`，并对账 12 input + 9 output = 21 total tokens。Event projection 为 `sha256:9cc5964da2517f2076a1c624c2636bd8ca75077b89f024c7710b1b720cbd713e`，最终 receipt 为 `sha256:c4829c19895dcb4013141da3d11b5dc9befee8189210a0901f0cb14c19942579`。
+
+状态机覆盖 `response.created/in_progress`，message 的 output-text/refusal content lifecycle，function-call arguments delta/done，以及 completed/incomplete/failed terminal。它校验 response id/model、output/item/content index、delta→done→terminal output、usage 三数和 item 完成顺序；reasoning/其他 item 只保留 opaque 生命周期，不解释语义。`sequence_number` 从 0 严格连续是本地 evidence artifact 规则，不是任意网络恢复的公开保证。
+
+Loader 拒绝 duplicate key、`NaN`/`Infinity`、invalid UTF-8、空行、缺少末尾换行、未知或额外 event 字段、4 MiB 文件/1 MiB 单行/10,000 events 超限。Function arguments 无效时保留原字符串并报告 `arguments_is_strict_object=false`，不能冒充已校验工具参数。
+
+该命令没有执行 HTTP/SSE/WebSocket framing、OpenAI SDK 或远程 API，也不认证 authored `model`/response id/usage。它不证明真实 OpenAI 服务、完整 Responses API、模型质量、安全、计费或生产可靠性。当前产品接口与事件 reference 的核对日期为 2026-08-14；完整对象图和生产分层见 [GPT 家族](../../docs/models/gpt.md)。
+
+## Opaque reasoning artifact replay matrix
+
+运行本地 context-binding control：
+
+~~~powershell
+python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
+  --output artifacts/cloud-api/reasoning-replay-matrix.json
+~~~
+
+命令使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 reasoning bytes 和内存 ledger，不解析 provider signature，不发送请求，也不输出 plaintext/ciphertext。16 个 case 先证明 content-only AEAD 仍接受 cross-subject、cross-tenant、cross-session 和 cross-model 四类错误上下文，再验证 context-bound envelope 对 identity/session/branch/predecessor/model/expiry/key/tamper/replay 分别 fail closed。
+
+顶层 `passed: true` 表示所有观察符合实验预期；其中四个 `unsafe_acceptance_demonstrated: true` 是故意保留的弱协议反例，不是安全通过。完整协议、论文时效和故障注入步骤见 [Reasoning 工件安全](../../docs/quality/reasoning-artifact-security.md)与[实验 0D](../../docs/practice/labs/lab-0d-reasoning-artifact-security.md)。
+
+该 control 不模拟任一真实供应商格式或密码系统。内存 nonce/consumption ledger 不证明持久化、多进程、多区域一致性、KMS/HSM 或 key rotation；predecessor digest 也不是完整 fork/compaction/Merkle 协议。
+
+## Trajectory release gate
+
+检查 allowlist publication projection：
+
+~~~powershell
+python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
+  --input projects/cloud-api-contracts/trajectory-release.example.json `
+  --output artifacts/cloud-api/trajectory-release-report.json
+~~~
+
+输入为 strict JSON/JSONL；duplicate key、non-finite number 和非对象 candidate 会在解析阶段失败。发布 schema 只允许 `text/tool_call/tool_result/citation` block；reasoning/thinking/signature/encrypted、嵌套工具参数中的禁用字段、未知 block 与未知字段均 fail closed。安全投影退出 0，有 finding 的投影退出 1，输入无效退出 2。
+
+报告不回显输入值、未知类型或任意字段名，并固定 `provider_artifacts_interpreted: false`、`plaintext_values_emitted: false`。`secret_pii_scan_performed: false` 表示它不检查允许文本中的 secret/PII、版权、consent 或用途；这个 gate 也不是 raw provider response sanitizer。
+
 ## 可运行重试决策表
 
 `about_llm.integrations.retry` 是 provider-neutral 的纯策略层。它不发送请求，而是根据刚结束的 attempt、HTTP status 或本地错误类别、请求能否安全重放、结果是否不确定、剩余 deadline、`Retry-After` 和注入的 jitter 值给出 `RetryDecision`。生成固定决策表：
@@ -113,7 +159,7 @@ async with httpx.AsyncClient() as client:
 - Anthropic Messages：校验 SSE event 与 payload type 一致，跟踪 text content block 的 start/delta/stop、message usage/stop reason 与 `message_stop`；
 - Gemini `streamGenerateContent`：单 candidate、纯 text part、usageMetadata、finishReason，并在底层 EOF 后显式完成。
 
-三者遇到 tool/function/refusal/thinking/媒体或未知 block 会失败，而不是丢弃后假装获得完整文本。OpenAI Responses API、Gemini Interactions API 和 provider-specific 兼容扩展不在该契约中。规范化 `StreamUpdate` 是 wire fragment/usage/finish/transport-end 事件，事件数和 text fragment 数都不是 token 数。
+三者遇到 tool/function/refusal/thinking/媒体或未知 block 会失败，而不是丢弃后假装获得完整文本。这个旧 text-only SSE 契约不覆盖 OpenAI Responses API；上文的独立 `OpenAIResponsesEventReplay` 只覆盖 reviewed SDK-shaped typed-event subset，也没有接入 HTTP/SSE transport。Gemini Interactions API 和 provider-specific 兼容扩展仍不在三类 text stream 契约中。规范化 `StreamUpdate` 是 wire fragment/usage/finish/transport-end 事件，事件数和 text fragment 数都不是 token 数。
 
 `execute_sse_request` 已把这两层接入 caller-owned `httpx.AsyncClient`：发送时使用 `stream=True`、禁止 redirect，校验 `text/event-stream`，逐个消费 `aiter_bytes` chunk，并在成功、HTTP 错误、截断、超限、idle/overall timeout、协议异常或取消时关闭 response。只有取得非 2xx headers 且尚未读取成功 body 时才允许走 RetryPolicy；一旦 2xx stream 开始，任何失败都终止且不重放。已经通过 `on_update` 交付的 fragment 是 partial output，不能撤回或改标为普通成功。
 
@@ -190,9 +236,28 @@ python projects/cloud-api-contracts/budgeted_http_demo.py `
 
 这个 demo 用 `httpx.MockTransport` 完成一个 58+4 usage 的成功结算，再返回一个带 request id 的 HTTP 500；最终 SQLite 中分别是 settled 66 micro-USD 与 uncertain 80 micro-USD，共 committed 146。输出不证明网络、真实 provider error/usage 或 invoice。
 
-Wrapper 强制 `RetryPolicy(max_attempts=1)`。一次逻辑调用预留一次，却在内部自动 replay 三次，会让三次都可能计费而账本只覆盖一个 cap；底层 executor 又没有 attempt-start reservation hook，成功响应 usage 也不能证明前面失败 attempt 为零费用。因此每次 replay 都必须新建独立 reservation（使用唯一 attempt id），并分别 settle/cancel/uncertain；不能复用已成为 tombstone 的 reservation id。该限制牺牲了一点调用便利性，但保留了费用口径的真实性。
+旧的单-attempt wrapper 继续强制 `RetryPolicy(max_attempts=1)`。一次逻辑调用预留一次，却在内部自动 replay 三次，会让三次都可能计费而账本只覆盖一个 cap；成功响应 usage 也不能证明前面失败 attempt 为零费用。因此每次 replay 都必须新建独立 reservation（使用唯一 attempt id），并分别 settle/cancel/uncertain；不能复用已成为 tombstone 的 reservation id。
 
 这仍不是跨系统事务：provider 已执行后、SQLite terminal commit 前进程可能崩溃，留下 active 供重启后 reconciliation。`BudgetedCloudCallError` 只给稳定 reason、attempt trace 与预算状态，不把 raw exception/body/密钥写进消息；但部署仍需安全保存 provider request id、billing export 和人工处置。
+
+### 逐 attempt 预算重试 orchestrator
+
+`execute_budgeted_json_request_with_retry` 复用底层 executor 的 bounded retry、`Retry-After`、replay-safe、outcome uncertainty 与 monotonic deadline；它不在外层重写一套 delay 逻辑。默认关闭的 `before_attempt` hook 在每次真正发送前创建 `logical-call:attempt:N` reservation，`after_attempt` hook 在 sleep 或下一次 attempt 前完成 terminal transition：
+
+- 明确 Pool/Connect 前失败为 `cancelled`，释放该 attempt 的 capacity；
+- 任意 HTTP status、outcome-uncertain transport、strict-response failure 为 `uncertain`，提交完整 attempt reservation；
+- 2xx strict JSON 先保持 active，只有 parser 给出完整 usage 才 `settled`；缺 usage 或 parser failure 改为 `uncertain`；
+- reserve 后、trace 前发生 task cancellation，当前 active reservation 仍记 `uncertain`；
+- 下一 attempt reserve 若过 hard gate，网络不会再发送；此前 attempt 的 tombstone 保持不变。
+
+~~~powershell
+python projects/cloud-api-contracts/budgeted_retry_demo.py `
+  --database artifacts/cloud-api/budgeted-retry.sqlite
+~~~
+
+离线 fixture 固定为 HTTP 500→200：attempt 1 的 60+10 cap 按 uncertain 提交 80 micro-USD，attempt 2 的 provider-reported 58+4 usage settled 66 micro-USD，逻辑调用合计 146。若 hard limit 设为 140，attempt 1 入账后，attempt 2 的 80 micro-USD reservation 会在 transport 前被 gate 拒绝，因此只发生一次 MockTransport call。429 fixture 另证明原 executor 的有效 `Retry-After` delay 没有被 wrapper 丢失。
+
+这是 JSON-only reference。它不为 streaming partial output 自动重放，不解析 provider-specific error usage，也不声称 HTTP 500 一定收费；`uncertain` 表示本地证据不足以证明零费用。`BudgetedCloudRetryError` 汇总已 terminalize 的 ordered attempts 与最终本地 snapshot，但仍不证明 provider usage、invoice、server cancellation、idempotency 或 exactly-once billing。
 
 ## 生产调用层仍需补充
 
@@ -201,7 +266,8 @@ Wrapper 强制 `RetryPolicy(max_attempts=1)`。一次逻辑调用预留一次，
 - 按固定 provider/API 版本校准 retryable status/error，不把教学 allowlist 当通用事实；
 - 按 provider 解析 error body、request id、配额与 idempotency-key 语义；
 - 真实 provider 的取消确认、partial-output reconciliation 与 streaming error body；
-- 将单-attempt reference 扩展为 attempt-start 就逐次 reserve 的重试 orchestrator，并按 provider 解析 error usage；远程调用与本地事务仍有不可消除的提交窗口；
+- 按 provider/API version 解析 error usage 与 billing receipt；当前通用 orchestrator 对失败 attempt 只能保守记 uncertain；
+- streaming partial-output 的 attempt-level reservation、禁止/允许 reconnect 的 provider-specific 协议与 reconciliation；
 - proxy、证书 pinning/mTLS、DNS rebinding/egress policy 等进程外网络控制；
 - 每次真实调用的 provider/model/API revision/checked_at 记录；pricing snapshot 不能替代 request/runtime manifest。
 
@@ -211,4 +277,4 @@ base URL、model id、API version 和密钥来自配置/秘密管理，不写死
 
 ## 离线测试
 
-`tests/test_cloud_api.py`、`tests/test_cloud_api_cli.py`、`tests/test_cloud_api_retry.py`、`tests/test_cloud_http.py`、`tests/test_sse.py`、`tests/test_cloud_stream.py`、`tests/test_usage_budget.py`、`tests/test_sqlite_usage_budget.py` 和 `tests/test_budgeted_cloud.py` 验证三类字段映射、严格 JSON/数值类型、retry/HTTP 控制、任意 byte framing、三种文本流状态，以及内存/SQLite 预算 reservation 与单-attempt 接线。SQLite 测试覆盖重开、子进程退出、多连接竞争、配置漂移、event 写失败回滚、tombstone 与 post-call overrun 持久化；budgeted HTTP 测试覆盖 success/connect/HTTP error/malformed/missing usage/cancel/retry/preflight。它们不模拟远程调用原子性或 provider 计费。HTTP 测试使用 `httpx.MockTransport` 或内存 byte fixture，不执行真实 DNS/TLS、网络请求或计费；网络 smoke test 必须显式标记 network，并设置请求数、token/费用上限、timeout 与允许的 base URL。
+`tests/test_cloud_api.py`、`tests/test_cloud_api_cli.py`、`tests/test_openai_responses_replay.py`、`tests/test_reasoning_artifact.py`、`tests/test_trajectory_release.py`、`tests/test_cloud_api_retry.py`、`tests/test_cloud_http.py`、`tests/test_sse.py`、`tests/test_cloud_stream.py`、`tests/test_usage_budget.py`、`tests/test_sqlite_usage_budget.py` 和 `tests/test_budgeted_cloud.py` 验证三类字段映射、Responses typed lifecycle、严格 JSON/数值类型、reasoning context binding、trajectory publication allowlist、retry/HTTP 控制、任意 byte framing、三种文本流状态，以及内存/SQLite 预算 reservation、单-attempt 接线和逐 attempt retry orchestration。SQLite 测试覆盖重开、子进程退出、多连接竞争、配置漂移、event 写失败回滚、tombstone 与 post-call overrun 持久化；budgeted HTTP 测试覆盖 500→200、Connect→200、hard gate、`Retry-After`、outcome-uncertain、replay-unsafe、malformed/missing usage、cancel 与 SQLite event 顺序。它们不模拟远程调用原子性、provider artifact 或计费。HTTP 测试使用 `httpx.MockTransport` 或内存 byte fixture；Responses 测试使用 authored JSONL，不执行 OpenAI SDK、真实 DNS/TLS、网络请求或计费。网络 smoke test 必须显式标记 network，并设置请求数、token/费用上限、timeout 与允许的 base URL。

@@ -1,0 +1,95 @@
+{
+  "audit": {
+    "accepted_requests": 2,
+    "backend_stream_call_count": 2,
+    "cancelled_incremental_streams": 1,
+    "completed_incremental_streams": 1,
+    "failed_backend_requests": 0,
+    "nonstream_requests": 0,
+    "single_process_admission_limit": 1,
+    "stream_requests": 2
+  },
+  "backend_fingerprint": "sha256:bdf73794e6631140ad7a16a28800510db8a82d114b7741c6723a00f5be70a877",
+  "checked_at": "2026-08-13",
+  "complete_stream": {
+    "backend_completed": true,
+    "backend_completion_token_ids": [101, 102, 103],
+    "client_content_delta_count": 3,
+    "client_content_fingerprint": "sha256:0dd6ce312c44a4c84061f52a8a1190717a8e607b07f42fa97cfbac5c4e17b9ce",
+    "client_finish_reason": "stop",
+    "client_sse_done_observed": true,
+    "client_usage": {
+      "completion_tokens": 3,
+      "prompt_tokens": 5,
+      "total_tokens": 8
+    }
+  },
+  "disconnect_stream": {
+    "client_content_delta_count_before_close": 1,
+    "client_content_fingerprint_before_close": "sha256:c4c8919b9e3d4b2ec08474610a990c0541c73d09f4e8fb722e04f852a23c520b",
+    "client_response_explicitly_closed": true,
+    "postclose_backend_asyncio_cancelled_error_observed": true,
+    "postclose_backend_completed": false,
+    "postclose_backend_emitted_token_ids": [201],
+    "postclose_backend_iterator_closed": true,
+    "postclose_service_active_streams": 0,
+    "postclose_service_cancelled_streams": 1,
+    "preclose_backend_completed": false,
+    "preclose_backend_first_delta_emitted": true,
+    "preclose_service_active_streams": 1,
+    "preclose_service_cancelled_streams": 0
+  },
+  "evidence_boundary": "This control uses an authored asynchronous pseudo-token backend and a real Uvicorn subprocess over IPv4 loopback TCP/HTTP. It proves that one client observes content before that backend completes, and that explicitly closing a second response causes the ASGI streaming task and cooperative backend iterator to observe cancellation before later authored deltas are produced. It does not execute a tokenizer, model forward, Transformers generation thread, vLLM, CUDA, a GPU kernel, KV allocation, TLS, a reverse proxy, OAuth/JWT/IAM, a remote client, multiple workers, network packet capture, provider billing, or performance/quality/SLO measurement. It does not prove that a blocking thread, process, remote provider, or model runtime stops work or releases resources after disconnect, and its unkeyed report fingerprint does not authenticate the recorder.",
+  "implementation": "about-llm.incremental-streaming-control.v1",
+  "protocol": {
+    "endpoint": "/v1/chat/completions",
+    "models_endpoint_executed": true,
+    "raw_request_or_response_published": false,
+    "service_version": "about-llm.openai-reference-service.v1",
+    "sse_done_required_for_complete_case": true,
+    "streaming_only_profile": true,
+    "usage_event_required_for_complete_case": true
+  },
+  "report_fingerprint": "sha256:258468229bb14af198f7a39a68999fb41375a9256ee7aa4b2c2c0e80f42b5d00",
+  "report_version": "about-llm.incremental-streaming-control-report.v1",
+  "runtime": {
+    "httpx": "0.28.1",
+    "python": "3.12.10",
+    "starlette": "0.41.3",
+    "uvicorn": "0.52.1"
+  },
+  "scope": {
+    "authored_async_backend_executed": true,
+    "blocking_thread_or_process_termination_proven": false,
+    "client_disconnect_cancelled_asgi_stream_task": true,
+    "content_observed_before_backend_completion": true,
+    "cooperative_async_backend_cancellation_observed": true,
+    "full_openai_api_compatibility_proven": false,
+    "kv_or_gpu_resource_release_proven": false,
+    "later_authored_deltas_suppressed_after_disconnect": true,
+    "performance_quality_or_slo_proven": false,
+    "real_ipv4_loopback_tcp_http_executed": true,
+    "remote_provider_cancellation_or_billing_proven": false,
+    "report_fingerprint_proves_authenticity": false,
+    "tls_proxy_remote_or_multiworker_proven": false,
+    "tokenizer_or_model_forward_executed": false,
+    "transformers_generation_thread_cancellation_proven": false,
+    "vllm_or_cuda_executed": false
+  },
+  "server_process": {
+    "stderr_bytes": 0,
+    "stdout_bytes": 0,
+    "stdout_stderr_empty": true,
+    "subprocess_used": true
+  },
+  "transport": {
+    "address_scope": "IPv4 loopback",
+    "bearer_header_gate": true,
+    "raw_bearer_or_session_published": false,
+    "real_tcp_http": true,
+    "scheme": "http",
+    "server_subprocess": true,
+    "tls": false,
+    "unauthorized_audit_status": 401
+  }
+}

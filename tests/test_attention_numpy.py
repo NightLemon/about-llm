@@ -7,6 +7,7 @@ import pytest
 
 from about_llm.from_scratch.attention_numpy import (
     apply_rope,
+    blockwise_online_attention,
     causal_mask,
     grouped_query_attention,
     rms_norm,
@@ -120,6 +121,193 @@ def test_attention_rejects_fully_masked_query() -> None:
     tensor = np.ones((1, 2, 3))
     with pytest.raises(ValueError, match="at least one visible key"):
         scaled_dot_product_attention(tensor, tensor, tensor, mask=np.zeros((2, 2), dtype=np.bool_))
+
+
+@pytest.mark.parametrize("block_size", [1, 2, 3, 7, 16])
+def test_blockwise_online_attention_matches_dense_broadcast_reference(
+    block_size: int,
+) -> None:
+    rng = np.random.default_rng(31)
+    query = rng.normal(size=(2, 1, 5, 4))
+    key = rng.normal(size=(1, 3, 7, 4))
+    value = rng.normal(size=(2, 1, 7, 6))
+
+    expected, _ = scaled_dot_product_attention(query, key, value)
+    result = blockwise_online_attention(
+        query, key, value, block_size=block_size
+    )
+
+    np.testing.assert_allclose(result.output, expected, rtol=1e-12, atol=1e-12)
+    assert result.output.dtype == expected.dtype
+    assert result.key_block_count == (7 + block_size - 1) // block_size
+    assert result.logical_peak_score_elements == 2 * 3 * 5 * min(block_size, 7)
+    assert result.full_score_elements == 2 * 3 * 5 * 7
+    assert result.running_row_max.shape == (2, 3, 5)
+    assert result.row_normalizer.shape == (2, 3, 5)
+    assert not hasattr(result, "probabilities")
+
+
+def test_blockwise_online_attention_matches_causal_prefill_and_decode() -> None:
+    rng = np.random.default_rng(37)
+    query = rng.normal(size=(1, 2, 6, 5))
+    key = rng.normal(size=(1, 2, 6, 5))
+    value = rng.normal(size=(1, 2, 6, 3))
+    prefill_mask = causal_mask(6)
+
+    expected_prefill, _ = scaled_dot_product_attention(
+        query, key, value, mask=prefill_mask
+    )
+    actual_prefill = blockwise_online_attention(
+        query, key, value, block_size=2, mask=prefill_mask
+    ).output
+    np.testing.assert_allclose(actual_prefill, expected_prefill, rtol=1e-12, atol=1e-12)
+
+    decode_mask = causal_mask(query_length=1, key_length=6)
+    expected_decode, _ = scaled_dot_product_attention(
+        query[..., -1:, :], key, value, mask=decode_mask
+    )
+    actual_decode = blockwise_online_attention(
+        query[..., -1:, :],
+        key,
+        value,
+        block_size=4,
+        mask=decode_mask,
+    ).output
+    np.testing.assert_allclose(actual_decode, expected_decode, rtol=1e-12, atol=1e-12)
+
+
+def test_blockwise_online_attention_handles_sparse_mask_and_large_logits() -> None:
+    query = np.array(
+        [[1000.0, -1000.0], [-1000.0, 1000.0], [1000.0, 1000.0]]
+    )
+    key = np.array(
+        [[1000.0, -1000.0], [-1000.0, 1000.0], [1000.0, 1000.0], [0.0, 0.0]]
+    )
+    value = np.array([[1.0, 2.0], [3.0, 5.0], [7.0, 11.0], [13.0, 17.0]])
+    mask = np.array(
+        [
+            [False, False, True, False],
+            [False, True, True, False],
+            [True, True, False, True],
+        ],
+        dtype=np.bool_,
+    )
+
+    expected, _ = scaled_dot_product_attention(query, key, value, mask=mask)
+    with np.errstate(all="raise"):
+        result = blockwise_online_attention(
+            query, key, value, block_size=2, mask=mask
+        )
+
+    assert np.all(np.isfinite(result.output))
+    assert np.all(np.isfinite(result.row_normalizer))
+    np.testing.assert_allclose(result.output, expected, rtol=1e-12, atol=1e-12)
+
+
+def test_blockwise_online_attention_preserves_result_dtype() -> None:
+    tensor = np.arange(12, dtype=np.float32).reshape(1, 3, 4)
+    result = blockwise_online_attention(tensor, tensor, tensor, block_size=2)
+
+    assert result.output.dtype == np.float32
+    assert result.running_row_max.dtype == np.float64
+    assert result.row_normalizer.dtype == np.float64
+
+
+def test_blockwise_online_attention_rejects_fully_masked_row() -> None:
+    tensor = np.ones((2, 3), dtype=np.float64)
+    mask = np.array([[True, True], [False, False]], dtype=np.bool_)
+
+    with pytest.raises(ValueError, match="at least one visible key"):
+        blockwise_online_attention(tensor, tensor, tensor, block_size=1, mask=mask)
+
+
+@pytest.mark.parametrize(
+    ("operation", "message"),
+    [
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 3)), np.ones((2, 3)), np.ones((2, 3)), block_size=0
+            ),
+            "block_size",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 3)), np.ones((2, 3)), np.ones((2, 3)), block_size=True
+            ),
+            "block_size",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 3), dtype=np.int64),
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                block_size=1,
+            ),
+            "floating dtype",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.array([[np.nan, 0.0]]),
+                np.ones((1, 2)),
+                np.ones((1, 2)),
+                block_size=1,
+            ),
+            "finite values",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 3)),
+                np.ones((2, 4)),
+                np.ones((2, 3)),
+                block_size=1,
+            ),
+            "head dimensions",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                np.ones((3, 3)),
+                block_size=1,
+            ),
+            "sequence lengths",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                block_size=1,
+                mask=np.ones((2, 2), dtype=np.int64),
+            ),
+            "boolean",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                block_size=1,
+                mask=np.ones((3, 3), dtype=np.bool_),
+            ),
+            "cannot broadcast",
+        ),
+        (
+            lambda: blockwise_online_attention(
+                np.ones((2, 1, 2, 3)),
+                np.ones((3, 1, 2, 3)),
+                np.ones((2, 1, 2, 3)),
+                block_size=1,
+            ),
+            "leading dimensions",
+        ),
+    ],
+)
+def test_blockwise_online_attention_rejects_invalid_contracts(
+    operation: Callable[[], object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        operation()
 
 
 @pytest.mark.parametrize(

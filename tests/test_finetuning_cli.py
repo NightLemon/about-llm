@@ -226,7 +226,7 @@ def test_prepare_training_writes_reloadable_minimal_readiness(
         (output / "sft-training-readiness.json").read_text(encoding="utf-8")
     )
     assert printed == readiness
-    assert readiness["artifact_version"] == "about-llm.sft-training-readiness.v2"
+    assert readiness["artifact_version"] == "about-llm.sft-training-readiness.v3"
     assert readiness["gate_passed"] is True
     assert readiness["near_duplicate_candidate_count"] == 0
     assert readiness["scope"]["held_out_plaintext_embedded"] is False

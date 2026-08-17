@@ -1,5 +1,18 @@
 # 预训练：从 token 目标到可恢复系统
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：预训练方案、训练平台和恢复机制设计者。
+- **先修**：[Transformer](../core/transformer.md)、tokenization、损失与优化基础。
+- **首次阅读**：训练目标 → 数据混合 → token/计算预算 → 稳定性 → checkpoint。
+- **完成信号**：能写训练预算和包含数据、优化器、RNG 的恢复契约。
+- **卡住时**：回到[机器学习与深度学习](../foundations/ml-dl.md)的训练闭环。
+
+</div>
+
 ## 学习目标与证据边界
 
 读完本章应能解释 decoder-only 预训练目标、数据混合与 token 记账，估算理想化 dense 训练计算量，设计 AdamW/schedule 与稳定性监控，并写出可精确恢复的 checkpoint manifest。还应能判断 loss 下降究竟证明了什么、哪些能力结论仍需独立评测。
@@ -93,6 +106,28 @@ N_{\text{step}}=B_{\text{micro}}\times A\times D_{\text{data}}
 其中 \(A\) 是 gradient accumulation，\(D_{data}\) 是数据并行副本数，\(T_{effective}\) 是每样本平均有效 target token。TP/PP/EP 不复制独立数据，不能乘入 global batch。
 
 当样本长度不同，`examples/step × max_length` 会高估训练 token；应直接累计 loss mask。
+
+### 可变 token 下的梯度累积
+
+Gradient accumulation 只在 reduction 契约正确时才近似一个大 batch。设一个 optimizer update 内第 \(i\) 个 micro-batch 的有效 target token 数为 \(n_i\)，对应 loss sum 为 \(S_i\)。若训练目标是所有有效 token 同权，应使用
+
+\[
+L=\frac{\sum_i S_i}{\sum_i n_i},
+\]
+
+而不是把每批的 \(S_i/n_i\) 再除以 accumulation steps。后者在 padding、assistant-only mask、packing 或截断造成 \(n_i\) 不等时，会让短批中的每个 token 获得更大系数。最稳妥的审计方式是同时记录每批 numerator/count，在整个 accumulation window 得到全局 count 后缩放 sum-gradient，并在 clip、optimizer step 与 scheduler step 前完成归一化。DDP 默认 gradient averaging 还会引入 world-size 因子，必须按实际 reducer 语义调整；详见[高效与分布式训练](../systems/distributed-training.md#mean-or-sum)。
+
+仓库的 `gradient_accumulation_toy.py` 用 `Fraction` oracle 与真实 PyTorch Float64 `cross_entropy.backward()` 对照：有效 token `[1,3]` 时 full batch 与 sum/count 路径逐元素相同，等权 micro-batch mean 改变梯度。它没有执行 optimizer、dropout/BatchNorm、AMP、DDP/FSDP/ZeRO、CUDA 或目标模型，因此不能把局部 reduction 等价升级成训练等价、吞吐或质量结论。
+
+独立的 `ddp_token_mean_control.py` 把同一反例分到两个 rank，并真实运行双进程 CPU/Gloo。默认 DDP 对 rank gradient 取 mean，所以 `D=2,N=4` 时 local loss sum 的正确 backward scale 是 `D/N=1/2`：同步梯度为 `(0.575,-0.575)`，与单进程 full batch 在 `1e-15` 内一致；错误的 `1/N=1/4` 得到 `(0.2875,-0.2875)`，rank-local mean 得到 `(0.35,-0.35)`。它证明当前 PyTorch/Gloo/default reducer 固定路径，不证明 gradient accumulation + `no_sync`、AMP/scaler、optimizer update、FSDP/ZeRO、GPU、多节点或真实预训练行为。
+
+后续 `ddp_accumulation_no_sync_control.py` 已真实覆盖同机两个 rank、每 rank 两个 micro-batch、首批 `no_sync`、末批同步、同步后 global-norm clipping 与一次 plain SGD step。`[[1,2],[3,1]]` counts 给出 `N=7,D/N=2/7` 和精确 pre-clip gradient `(+19/35,-19/35)`；built-in 路径的 gradient、clip 后 gradient、参数更新都与 full batch 一致。官方 reference all-reduce hook 的独立计数对照显示 forward+backward 均在 `no_sync` 时 1 次 hook，只包 backward 时 2 次；后者没有节省通信，但在本线性 fixture 上仍得到相同数值。该 control 没有 AMP、dropout/BatchNorm、多 bucket、AdamW、checkpoint resume、FSDP/ZeRO、GPU、多节点、目标模型或吞吐证据。
+
+AMP 必须另按实际 update window 验证。`amp_grad_scaler_control.py` 在真实 CPU FP16 autocast/GradScaler 上得到 scaled accumulated gradient 24；正确 `unscale_→clip` 是 `3→约 0.5`，与 full batch 相同，错误 `clip→unscale_` 则变为约 0.0625。一个窗口中任一 micro-batch 产生 non-finite gradient，`scaler.step` 会跳过整个 AdamW update；当前 fixture 连续观察 scale `8→4→2→1`，而 parameter、step 与 moments 都保持不变。进程内 split-run 还证明漏恢复 scale=1 的 scaler 会让下一条 10000 边界梯度在 fresh scale=8 下溢出并跳步。这个控制不包含 scheduler/RNG、磁盘 checkpoint、真实进程重启、DDP/CUDA、目标模型或质量证据。
+
+进一步的 `checkpoint_resume_control.py` 把这些状态放进同一条真实 split-run：1 次有限 update 后的 3 次 overflow 只回退 scale，不推进 AdamW 或 `StepLR`；phase-1 进程写入 model/optimizer/scheduler/scaler、Torch CPU/Python RNG、stateful shuffle permutation/cursor/epoch 与 dataset hash 后退出，另一个 PID 恢复。8 个 attempt 的后半段 trace 和最终全部状态与 uninterrupted 进程 bit-exact；错误地在 overflow 上推进 scheduler，以及分别漏 scheduler/scaler/RNG/data state 都有独立反例。它仍只是 6 参数 CPU FP16 authored fixture、custom stream 与 zero-grad boundary；没有 accumulation 中间态、worker/prefetch、distributed checkpoint、CUDA/目标模型、crash recovery、性能或质量证据。
+
+`ddp_amp_overflow_consensus_control.py` 则补 DDP 与 AMP 的同路径状态机，而不借用 resume 结论。双进程 CPU/Gloo 中，rank 0 在首个 `no_sync` micro-batch 产生 Inf 后，末批 built-in DDP reduction 让两 rank 都观察 non-finite，AdamW/StepLR 共同 skip、scale `8→4`。负对照先让 DDP 在两边得到 finite scaled grad=8，再于 rank 0 的 `unscale_` 前人为改成 Inf；rank-local GradScaler 于是让 rank 0 保持 step=1、rank 1 前进到 step=2，参数、moments、scheduler、LR 与 scaler 分叉。optimizer 前对 unscaled local flag 做 `all_reduce(MAX)` 可让两边共同 skip；但示例的 `update(new_scale=...)` 是显式 scale policy，growth tracker 保持 1，并不等同于 native found-inf transition。该 control 只有单参数/单 bucket、authored fault 和 CPU/Gloo，无 clipping、自然 overflow、custom hook、checkpoint、CUDA/NCCL、多节点、目标模型、性能或质量证据。
 
 ### \(6ND\) 只是理想化 dense 近似
 
@@ -207,6 +242,16 @@ model/tokenizer/data/config/code versions
 ```
 
 原子发布流程通常是：写临时目录 → 每个 shard 完成并校验 → 写 manifest/hash → 独立加载 smoke test → 原子标记为 complete。只有 manifest 完整的 checkpoint 才可恢复；不能因为目录存在就认为保存成功。
+
+DataLoader 的“sampler 已产生 index”不等于“训练已消费 sample”，更不等于“包含该 sample 的 optimizer update 已提交”。仓库 `dataloader_prefetch_resume_control.py` 用真实双 worker、prefetch factor 2、spawn 和 batch 1 固定出三层边界：训练只接收 permutation 前 3 条时，sampler emitted cursor 已到 7，queue 中还有 `[7,0,9,4]`；从 7 恢复会跳过它们，从应用记录的 consumed cursor 3 重建则恢复完整 ID 顺序。当前观察到的 ahead=4 与安装版 PyTorch 的 loader 调度一致，但 control 未读写私有 queue 字段，不能把具体 prefetch 深度当跨版本公开 API。
+
+同一实验还证明只恢复顺序不恢复 worker-local random stream：fresh worker tail 的 `torch.rand` 与 uninterrupted 不同，而用 sample ID 派生的局部 RNG tail exact。Stateless key 在真实多 epoch/重复采样中还需加入 dataset/transform revision、epoch/visit 等语义；否则每次见到同一 ID 都产生同一增强。该控制无模型、optimizer 或分布式 sampler，也未保存 worker/queue state，因此只能指导数据交付协议，不能替代训练 checkpoint 的完整一致性边界。
+
+后续 `optimizer_commit_resume_control.py` 用 main-process inverted-Bernoulli mask、真实 backward、SGD momentum、StepLR 和两步 gradient accumulation 固定出 emitted/consumed/committed=`7/3/2` 的崩溃窗口。base checkpoint 不保存第三条 sample `1` 的 `.grad`，但保存 commit-boundary model/optimizer/scheduler/Torch RNG；从 committed=2 同时恢复 RNG 并重放后，与 uninterrupted 的 ledger 和四类终态 bit-exact。第一个隔离负例从 consumed=3 起步、恢复正确 crash RNG 却漏 gradients：未来 mask 与终态 RNG 相同，ledger 漏 `1`；即使两边仍各有 5 次 optimizer/StepLR step、LR 同为 `0.0125`，参数最大差仍为 `0.005767858566116724`。
+
+同一 phase 另写绑定 base digest 的 gradient sidecar，保存 pending `[1]`、accumulation position/divisor、两个 finite gradients与 crash-observed Torch RNG；最后发布的 canonical manifest 再绑定数据 identity、base/sidecar name/schema/size/hash 与完成顺序。第五个 PID 先验 manifest、后按声明 hash 重查实际反序列化 bytes，从 consumed=3 把 `[1,7]` 完成成一个窗口，终态也与 uninterrupted bit-exact。第六个 PID 保留完整 gradients/ledger，却故意使用 commit-boundary RNG；它同样执行 5 steps、LR 仍为 `0.0125`，但参数最大差为 `0.017878893573032573` 且终态 RNG 不同。这证明“step 数、ledger、sidecar 都完整”仍不能替代相关 RNG，也证明完整半窗口 state 可以恢复当前 stochastic fixture。
+
+故障矩阵还证明 sidecar 协议会拒绝 base-only、两 payload 无 manifest、manifest 缺 sidecar 与 sidecar 被篡改四种快照；其中 base-only 并非坏 checkpoint，仍可从 committed=2 replay。manifest-last 是 completeness gate，不是 base+sidecar+manifest、sample 与 optimizer 的原子事务；无目录 `fsync`、power-loss/filesystem fault、原子目录/远程存储或来源认证证据。实验覆盖 main-process Torch RNG 与 StepLR，但仍无 worker/Python/NumPy/CUDA RNG、原生随机层、GradScaler、distributed shard、CUDA 或目标模型证据。
 
 ### 恢复等价性测试
 

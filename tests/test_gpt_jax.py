@@ -41,6 +41,40 @@ def test_jax_forward_loss_and_causality() -> None:
     )
 
 
+def test_config_rejects_invalid_sizes_and_head_partition() -> None:
+    with pytest.raises(ValueError, match="divisible"):
+        JAXGPTConfig(model_dim=10, num_heads=4)
+    with pytest.raises(ValueError, match="positive"):
+        JAXGPTConfig(vocab_size=0)
+
+
+def test_forward_rejects_rank_and_context_overflow() -> None:
+    config = JAXGPTConfig(
+        vocab_size=8,
+        context_length=4,
+        model_dim=8,
+        num_heads=2,
+        num_layers=1,
+        mlp_ratio=2,
+    )
+    params = init_params(jax.random.key(5), config)
+    with pytest.raises(ValueError, match="two dimensions"):
+        forward(params, jnp.array([0, 1, 2, 3]), config)
+    with pytest.raises(ValueError, match="exceeds context"):
+        forward(params, jnp.array([[0, 1, 2, 3, 4]]), config)
+
+
+def test_masked_loss_rejects_shape_drift_and_handles_empty_supervision() -> None:
+    logits = jnp.zeros((1, 3, 5), dtype=jnp.float32)
+    with pytest.raises(ValueError, match="targets must match"):
+        cross_entropy_loss(logits, jnp.zeros((1, 2), dtype=jnp.int32))
+    empty = cross_entropy_loss(
+        logits,
+        jnp.full((1, 3), -100, dtype=jnp.int32),
+    )
+    assert float(empty) == 0.0
+
+
 def test_jitted_optax_step_updates_params_and_overfits_tiny_batch() -> None:
     config = JAXGPTConfig(
         vocab_size=8,

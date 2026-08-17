@@ -14,7 +14,7 @@ from typing import Any, NoReturn, cast
 
 from about_llm.llmops import artifact_fingerprint, canonical_json_bytes
 
-SFT_DATA_CONTRACT_VERSION = "about-llm.sft-jsonl.v1"
+SFT_DATA_CONTRACT_VERSION = "about-llm.sft-jsonl.v2"
 
 
 class DataSplit(str, Enum):
@@ -31,17 +31,104 @@ class MessageRole(str, Enum):
 
 
 @dataclass(frozen=True)
+class FunctionToolCall:
+    call_id: str
+    name: str
+    arguments: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        _require_nonempty_string(self.call_id, "tool call id")
+        _require_nonempty_string(self.name, "tool call name")
+        object.__setattr__(
+            self,
+            "arguments",
+            _strict_json_object_snapshot(self.arguments, "tool call arguments"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.call_id,
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "arguments": _thaw_json(self.arguments),
+            },
+        }
+
+
+@dataclass(frozen=True)
+class FunctionToolDefinition:
+    name: str
+    description: str
+    parameters: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        _require_nonempty_string(self.name, "tool definition name")
+        _require_nonempty_string(self.description, "tool definition description")
+        parameters = _strict_json_object_snapshot(
+            self.parameters, "tool definition parameters"
+        )
+        if parameters.get("type") != "object":
+            raise ValueError("tool definition parameters.type must be 'object'")
+        object.__setattr__(self, "parameters", parameters)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": _thaw_json(self.parameters),
+            },
+        }
+
+
+@dataclass(frozen=True)
 class ChatMessage:
     role: MessageRole
     content: str
+    tool_calls: tuple[FunctionToolCall, ...] = ()
+    tool_call_id: str | None = None
+    name: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.role, MessageRole):
             raise ValueError("message role must be MessageRole")
-        _require_nonempty_string(self.content, "message content")
+        _text(self.content, "message content")
+        tool_calls = tuple(self.tool_calls)
+        if any(not isinstance(call, FunctionToolCall) for call in tool_calls):
+            raise ValueError("message tool_calls must contain FunctionToolCall values")
+        if len({call.call_id for call in tool_calls}) != len(tool_calls):
+            raise ValueError("message tool call ids must be unique")
+        object.__setattr__(self, "tool_calls", tool_calls)
 
-    def to_dict(self) -> dict[str, str]:
-        return {"role": self.role.value, "content": self.content}
+        if self.role in (MessageRole.SYSTEM, MessageRole.USER):
+            _require_nonempty_string(self.content, "message content")
+            if tool_calls or self.tool_call_id is not None or self.name is not None:
+                raise ValueError("system/user messages cannot carry tool-call fields")
+        elif self.role is MessageRole.ASSISTANT:
+            if not self.content.strip() and not tool_calls:
+                raise ValueError(
+                    "assistant message requires content or at least one tool call"
+                )
+            if self.tool_call_id is not None or self.name is not None:
+                raise ValueError("assistant messages cannot be tool responses")
+        else:
+            _require_nonempty_string(self.content, "tool response content")
+            if tool_calls:
+                raise ValueError("tool response cannot contain tool calls")
+            _require_nonempty_string(self.tool_call_id, "tool response tool_call_id")
+            _require_nonempty_string(self.name, "tool response name")
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"role": self.role.value, "content": self.content}
+        if self.tool_calls:
+            payload["tool_calls"] = [call.to_dict() for call in self.tool_calls]
+        if self.tool_call_id is not None:
+            payload["tool_call_id"] = self.tool_call_id
+        if self.name is not None:
+            payload["name"] = self.name
+        return payload
 
 
 @dataclass(frozen=True)
@@ -56,6 +143,7 @@ class SFTRecord:
     group_id: str
     split: DataSplit
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    tools: tuple[FunctionToolDefinition, ...] = ()
     _content_fingerprint: str = field(init=False, repr=False)
     _record_fingerprint: str = field(init=False, repr=False)
 
@@ -71,8 +159,16 @@ class SFTRecord:
         ):
             _require_nonempty_string(value, f"SFT {field_name}")
         messages = tuple(self.messages)
-        _validate_conversation(messages)
+        tools = tuple(self.tools)
+        if any(not isinstance(tool, FunctionToolDefinition) for tool in tools):
+            raise ValueError(
+                "SFT tools must contain FunctionToolDefinition values"
+            )
+        if len({tool.name for tool in tools}) != len(tools):
+            raise ValueError("SFT tool definition names must be unique")
+        _validate_conversation(messages, tools)
         object.__setattr__(self, "messages", messages)
+        object.__setattr__(self, "tools", tools)
         if not isinstance(self.split, DataSplit):
             raise ValueError("SFT split must be DataSplit")
         try:
@@ -84,7 +180,11 @@ class SFTRecord:
         if not isinstance(metadata_snapshot, dict):
             raise ValueError("SFT metadata must be a JSON object")
         object.__setattr__(self, "metadata", _freeze_json_object(metadata_snapshot))
-        content = {"messages": [message.to_dict() for message in messages]}
+        content: dict[str, Any] = {
+            "messages": [message.to_dict() for message in messages]
+        }
+        if tools:
+            content["tools"] = [tool.to_dict() for tool in tools]
         object.__setattr__(
             self,
             "_content_fingerprint",
@@ -112,8 +212,16 @@ class SFTRecord:
             if message.role is MessageRole.ASSISTANT
         )
 
+    @property
+    def tool_call_count(self) -> int:
+        return sum(len(message.tool_calls) for message in self.messages)
+
+    @property
+    def tool_response_count(self) -> int:
+        return sum(message.role is MessageRole.TOOL for message in self.messages)
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "id": self.record_id,
             "messages": [message.to_dict() for message in self.messages],
             "source": self.source,
@@ -125,11 +233,19 @@ class SFTRecord:
             "split": self.split.value,
             "metadata": _thaw_json(self.metadata),
         }
+        if self.tools:
+            payload["tools"] = [tool.to_dict() for tool in self.tools]
+        return payload
 
     def to_training_row(self) -> dict[str, Any]:
         """Return only model inputs; governance fields remain in the audit manifest."""
 
-        return {"messages": [message.to_dict() for message in self.messages]}
+        payload: dict[str, Any] = {
+            "messages": [message.to_dict() for message in self.messages]
+        }
+        if self.tools:
+            payload["tools"] = [tool.to_dict() for tool in self.tools]
+        return payload
 
 
 @dataclass(frozen=True)
@@ -157,6 +273,9 @@ class SFTDataAuditReport:
     language_counts: Mapping[str, int]
     risk_counts: Mapping[str, int]
     assistant_character_count: int
+    tool_definition_count: int
+    tool_call_count: int
+    tool_response_count: int
     duplicate_record_ids: tuple[str, ...]
     duplicate_content: tuple[DuplicateGroup, ...]
     cross_split_group_ids: tuple[DuplicateGroup, ...]
@@ -208,6 +327,9 @@ class SFTDataAuditReport:
             "risk_counts": dict(self.risk_counts),
             "assistant_character_count": self.assistant_character_count,
             "assistant_count_unit": "unicode_codepoints_not_tokens",
+            "tool_definition_count": self.tool_definition_count,
+            "tool_call_count": self.tool_call_count,
+            "tool_response_count": self.tool_response_count,
             "duplicate_record_ids": list(self.duplicate_record_ids),
             "duplicate_content": [item.to_dict() for item in self.duplicate_content],
             "cross_split_group_ids": [
@@ -291,8 +413,9 @@ def load_sft_records(path: Path) -> tuple[SFTRecord, ...]:
             "group_id",
             "split",
             "metadata",
+            "tools",
         }
-        required = allowed - {"metadata"}
+        required = allowed - {"metadata", "tools"}
         _expect_fields(record, required=required, allowed=allowed, prefix=prefix)
         messages_raw = record["messages"]
         if not isinstance(messages_raw, list):
@@ -300,6 +423,13 @@ def load_sft_records(path: Path) -> tuple[SFTRecord, ...]:
         messages = tuple(
             _parse_message(message, prefix, index)
             for index, message in enumerate(messages_raw, 1)
+        )
+        tools_raw = record.get("tools", [])
+        if not isinstance(tools_raw, list):
+            raise ValueError(f"{prefix}: tools must be an array")
+        tools = tuple(
+            _parse_tool_definition(tool, prefix, index)
+            for index, tool in enumerate(tools_raw, 1)
         )
         try:
             split = DataSplit(record["split"])
@@ -318,6 +448,7 @@ def load_sft_records(path: Path) -> tuple[SFTRecord, ...]:
                     group_id=_string(record["group_id"], f"{prefix}.group_id"),
                     split=split,
                     metadata=record.get("metadata", {}),
+                    tools=tools,
                 )
             )
         except ValueError as error:
@@ -390,6 +521,9 @@ def audit_sft_records(
         assistant_character_count=sum(
             record.assistant_character_count for record in snapshot
         ),
+        tool_definition_count=sum(len(record.tools) for record in snapshot),
+        tool_call_count=sum(record.tool_call_count for record in snapshot),
+        tool_response_count=sum(record.tool_response_count for record in snapshot),
         duplicate_record_ids=tuple(
             record_id for record_id, count in sorted(id_counts.items()) if count > 1
         ),
@@ -462,7 +596,10 @@ def validate_training_subset(
     return SFTTrainingBindingReport(training_report, split_report)
 
 
-def _validate_conversation(messages: tuple[ChatMessage, ...]) -> None:
+def _validate_conversation(
+    messages: tuple[ChatMessage, ...],
+    tools: tuple[FunctionToolDefinition, ...],
+) -> None:
     if not messages:
         raise ValueError("messages must not be empty")
     if any(not isinstance(message, ChatMessage) for message in messages):
@@ -489,6 +626,48 @@ def _validate_conversation(messages: tuple[ChatMessage, ...]) -> None:
                 f"unsupported role transition: {previous.role.value}->{current.role.value}"
             )
 
+    declared_tools = {tool.name for tool in tools}
+    seen_call_ids: set[str] = set()
+    outstanding: dict[str, str] = {}
+    for index, message in enumerate(messages):
+        if message.role is MessageRole.ASSISTANT:
+            if message.tool_calls:
+                if outstanding:
+                    raise ValueError("assistant issued tool calls before prior calls resolved")
+                if index + 1 >= len(messages) or messages[index + 1].role is not MessageRole.TOOL:
+                    raise ValueError("assistant tool calls must be followed by tool responses")
+                for call in message.tool_calls:
+                    if call.call_id in seen_call_ids:
+                        raise ValueError("tool call ids must be unique across the conversation")
+                    if call.name not in declared_tools:
+                        raise ValueError(
+                            f"tool call {call.name!r} has no matching tool definition"
+                        )
+                    seen_call_ids.add(call.call_id)
+                    outstanding[call.call_id] = call.name
+            elif outstanding:
+                raise ValueError("assistant responded before all tool calls were resolved")
+        elif message.role is MessageRole.TOOL:
+            call_id = cast(str, message.tool_call_id)
+            name = cast(str, message.name)
+            expected_name = outstanding.get(call_id)
+            if expected_name is None:
+                raise ValueError(
+                    f"tool response references unknown or already-resolved call {call_id!r}"
+                )
+            if name != expected_name:
+                raise ValueError(
+                    f"tool response name {name!r} does not match call {expected_name!r}"
+                )
+            del outstanding[call_id]
+            next_role = messages[index + 1].role if index + 1 < len(messages) else None
+            if outstanding and next_role is not MessageRole.TOOL:
+                raise ValueError("all outstanding tool calls require one response each")
+        elif outstanding:
+            raise ValueError("tool calls must be resolved before the conversation continues")
+    if outstanding:
+        raise ValueError("conversation ends with unresolved tool calls")
+
 
 def _parse_message(value: Any, prefix: str, index: int) -> ChatMessage:
     message_prefix = f"{prefix}.messages[{index}]"
@@ -496,14 +675,89 @@ def _parse_message(value: Any, prefix: str, index: int) -> ChatMessage:
     _expect_fields(
         record,
         required={"role", "content"},
-        allowed={"role", "content"},
+        allowed={"role", "content", "tool_calls", "tool_call_id", "name"},
         prefix=message_prefix,
     )
     try:
         role = MessageRole(record["role"])
     except (TypeError, ValueError) as error:
         raise ValueError(f"{message_prefix}: unsupported role {record['role']!r}") from error
-    return ChatMessage(role, _string(record["content"], f"{message_prefix}.content"))
+    tool_calls_raw = record.get("tool_calls", [])
+    if not isinstance(tool_calls_raw, list):
+        raise ValueError(f"{message_prefix}.tool_calls must be an array")
+    tool_calls = tuple(
+        _parse_tool_call(tool_call, message_prefix, tool_index)
+        for tool_index, tool_call in enumerate(tool_calls_raw, 1)
+    )
+    tool_call_id = record.get("tool_call_id")
+    name = record.get("name")
+    return ChatMessage(
+        role,
+        _text(record["content"], f"{message_prefix}.content"),
+        tool_calls=tool_calls,
+        tool_call_id=(
+            None
+            if tool_call_id is None
+            else _string(tool_call_id, f"{message_prefix}.tool_call_id")
+        ),
+        name=None if name is None else _string(name, f"{message_prefix}.name"),
+    )
+
+
+def _parse_tool_call(value: Any, prefix: str, index: int) -> FunctionToolCall:
+    call_prefix = f"{prefix}.tool_calls[{index}]"
+    record = _record(value, call_prefix)
+    _expect_fields(
+        record,
+        required={"id", "type", "function"},
+        allowed={"id", "type", "function"},
+        prefix=call_prefix,
+    )
+    if record["type"] != "function":
+        raise ValueError(f"{call_prefix}.type must be 'function'")
+    function = _record(record["function"], f"{call_prefix}.function")
+    _expect_fields(
+        function,
+        required={"name", "arguments"},
+        allowed={"name", "arguments"},
+        prefix=f"{call_prefix}.function",
+    )
+    arguments = _record(function["arguments"], f"{call_prefix}.function.arguments")
+    return FunctionToolCall(
+        call_id=_string(record["id"], f"{call_prefix}.id"),
+        name=_string(function["name"], f"{call_prefix}.function.name"),
+        arguments=arguments,
+    )
+
+
+def _parse_tool_definition(
+    value: Any, prefix: str, index: int
+) -> FunctionToolDefinition:
+    tool_prefix = f"{prefix}.tools[{index}]"
+    record = _record(value, tool_prefix)
+    _expect_fields(
+        record,
+        required={"type", "function"},
+        allowed={"type", "function"},
+        prefix=tool_prefix,
+    )
+    if record["type"] != "function":
+        raise ValueError(f"{tool_prefix}.type must be 'function'")
+    function = _record(record["function"], f"{tool_prefix}.function")
+    _expect_fields(
+        function,
+        required={"name", "description", "parameters"},
+        allowed={"name", "description", "parameters"},
+        prefix=f"{tool_prefix}.function",
+    )
+    parameters = _record(function["parameters"], f"{tool_prefix}.function.parameters")
+    return FunctionToolDefinition(
+        name=_string(function["name"], f"{tool_prefix}.function.name"),
+        description=_string(
+            function["description"], f"{tool_prefix}.function.description"
+        ),
+        parameters=parameters,
+    )
 
 
 def _group_records(
@@ -539,6 +793,18 @@ def _freeze_json(value: Any) -> Any:
     return value
 
 
+def _strict_json_object_snapshot(
+    value: Mapping[str, Any], field_name: str
+) -> Mapping[str, Any]:
+    try:
+        snapshot = json.loads(canonical_json_bytes(value))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field_name} must be strict JSON: {error}") from error
+    if not isinstance(snapshot, dict):
+        raise ValueError(f"{field_name} must be a JSON object")
+    return _freeze_json_object(cast(dict[str, Any], snapshot))
+
+
 def _thaw_json(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {key: _thaw_json(item) for key, item in value.items()}
@@ -572,6 +838,16 @@ def _expect_fields(
 def _string(value: Any, prefix: str) -> str:
     _require_nonempty_string(value, prefix)
     return cast(str, value)
+
+
+def _text(value: Any, prefix: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{prefix} must be a string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise ValueError(f"{prefix} contains an unpaired Unicode surrogate") from error
+    return value
 
 
 def _require_nonempty_string(value: Any, prefix: str) -> None:

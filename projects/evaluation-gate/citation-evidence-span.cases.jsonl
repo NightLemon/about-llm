@@ -1,0 +1,5 @@
+{"case_id":"span-valid-unicode","input":"Bind the claim to the exact authorized source span.","expected":"","slices":["citation-span","valid"],"metadata":{"citation_sources":{"S1":"地球围绕太阳运行。"}}}
+{"case_id":"span-unknown-source","input":"Bind the claim only to an authorized source id.","expected":"","slices":["citation-span","invalid-source"],"metadata":{"citation_sources":{"S1":"abcdef"}}}
+{"case_id":"span-offset-mismatch","input":"Bind the quote to exact end-exclusive offsets.","expected":"","slices":["citation-span","invalid-offset"],"metadata":{"citation_sources":{"S1":"abcdef"}}}
+{"case_id":"span-duplicate-json-key","input":"Return strict JSON with unique object keys.","expected":"","slices":["citation-span","invalid-json"],"metadata":{"citation_sources":{"S1":"abcdef"}}}
+{"case_id":"span-semantic-boundary","input":"Bind an exact span without claiming semantic support.","expected":"","slices":["citation-span","boundary"],"metadata":{"citation_sources":{"S1":"Earth is round."}}}

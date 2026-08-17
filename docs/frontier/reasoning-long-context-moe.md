@@ -1,5 +1,18 @@
 # 推理增强、长上下文与 Mixture of Experts
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：推理增强、长上下文和 MoE 研究与系统工程师。
+- **先修**：[生成](../core/generation.md)、评测、attention 和并行基础。
+- **首次阅读**：推理定义 → test-time compute → 长上下文三层含义 → MoE → 审计。
+- **完成信号**：能分开模型能力、搜索预算、上下文有效性和容量证据。
+- **卡住时**：先回到[Transformer](../core/transformer.md)与[评测](../quality/evaluation.md)。
+
+</div>
+
 这三类技术都在扩大模型可用计算或容量，但扩大的是不同维度：推理增强增加 test-time search/verification，长上下文增加一次调用可访问的信息，MoE 增加总参数而控制每 token 激活计算。它们都不保证质量单调提升。
 
 ## 1. “推理”需要可操作定义
@@ -48,6 +61,45 @@
 
 投票还需要答案归一化。把等价数学表达识别错，会把正确票拆散；开放文本没有自然 majority label。
 
+#### 相同单样本正确率，不同多数票结果
+
+先把问题限定为只有“正确/错误”两个 canonical label，且 N 为奇数。若候选真正 i.i.d.、每次正确概率都是 \(p\)，多数票成功率是 binomial upper tail；当 \(p>0.5\) 时它随奇数 N 增大。但真实题目有共享难度、模板和错误模式：同一道题的多次采样可能只在**给定题目状态后**条件独立，边缘上并不独立。
+
+用一个 finite latent-regime 模型表达这种差别。每题先抽一次 \(R=r\)，概率为 \(q_r\)；随后该题的 N 个 correctness indicators 在给定 R 后 i.i.d. Bernoulli\((p_r)\)。奇数 N 的多数票成功率为
+
+\[
+P(\operatorname{majority\ success})=
+\sum_r q_r
+\sum_{k=(N+1)/2}^{N}
+{N\choose k}p_r^k(1-p_r)^{N-k}.
+\]
+
+边缘单样本正确率只有 \(\bar p=\sum_rq_rp_r\)，不足以确定上式。两次候选 correctness 的边缘相关系数为
+
+\[
+\rho=
+\frac{\sum_rq_rp_r^2-\bar p^2}{\bar p(1-\bar p)},
+\]
+
+其中分母非零。运行精确控制：
+
+~~~powershell
+python projects/inference-serving/self_consistency_correlation_toy.py
+~~~
+
+对照场景只有一个 regime、\(p=0.6\)，所以候选无条件独立、\(\rho=0\)。相关场景以相同概率抽 easy \((p=0.9)\) 或 hard \((p=0.3)\)，其边缘单样本正确率仍是 0.6，但共享 R 令 \(\rho=3/8\)：
+
+| N | i.i.d. majority success | latent-correlated majority success |
+|---:|---:|---:|
+| 1 | 0.60000000000 | 0.60000000000 |
+| 3 | 0.64800000000 | 0.59400000000 |
+| 5 | 0.68256000000 | 0.57726000000 |
+| 11 | 0.75349813248 | 0.53896454244 |
+
+相关场景中，增加采样会让 easy 题更稳，也会让 \(p=0.3\) 的 hard 题更稳定地投错；只看跨题平均 \(\bar p>0.5\) 会隐藏这个异质性。N=11 对应 `2^11=2,048` 条 logical binary vote sequences，程序按每个 regime 的 binomial tail 用 `Fraction` 闭式计算，没有枚举。
+
+这只是 authored binary-answer counterexample：每题恰好一次 latent regime draw，候选只在 regime 内 conditional i.i.d.。它没有模拟多个不同错误答案的 plurality、答案 canonicalization、temperature 对相关性的影响、模型、tokenizer、dataset 或 judge，也没有测量 latency、费用、provider 或目标质量。开放文本 self-consistency 必须保存逐题候选与规范化结果，按 item cluster 估计增益和不确定性，不能用这个 toy 宣称真实系统必然退化。
+
 ### 3.2 Best-of-N
 
 生成 \(N\) 个候选，由 reward/verifier 选最大分数：
@@ -57,6 +109,46 @@
 \]
 
 随着 \(N\) 增大，候选 oracle quality 可能提高，selection quality 却受 verifier 限制。弱 verifier 会更频繁选到高分漏洞，产生“优化者诅咒”。必须同时报告 oracle@N、selected@N 和 verifier calibration。
+
+#### 一个可精确复算的 verifier 反例
+
+运行有限支持集上的闭式控制：
+
+~~~powershell
+python projects/inference-serving/verifier_best_of_n_toy.py
+~~~
+
+这个 fixture 不是模型输出，而是作者明确写下的三个 outcome class。每次从同一固定分布独立同分布（i.i.d.）抽样，verifier score 是确定常数；选择规则固定为最大 `(verifier_score, candidate_id)`，因此同分时较大的 canonical ID 胜出：
+
+| candidate | sampling probability | verifier score | target success |
+|---|---:|---:|---:|
+| `wrong` | 0.5 | 20 | false |
+| `correct` | 0.4 | 80 | true |
+| `verifier_hack` | 0.1 | 99 | false |
+
+按 `(verifier_score, candidate_id)` 从弱到强排序，令 \(F_i\) 为截至候选 \(i\) 的累积抽样概率。best-of-N 最终选择该候选的概率是
+
+\[
+P(\operatorname{select} i)=F_i^N-F_{i-1}^N.
+\]
+
+它来自“\(N\) 次抽样都不超过 \(i\)”减去“\(N\) 次都严格低于 \(i\)”，无需枚举所有序列。另令单次抽到任意 target-success candidate 的概率为 \(p_s\)，则
+
+\[
+\operatorname{oracle@N}=1-(1-p_s)^N.
+\]
+
+这里 oracle@N 只问候选集合中是否**存在**正确项；selected@N 才问 verifier 最终选中的项是否正确：
+
+| N | oracle@N | selected@N | oracle-selection gap | expected verifier score |
+|---:|---:|---:|---:|---:|
+| 1 | 0.4000000000 | 0.4000000000 | 0 | 51.9000000 |
+| 4 | 0.8704000000 | 0.5936000000 | 0.2768000000 | 82.7841000 |
+| 16 | 0.9997178890 | 0.1852867601 | 0.8144311289 | 95.4783461 |
+
+随着 N 从 1 增至 16，oracle success 和期望 verifier score 都严格上升，但 selected success 先升后降；N=16 时 `verifier_hack` 至少出现一次的概率已约为 0.814698。`3^16=43,046,721` 只是三个 outcome class 的 logical candidate sequences 数，程序使用 `Fraction` 闭式计算，没有枚举这些序列。
+
+这份控制只证明上述 authored finite distribution、i.i.d.、deterministic score 和 tie-break 下的数学反例。逻辑上的 N 次 model sample / verifier score 不等于 wall-clock、费用或并行行为；脚本没有执行 model、tokenizer、PRM、GPU 或 provider，也不证明 verifier calibration、语义正确性、目标模型质量或真实系统中的 optimizer's curse 强度。
 
 ### 3.3 Search
 
@@ -275,9 +367,56 @@ python -m pytest tests/test_moe_routing.py -q
 
 这不是训练过的 router/MLP，不执行 backward、expert-parallel all-to-all、distributed capacity、GPU grouped GEMM，也不加载 DeepSeek/Qwen checkpoint。它证明当前公式与 CPU control flow，不证明模型质量、expert specialization、显存、通信或吞吐。
 
+### 14.5 可运行 router/MLP 梯度 fixture
+
+~~~powershell
+python projects/transformers-basics/moe_training_control.py
+python -m pytest tests/test_moe_training.py -q
+~~~
+
+这个独立 PyTorch CPU Float64 control 使用 5 个 token、3 个 MLP experts 与稳定 top-2。Sparse dispatch 只运行实际选中的 token—expert pair；dense oracle 运行所有 pair，再用完全相同的 gate mask 合并。两条路径对 `task + 0.05L_{bal}^{ref} + 0.001L_z` 的输出最大差为 0，所有 router/expert 参数的 backward 最大差约为 (6.94\times10^{-18})。一次真实 SGD step 同时改变 router 和三个 experts；当前 authored task loss 从约 0.0886473 降到 0.0875580，只能证明该单步链路执行，不能推断收敛。
+
+同一训练图还执行 score-priority capacity/drop。固定 \(\phi=0.5\) 时 capacity 为 2，pre/post counts 为 `[4,3,3]→[2,2,2]`，10 个 assignments 丢 4 个但无整 token 全丢；capacity-enabled sparse/dense 的输出与全参数梯度最大差均为 0。Drop 后重归一化会把有幸存 assignment 的 token 权重和恢复到 1；保留丢失 mass 的策略不这样做，当前两者输出最大差约为 0.125542。独立同分 fixture 还让后两个 token 的 assignments 全丢，并观察 routed expert 输出精确为零；这不包含残差或 shared expert。
+
+另一个固定 control 显式提供 token mask 与 CPU-local routing-group IDs。最后一个 padding token 不参与 capacity、drop 分母、expert dispatch、balance/z-loss 或 routed output；修改其 hidden value 和 group id 后，active output 与 aux diagnostics 差仍为 0，padding hidden gradient 也为 0。两个 active groups 各有 2 tokens，因此各组 capacity 都是 1；逐组 pre/post counts 为 `[2,1,1]→[1,1,1]` 和 `[1,1,2]→[1,1,1]`。逐组 \(L_{bal}^{ref}\)/z-loss 按 active-token 数加权。与把四个 active tokens 放入一个 capacity=2 的 group 相比，kept assignments 改变，输出最大差约 0.329387；这说明 routing group 是公式输入，不是可省略的实现细节。
+
+Hard top-k indices 是离散选择。当前主任务到 router 的可微路径来自 selected softmax probabilities：若只 detach combine weights，expert index 与 expert forward 仍完全相同，三个 experts 都有非零 task gradient，但 router 的 task gradient 为 `None`。这不是说所有 MoE 都必须使用同一 gate 公式；它证明实现者若无意 detach，就会把 router 从主任务梯度中切断。
+
+训练 control 对 (f_e) 使用 stop-gradient，对 (p_e) 保留梯度。在 collapsed top-1 fixture 中，一次只更新 router 的 balance step 把 (L_{bal}^{ref}) 从约 2.567724 降到 2.552751，而四个 hard assignments 仍全选 expert 0。这说明连续 probability pressure 可以先于离散 route change，但不证明后续一定均衡、不会 oscillate、task quality 不受损或 experts 会形成可解释专门化。
+
+v3 又把 overflow policy 做成可执行反事实。4 个相同 token 的 top-1 都先选 expert 0，完整稳定排名为 `[0,2,1]`，每 expert nominal capacity=2。`drop` 保留前两个并丢 2 个；deterministic `reroute` 按原 selected score/token/rank 处理 dropped slots，扫描完整 ranking、禁止同 token 重复 expert，最终 dispatched experts 为 `[0,0,2,2]`、post-policy excess=0；`dropless` 保留 `[0,0,0,0]` 并显式报告 expert 0 超额 2，而不是声称 capacity 得到满足。Reroute 还分别执行 post-policy renormalization 与“以原 selected top-k mass 为分母”的保留策略；后两 token 的 weight sum 为 1 或约 0.449329，输出确实不同。两条新策略的 sparse/dense forward 与 materialized-zero backward 对账为 0。
+
+这仍只是本仓库的 deterministic full-ranking reroute 与 dropless nominal-capacity-excess contract，不是某个框架或模型的默认行为。它没有跨 device/process 的 distributed capacity-group collective、shared/fine-grained expert、all-to-all、grouped GEMM、GPU、目标 checkpoint、收敛、质量或性能证据。整数 group IDs 不证明通信域真的一致，也不执行任何 collective；它与 NumPy oracle 使用不同 fixture，不能合并外推为 DeepSeek/Qwen 已复现。
+
+### 14.4 Collective capacity group 与 expert parallel 不是同一件事
+
+仓库另有一条独立的 two-process CPU/Gloo control，专门补“整数 group ID 不等于 collective”这条边界。Rank 0/1 各持有两个 token；真实 `all_gather` 形成 `[2,1,3,0.5]` 的 4-token replicated global routing batch，两个 `all_reduce(SUM)` 又分别确认 global active count=4、selected counts=`[4,0]`。在 `E=2,k=1,φ=0.5` 下，每 rank 独立计容会各保留 1 个、合计 2 个；global score-priority competition 的 capacity=1，只保留 score 最高的 rank-1/token-0，mask `[F,F,T,F]`、counts `[4,0]→[1,0]`、drop=3。Rank 0 的 local-only 与 collective routed output 最大差为 `0.9640275800758169`，因此这不是只打印 collective 元数据的空对照。
+
+但这条 control 为了隔离 capacity group，复制了 router、experts 与 gathered hidden states；它没有把 token 发到 owner expert，也不执行 `all_to_all`、`reduce_scatter`、distributed autograd 或 backward。因此它证明“当前全局 routing input/competition 经真实 collective 建立”，不证明 expert parallel。Same-host Gloo/FileStore 也不能外推为 NCCL、多节点、GPU grouped GEMM、通信量、tail latency、目标模型策略、收敛或质量。
+
 ## 15. Expert parallel 与通信
 
 Expert weights 分布在设备上时，token 按 routing 做 all-to-all dispatch，再返回原设备。成本取决于 token 数、hidden size、top-k、dtype、网络、负载不均和消息大小。
+
+### 15.1 真实 token-to-owner all-to-all control
+
+仓库的独立 CPU/Gloo fixture 让 expert 0/1 只驻留在 rank 0/1，并用 variable splits 完成 count exchange、token/gate 与 metadata dispatch、owner forward、output/gate 与 metadata return。Source→owner counts 是 `[[1,2],[1,0]]`；每 rank 共执行五次 `all_to_all_single`。Rank 0 的 return arrival 的 global token 顺序为 `[1,0,2]`，不是 source-local `[0,1,2]`，所以必须用 source rank/local index metadata scatter 后再乘 gate。正确输出与单进程 oracle 精确对账；按 arrival row 直接合并的最大差为 `0.8958737432590591`。
+
+这份 authored top-1 fixture选择保留 selected softmax probability，因此输出不是简单的 raw expert output；目标实现也可能把幸存 top-1 gate 归一化为 1。逻辑张量账本为 416 bytes，但没有测 wire/protocol bytes。它只证明同机 CPU/Gloo 前向通信与顺序恢复，不含 capacity/drop、distributed backward、CUDA/NCCL、多节点、目标模型、性能、收敛或质量；上一节的 replicated global-capacity control 与本节也不能拼成一个已验证的完整 EP 实现。
+
+### 15.2 Authored all-to-all autograd 与梯度归约
+
+另一条独立 training control 用 authored autograd Function 包装 variable-split payload：forward 按 source→owner splits 通信，backward 交换 reverse splits，再把 output/gate 梯度送回 owner、hidden/gate 梯度送回 source。每个 rank 的 local loss contribution 都按 global-token mean 的分母 4 缩放。Owner expert 已处理来自所有 sources 的本 expert tokens，所以其参数梯度留在 owner；replicated router 只积累本 source token 的 gate 梯度，必须 SUM all-reduce。
+
+固定 fixture 的 router global gradient 为 `[[2.2904292655042227],[-2.290429265504225]]`，一步 SGD 后两 rank 的 router 和各 owner expert 都与单进程 global-batch oracle 对齐；前后分布式 MSE 为 `20.78017329703821→19.41091750734501`。Call ledger 中 payload forward/backward 为 4/2、count+metadata 为 6、router all-reduce 为 1，但这只是 authored wrappers 计数。它不使用 DDP、`torch.distributed.autograd` RPC、capacity/drop、CUDA/NCCL、目标模型或性能测量；不能把单步 loss 下降解释为收敛、专门化或质量改善。
+
+### 15.3 Capacity、owner dispatch 与 backward 同图
+
+第四条独立 control 在同一个 two-process CPU/Gloo autograd 图中加入 global score-priority drop。四个 active tokens 的 top-1 selected counts 为 `[2,2]`；`φ=0.5` 时每 expert capacity=1，global keep mask `[F,T,T,F]`，仅 token 1/2 分别发往 owner 0/1。两 rank 的 source→owner splits 为 `[[1,1],[0,0]]`，所以 rank 1 的 source 侧 dispatch/return 都是零行，但 owner 1 仍处理来自 rank 0 的 token。
+
+零行并不表示该 rank 可以跳过 collective。实现保留一个依赖 returned empty tensor 的 zero-size graph edge，使 rank 1 backward 仍按相同顺序执行 reverse all-to-all；否则 rank 0 会等待未参与的 peer。Dropped token 0/3 的 routed output 与 task hidden gradient 为 0，而 rank-1 router local gradient也为零；router SUM gradient、owner expert gradients、一步参数及 post-step forward 都与单进程 capacity oracle 对齐。Global MSE `15.253670387373656→14.530264380025987`，strict fingerprint `sha256:33f11f199b9668c…`。
+
+这证明当前 authored drop policy、capacity group、kept-only owner dispatch 与 reverse backward 可在这个同机 Float64 fixture 中组合；不证明 reroute/dropless、shared/fine-grained experts、DDP/FSDP/ZeRO、mixed precision、CUDA/NCCL、多节点、目标 DeepSeek/Qwen policy、通信性能、扩展性、收敛或质量。Call ledger 仍只是源码包装器计数，不是 backend profiler。
 
 即使 theoretical active FLOPs 低，all-to-all、packing/unpacking、小 expert GEMM 和 straggler 可吞噬收益。报告：
 
@@ -314,7 +453,7 @@ Expert weights 分布在设备上时，token 按 routing 做 all-to-all dispatch
 
 ## 19. 当前仓库证据边界
 
-仓库已有生成采样、paired evaluation、KV 公式、Roofline、Agent 工具安全、scaling 计算器，以及 top-k/capacity/drop/sparse-linear-combine 的 NumPy MoE oracle，可用于验证部分数学/系统概念。但没有训练 PRM/online reasoning policy，没有目标长上下文 checkpoint 的全长度矩阵，也没有训练 MoE router/MLP 或 expert-parallel GPU 实跑。因此 CPU routing fixture 不是 DeepSeek/Qwen 复现，本章其余能力仍是实验协议与机制教材。
+仓库已有生成采样、paired evaluation、KV 公式、Roofline、Agent 工具安全与 scaling 计算器。MoE 侧除 NumPy top-k/capacity/drop/combine oracle 外，已有 CPU Float64 trainable router/MLP 的 sparse—dense forward/backward、overflow policy 对账，以及四条相互隔离或递进的同机 Gloo controls：replicated global capacity competition、owner-only token dispatch/return、无 capacity 的 authored reverse-split training，以及 capacity-aware kept-only reverse-split training。仍没有目标 DeepSeek/Qwen MoE checkpoint、shared/fine-grained experts、reroute/dropless distributed training、DDP/FSDP/ZeRO、CUDA/NCCL、多节点、GPU grouped GEMM 或性能/质量实跑；因此这些 CPU fixtures 不是目标模型或生产 EP 复现。推理侧也没有训练 PRM/online reasoning policy，长上下文侧没有目标 checkpoint 的全长度矩阵，本章相应内容仍是实验协议与机制教材。
 
 ## 20. 常见错误结论
 

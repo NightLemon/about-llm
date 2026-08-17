@@ -1,5 +1,20 @@
 # 生成与解码
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：已完成[生成入门](generation-basics.md)，需要完整协议与工程边界的开发者。
+- **先修**：条件概率、logits、softmax 与 [Transformer](transformer.md) 前向。
+- **首次阅读**：生成循环 → temperature/top-k/top-p → 停止 → 约束解码。
+- **完成信号**：能复算一步采样，并为每个输出说明停止原因。
+- **卡住时**：先完成[实验 0A](../practice/labs/lab-0a-sampling.md)。
+
+</div>
+
+本页是完整参考章节。第一次学习只需阅读[生成与解码入门](generation-basics.md)并完成实验 0A；需要 beam、约束、流式协议或生产验收时再按学习导航进入对应小节。
+
 模型给出的是下一 token 的分数，产品需要的是一段在质量、延迟、成本、格式与安全约束下完成任务的输出。**解码（decoding）是把条件分布变成决策的过程**，并不是给模型加一个“创造力旋钮”那么简单。
 
 ## 1. 生成循环的最小契约
@@ -156,7 +171,7 @@ Beam search 每一步保留累计分数最高的 \(B\) 个部分序列。序列�
 s(x_{1:T})=\frac{\log p(x_{1:T})}{T^\alpha},\qquad \alpha\ge 0.
 \]
 
-这里必须定义 (T) 是否包含 prompt、EOS 和特殊 token。仓库 oracle 规定 (T) **只计生成 token，包含已发出的 EOS，不计 prompt**。因为 log probability 为负，增大正的 \(\alpha\) 会让较长序列的分数向 0 靠近；这不是“简单惩罚长序列”，也不能把该公式套到所有框架。Transformers、vLLM 或云服务可能使用不同 normalization、finished-candidate cap、EOS/early-stopping 语义。
+这里必须定义 \(T\) 是否包含 prompt、EOS 和特殊 token。仓库 oracle 规定 \(T\) **只计生成 token，包含已发出的 EOS，不计 prompt**。因为 log probability 为负，增大正的 \(\alpha\) 会让较长序列的分数向 0 靠近；这不是“简单惩罚长序列”，也不能把该公式套到所有框架。Transformers、vLLM 或云服务可能使用不同 normalization、finished-candidate cap、EOS/early-stopping 语义。
 
 Beam search 不是对所有可能序列的精确全局搜索；有限 beam 仍会剪掉以后可能变好的前缀。考虑 root 上 `A=0.6,B=0.4`，随后 `A→EOS=0.51`、`B→EOS=1`：beam width 1 会先剪掉 B，返回概率 (0.6\times0.51=0.306) 的 `A,EOS`；width 2 才能返回概率 0.4 的 `B,EOS`。这说明更宽 beam 能修复某个反例，却不保证有限宽度在任意树上全局最优。
 

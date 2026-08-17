@@ -18,6 +18,37 @@
 - overall 与语言、风险、用户等切片汇总及 Markdown 表格；
 - 固定 seed 的可复现测试。
 - Binary Brier score、equal-width ECE 和 tie-aware risk-coverage 曲线。
+- 固定 look schedule 下 exact doubled-tail sign test 的首次拒绝动态规划，以及 naive peeking 与预设 Bonferroni alpha split 对照。
+
+## 固定 Qwen 真实权重的小型行为评测
+
+通用 Evaluation Gate 默认只处理已记录输出，不会自行调用模型。`run_qwen_target_behavior_evaluation.py` 是一条明确分开的 target runner：它复用 Transformers Basics 中固定的 Qwen2.5-0.5B-Instruct revision、7-file/999,586,347-byte snapshot 和 checkpoint manifest，加载前重哈希，然后以 CPU FP32/eager、batch 1、greedy、`max_new_tokens=12` 对七条 authored case 逐条调用真实 `GenerationMixin.generate()`。
+
+~~~powershell
+# 真实重哈希、加载权重并运行七条 case
+python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
+  --local-files-only
+
+# 普通 CI：只复算 strict report，不加载约 1 GB snapshot
+python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
+  --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
+python -m pytest tests/test_target_qwen_evaluation_control.py -q
+~~~
+
+Suite `sha256:27ada9b1…6201` 固定中英文算术、北京/Paris 事实、空证据拒答、大小写复制和 JSON 三类输出约束。Report `sha256:dd30a278…5c43` 保存每条 prompt token identity、continuation IDs、raw decoded output、EOS/cap terminal，并从原始文本重算三种不同指标：
+
+| Case | Raw output | literal exact | normalized exact | token F1 |
+|---|---|---:|---:|---:|
+| 中文算术 | `42` | 1 | 1 | 1 |
+| 英文算术 | `112` | 0 | 0 | 0 |
+| 中文/英文事实 | `北京` / `Paris` | 2/2 | 2/2 | 2/2 |
+| 空证据拒答 | `无法回答` | 1 | 1 | 1 |
+| 大小写复制 | `llm-2026` | 0 | 1 | 1 |
+| JSON | `{"answer": 42}` | 0 | 0 | 1 |
+
+总体 literal exact 为 `4/7`，normalized exact 为 `5/7`，token F1 为 `6/7`。这不是三个互相竞争的“模型准确率”，而是三个不同判定函数：case-folding 让大小写错误通过 normalized exact；token F1 又忽略 JSON 标点/空格结构。结构化输出应另做 parse/schema/semantic gate，大小写敏感复制应使用 literal decoded-string exact；若要声明原始响应 byte identity，还必须另行保存并比较 bytes，不能把两者混写，也不能挑最高的 6/7 写进简历。
+
+七条 case 是作者构造且不是外部预注册、独立抽样或 held-out benchmark；没有置信区间、baseline/candidate 比较、judge/人工标注、真实用户分布、长上下文、安全红队、GPU/vLLM、工具/RAG/训练或性能测量。报告中的 CPU 执行只证明固定 snapshot 和固定输入确实运行，不建立总体中文/英文能力、质量、泛化、校准、生产安全、许可或发布者身份。
 
 ## 可运行 CLI
 
@@ -43,7 +74,63 @@ python -m about_llm.evaluation.cli score `
   --system-id deployed-candidate@exact-revision
 ~~~
 
-默认计算 normalized exact match 与 token F1；也可重复传入 `--metric json_schema` 或 `--metric citation_syntax`。这两个指标要求 case metadata 分别提供 `output_schema` 或 `valid_source_ids`。引用指标只检查编号和段落覆盖，不证明 claim-evidence entailment。
+默认计算 normalized exact match 与 token F1。若任务要求逐字保留大小写、标点或空格，显式传 `--metric literal_exact_match`；它的 revision 是 `about-llm.literal-exact-match.v1`，比较 decoded string equality，不声称原始 response bytes 相同。`--metric` 可重复传入，例如同时选择 literal/normalized exact，也可选择 `json_schema`、`json_value_exact`、`citation_syntax` 或 `citation_evidence_span`。Schema 指标要求 case metadata 提供 `output_schema`，引用语法指标要求 `valid_source_ids`；span 指标要求 `citation_sources`。三者都不证明 claim-evidence entailment。
+
+### Strict JSON Schema 与 expected-value equality 分账
+
+五条 authored fixture 把“字符串像不像”“JSON 是否严格合法”“是否符合 schema”“parsed value 是否等于 gold”拆开：
+
+~~~powershell
+python -m about_llm.evaluation.cli score `
+  --cases projects/evaluation-gate/structured-metrics.cases.jsonl `
+  --answers projects/evaluation-gate/structured-metrics.answers.jsonl `
+  --results artifacts/evaluation/structured.results.jsonl `
+  --report artifacts/evaluation/structured.report.md `
+  --manifest artifacts/evaluation/structured.run-manifest.json `
+  --system-id authored-structured-fixture@v1 `
+  --metric literal_exact_match `
+  --metric exact_match `
+  --metric token_f1 `
+  --metric json_schema `
+  --metric json_value_exact
+~~~
+
+| Case | literal | normalized | token F1 | schema v2 | JSON value v1 |
+|---|---:|---:|---:|---:|---:|
+| object key order + whitespace only | 0 | 0 | 1 | 1 | 1 |
+| wrong value `43` | 0 | 0 | 0.5 | 1 | 0 |
+| duplicate object key | 0 | 0 | 2/3 | 0 | 0 |
+| `NaN` | 0 | 0 | 0.5 | 0 | 0 |
+| reversed array order | 0 | 0 | 1 | 1 | 0 |
+
+`about-llm.json-schema-metric.v2` 使用 strict JSON：拒绝 duplicate object key 与 `NaN/Infinity`；schema 只允许 local `$ref/$dynamicRef`，拒绝 `$id` 和 external resolution。无效 gold schema 是 case 配置错误，会中止评分，不会把所有输出悄悄记为 0。当前 `format` 仍是 annotation，未启用 `FormatChecker`；它也不做 coercion 或应用 `default`。
+
+`about-llm.json-value-exact.v1` 忽略 JSON object key order 与不重要 whitespace，但保留 array order、string、scalar type 以及 parser 的 integer/float distinction。它不自动调用 schema，也不等于业务语义：单位、资源归属、数据库状态、权限和跨字段规则仍需独立 validator。Fixture 的 `latency_seconds=0.0` 是 authored 非性能占位值；五条 case 不证明真实模型、provider、代表性质量或生产安全。
+
+### Citation ID、exact span 与 entailment 分账
+
+`about-llm.citation-evidence-span-metric.v1` 接受 strict JSON claim 列表。每个 claim 必须有唯一非空 `claim_id`、非空 `text` 和至少一个 evidence；每个 evidence 必须只含 `source_id/start_char/end_char/quote`。Case 的 `citation_sources` 是 scorer 收到的授权来源快照；指标检查 source ID membership、零基/end-exclusive Python string offset、逐字 quote equality、duplicate JSON key、重复 claim/span 和未知字段。它不负责证明这个快照真的来自在线 ACL，也不判断 quote 是否支持 claim。
+
+~~~powershell
+python -m about_llm.evaluation.cli score `
+  --cases projects/evaluation-gate/citation-evidence-span.cases.jsonl `
+  --answers projects/evaluation-gate/citation-evidence-span.answers.jsonl `
+  --results artifacts/evaluation/citation-span.results.jsonl `
+  --report artifacts/evaluation/citation-span.report.md `
+  --manifest artifacts/evaluation/citation-span.run-manifest.json `
+  --system-id authored-citation-span-fixture@v1 `
+  --metric citation_evidence_span
+~~~
+
+| Case | span v1 | 说明 |
+|---|---:|---|
+| Unicode exact binding | 1 | `0:9` 精确绑定“地球围绕太阳运行。” |
+| unknown source `S9` | 0 | 不在 supplied `citation_sources` |
+| offset/quote mismatch | 0 | `source[0:3]` 是 `abc`，不是 `bcd` |
+| duplicate JSON key | 0 | strict parser 在评分前拒绝 |
+| unrelated claim + exact quote | 1 | 故意证明 identity gate 不推断 entailment |
+
+Cases/answers 分别为 1,015/1,138 bytes，SHA-256 为 `ceb3ff9d…89e8` / `c61507ec…2661`。这五条 authored fixture 没有模型调用、人类判断或权限系统；最后一行的明显语义反例仍得 1 是协议设计，不是漏洞。生产评测应把 syntax、authorized source identity、span identity、semantic verdict、source quality 与 publication policy 分开保存。
 
 对已经观测到 binary label 的历史预测做校准分析：
 
@@ -193,6 +280,18 @@ python projects/evaluation-gate/holm_correction_toy.py
 输入顺序 `[0.04,0.01,0.03,0.20]` 经稳定升序排序后，multiplier 是 `[4,3,2,1]`。Scaled value `[0.04,0.09,0.08,0.20]` 必须再取前缀最大值，所以 sorted adjusted p-value 为 `[0.04,0.09,0.09,0.20]`；映回输入顺序后为 `[0.09,0.04,0.09,0.20]`，`alpha=0.05` 只拒绝原索引 1。输出同时保留 rank ledger 与 input-order view，避免调用方把排序后的结果贴错 hypothesis。
 
 Holm 在 component p-value 有效时对任意依赖控制 FWER，但不证明 family 是事前定义的，也不修复反复窥视、可选停止、测试集挑指标、cluster unit 错误或无效原始检验。它不估计 effect size、业务重要性或因果。该 reference 不自动接入 comparison artifact；生产 gate 还需把 family、原始/adjusted p-value、alpha、全部 hypothesis 和预注册/选择协议写入版本化 artifact。
+
+### Sequential peeking / optional-stopping 对照
+
+同一 hypothesis 在多个时点反复检验不是 Holm 的 multiple-hypothesis 问题。运行：
+
+~~~powershell
+python projects/evaluation-gate/sequential_peeking_toy.py
+~~~
+
+Fixture 预设 `[10,20,30,40,50]` 五个 informative-pair looks，以 i.i.d. fair sign 为 null，并固定双侧 p-value 为 doubled smaller inclusive binomial tail。每次都用 0.05 且首次显著即停，exact familywise error 为 `7109832616777/70368744177664 ≈ 0.1010367984`；事前把 familywise 0.05 均分为每次 0.01 时为 `2142139082367/140737488355328 ≈ 0.0152208136`。实现用 `(n, positive_count)` dynamic program 传播精确概率，没有枚举 `2^50` 条 sign sequences。
+
+Bonferroni 对照只在 look 数与阈值事前固定、每个 p-value 在其 null 下有效时由 union bound 控制总体错误；它通常保守，也不允许结果不好看时临时增加 look。本 oracle 没有 tie、effect magnitude、cluster、case sampling、power/sample-size、confidence sequence、模型/judge 或线上随机实验，因此不自动接入 comparison release gate，也不能证明候选模型改善。
 
 ### Artifact schema
 

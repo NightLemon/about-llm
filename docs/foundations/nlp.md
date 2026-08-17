@@ -1,5 +1,18 @@
 # NLP 与语言建模
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：需要理解文本如何变成语言模型输入输出的开发者。
+- **先修**：Python 基础和条件概率直觉。
+- **首次阅读**：文本单位 → 语言模型概率 → shift 与 loss mask → 解码。
+- **完成信号**：能区分字符、token、token id、logit、loss 和生成文本。
+- **卡住时**：先做[新手知识地图](../guide/beginner-map.md)的四项自检。
+
+</div>
+
 自然语言处理（Natural Language Processing, NLP）研究怎样把语言现象变成可计算对象，又怎样把模型输出还原为对人有用、可验证的语言行为。LLM 把许多任务统一成“给定上下文预测后续 token”，但数据表示、概率建模、解码、评测和语用问题并没有因此消失。
 
 ## 1. 语言的层次

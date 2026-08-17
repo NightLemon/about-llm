@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from about_llm.evaluation import EvaluationCase, load_cases, run_evaluation, write_results
-from about_llm.evaluation.text_metrics import normalized_exact_match, token_f1
+from about_llm.evaluation.text_metrics import (
+    literal_exact_match,
+    normalized_exact_match,
+    token_f1,
+)
 
 
 def test_load_run_and_write_evaluation(tmp_path: Path) -> None:
@@ -40,12 +44,21 @@ def test_load_run_and_write_evaluation(tmp_path: Path) -> None:
     results = run_evaluation(
         cases,
         answers.__getitem__,
-        {"exact_match": normalized_exact_match, "token_f1": token_f1},
+        {
+            "literal_exact_match": literal_exact_match,
+            "exact_match": normalized_exact_match,
+            "token_f1": token_f1,
+        },
     )
     result_path = tmp_path / "nested" / "results.jsonl"
     write_results(result_path, results)
 
-    assert results[0].scores == {"exact_match": 1.0, "token_f1": 1.0}
+    assert results[0].scores == {
+        "literal_exact_match": 0.0,
+        "exact_match": 1.0,
+        "token_f1": 1.0,
+    }
+    assert results[1].scores["literal_exact_match"] == 0.0
     assert results[1].scores["exact_match"] == 0.0
     assert 0 < results[1].scores["token_f1"] < 1
     assert len(result_path.read_text(encoding="utf-8").splitlines()) == 2

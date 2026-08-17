@@ -168,15 +168,26 @@ async def execute_json_request(
     monotonic: Callable[[], float] = time.monotonic,
     wall_clock: Callable[[], datetime] | None = None,
     jitter: Callable[[], float] = random.random,
+    before_attempt: Callable[[int], None] | None = None,
+    after_attempt: Callable[[AttemptTrace], None] | None = None,
 ) -> CloudHttpResult:
     """Execute a bounded JSON POST and return strict object JSON plus attempt trace.
 
     Connect/pool failures are classified as outcome-known and may be retried.
     Write/read/protocol/overall-attempt timeouts are outcome-uncertain and stop
     automatically. Cancellation is never converted into a retry.
+
+    Optional synchronous lifecycle hooks run immediately before a send and
+    after its trace is complete but before any retry sleep. Hook exceptions
+    propagate and therefore stop the logical call; defaults preserve the
+    original executor behavior.
     """
     if not isinstance(replay_safe, bool):
         raise ValueError("replay_safe must be a boolean")
+    if before_attempt is not None and not callable(before_attempt):
+        raise TypeError("before_attempt must be callable or None")
+    if after_attempt is not None and not callable(after_attempt):
+        raise TypeError("after_attempt must be callable or None")
     _validate_request_target(request, config)
     wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
     started = _finite_monotonic(monotonic())
@@ -197,6 +208,8 @@ async def execute_json_request(
             headers=dict(request.headers),
             json=dict(request.body),
         )
+        if before_attempt is not None:
+            before_attempt(attempt)
         try:
             response = await asyncio.wait_for(
                 client.send(outbound, follow_redirects=False), timeout=timeout
@@ -218,19 +231,20 @@ async def execute_json_request(
                 remaining_seconds=max(0.0, deadline - ended),
                 jitter_fraction=jitter(),
             )
-            attempts.append(
-                AttemptTrace(
-                    attempt=attempt,
-                    started_after_seconds=attempt_started - started,
-                    duration_seconds=duration,
-                    status_code=None,
-                    failure_kind=failure_kind,
-                    error_category=error_category,
-                    outcome_uncertain=outcome_uncertain,
-                    request_id=None,
-                    retry_decision=decision,
-                )
+            trace = AttemptTrace(
+                attempt=attempt,
+                started_after_seconds=attempt_started - started,
+                duration_seconds=duration,
+                status_code=None,
+                failure_kind=failure_kind,
+                error_category=error_category,
+                outcome_uncertain=outcome_uncertain,
+                request_id=None,
+                retry_decision=decision,
             )
+            attempts.append(trace)
+            if after_attempt is not None:
+                after_attempt(trace)
             if not decision.retry:
                 raise CloudCallError(decision.reason, attempts) from None
             await sleep(cast(float, decision.delay_seconds))
@@ -252,19 +266,20 @@ async def execute_json_request(
                 remaining_seconds=max(0.0, deadline - ended),
                 jitter_fraction=jitter(),
             )
-            attempts.append(
-                AttemptTrace(
-                    attempt=attempt,
-                    started_after_seconds=attempt_started - started,
-                    duration_seconds=duration,
-                    status_code=response.status_code,
-                    failure_kind="http_status",
-                    error_category=None,
-                    outcome_uncertain=False,
-                    request_id=request_id,
-                    retry_decision=decision,
-                )
+            trace = AttemptTrace(
+                attempt=attempt,
+                started_after_seconds=attempt_started - started,
+                duration_seconds=duration,
+                status_code=response.status_code,
+                failure_kind="http_status",
+                error_category=None,
+                outcome_uncertain=False,
+                request_id=request_id,
+                retry_decision=decision,
             )
+            attempts.append(trace)
+            if after_attempt is not None:
+                after_attempt(trace)
             if not decision.retry:
                 raise CloudCallError(decision.reason, attempts)
             await sleep(cast(float, decision.delay_seconds))
@@ -286,7 +301,7 @@ async def execute_json_request(
         try:
             payload = _strict_response_object(response, config=config)
         except _ResponseValidationError as error:
-            attempts[-1] = AttemptTrace(
+            terminal = AttemptTrace(
                 attempt=terminal.attempt,
                 started_after_seconds=terminal.started_after_seconds,
                 duration_seconds=terminal.duration_seconds,
@@ -297,7 +312,12 @@ async def execute_json_request(
                 request_id=terminal.request_id,
                 retry_decision=None,
             )
+            attempts[-1] = terminal
+            if after_attempt is not None:
+                after_attempt(terminal)
             raise CloudCallError(error.kind, attempts) from error
+        if after_attempt is not None:
+            after_attempt(terminal)
         return CloudHttpResult(
             payload=MappingProxyType(payload),
             status_code=response.status_code,

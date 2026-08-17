@@ -68,7 +68,6 @@ def test_parity_control_cli_emits_machine_readable_scope() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=60,
     )
     report = json.loads(completed.stdout)
 

@@ -1,4 +1,7 @@
 .venv/
+v/
+build/
+dist/
 site/
 .env
 .env.*
@@ -7,9 +10,11 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.test-tmp/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
 .ipynb_checkpoints/
 outputs/

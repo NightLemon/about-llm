@@ -1,0 +1,74 @@
+{
+  "manifest_version": "about-llm.model-release-evidence.v1",
+  "checked_at": "2026-08-13",
+  "evidence_boundary": "The manifest binds exact bytes at immutable upstream revisions to local semantic snapshots and conservative projections. Vendor model-card claims are not independent measurements. Config fields do not prove weight identity, executed architecture, effective context, quality, license compatibility, runtime support, memory peak, throughput, or production safety.",
+  "records": [
+    {
+      "record_id": "llama-3.2-text-model-card",
+      "family": "Llama",
+      "artifact_kind": "vendor_markdown_projection",
+      "revision": "0e0b8c519242d5833d8c11bffc1232b77ad7f301",
+      "source_url": "https://raw.githubusercontent.com/meta-llama/llama-models/0e0b8c519242d5833d8c11bffc1232b77ad7f301/models/llama3_2/MODEL_CARD.md",
+      "upstream_sha256": "sha256:cdc06052012c47654cfa49dc41a766cdb8801c4dfd469bee6d42774b058beb78",
+      "upstream_size_bytes": 25416,
+      "local_snapshot_path": "llama-3.2-text.projection.json",
+      "local_snapshot_sha256": "sha256:be14f72e9cbf200abb9740acc3049b82dca717d4f1e1eb4a46a8ed439a3ceb99"
+    },
+    {
+      "record_id": "qwen2.5-0.5b-instruct-config",
+      "family": "Qwen",
+      "artifact_kind": "transformers_config_json",
+      "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "source_url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/config.json",
+      "upstream_sha256": "sha256:18e18afcaccafade98daf13a54092927904649e1dd4eba8299ab717d5d94ff45",
+      "upstream_size_bytes": 659,
+      "local_snapshot_path": "qwen2.5-0.5b-instruct.config.json",
+      "local_snapshot_sha256": "sha256:ee6f9831a4c4729cf094af9a76a53dfe1dde8e34a8251889f527d2179c7d918d",
+      "expected_contract": {
+        "architectures": [
+          "Qwen2ForCausalLM"
+        ],
+        "attention_kind": "gqa",
+        "head_dim": 64,
+        "known_mla_markers_present": false,
+        "known_moe_markers_present": false,
+        "model_type": "qwen2",
+        "query_heads_per_kv_head": 7,
+        "standard_kv_applicable": true
+      },
+      "kv_scenarios": [
+        {
+          "batch_size": 1,
+          "element_bytes": 2,
+          "token_count": 32768,
+          "expected_bytes_per_token_per_layer": 512,
+          "expected_total_bytes": 402653184
+        }
+      ]
+    },
+    {
+      "record_id": "deepseek-v3-config",
+      "family": "DeepSeek",
+      "artifact_kind": "transformers_config_json",
+      "revision": "e815299b0bcbac849fa540c768ef21845365c9eb",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/e815299b0bcbac849fa540c768ef21845365c9eb/config.json",
+      "upstream_sha256": "sha256:cbf0b95dc614de208a109bb5fd4e7eed11385e9c68411d2c17db5319443035d9",
+      "upstream_size_bytes": 1660,
+      "local_snapshot_path": "deepseek-v3.config.json",
+      "local_snapshot_sha256": "sha256:fed8c13b4637058cd68e600bd4bf7dc734bda4594dd583e3b49fa27c6e123cc6",
+      "expected_contract": {
+        "architectures": [
+          "DeepseekV3ForCausalLM"
+        ],
+        "attention_kind": null,
+        "head_dim": null,
+        "known_mla_markers_present": true,
+        "known_moe_markers_present": true,
+        "model_type": "deepseek_v3",
+        "query_heads_per_kv_head": null,
+        "standard_kv_applicable": false
+      },
+      "kv_scenarios": []
+    }
+  ]
+}

@@ -117,6 +117,36 @@ def test_audit_resolves_synthetic_and_known_external_parents() -> None:
     ]
 
 
+def test_audit_reports_cycles_and_nonmonotonic_parent_rounds() -> None:
+    first = record(
+        "round-1",
+        parent_ids=("round-2",),
+        generation_round=1,
+    )
+    second = record(
+        "round-2",
+        parent_ids=("round-1",),
+        generation_round=2,
+        content="第二代样本",
+    )
+    descendant = record(
+        "round-3",
+        parent_ids=("round-2",),
+        generation_round=3,
+        content="第三代样本",
+    )
+
+    report = audit_synthetic_records(
+        [descendant, second, first],
+        required_verifiers=("schema", "grounding"),
+    )
+
+    assert report.unresolved_parent_pairs == ()
+    assert report.nonmonotonic_parent_pairs == (("round-1", "round-2"),)
+    assert report.lineage_cycle_record_ids == ("round-1", "round-2")
+    assert report.eligible_record_ids == ("round-1", "round-2", "round-3")
+
+
 def test_byte_exact_and_nfc_whitespace_profiles_have_explicit_semantics() -> None:
     composed = "é  value\nnext"
     decomposed = "e\u0301 value next"
@@ -205,6 +235,15 @@ def test_audit_requires_a_nonempty_unique_verifier_contract() -> None:
             audit_synthetic_records([item], required_verifiers=required)
 
 
+def test_audit_requires_unique_known_parent_ids() -> None:
+    with pytest.raises(ValueError, match="known_parent_ids must be unique"):
+        audit_synthetic_records(
+            [record("item")],
+            required_verifiers=("schema", "grounding"),
+            known_parent_ids=("real-anchor-1", "real-anchor-1"),
+        )
+
+
 def test_record_rejects_duplicate_verifier_ids() -> None:
     with pytest.raises(ValueError, match="verifier_id"):
         record(
@@ -229,6 +268,16 @@ def test_real_component_forbids_generation_round() -> None:
     with pytest.raises(ValueError, match="must not"):
         MixtureComponent(
             "real", SourceKind.REAL, unique_tokens=100, weight=1, generation_round=1
+        )
+
+
+def test_component_requires_typed_source_kind() -> None:
+    with pytest.raises(TypeError, match="SourceKind"):
+        MixtureComponent(
+            "real",
+            "real",  # type: ignore[arg-type]
+            unique_tokens=100,
+            weight=1,
         )
 
 
