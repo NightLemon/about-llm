@@ -120,12 +120,6 @@
       "max_prose_line_length": 307,
       "overlong_prose_line_count": 6
     },
-    "docs/models/qwen.md": {
-      "heading_count": 57,
-      "line_count": 886,
-      "max_prose_line_length": 692,
-      "overlong_prose_line_count": 22
-    },
     "docs/practice/labs/lab-0c-cloud-budget.md": {
       "max_prose_line_length": 244,
       "overlong_prose_line_count": 2
