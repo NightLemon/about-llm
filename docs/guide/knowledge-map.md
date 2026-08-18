@@ -1,6 +1,8 @@
 # 知识地图
 
-这张地图只描述知识之间的依赖关系。项目成熟度、实验记录和版本信息分别放在[项目索引](../practice/project-index.md)、[实验目录](../practice/labs.md)和[参考资料](../reference/accuracy.md)中。
+这张地图描述章节之间的依赖关系。要查询单个学术术语、先修概念和易混淆关系，请使用[术语知识图谱](../reference/glossary.md)与[概念依赖地图](../reference/concept-map.md)。
+
+项目成熟度、实验记录和版本信息分别放在[项目索引](../practice/project-index.md)、[实验目录](../practice/labs.md)和[参考资料](../reference/accuracy.md)中。
 
 第一次学习时沿主干前进；遇到具体问题，再进入训练、应用或系统分支。
 

@@ -61,7 +61,7 @@ python -m pytest tests/test_tokenizer.py -q
 
 ## 卡住时怎么办
 
-- 不认识术语：查[术语表](../reference/glossary.md)。
+- 不认识术语：查[术语知识图谱](../reference/glossary.md)；不知道先修顺序或总把两个概念混在一起时，再看[概念依赖地图](../reference/concept-map.md)。
 - 看不懂形状或概率：按需回到[数学基础](../foundations/math.md)。
 - 环境无法运行：查[环境与硬件矩阵](environment.md)。
 - 不知道下一章：看[知识地图](knowledge-map.md)。

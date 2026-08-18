@@ -6,6 +6,7 @@ from pathlib import Path
 from scripts.check_docs import (
     READABILITY_DEFAULTS,
     check_evidence_entrypoints,
+    check_glossary_graph,
     check_internal_links,
     check_learning_contracts,
     check_math_delimiters,
@@ -144,6 +145,46 @@ def test_test_references_reject_missing_files(tmp_path: Path) -> None:
     assert check_test_references([page], root=tmp_path) == [
         f"{page.relative_to(tmp_path)}: missing test file: tests/test_missing.py"
     ]
+
+
+def test_glossary_graph_accepts_complete_linked_terms(tmp_path: Path) -> None:
+    glossary = tmp_path / "docs" / "reference" / "glossary.md"
+    glossary.parent.mkdir(parents=True)
+    glossary.write_text(
+        "# 术语表\n\n"
+        "| 术语 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| <a id=\"term-logit\"></a>Logit | 归一化为概率以前的模型分数。 | 基础 |"
+        " [Token](#term-token) | [概率](#term-token) | [正文](../../README.md) |"
+        " [实验](../../CONTRIBUTING.md) |\n"
+        "| <a id=\"term-token\"></a>Token | tokenizer 词表中的离散单位。 | 基础 |"
+        " 根概念 | — | [正文](../../README.md) | [实验](../../CONTRIBUTING.md) |\n",
+        encoding="utf-8",
+    )
+
+    assert check_glossary_graph(
+        glossary, root=tmp_path, minimum_terms=2
+    ) == []
+
+
+def test_glossary_graph_rejects_unknown_dependency_and_missing_binding(
+    tmp_path: Path,
+) -> None:
+    glossary = tmp_path / "docs" / "reference" / "glossary.md"
+    glossary.parent.mkdir(parents=True)
+    glossary.write_text(
+        "# 术语表\n\n"
+        "| 术语 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| <a id=\"term-logit\"></a>Logit | 归一化为概率以前的模型分数。 | 基础 |"
+        " [Missing](#term-missing) | — | 无 | [实验](../../CONTRIBUTING.md) |\n",
+        encoding="utf-8",
+    )
+
+    errors = check_glossary_graph(glossary, root=tmp_path, minimum_terms=1)
+
+    assert any("canonical needs a local link" in error for error in errors)
+    assert any("unknown term 'missing'" in error for error in errors)
 
 
 def test_readability_uses_strict_defaults_for_new_pages(tmp_path: Path) -> None:

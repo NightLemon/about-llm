@@ -16,6 +16,8 @@ import markdown
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 READABILITY_BASELINE = DOCS / "reference" / "readability-baseline.json"
+GLOSSARY = DOCS / "reference" / "glossary.md"
+GLOSSARY_MINIMUM_TERMS = 120
 READABILITY_DEFAULTS = {
     "line_count": 600,
     "heading_count": 45,
@@ -49,6 +51,11 @@ FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 INLINE_CODE_RE = re.compile(r"(`+)(.*?)\1")
 MATH_DELIMITER_RE = re.compile(r"(?<!\\)(\\\(|\\\)|\\\[|\\\])")
 TEST_FILE_RE = re.compile(r"\btests/test_[A-Za-z0-9_]+\.py\b")
+GLOSSARY_TERM_RE = re.compile(
+    r'^<a id="term-([a-z0-9]+(?:-[a-z0-9]+)*)"></a>(.+)$'
+)
+MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+TERM_REFERENCE_RE = re.compile(r"#term-([a-z0-9]+(?:-[a-z0-9]+)*)")
 
 
 @dataclass
@@ -229,6 +236,109 @@ def check_test_references(files: list[Path], *, root: Path = ROOT) -> list[str]:
     return errors
 
 
+def check_glossary_graph(
+    path: Path = GLOSSARY,
+    *,
+    root: Path = ROOT,
+    minimum_terms: int = GLOSSARY_MINIMUM_TERMS,
+) -> list[str]:
+    """Validate the glossary as a navigable concept graph, not a word list."""
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, UnicodeDecodeError) as error:
+        return [f"{path}: invalid glossary: {error}"]
+
+    display_path = path.relative_to(root)
+    errors: list[str] = []
+    terms: dict[str, tuple[int, list[str]]] = {}
+    term_line_numbers: list[int] = []
+    graph_rows = 0
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.startswith("| <a id=\"term-"):
+            continue
+        graph_rows += 1
+        term_line_numbers.append(line_number)
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 7:
+            errors.append(
+                f"{display_path}:{line_number}: glossary term row needs 7 columns, "
+                f"found {len(cells)}"
+            )
+            continue
+        match = GLOSSARY_TERM_RE.fullmatch(cells[0])
+        if match is None:
+            errors.append(
+                f"{display_path}:{line_number}: invalid or missing stable term id"
+            )
+            continue
+        term_id = match.group(1)
+        if term_id in terms:
+            errors.append(
+                f"{display_path}:{line_number}: duplicate term id '{term_id}'"
+            )
+        terms[term_id] = (line_number, cells)
+
+        if len(cells[1]) < 8:
+            errors.append(
+                f"{display_path}:{line_number}: definition is too short to be useful"
+            )
+        if not cells[2]:
+            errors.append(f"{display_path}:{line_number}: missing concept category")
+        if "#term-" not in cells[3] and "根概念" not in cells[3]:
+            errors.append(
+                f"{display_path}:{line_number}: prerequisites need term links or 根概念"
+            )
+        if "#term-" not in cells[4] and cells[4] != "—":
+            errors.append(
+                f"{display_path}:{line_number}: confusion cell needs term links or —"
+            )
+        for column_name, cell in (("canonical", cells[5]), ("experiment", cells[6])):
+            targets = MARKDOWN_LINK_RE.findall(cell)
+            if not targets:
+                errors.append(
+                    f"{display_path}:{line_number}: {column_name} needs a local link"
+                )
+            elif any(urlsplit(target).scheme or urlsplit(target).netloc for target in targets):
+                errors.append(
+                    f"{display_path}:{line_number}: {column_name} must link inside the repo"
+                )
+
+    if graph_rows < minimum_terms:
+        errors.append(
+            f"{display_path}: expected at least {minimum_terms} concept rows, "
+            f"found {graph_rows}"
+        )
+
+    term_ids = list(terms)
+    if term_ids != sorted(term_ids):
+        for index, (actual, expected) in enumerate(
+            zip(term_ids, sorted(term_ids), strict=True), start=1
+        ):
+            if actual != expected:
+                errors.append(
+                    f"{display_path}: concept row {index} is '{actual}', "
+                    f"expected alphabetical '{expected}'"
+                )
+                break
+
+    if term_line_numbers:
+        lines = text.splitlines()
+        first, last = term_line_numbers[0], term_line_numbers[-1]
+        if any(not lines[index - 1].startswith("|") for index in range(first, last + 1)):
+            errors.append(f"{display_path}: concept rows must remain in one Markdown table")
+
+    known = set(terms)
+    for term_id, (line_number, cells) in terms.items():
+        for referenced in TERM_REFERENCE_RE.findall(" ".join(cells[3:5])):
+            if referenced not in known:
+                errors.append(
+                    f"{display_path}:{line_number}: term '{term_id}' references "
+                    f"unknown term '{referenced}'"
+                )
+    return errors
+
+
 def check_learning_contracts(files: list[Path], *, root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     for source in files:
@@ -350,6 +460,7 @@ def main() -> int:
         + check_internal_links(files)
         + check_math_delimiters(files)
         + check_test_references(reference_files)
+        + check_glossary_graph()
         + check_learning_contracts(curriculum_files)
         + check_readability(reader_files)
         + check_evidence_entrypoints()
@@ -360,7 +471,7 @@ def main() -> int:
         return 1
     print(
         f"OK: checked {len(files)} Markdown files, assets, local anchors, "
-        f"test references, and {len(curriculum_files)} learning contracts"
+        f"test references, concept graph, and {len(curriculum_files)} learning contracts"
     )
     return 0
 

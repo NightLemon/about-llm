@@ -1,91 +1,193 @@
-# 术语表
+# LLM 术语知识图谱
 
-> 英文缩写按字母检索；定义强调在 LLM 语境中的含义。
+这不是只给缩写配一句中文的词典。每个词条同时回答五件事：它是什么、属于哪一层、先学什么、最容易与什么混淆、去哪里阅读和运行验证。
 
-| 术语 | 含义 |
-|---|---|
-| A2A | Agent2Agent Protocol，描述独立 Agent 的发现、消息、任务状态与 artifact 交换；协议状态不等于业务完成。 |
-| Abstain | 证据不足或风险过高时明确不作答/转交，而非猜测。 |
-| Activation | 神经网络某层对当前输入产生的中间数值；也指激活函数。 |
-| Agent | 模型在状态—动作—观察循环中调用工具完成任务的系统。 |
-| Alignment | 让系统行为更符合人类意图、价值、安全和权限边界的一组方法。 |
-| Attention | 根据 query-key 匹配对 value 加权聚合的信息混合机制。 |
-| Autoregressive | 按此前 token 条件逐个预测后续 token。 |
-| Backpropagation | 用链式法则在计算图上高效求参数梯度。 |
-| Batch | 一次并行处理的一组样本；LLM 还需区分 micro/global batch。 |
-| Beam search | 保留多个累计得分最高部分序列的解码算法。 |
-| Benchmark | 固定数据与协议的比较测试；可能饱和或受训练污染。 |
-| BF16 | 8 位指数、7 位尾数的 16-bit 浮点格式，范围接近 FP32。 |
-| BM25 | 基于词频、逆文档频率和长度归一化的经典稀疏检索算法。 |
-| BPE | 反复合并高频相邻单元的子词 tokenizer 算法。 |
-| Calibration | 预测置信度与真实正确频率匹配的程度。 |
-| Causal mask | 屏蔽未来 token，保证自回归训练不泄露答案。 |
-| Checkpoint | 可恢复训练/推理状态的参数及相关元数据快照。 |
-| Chunk | RAG 中用于索引和检索的文档片段。 |
-| Context window | 一次模型调用可处理的最大 token 范围；有效利用能力另需评测。 |
-| Cross-attention | query 来自一序列、key/value 来自另一序列的注意力。 |
-| Cross-entropy | 训练分类/语言模型常用的负对数似然损失。 |
-| Data contamination | 评测内容或其近似版本进入训练数据。 |
-| Decode | 推理中逐 token 生成的阶段；区别于一次性处理输入的 prefill。 |
-| Dense model | 每个 token 大体激活相同全部层/参数的模型；与稀疏 MoE 相对。 |
-| Distillation | 用教师模型的输出或分布训练学生模型。 |
-| DPO | 直接从偏好对优化策略相对参考模型概率的训练方法。 |
-| Embedding | 离散项目或输入映射得到的连续向量表示。 |
-| EOS/BOS | 序列结束/开始特殊 token。 |
-| Epoch | 完整遍历训练集一次；大规模预训练更常用 consumed tokens。 |
-| Exposure bias | 训练看真实历史、推理看自身生成历史造成的分布差异。 |
-| Fine-tuning | 在预训练模型上用目标数据继续更新参数。 |
-| FlashAttention | 通过 IO-aware 分块计算精确注意力的高效算法族。 |
-| FP16/FP32/FP8 | 不同位宽和范围的浮点格式。 |
-| FSDP | 将参数、梯度、优化器状态跨数据并行设备分片的训练方法。 |
-| Function/tool calling | 模型按 schema 提出外部函数/工具调用参数的机制。 |
-| GQA | 多个 query 头共享一组 K/V 头，在质量与 KV 内存间折中。 |
-| Gradient | 损失对参数的偏导数，指示局部最速上升方向。 |
-| Gradient accumulation | 多个 micro-batch 累积梯度后再更新一次。 |
-| Hallucination | 输出缺乏依据或与事实/给定证据矛盾；边界需按任务定义。 |
-| In-context learning | 不更新权重，仅凭当前上下文中的说明/示例适应任务。 |
-| Instruction tuning | 用指令—回答示例监督微调模型。 |
-| KV Cache | 自回归推理缓存旧 token 各层 key/value 的内存。 |
-| Latency | 完成请求所需时间；需区分 TTFT、TPOT 和端到端。 |
-| Logit | softmax 前每个候选 token 的未归一化分数。 |
-| LoRA | 用低秩矩阵参数化权重增量的 PEFT 方法。 |
-| LLM-as-judge | 使用另一个模型按 rubric 评价输出；需做人类校准。 |
-| Masked LM | 遮住部分 token 并利用双向上下文恢复它们的训练范式。 |
-| MCP | Model Context Protocol，连接 AI host/client 与提供 tools/resources/prompts 的 server；能力发现不等于授权。 |
-| MHA/MQA | 每个 query 头独立 K/V，或所有 query 头共享一组 K/V。 |
-| Mixed precision | 不同算子/状态用不同数值精度以兼顾速度、内存和稳定性。 |
-| MoE | Mixture of Experts，每个 token 只路由到部分专家的稀疏模型。 |
-| NLL | Negative Log-Likelihood，正确观测的负对数概率。 |
-| nDCG | 考虑相关等级与排名位置的检索排序指标。 |
-| Parameter | 训练学习并持久保存的权重数值。 |
-| PEFT | Parameter-Efficient Fine-Tuning，只更新少量新增/选定参数。 |
-| Perplexity | 平均 NLL 的指数；不可跨 tokenizer 直接比较。 |
-| PII | 可识别个人身份的信息。 |
-| PagedAttention | 用分页方式管理 KV Cache、降低碎片的服务内存技术。 |
-| Positional encoding | 将 token 顺序/距离信息注入模型的方法。 |
-| Prefill | 对整个输入 prompt 并行前向并建立 KV Cache 的推理阶段。 |
-| Prompt injection | 不可信输入诱导模型改变指令或执行越权动作的攻击。 |
-| Prompt | 发送给模型的指令、上下文、示例和输出约束整体。 |
-| Quantization | 用较低位宽表示权重、激活或 KV Cache。 |
-| RAG | 生成前从外部知识源检索证据的系统模式。 |
-| Red teaming | 从攻击者视角系统寻找滥用和安全失败。 |
-| Reward model | 预测人类/AI 偏好分数的模型。 |
-| RLHF/RLAIF | 用人类/AI 反馈构造奖励并优化模型行为。 |
-| RMSNorm/LayerNorm | 稳定隐藏状态尺度的归一化方法。 |
-| RoPE | 旋转 Q/K 分量以编码相对位置信息的位置方法。 |
-| SFT | Supervised Fine-Tuning，使用理想输入输出对的监督微调。 |
-| Self-consistency | 对同一输入采样多个候选并按规范化答案投票；收益依赖候选相关性与 canonicalization，不能只由边缘单样本准确率推出。 |
-| Softmax | 将任意 logits 归一化成总和为 1 的概率分布。 |
-| Speculative decoding | 小模型草拟、大模型批量验证以减少串行解码步骤。 |
-| SSM | State Space Model，以状态递推处理序列的模型族。 |
-| Temperature | 缩放 logits、调节采样分布尖锐程度的参数。 |
-| Tensor parallelism | 把单个层/矩阵运算切到多个设备。 |
-| Token | tokenizer 词表中的离散单位，可能是字节、字符或子词片段。 |
-| Top-k / Top-p | 仅从最高 k 个或累计概率达到 p 的最小集合采样。 |
-| Transformer | 以注意力、MLP、残差和归一化堆叠为核心的序列架构。 |
-| TTFT / TPOT | 首 token 延迟 / 每个输出 token 的平均时间。 |
-| Vector database | 为向量近邻查询及元数据过滤优化的存储/检索系统。 |
-| Weight decay | 抑制权重过大的正则化更新；AdamW 将其与梯度解耦。 |
-| ZeRO | 分阶段分片优化器、梯度和参数的分布式训练方法。 |
+第一次系统学习请先看[概念依赖与易混淆地图](concept-map.md)。英文术语按字母检索；同一词在具体框架中若有不同定义，以链接的正文、固定版本和实验契约为准。
 
-若同一术语在某个框架中定义不同，以对应章节和官方实现为准。
+| 术语 | 核心定义 | 分类 | 先修 | 易混淆 | 权威正文 | 可运行验证 |
+|---|---|---|---|---|---|---|
+| <a id="term-a2a"></a>A2A | Agent2Agent Protocol，描述独立 Agent 的发现、消息、任务状态与 artifact 交换。 | Agent | [Agent](#term-agent) | [MCP](#term-mcp) | [Agent 互操作](../applications/agent-interoperability.md) | [A2A loopback control](../applications/agent-interoperability.md) |
+| <a id="term-ablation"></a>Ablation | 保持其余条件不变，移除或替换一个组件以估计它对结果的影响。 | 证据 | [Baseline](#term-baseline) | [Control](#term-control) | [架构比较](../core/architectures-interpretability.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-abstain"></a>Abstain | 证据不足或风险过高时明确不作答或转交，而不是生成一个低可信答案。 | 评测 | [Calibration](#term-calibration) | [Hallucination](#term-hallucination) | [RAG 证据不足](../applications/rag-generation.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-accuracy"></a>Accuracy | 正确预测数量占评测样本数量的比例；必须说明样本和分母定义。 | 评测 | [Metric](#term-metric) | [Calibration](#term-calibration) | [评测总览](../quality/evaluation.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-activation"></a>Activation | 神经网络某层对当前输入产生的中间数值，也可指非线性激活函数。 | 基础 | [Parameter](#term-parameter) | [Activation patching](#term-activation-patching) | [机器学习基础](../foundations/ml-dl.md) | [MiniGPT 实验](../practice/labs.md#lab-3) |
+| <a id="term-activation-checkpointing"></a>Activation checkpointing | 前向时只保存部分激活，反向时重算其余激活，以计算换显存。 | 训练 | [Activation](#term-activation), [Backpropagation](#term-backpropagation) | [Checkpoint](#term-checkpoint) | [分布式训练](../systems/distributed-training.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-activation-patching"></a>Activation patching | 把一个运行中的激活替换到另一个运行中，观察连续行为指标的因果变化。 | 可解释性 | [Activation](#term-activation), [Control](#term-control) | [Ablation](#term-ablation) | [架构与可解释性](../core/architectures-interpretability.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-admission-control"></a>Admission control | 在请求占用稀缺资源前，根据容量和策略决定接收、排队或拒绝。 | 系统 | [Latency](#term-latency), [SLO](#term-slo) | [Continuous batching](#term-continuous-batching) | [vLLM 服务](../systems/vllm-serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-agent"></a>Agent | 模型在状态、动作、观察循环中调用工具并朝停止条件推进的受控系统。 | Agent | [Tool calling](#term-tool-calling) | [Workflow](#term-workflow) | [Agent 总览](../applications/agents.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-alignment"></a>Alignment | 让系统行为更符合目标用户意图、价值、安全和权限边界的一组方法。 | 对齐 | [SFT](#term-sft) | [Safety](#term-safety) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-ann"></a>ANN | Approximate Nearest Neighbor，用少量近邻召回损失换取向量检索吞吐。 | RAG | [Embedding](#term-embedding) | [Vector database](#term-vector-database) | [RAG 检索](../applications/rag-retrieval.md) | [RAG 检索实验](../applications/rag-retrieval.md) |
+| <a id="term-artifact"></a>Artifact | 可保存、校验和重放的一次输入、配置、输出或报告工件。 | 证据 | 根概念 | [Checkpoint](#term-checkpoint) | [准确性与核验](accuracy.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-attention"></a>Attention | 根据 query-key 匹配对 value 加权聚合的信息混合机制。 | 架构 | [Softmax](#term-softmax) | [Cross-attention](#term-cross-attention) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-autoregressive"></a>Autoregressive | 按此前 token 条件逐个预测后续 token 的概率分解和生成方式。 | 语言模型 | [Token](#term-token) | [Causal LM](#term-causal-lm) | [NLP 与语言建模](../foundations/nlp.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-backpressure"></a>Backpressure | 下游处理不过来时，向上游限制进入速度而不是无限堆积工作。 | 系统 | [Admission control](#term-admission-control) | [Retry](#term-retry) | [服务与可观测性](../systems/serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-backpropagation"></a>Backpropagation | 用链式法则在计算图上高效计算损失对参数的梯度。 | 基础 | [Gradient](#term-gradient) | [Gradient accumulation](#term-gradient-accumulation) | [数学基础](../foundations/math.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-baseline"></a>Baseline | 在引入复杂方法前固定的最小可比方案，用来定义增益和失败。 | 证据 | 根概念 | [Benchmark](#term-benchmark) | [评测方法](../quality/evaluation-methodology.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-batch"></a>Batch | 一次并行处理的一组样本；LLM 训练还需区分 micro batch 和 global batch。 | 训练 | [Token](#term-token) | [Gradient accumulation](#term-gradient-accumulation) | [分布式训练](../systems/distributed-training.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-beam-search"></a>Beam search | 每一步保留多个累计得分较高部分序列的启发式解码算法。 | 生成 | [Logit](#term-logit) | [Best-of-N](#term-best-of-n) | [生成与解码](../core/generation.md) | [生成协议实验](../practice/labs/lab-0b-generation-protocol.md) |
+| <a id="term-benchmark"></a>Benchmark | 固定数据、指标和协议的比较测试；可能饱和、污染或偏离真实任务。 | 评测 | [Baseline](#term-baseline) | [Evaluation](#term-evaluation) | [评测总览](../quality/evaluation.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-best-of-n"></a>Best-of-N | 从同一输入采样 N 个候选，再用 verifier 或规则选择一个结果。 | 推理 | [Sampling](#term-sampling) | [Self-consistency](#term-self-consistency) | [推理系统](../frontier/reasoning-systems.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-bf16"></a>BF16 | 具有 8 位指数和 7 位显式尾数的 16-bit 浮点格式，动态范围接近 FP32。 | 数值 | [Mixed precision](#term-mixed-precision) | [FP16/FP32/FP8](#term-floating-point) | [数学基础](../foundations/math.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-bm25"></a>BM25 | 结合词频饱和、逆文档频率和文档长度归一化的稀疏检索算法。 | RAG | [Token](#term-token) | [Dense retrieval](#term-dense-retrieval) | [RAG 检索](../applications/rag-retrieval.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-bpe"></a>BPE | 反复合并高频相邻单元的子词 tokenizer 训练和编码算法族。 | Tokenization | [Token](#term-token) | [Unigram](#term-unigram) | [Tokenization](../core/tokenization.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-brier-score"></a>Brier score | 概率预测与二元结果之间平方误差的均值，是 proper scoring rule。 | 评测 | [Calibration](#term-calibration) | [ECE](#term-ece) | [评测方法](../quality/evaluation-methodology.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-calibration"></a>Calibration | 预测概率与对应事件真实发生频率匹配的程度。 | 评测 | [Probability](#term-probability) | [Accuracy](#term-accuracy) | [评测方法](../quality/evaluation-methodology.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-causal-lm"></a>Causal LM | 用左侧上下文预测下一个 token 的语言模型训练范式。 | 语言模型 | [Autoregressive](#term-autoregressive) | [Masked LM](#term-masked-lm) | [NLP 与语言建模](../foundations/nlp.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-causal-mask"></a>Causal mask | 屏蔽未来位置，使当前 token 不能读取其右侧 token 的 attention mask。 | 架构 | [Attention](#term-attention) | [Loss mask](#term-loss-mask) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-chat-template"></a>Chat template | 把角色消息和控制 token 确定性渲染为模型输入 token 的接口契约。 | Tokenization | [Tokenizer](#term-tokenizer) | [Prompt](#term-prompt) | [SFT 数据管道](../training/sft-data-pipeline.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-checkpoint"></a>Checkpoint | 用于恢复训练或加载推理的参数及相关状态快照。 | 训练 | [Parameter](#term-parameter) | [Artifact](#term-artifact), [Activation checkpointing](#term-activation-checkpointing) | [预训练](../training/pretraining.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-chunk"></a>Chunk | RAG 中带来源、版本和权限信息的可索引文档片段。 | RAG | [Token](#term-token) | [Document](#term-document) | [RAG 摄取](../applications/rag-ingestion.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-chunked-prefill"></a>Chunked prefill | 把长 prompt 的 prefill 切成调度块，与其他 prefill 或 decode 工作交错执行。 | 系统 | [Prefill](#term-prefill) | [PagedAttention](#term-paged-attention) | [推理优化](../systems/inference-optimization.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-circuit"></a>Circuit | 被假设共同实现某项行为的模型组件和信息路径子图。 | 可解释性 | [Activation patching](#term-activation-patching) | [Probe](#term-probe) | [架构与可解释性](../core/architectures-interpretability.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-citation-validity"></a>Citation validity | 引用标识是否存在、被授权且确实指向本次上下文中的来源。 | RAG | [RAG](#term-rag) | [Faithfulness](#term-faithfulness) | [RAG 生成](../applications/rag-generation.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-confidence-interval"></a>Confidence interval | 在重复抽样协议下，以指定覆盖率包含目标参数的区间构造。 | 统计 | [Paired bootstrap](#term-paired-bootstrap) | [P-value](#term-p-value) | [评测统计](../foundations/evaluation-statistics.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-constrained-decoding"></a>Constrained decoding | 在每一步只允许能保持语法或状态机合法的 token，再重新归一化概率。 | 生成 | [Sampling](#term-sampling) | [Structured output](#term-structured-output) | [生成与解码](../core/generation.md) | [生成协议实验](../practice/labs/lab-0b-generation-protocol.md) |
+| <a id="term-context-window"></a>Context window | 一次模型调用能接收的最大 token 范围；不等于模型能有效利用全部位置。 | 架构 | [Token](#term-token) | [Long-context](#term-long-context) | [长上下文系统](../frontier/long-context-systems.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-continuous-batching"></a>Continuous batching | 请求可在不同解码步进入和离开批次的推理调度方式。 | 系统 | [Decode](#term-decode) | [Batch](#term-batch), [Admission control](#term-admission-control) | [推理优化](../systems/inference-optimization.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-control"></a>Control | 为隔离因果或正确性问题而固定输入、变量、断言和负对照的实验协议。 | 证据 | [Baseline](#term-baseline) | [Ablation](#term-ablation) | [准确性与核验](accuracy.md) | [实验与项目](../practice/labs.md) |
+| <a id="term-cross-attention"></a>Cross-attention | query 来自一个序列，而 key/value 来自另一个序列的注意力。 | 架构 | [Attention](#term-attention) | [Self-attention](#term-self-attention) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-cross-entropy"></a>Cross-entropy | 用目标分布给模型分布计分的负对数似然型损失。 | 数学 | [Probability](#term-probability), [Softmax](#term-softmax) | [KL divergence](#term-kl-divergence) | [数学基础](../foundations/math.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-data-contamination"></a>Data contamination | 评测内容或其近似版本进入训练、调参或模型选择数据。 | 数据 | [Benchmark](#term-benchmark) | [Data leakage](#term-data-leakage) | [训练数据工程](../training/data.md) | [Synthetic Data Audit](../practice/projects/synthetic-data-audit.md) |
+| <a id="term-data-leakage"></a>Data leakage | 评测时不可用的信息通过划分、特征、模板或处理流程进入训练或预测。 | 数据 | [Dataset split](#term-dataset-split) | [Data contamination](#term-data-contamination) | [机器学习基础](../foundations/ml-dl.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-dataset-split"></a>Dataset split | 按独立单位把数据分成训练、验证和测试集合的协议。 | 数据 | 根概念 | [Data leakage](#term-data-leakage) | [机器学习基础](../foundations/ml-dl.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-ddp"></a>DDP | Distributed Data Parallel，在副本上处理不同数据并同步梯度的数据并行方法。 | 训练系统 | [Gradient](#term-gradient), [Batch](#term-batch) | [FSDP](#term-fsdp) | [分布式训练](../systems/distributed-training.md) | [分布式验收路线](../systems/distributed-training.md) |
+| <a id="term-decode"></a>Decode | 推理中利用 KV Cache 逐 token 生成的阶段。 | 系统 | [Autoregressive](#term-autoregressive) | [Prefill](#term-prefill) | [推理基础](../systems/inference.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-dense-model"></a>Dense model | 每个 token 大体激活相同全部层和参数的模型，与稀疏 MoE 相对。 | 架构 | [Parameter](#term-parameter) | [MoE](#term-moe) | [架构与可解释性](../core/architectures-interpretability.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-dense-retrieval"></a>Dense retrieval | 用连续向量相似度召回语义相关文档的检索方式。 | RAG | [Embedding](#term-embedding) | [BM25](#term-bm25) | [RAG 检索](../applications/rag-retrieval.md) | [RAG 实验](../practice/labs.md#lab-5) |
+| <a id="term-distillation"></a>Distillation | 用教师模型的硬输出、软分布或过程信号训练学生模型。 | 训练 | [Cross-entropy](#term-cross-entropy) | [Synthetic data](#term-synthetic-data) | [合成数据](../training/synthetic-data.md) | [Synthetic Data Audit](../practice/projects/synthetic-data-audit.md) |
+| <a id="term-document"></a>Document | RAG 摄取中保留来源、版本和权限的逻辑文档对象，通常会产生多个 chunk。 | RAG | 根概念 | [Chunk](#term-chunk) | [RAG 摄取](../applications/rag-ingestion.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-dpo"></a>DPO | 直接优化偏好对的策略相对参考模型概率差，而不显式训练在线 reward-policy loop。 | 对齐 | [Preference data](#term-preference-data), [KL divergence](#term-kl-divergence) | [PPO](#term-ppo) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-ece"></a>ECE | Expected Calibration Error，把置信度分箱后聚合预测置信度与经验正确率的差。 | 评测 | [Calibration](#term-calibration) | [Brier score](#term-brier-score) | [评测方法](../quality/evaluation-methodology.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-embedding"></a>Embedding | 把离散项目或输入映射为连续向量表示。 | 表示学习 | [Vector](#term-vector) | [Logit](#term-logit) | [机器学习基础](../foundations/ml-dl.md) | [RAG 实验](../practice/labs.md#lab-5) |
+| <a id="term-eos-bos"></a>EOS/BOS | 序列结束和开始的特殊 token；其具体 ID 和注入方式属于 tokenizer/model 契约。 | Tokenization | [Token](#term-token) | [Stop condition](#term-stop-condition) | [Tokenization](../core/tokenization.md) | [生成协议实验](../practice/labs/lab-0b-generation-protocol.md) |
+| <a id="term-epoch"></a>Epoch | 完整遍历训练集一次；大规模预训练更常用 consumed tokens 描述进度。 | 训练 | [Dataset split](#term-dataset-split) | [Training step](#term-training-step) | [预训练](../training/pretraining.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-evaluation"></a>Evaluation | 对固定系统、任务分布、指标和决策规则收集证据的过程。 | 评测 | [Benchmark](#term-benchmark) | [LLM-as-judge](#term-llm-as-judge) | [评测总览](../quality/evaluation.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-evidence-boundary"></a>Evidence boundary | 明确一次实验能够支持和不能支持哪些结论的声明范围。 | 证据 | [Artifact](#term-artifact), [Control](#term-control) | [Generalization](#term-generalization) | [准确性与核验](accuracy.md) | [实验与项目](../practice/labs.md) |
+| <a id="term-expert-parallelism"></a>Expert parallelism | 把 MoE experts 分布到不同设备，并在设备间 dispatch/return token 的并行方式。 | 训练系统 | [MoE](#term-moe) | [Tensor parallelism](#term-tensor-parallelism) | [MoE 系统](../frontier/moe-systems.md) | [MoE 实验](../practice/labs.md#lab-2a) |
+| <a id="term-exposure-bias"></a>Exposure bias | 训练使用真实历史而推理使用自身生成历史造成的输入分布差异。 | 语言模型 | [Teacher forcing](#term-teacher-forcing) | [Hallucination](#term-hallucination) | [NLP 与语言建模](../foundations/nlp.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-faithfulness"></a>Faithfulness | 回答中的 claim 是否被给定证据支持，而不是答案是否碰巧正确。 | RAG | [Groundedness](#term-groundedness) | [Citation validity](#term-citation-validity) | [RAG 生成](../applications/rag-generation.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-fine-tuning"></a>Fine-tuning | 在预训练模型上使用目标数据继续更新部分或全部参数。 | 训练 | [Pretraining](#term-pretraining) | [In-context learning](#term-in-context-learning) | [微调总览](../training/finetuning.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-fixture"></a>Fixture | 为测试或实验预先固定的小型输入、配置和期望结果。 | 证据 | [Control](#term-control) | [Benchmark](#term-benchmark) | [准确性与核验](accuracy.md) | [实验与项目](../practice/labs.md) |
+| <a id="term-flashattention"></a>FlashAttention | 通过 IO-aware 分块和 online softmax 计算精确 attention 的高效算法族。 | 系统 | [Attention](#term-attention), [Online softmax](#term-online-softmax) | [PagedAttention](#term-paged-attention) | [推理优化](../systems/inference-optimization.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-floating-point"></a>FP16/FP32/FP8 | 具有不同位宽、动态范围和精度的浮点格式家族。 | 数值 | [Mixed precision](#term-mixed-precision) | [Quantization](#term-quantization) | [数学基础](../foundations/math.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-fsdp"></a>FSDP | Fully Sharded Data Parallel，把参数、梯度和 optimizer state 沿数据并行组分片。 | 训练系统 | [DDP](#term-ddp) | [ZeRO](#term-zero) | [分布式训练](../systems/distributed-training.md) | [分布式验收路线](../systems/distributed-training.md) |
+| <a id="term-generalization"></a>Generalization | 模型在未用于拟合或选择的数据分布上保持任务表现的能力。 | 基础 | [Dataset split](#term-dataset-split) | [Evidence boundary](#term-evidence-boundary) | [机器学习基础](../foundations/ml-dl.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-gqa"></a>GQA | Grouped-Query Attention，让多组 query heads 共享较少的 key/value heads。 | 架构 | [Attention](#term-attention) | [MHA/MQA](#term-mha-mqa), [MLA](#term-mla) | [Transformer](../core/transformer.md) | [配置与生成协议](../practice/labs.md#lab-2b) |
+| <a id="term-gradient"></a>Gradient | 损失对参数的偏导数组，描述局部最速上升方向。 | 数学 | [Vector](#term-vector) | [Optimizer](#term-optimizer) | [数学基础](../foundations/math.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-gradient-accumulation"></a>Gradient accumulation | 多个 micro batch 的梯度按明确分母累积后再执行一次 optimizer update。 | 训练 | [Gradient](#term-gradient), [Batch](#term-batch) | [Batch](#term-batch) | [PEFT 工程](../training/peft-qlora-engineering.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-gradient-clipping"></a>Gradient clipping | 当梯度范数或元素超过阈值时进行缩放或截断，以限制单步更新。 | 训练 | [Gradient](#term-gradient) | [Weight decay](#term-weight-decay) | [预训练](../training/pretraining.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-groundedness"></a>Groundedness | 系统输出是否依赖并引用允许使用的外部证据。 | RAG | [RAG](#term-rag) | [Faithfulness](#term-faithfulness) | [RAG 生成](../applications/rag-generation.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-hallucination"></a>Hallucination | 输出缺乏任务要求的依据，或与事实、工具结果、给定证据相矛盾。 | 质量 | [Autoregressive](#term-autoregressive) | [Abstain](#term-abstain) | [评测总览](../quality/evaluation.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-hardware-utilization"></a>Hardware utilization | 设备计算单元、显存带宽或内存容量在工作负载中的实际使用程度。 | 系统 | [Throughput](#term-throughput) | [MFU](#term-mfu) | [硬件与端侧](../systems/hardware-edge.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-holm"></a>Holm correction | 对预定义假设族的 p-value 做 step-down 调整，以控制 family-wise error rate。 | 统计 | [P-value](#term-p-value) | [Paired bootstrap](#term-paired-bootstrap) | [评测方法](../quality/evaluation-methodology.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-human-in-the-loop"></a>Human-in-the-loop | 在高风险、低置信或权限敏感节点由人确认、修订或接管。 | Agent | [Agent](#term-agent) | [Alignment](#term-alignment) | [Agent 架构](../applications/agent-architecture.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-idempotency"></a>Idempotency | 对同一逻辑操作重复提交时，不产生额外业务副作用的接口性质。 | 系统 | [Artifact](#term-artifact) | [Retry](#term-retry) | [Agent Runtime](../applications/agent-runtime.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-in-context-learning"></a>In-context learning | 不更新权重，只凭当前上下文中的指令和示例改变任务行为。 | 语言模型 | [Prompt](#term-prompt) | [Fine-tuning](#term-fine-tuning) | [Prompt 工程](../applications/prompting.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-instruction-tuning"></a>Instruction tuning | 用指令、输入与理想回答样本对模型做监督微调。 | 对齐 | [SFT](#term-sft) | [Alignment](#term-alignment) | [微调总览](../training/finetuning.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-invariant"></a>Invariant | 在允许的状态变化或重放过程中必须始终成立的可检查条件。 | 证据 | [Control](#term-control) | [Metric](#term-metric) | [仓库地图与实现契约](../guide/repo-map.md) | [实验与项目](../practice/labs.md) |
+| <a id="term-jailbreak"></a>Jailbreak | 通过特制输入绕过模型或应用内容策略的攻击尝试。 | 安全 | [Prompt](#term-prompt) | [Prompt injection](#term-prompt-injection) | [安全、隐私与治理](../quality/safety.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-kl-divergence"></a>KL divergence | 衡量分布 p 相对 q 额外编码代价的非对称散度，不是距离。 | 数学 | [Probability](#term-probability) | [Cross-entropy](#term-cross-entropy) | [数学基础](../foundations/math.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-kv-cache"></a>KV Cache | 自回归解码时保存旧 token 各层 key/value 或等价状态的缓存。 | 系统 | [Attention](#term-attention), [Decode](#term-decode) | [Prefix cache](#term-prefix-cache) | [推理基础](../systems/inference.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-latency"></a>Latency | 请求完成所需时间；LLM 服务需分别报告 TTFT、TPOT 和端到端时间。 | 系统 | 根概念 | [Throughput](#term-throughput) | [服务与可观测性](../systems/serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-llm-as-judge"></a>LLM-as-judge | 使用模型按固定 rubric 评价输出的测量方法，需要人工校准和偏差检查。 | 评测 | [Evaluation](#term-evaluation) | [Reward model](#term-reward-model) | [评测方法](../quality/evaluation-methodology.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-logit"></a>Logit | softmax 前每个候选类别或 token 的未归一化分数。 | 数学 | [Vector](#term-vector) | [Probability](#term-probability) | [生成入门](../core/generation-basics.md) | [采样实验](../practice/labs/lab-0a-sampling.md) |
+| <a id="term-long-context"></a>Long-context | 对长输入的表示、计算、缓存和有效信息利用问题集合。 | 前沿 | [Context window](#term-context-window) | [RAG](#term-rag) | [长上下文系统](../frontier/long-context-systems.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-lora"></a>LoRA | 用低秩矩阵参数化权重增量，只训练少量新增参数的 PEFT 方法。 | 训练 | [SVD](#term-svd), [Fine-tuning](#term-fine-tuning) | [QLoRA](#term-qlora) | [PEFT 工程](../training/peft-qlora-engineering.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-loss"></a>Loss | 在样本或 batch 上度量预测与训练目标差异、并用于求梯度的标量函数。 | 基础 | [Objective](#term-objective) | [Metric](#term-metric) | [机器学习基础](../foundations/ml-dl.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-loss-mask"></a>Loss mask | 指定哪些 token 参与训练损失聚合的 mask，与 attention 可见性不同。 | 训练 | [Cross-entropy](#term-cross-entropy) | [Causal mask](#term-causal-mask) | [SFT 数据管道](../training/sft-data-pipeline.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-masked-lm"></a>Masked LM | 遮住部分 token，并利用双向上下文恢复它们的训练范式。 | 语言模型 | [Token](#term-token) | [Causal LM](#term-causal-lm) | [NLP 与语言建模](../foundations/nlp.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-mcp"></a>MCP | Model Context Protocol，连接 AI host/client 与提供 tools、resources、prompts 的 server。 | Agent | [Tool calling](#term-tool-calling) | [A2A](#term-a2a) | [Agent 互操作](../applications/agent-interoperability.md) | [MCP controls](../applications/agent-interoperability.md) |
+| <a id="term-metric"></a>Metric | 把某个明确定义的结果映射为数值或类别的测量规则。 | 评测 | [Evaluation](#term-evaluation) | [Objective](#term-objective) | [评测总览](../quality/evaluation.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-mfu"></a>MFU | Model FLOPs Utilization，模型理论计算量相对设备峰值算力的利用率口径。 | 训练系统 | [Throughput](#term-throughput) | [Hardware utilization](#term-hardware-utilization) | [分布式训练](../systems/distributed-training.md) | [分布式验收路线](../systems/distributed-training.md) |
+| <a id="term-mha-mqa"></a>MHA/MQA | Multi-Head Attention 为各 query head 保留独立 K/V；MQA 让所有 query heads 共享一组 K/V。 | 架构 | [Attention](#term-attention) | [GQA](#term-gqa), [MLA](#term-mla) | [Transformer](../core/transformer.md) | [配置与生成协议](../practice/labs.md#lab-2b) |
+| <a id="term-mixed-precision"></a>Mixed precision | 对不同算子和状态使用不同数值格式，以平衡速度、显存和稳定性。 | 数值 | [Floating point](#term-floating-point) | [Quantization](#term-quantization) | [数学基础](../foundations/math.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-mla"></a>MLA | Multi-head Latent Attention，把部分 attention 状态压缩到 latent 表示，不能套用标准 GQA KV 公式。 | 架构 | [Attention](#term-attention) | [GQA](#term-gqa), [MHA/MQA](#term-mha-mqa) | [DeepSeek](../models/deepseek.md) | [配置与生成协议](../practice/labs.md#lab-2b) |
+| <a id="term-moe"></a>MoE | Mixture of Experts，通过 router 让每个 token 只执行部分 experts 的稀疏架构。 | 架构 | [Dense model](#term-dense-model) | [Expert parallelism](#term-expert-parallelism) | [MoE 系统](../frontier/moe-systems.md) | [MoE 实验](../practice/labs.md#lab-2a) |
+| <a id="term-ndcg"></a>nDCG | 对分级相关性按排名位置折损，并用理想排序归一化的检索指标。 | RAG 评测 | [Qrels](#term-qrels) | [Recall@k](#term-recall-at-k) | [RAG 检索](../applications/rag-retrieval.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-nll"></a>NLL | Negative Log-Likelihood，观测目标在模型分布下负对数概率的聚合。 | 数学 | [Probability](#term-probability) | [Cross-entropy](#term-cross-entropy) | [数学基础](../foundations/math.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-objective"></a>Objective | 训练或决策过程实际优化的标量目标，不保证等同最终用户效用。 | 基础 | [Metric](#term-metric) | [Loss](#term-loss) | [机器学习基础](../foundations/ml-dl.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-online-softmax"></a>Online softmax | 用 running maximum 和 normalizer 分块计算与完整 softmax 等价结果的方法。 | 系统 | [Softmax](#term-softmax) | [FlashAttention](#term-flashattention) | [数学基础](../foundations/math.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-optimizer"></a>Optimizer | 把梯度和内部状态转换为参数更新的算法。 | 训练 | [Gradient](#term-gradient) | [Objective](#term-objective) | [数学基础](../foundations/math.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-oracle"></a>Oracle | 在明确假设下提供正确结果或上界的参考实现，不表示现实中可部署。 | 证据 | [Fixture](#term-fixture) | [Baseline](#term-baseline) | [准确性与核验](accuracy.md) | [实验与项目](../practice/labs.md) |
+| <a id="term-p-value"></a>P-value | 在指定零假设和检验协议下，得到至少同样极端统计量的概率。 | 统计 | [Probability](#term-probability) | [Confidence interval](#term-confidence-interval) | [评测统计](../foundations/evaluation-statistics.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-packing"></a>Packing | 把多个训练样本拼入固定长度序列，同时保留文档边界、mask 和 loss 语义。 | 训练 | [Token](#term-token), [Loss mask](#term-loss-mask) | [Padding](#term-padding) | [训练数据工程](../training/data.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-padding"></a>Padding | 用占位 token 把不同长度序列补齐到可批处理形状，并用 mask 排除其语义影响。 | 训练 | [Batch](#term-batch) | [Packing](#term-packing) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-paged-attention"></a>PagedAttention | 用分页式 block table 管理 KV Cache，减少碎片并支持共享前缀的内存技术。 | 系统 | [KV Cache](#term-kv-cache) | [FlashAttention](#term-flashattention) | [推理优化](../systems/inference-optimization.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-paired-bootstrap"></a>Paired bootstrap | 以 case 或 cluster 为单位成对重采样系统差异，估计目标 estimand 的不确定性。 | 统计 | [Dataset split](#term-dataset-split) | [P-value](#term-p-value) | [评测统计](../foundations/evaluation-statistics.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-parameter"></a>Parameter | 训练学习并持久保存在 checkpoint 中的模型权重数值。 | 基础 | [Vector](#term-vector) | [Activation](#term-activation) | [机器学习基础](../foundations/ml-dl.md) | [MiniGPT 实验](../practice/labs.md#lab-3) |
+| <a id="term-peft"></a>PEFT | Parameter-Efficient Fine-Tuning，只更新少量新增或选定参数的方法族。 | 训练 | [Fine-tuning](#term-fine-tuning) | [LoRA](#term-lora) | [微调总览](../training/finetuning.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-perplexity"></a>Perplexity | 平均 token NLL 的指数，只能在相同数据和 tokenization 口径下比较。 | 语言模型 | [NLL](#term-nll) | [Accuracy](#term-accuracy) | [NLP 与语言建模](../foundations/nlp.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-pii"></a>PII | 可直接或间接识别个人身份的信息。 | 安全 | 根概念 | [Secret](#term-secret) | [安全、隐私与治理](../quality/safety.md) | [Synthetic Data Audit](../practice/projects/synthetic-data-audit.md) |
+| <a id="term-planning"></a>Planning | 在执行前或执行间选择动作序列、分支和终止条件的决策过程。 | Agent | [Agent](#term-agent) | [ReAct](#term-react) | [Agent 架构](../applications/agent-architecture.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-policy-gradient"></a>Policy gradient | 直接对期望回报关于策略参数求梯度的一类强化学习方法。 | 强化学习 | [Probability](#term-probability), [Objective](#term-objective) | [Supervised learning](#term-supervised-learning) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-ppo"></a>PPO | 用旧策略采样轨迹，并用 clipped surrogate 等机制限制单次策略更新幅度的 on-policy 算法。 | 对齐 | [Policy gradient](#term-policy-gradient) | [DPO](#term-dpo) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-preference-data"></a>Preference data | 对同一上下文下候选输出的比较、排序或评分测量记录。 | 对齐 | [Dataset split](#term-dataset-split) | [SFT](#term-sft) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-prefill"></a>Prefill | 对完整输入 prompt 并行前向、产生首 token 分布并建立 KV Cache 的阶段。 | 系统 | [Attention](#term-attention) | [Decode](#term-decode) | [推理基础](../systems/inference.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-prefix-cache"></a>Prefix cache | 跨请求复用相同安全身份和 token 前缀对应的 prefill/KV 结果。 | 系统 | [KV Cache](#term-kv-cache) | [Prompt cache](#term-prompt-cache) | [推理优化](../systems/inference-optimization.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-pretraining"></a>Pretraining | 在大规模语料上用自监督目标学习通用语言与世界统计的训练阶段。 | 训练 | [Causal LM](#term-causal-lm) | [Fine-tuning](#term-fine-tuning) | [预训练](../training/pretraining.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-probability"></a>Probability | 在给定样本空间和条件下，对事件不确定性进行归一化量化的数学对象。 | 数学 | 根概念 | [Logit](#term-logit) | [数学基础](../foundations/math.md) | [采样实验](../practice/labs/lab-0a-sampling.md) |
+| <a id="term-probe"></a>Probe | 从冻结表示中训练简单读出器，检验信息是否可读出而非是否被原模型使用。 | 可解释性 | [Activation](#term-activation) | [Circuit](#term-circuit) | [架构与可解释性](../core/architectures-interpretability.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-prompt"></a>Prompt | 发送给模型的指令、上下文、示例和输出约束整体。 | 应用 | [Token](#term-token) | [Chat template](#term-chat-template) | [Prompt 工程](../applications/prompting.md) | [Cloud API Contracts](../practice/projects/cloud-api-contracts.md) |
+| <a id="term-prompt-cache"></a>Prompt cache | 云端或运行时按 provider 规则复用已处理 prompt 片段的缓存产品能力。 | 系统 | [Prompt](#term-prompt) | [Prefix cache](#term-prefix-cache) | [云 API 可靠性](../models/cloud-api-reliability.md) | [Cloud API Contracts](../practice/projects/cloud-api-contracts.md) |
+| <a id="term-prompt-injection"></a>Prompt injection | 不可信内容诱导模型违背原任务或提出越权动作的攻击。 | 安全 | [Prompt](#term-prompt) | [Jailbreak](#term-jailbreak) | [安全、隐私与治理](../quality/safety.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-qlora"></a>QLoRA | 在量化基座上训练 LoRA adapter 的单卡友好方法，仍需单独核算激活和优化器状态。 | 训练 | [LoRA](#term-lora), [Quantization](#term-quantization) | [PEFT](#term-peft) | [PEFT 工程](../training/peft-qlora-engineering.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-qrels"></a>Qrels | Query relevance judgments，为 query-document 对提供相关性标签的评测标注。 | RAG 评测 | [Dataset split](#term-dataset-split) | [Reranker](#term-reranker) | [RAG 检索](../applications/rag-retrieval.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-quantization"></a>Quantization | 用较低位宽或离散 code 表示权重、激活或 KV Cache。 | 系统 | [Floating point](#term-floating-point) | [Mixed precision](#term-mixed-precision) | [推理优化](../systems/inference-optimization.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-rag"></a>RAG | Retrieval-Augmented Generation，在生成前从外部知识源检索并组装证据的系统模式。 | RAG | [Dense retrieval](#term-dense-retrieval), [Prompt](#term-prompt) | [Long-context](#term-long-context) | [RAG 总览](../applications/rag.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-react"></a>ReAct | 交替生成推理状态、工具动作和观察，再继续控制循环的 Agent 模式。 | Agent | [Agent](#term-agent) | [Planning](#term-planning) | [Agent 架构](../applications/agent-architecture.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-recall-at-k"></a>Recall@k | 前 k 个检索结果覆盖 gold relevant evidence 的比例。 | RAG 评测 | [Qrels](#term-qrels) | [nDCG](#term-ndcg) | [RAG 检索](../applications/rag-retrieval.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-red-teaming"></a>Red teaming | 从攻击者或滥用者视角系统寻找安全失败并形成可回归案例。 | 安全 | [Threat model](#term-threat-model) | [Evaluation](#term-evaluation) | [安全、隐私与治理](../quality/safety.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-reranker"></a>Reranker | 对第一阶段候选进行更昂贵、更细粒度重新排序的模型或规则。 | RAG | [Recall@k](#term-recall-at-k) | [Dense retrieval](#term-dense-retrieval) | [RAG 检索](../applications/rag-retrieval.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-residual-stream"></a>Residual stream | Transformer 层之间由注意力和 MLP 持续读写的共享隐藏状态通道。 | 架构 | [Activation](#term-activation) | [Embedding](#term-embedding) | [架构与可解释性](../core/architectures-interpretability.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-retry"></a>Retry | 请求失败或结果不确定后按预算和幂等策略再次发起 attempt。 | 系统 | [Idempotency](#term-idempotency) | [Backpressure](#term-backpressure) | [云 API 可靠性](../models/cloud-api-reliability.md) | [Cloud API Contracts](../practice/projects/cloud-api-contracts.md) |
+| <a id="term-reward-model"></a>Reward model | 根据上下文与回答预测偏好或效用代理分数的模型。 | 对齐 | [Preference data](#term-preference-data) | [LLM-as-judge](#term-llm-as-judge) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-risk-coverage"></a>Risk-coverage | 随着系统只回答高置信样本，错误风险与覆盖率之间的曲线。 | 评测 | [Calibration](#term-calibration), [Abstain](#term-abstain) | [Accuracy](#term-accuracy) | [评测方法](../quality/evaluation-methodology.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| <a id="term-rlhf-rlaif"></a>RLHF/RLAIF | 用人类或 AI 反馈构造偏好或奖励信号，再优化模型行为的方法族。 | 对齐 | [Preference data](#term-preference-data), [Reward model](#term-reward-model) | [DPO](#term-dpo) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-rmsnorm-layernorm"></a>RMSNorm/LayerNorm | 按隐藏特征归一化尺度的两类方法；LayerNorm 还会减去均值。 | 架构 | [Activation](#term-activation) | [Mixed precision](#term-mixed-precision) | [Transformer](../core/transformer.md) | [MiniGPT 实验](../practice/labs.md#lab-3) |
+| <a id="term-rope"></a>RoPE | 旋转 query/key 分量，使 attention score 表达相对位置信息的位置方法。 | 架构 | [Attention](#term-attention) | [Context window](#term-context-window) | [Transformer](../core/transformer.md) | [配置与生成协议](../practice/labs.md#lab-2b) |
+| <a id="term-rrf"></a>RRF | Reciprocal Rank Fusion，用多个结果列表的倒数名次融合不同检索器。 | RAG | [BM25](#term-bm25), [Dense retrieval](#term-dense-retrieval) | [Reranker](#term-reranker) | [RAG 检索](../applications/rag-retrieval.md) | [RAG 实验](../practice/labs.md#lab-5) |
+| <a id="term-sae"></a>SAE | Sparse Autoencoder，用稀疏过完备字典重构 activation，以寻找候选特征。 | 可解释性 | [Activation](#term-activation) | [Probe](#term-probe) | [架构与可解释性](../core/architectures-interpretability.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-safety"></a>Safety | 通过技术、流程和治理降低系统对用户、组织和社会造成伤害的风险。 | 安全 | [Threat model](#term-threat-model) | [Alignment](#term-alignment) | [安全、隐私与治理](../quality/safety.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-sampling"></a>Sampling | 按模型 token 概率分布随机选择后续 token 的解码方式。 | 生成 | [Probability](#term-probability), [Logit](#term-logit) | [Beam search](#term-beam-search) | [生成入门](../core/generation-basics.md) | [采样实验](../practice/labs/lab-0a-sampling.md) |
+| <a id="term-scaling-law"></a>Scaling law | 用经验幂律描述 loss 与参数、训练 token 或计算预算关系的拟合模型。 | 训练 | [Pretraining](#term-pretraining) | [Test-time compute](#term-test-time-compute) | [规模化规律](../core/scaling.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-secret"></a>Secret | 能授予系统、数据或外部服务访问能力的凭据材料。 | 安全 | 根概念 | [PII](#term-pii) | [安全、隐私与治理](../quality/safety.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-self-attention"></a>Self-attention | query、key 和 value 都来自同一序列表示的 attention。 | 架构 | [Attention](#term-attention) | [Cross-attention](#term-cross-attention) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-self-consistency"></a>Self-consistency | 对同一输入采样多个候选，再对规范化后的答案投票。 | 推理 | [Sampling](#term-sampling) | [Best-of-N](#term-best-of-n) | [推理系统](../frontier/reasoning-systems.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-sft"></a>SFT | Supervised Fine-Tuning，使用理想输入输出对训练模型条件概率。 | 训练 | [Fine-tuning](#term-fine-tuning), [Cross-entropy](#term-cross-entropy) | [Preference data](#term-preference-data) | [微调总览](../training/finetuning.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-sla"></a>SLA | Service Level Agreement，对外约定的服务责任，通常包含违约条件。 | 系统 | [SLO](#term-slo) | [Metric](#term-metric) | [服务与可观测性](../systems/serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-slo"></a>SLO | Service Level Objective，对延迟、可用性、错误率或质量给出时间窗口目标。 | 系统 | [Metric](#term-metric) | [SLA](#term-sla) | [服务与可观测性](../systems/serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-softmax"></a>Softmax | 将任意 logits 归一化为总和为 1 的分类概率分布。 | 数学 | [Probability](#term-probability), [Logit](#term-logit) | [Temperature](#term-temperature) | [数学基础](../foundations/math.md) | [采样实验](../practice/labs/lab-0a-sampling.md) |
+| <a id="term-speculative-decoding"></a>Speculative decoding | 由 draft 模型提出多个 token，再由 target 模型批量验证并保持目标分布。 | 系统 | [Decode](#term-decode) | [Best-of-N](#term-best-of-n) | [推理优化](../systems/inference-optimization.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-ssm"></a>SSM | State Space Model，用状态递推和可并行扫描处理序列的模型族。 | 架构 | [Vector](#term-vector) | [Transformer](#term-transformer) | [架构与可解释性](../core/architectures-interpretability.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-stop-condition"></a>Stop condition | 根据 EOS、长度、停止字符串、取消或错误决定生成终态的协议。 | 生成 | [EOS/BOS](#term-eos-bos) | [Structured output](#term-structured-output) | [生成入门](../core/generation-basics.md) | [生成协议实验](../practice/labs/lab-0b-generation-protocol.md) |
+| <a id="term-structured-output"></a>Structured output | 让输出满足 JSON Schema、grammar 或其他机器可解析结构约束。 | 应用 | [Constrained decoding](#term-constrained-decoding) | [Tool calling](#term-tool-calling) | [Prompt 工程](../applications/prompting.md) | [Cloud API Contracts](../practice/projects/cloud-api-contracts.md) |
+| <a id="term-supervised-learning"></a>Supervised learning | 从输入与目标标签对中最小化预测损失的学习范式。 | 基础 | [Dataset split](#term-dataset-split), [Loss](#term-loss) | [Policy gradient](#term-policy-gradient) | [机器学习基础](../foundations/ml-dl.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-svd"></a>SVD | Singular Value Decomposition，把矩阵分解为正交方向和奇异值，用于理解 rank 与低秩近似。 | 数学 | [Vector](#term-vector) | [LoRA](#term-lora) | [数学基础](../foundations/math.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-synthetic-data"></a>Synthetic data | 由模型、规则或模拟器生成，并经过 lineage、质量和污染审计的数据。 | 数据 | [Dataset split](#term-dataset-split) | [Distillation](#term-distillation) | [合成数据](../training/synthetic-data.md) | [Synthetic Data Audit](../practice/projects/synthetic-data-audit.md) |
+| <a id="term-teacher-forcing"></a>Teacher forcing | 训练自回归模型时，把真实历史 token 而非模型输出作为下一步条件。 | 语言模型 | [Autoregressive](#term-autoregressive) | [Exposure bias](#term-exposure-bias) | [NLP 与语言建模](../foundations/nlp.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-temperature"></a>Temperature | 以正数缩放 logits，改变采样分布尖锐程度的参数。 | 生成 | [Softmax](#term-softmax) | [Top-k/Top-p](#term-top-k-top-p) | [生成入门](../core/generation-basics.md) | [采样实验](../practice/labs/lab-0a-sampling.md) |
+| <a id="term-tensor-parallelism"></a>Tensor parallelism | 把同一层的矩阵运算切分到多个设备并组合结果的并行方式。 | 训练系统 | [Parameter](#term-parameter) | [Expert parallelism](#term-expert-parallelism) | [分布式训练](../systems/distributed-training.md) | [分布式验收路线](../systems/distributed-training.md) |
+| <a id="term-test-time-compute"></a>Test-time compute | 在参数固定后，通过更多采样、搜索、验证或工具调用增加单题推理预算。 | 推理 | [Sampling](#term-sampling) | [Scaling law](#term-scaling-law) | [推理系统](../frontier/reasoning-systems.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-threat-model"></a>Threat model | 明确资产、攻击者能力、信任边界、攻击路径和可接受残余风险的安全模型。 | 安全 | 根概念 | [Red teaming](#term-red-teaming) | [安全、隐私与治理](../quality/safety.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-throughput"></a>Throughput | 单位时间完成的请求、token 或样本数量，必须声明分母和工作负载。 | 系统 | [Latency](#term-latency) | [MFU](#term-mfu) | [服务与可观测性](../systems/serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-token"></a>Token | tokenizer 词表中的离散单位，可能对应字节、字符、子词片段或控制符。 | Tokenization | 根概念 | [Word](#term-word) | [Tokenization](../core/tokenization.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-tokenizer"></a>Tokenizer | 文本与 token IDs 之间的版本化映射系统，包含 normalization、模型、special tokens 和模板。 | Tokenization | [Token](#term-token) | [Chat template](#term-chat-template) | [Tokenization](../core/tokenization.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-tool-calling"></a>Tool calling | 模型按 schema 提出工具名称和参数的候选动作；执行权仍属于外部系统。 | Agent | [Structured output](#term-structured-output) | [Agent](#term-agent) | [Agent Runtime](../applications/agent-runtime.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-top-k-top-p"></a>Top-k/Top-p | 把采样支持集限制为最高 k 个 token，或累计概率达到 p 的最小前缀。 | 生成 | [Sampling](#term-sampling) | [Temperature](#term-temperature) | [生成入门](../core/generation-basics.md) | [采样实验](../practice/labs/lab-0a-sampling.md) |
+| <a id="term-training-step"></a>Training step | 一次完成 forward、loss、backward 和 optimizer update 的训练更新单位。 | 训练 | [Optimizer](#term-optimizer), [Backpropagation](#term-backpropagation) | [Epoch](#term-epoch) | [预训练](../training/pretraining.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-transformer"></a>Transformer | 以 attention、MLP、残差和归一化堆叠为核心的序列模型架构。 | 架构 | [Attention](#term-attention) | [SSM](#term-ssm) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-ttft-tpot"></a>TTFT/TPOT | Time To First Token 和 Time Per Output Token，分别刻画首 token 与后续解码延迟。 | 系统 | [Prefill](#term-prefill), [Decode](#term-decode) | [Latency](#term-latency) | [vLLM 服务](../systems/vllm-serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
+| <a id="term-unigram"></a>Unigram | 从候选 pieces 的概率模型出发，通过剪枝和动态规划进行子词分词的方法。 | Tokenization | [Token](#term-token) | [BPE](#term-bpe) | [Tokenization](../core/tokenization.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-vector"></a>Vector | 具有方向和尺度的一维数值数组，是 embedding、gradient 和 hidden state 的基础对象。 | 数学 | 根概念 | [Embedding](#term-embedding) | [数学基础](../foundations/math.md) | [Attention 实验](../practice/labs.md#lab-2) |
+| <a id="term-vector-database"></a>Vector database | 为向量近邻查询、metadata filtering 和索引生命周期优化的存储系统。 | RAG | [ANN](#term-ann) | [Dense retrieval](#term-dense-retrieval) | [RAG 总览](../applications/rag.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| <a id="term-weight-decay"></a>Weight decay | 在参数更新中抑制权重尺度的正则化；AdamW 将它与梯度更新解耦。 | 训练 | [Optimizer](#term-optimizer) | [Gradient clipping](#term-gradient-clipping) | [数学基础](../foundations/math.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) |
+| <a id="term-word"></a>Word | 语言学或文本处理中的词单位，不与 tokenizer 的 token 一一对应。 | NLP | 根概念 | [Token](#term-token) | [NLP 与语言建模](../foundations/nlp.md) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| <a id="term-workflow"></a>Workflow | 由代码预先规定状态和转移的工作流；模型可填充局部决策但不拥有任意控制权。 | Agent | [Tool calling](#term-tool-calling) | [Agent](#term-agent) | [Agent 架构](../applications/agent-architecture.md) | [Safe Agent](../practice/projects/safe-agent.md) |
+| <a id="term-zero"></a>ZeRO | 逐阶段沿数据并行组分片 optimizer state、gradient 和 parameter 的训练方法族。 | 训练系统 | [DDP](#term-ddp) | [FSDP](#term-fsdp) | [分布式训练](../systems/distributed-training.md) | [分布式验收路线](../systems/distributed-training.md) |
+
+## 怎样使用这张图
+
+1. 从“先修”列逆向回补，不需要把整张表从头背到尾。
+2. 能用自己的话解释“易混淆”列中的区别，才算掌握当前术语。
+3. 阅读正文后运行验证入口，记录观察和失败边界；命令跑通不等于方法有效。
+4. 面试复习时先说问题、机制和适用边界，最后再说术语名称。
