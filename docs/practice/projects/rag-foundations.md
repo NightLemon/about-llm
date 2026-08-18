@@ -1,38 +1,116 @@
-# RAG Foundations
+# RAG Foundations：从一次问答到可审计服务
 
-**项目导航**：
-[返回项目索引](../project-index.md) · [RAG 总览](../../applications/rag.md) · [检索与重排](../../applications/rag-retrieval.md) ·
-[检索表示学习](../../applications/retrieval-learning.md) · [生产 RAG](../../applications/rag-production.md) · [实验 5](../labs.md#lab-5)
+**项目导航**：[返回项目索引](../project-index.md) ·
+[RAG 总览](../../applications/rag.md) ·
+[请求生命周期](../../applications/rag-request-lifecycle.md) ·
+[实验 5](../labs/lab-5-rag-request.md) ·
+[证据页](../../evidence/rag-answer-controls.md)
 { .doc-nav }
 
-## 目标
+这个项目不是“用框架把 PDF 接到聊天模型”。它用小而透明的组件回答五个工程问题：
 
-用透明、可替换、可审计的组件构建 RAG，而不是先把摄取、权限、检索、packing、生成和评测藏进同一条框架链。每层必须保存自己的 identity、输入输出和失败原因；tenant/principal ACL 必须在任何 scorer、reranker、context 或 generator 看到正文前执行。
+1. 当前调用者能看哪些资料？
+2. 答案证据在哪一层进入或离开候选集？
+3. Context 和 citation 怎样绑定到精确 source？
+4. 有结果但没答案时，系统怎样拒答？
+5. 一次结果能支持什么结论，不能支持什么结论？
+
+## 你会构建什么
 
 ```mermaid
 flowchart LR
-    C["versioned corpus"] --> I["split + incremental plan"]
-    I --> S["SQLite store + backup"]
-    Q["query + trusted identity"] --> A["authorization filter"]
-    S --> A
-    A --> R["BM25 / dense / rerank"]
-    R --> P["context packing"]
-    P --> G["extractive or model generation"]
-    G --> O["publication policy"]
-    O --> T["recorded answer + trace"]
-    T --> E["retrieval / answer / slice evaluation"]
+  C["Versioned corpus"] --> I["Markdown split"]
+  I --> R["Authorized BM25"]
+  R --> K["Rerank"]
+  K --> P["Context packing"]
+  P --> A["Extractive / model answer"]
+  A --> G["Citation + publication gate"]
+  G --> E["Trace + evaluation"]
 ```
 
-| 层 | 当前仓库证据 | 明确不代表 |
+项目同时提供一条离线教材路径和三条进阶路径：
+
+| 路径 | 先解决什么 | 是否需要模型/GPU |
 |---|---|---|
-| 检索与摄取 | CPU BM25/RRF、稳定 chunk、SQLite 事务、ACL-before-ranking | learned embedding、远端向量库或多副本一致性 |
-| 回答与引用 | exact authorized span、citation syntax、recorded judgment 聚合 | claim-evidence entailment、来源权威或生成质量 |
-| 目标模型 | 固定 Qwen CPU FP32 两个失败 case | 总体质量、GPU/vLLM、延迟或生产安全 |
-| 发布策略 | counterfactual replay + 独立 guarded runtime control | provider 调用节省、计费、线上因果收益 |
+| 请求 walkthrough | 权限、召回、重排、packing、引用、拒答 | 否 |
+| 持久化与服务 | 版本、删除、备份、认证、deadline | 否 |
+| 目标 tokenizer packing | 完整 Prompt token 预算 | 需要 tokenizer，可离线 |
+| 固定 Qwen control | 真实模型的引用与拒答失败 | 需要本地约 1 GB snapshot，不需要 GPU |
 
-## 最小运行 { #run }
+第一次只完成请求 walkthrough。其余路径在你能解释 A/B 两个请求后再进入。
 
-先执行 authorization-first BM25 检索：
+## 二十分钟最小路径 { #run }
+
+安装基础依赖：
+
+~~~powershell
+python -m pip install -c constraints/ci.txt -e .
+~~~
+
+运行同一 corpus 上的一次 answer 与一次 abstain：
+
+~~~powershell
+python projects/rag-foundations/rag_request_walkthrough.py
+~~~
+
+不要从 JSON 第一行读到最后一行。按下面顺序观察：
+
+```text
+requests[0].trusted_security_context
+requests[0].retrieval
+requests[0].rerank
+requests[0].packing.source_map
+requests[0].answer
+requests[0].citation
+requests[0].final
+```
+
+请求 A 的关键结果是：
+
+```text
+query                 RAG 为什么要先做 ACL 权限过滤
+BM25 stable sources   rag-security, rag-evaluation, rag-security
+rerank top-2          rag-security, rag-security
+source map            S1/S2 -> 两个不同 security chunks
+coverage              1.0
+final                  answer
+```
+
+请求 B 问 Kubernetes 灾备步骤。它仍有三个主题相关结果，但有效 query token 覆盖只有 `2/9`，
+所以 final action 是 `abstain`。
+
+这条路径没有执行 Embedding、learned reranker 或 LLM。
+它先证明固定小语料上的控制流和 exact-span provenance。
+
+## 先读懂四个输入文件
+
+| 文件 | 用途 | 不要误解为 |
+|---|---|---|
+| `sample_corpus.jsonl` | 四份 versioned source 与 ACL | 代表性生产语料 |
+| `sample_eval.jsonl` | Answerable/no-answer、qrels 与 security context | 独立人工 benchmark |
+| `reranker-scores.example.jsonl` | Query/chunk 绑定的人工 score | Learned model 输出 |
+| `sample_answers.jsonl` | Recorded action、claim 与 supplied verdict | 自动语义判断结果 |
+
+打开 `sample_corpus.jsonl`，先预测 `tenant-a / engineering` 能看到哪些 source。
+`tenant-b-secret` 即使关键词最多，也不能进入在线请求的查询期统计和排序。
+
+## 选修：检索表示学习 exact control { #retriever-learning-control }
+
+想理解 dense retriever 的训练目标时，再运行：
+
+~~~powershell
+python projects/rag-foundations/retriever_learning_toy.py
+python -m pytest tests/test_retriever_learning.py -q
+~~~
+
+它对 supplied embedding 精确计算单/多正例 InfoNCE、解析梯度、hard/false negative、
+ColBERT-style MaxSim 与 SPLADE-style pooling。它没有执行 encoder、ANN 或 GPU，
+也不能说明 authored vectors 代表真实检索质量。推导见
+[检索表示学习](../../applications/retrieval-learning.md)。
+
+## 路径一：拆开观察一次请求
+
+### 只看 authorization-first BM25
 
 ~~~powershell
 python -m about_llm.rag.cli retrieve `
@@ -43,30 +121,136 @@ python -m about_llm.rag.cli retrieve `
   --top-k 3
 ~~~
 
-输出应包含 rank、score、稳定 chunk/source/version、heading path、授权后的 `<source>` context 和 `[S1]` 映射。先预测结果：`tenant-b-secret` 即使词面高度相关也不能进入 tenant-a 候选；没有 engineering principal 时，受限的 `rag-security` 不能被评分。空 ACL 只表示租户内公开，不表示跨租户公开。
+输出同时给出 chunk rank、stable source、version、heading path 和 canonical `S1..Sn` context。
 
-再运行不依赖 LLM 的 exact-span 回答与离线评测：
+去掉 `--principal engineering` 再运行。Query 没变，`rag-security` 应消失；
+不要把安全上下文变化误诊为相关性变化。
+
+### 单独看 recorded rerank
+
+~~~powershell
+python -m about_llm.rag.cli rerank-recorded `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --scores projects/rag-foundations/reranker-scores.example.jsonl `
+  --query "RAG 为什么要先做 ACL 权限过滤" `
+  --tenant tenant-a `
+  --principal engineering `
+  --candidate-k 3 `
+  --top-k 2
+~~~
+
+Reranker 前会再次授权。Recorded score 精确绑定 query、chunk bytes 与 scorer identity；
+改 query、改内容、缺分、多分或返回非有限数都会失败。
+
+这个 fixture 只证明 plumbing。要声称质量提升，必须在 held-out qrels 上比较排序与延迟。
+
+### 单独看 packing
+
+~~~powershell
+python -m about_llm.rag.cli pack `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --query "ACL 引用" `
+  --tenant tenant-a `
+  --principal engineering `
+  --candidate-k 20 `
+  --budget-bytes 500 `
+  --max-chunks-per-source 1
+~~~
+
+每个候选会得到：
+
+```text
+selected
+duplicate_document
+source_quota
+budget
+```
+
+`budget-bytes` 使用 UTF-8 bytes，只用于依赖无关的透明 control，不能称为模型 token budget。
+
+### 单独看逐字答案
 
 ~~~powershell
 python -m about_llm.rag.cli answer-extractive `
   --corpus projects/rag-foundations/sample_corpus.jsonl `
-  --query-id metrics-and-entailment `
-  --query "RAG 为什么既要评测 Recall nDCG，又不能把合法引用当成语义蕴含" `
+  --query-id acl-before-ranking `
+  --query "RAG 为什么要先做 ACL 权限过滤" `
   --tenant tenant-a `
   --principal engineering
+~~~
 
+Artifact 保存 exact offset、source/hash、coverage、packing decision 和 answer/abstain action。
+API 不接收 qrels 或 `answerable` 标签，避免 gold 直接控制在线答案。
+
+## 路径二：分别评价召回与回答 { #retrieval-reranking-metrics }
+
+### Source-level retrieval evaluation
+
+~~~powershell
+python -m about_llm.rag.cli evaluate `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --cases projects/rag-foundations/sample_eval.jsonl `
+  --top-k 3
+~~~
+
+报告把 answerable 与 no-answer 分开：
+
+- Answerable：Recall、MRR、nDCG、Precision 与 all-evidence recall。
+- No-answer：zero-result 只是检索信号，不等于最终拒答正确。
+- Gold source：区分 visible、ACL blocked 与 missing from tenant corpus。
+- 未标注结果：称为 unjudged，不自动视为 false positive。
+
+### End-to-end extractive evaluation
+
+~~~powershell
 python -m about_llm.rag.cli evaluate-extractive `
   --corpus projects/rag-foundations/sample_corpus.jsonl `
   --cases projects/rag-foundations/sample_eval.jsonl
 ~~~
 
-Answer baseline 只能从已授权且已 packed 的 chunk 按字符 offset 复制原文 span，再附短引用；被 budget 丢弃或未授权的文档不可能提供答案。当前 5 条 authored fixture 得到 3 次 answer、2 次 abstain，action accuracy、grounded-answer pass rate 与 recorded gate pass rate 都是 1.0。它只证明固定小语料的机械回归：exact substring 不证明来源真实、语义相关、答案完整或阈值校准。
+固定五条 fixture 产生三次 answer、两次 abstain。全绿只说明这组 hand-authored 小数据没有回归，
+不说明阈值、来源与语义适合真实业务。
 
-## 摄取、版本与显式删除
+### Recorded answer gate
 
-Markdown splitter 保留 heading path，对超长段落做无损兜底；chunk id 绑定稳定 source、heading、内容和同内容 occurrence，不直接使用列表顺序。插入无关段落不会让后续全部 chunk 重命名，修改内容、移动标题或重复次数变化会产生新 identity。
+~~~powershell
+python -m about_llm.rag.cli evaluate-answers `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --cases projects/rag-foundations/sample_eval.jsonl `
+  --answers projects/rag-foundations/sample_answers.jsonl
+~~~
 
-单机 reference store 使用 SQLite schema-v1。每次演练使用全新数据库文件名：
+这条 gate 检查 case/output exact join、授权 context、claim citation 与 supplied judgment provenance。
+`supported` verdict 来自 fixture，不是评测器自动执行 entailment。
+
+## 路径三：把 Prompt identity 也纳入 packing
+
+Byte budget 不能回答目标模型是否超窗。使用目标 tokenizer：
+
+~~~powershell
+python -m about_llm.rag.cli pack-tokenized `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --query "RAG 为什么要先做 ACL 权限过滤" `
+  --tenant tenant-a `
+  --principal engineering `
+  --candidate-k 20 `
+  --max-total-tokens 4096 `
+  --reserved-output-tokens 512 `
+  --tokenizer C:\path\to\deployed-model-or-tokenizer `
+  --tokenizer-revision exact-revision `
+  --local-files-only `
+  --system-prompt-file projects/rag-foundations/system-prompt.example.txt `
+  --user-prompt-template-file projects/rag-foundations/user-prompt-template.example.txt
+~~~
+
+它为每个 prospective context 重新渲染完整 chat，保存 tokenizer/template identity、
+最终 token IDs 与输出预留。
+
+Caller 提供的 revision 与无密钥 hash 不认证实际模型来源；最大 context 也不能从 tokenizer 自动猜出。
+
+## 路径四：版本化摄取与 SQLite
+
+创建全新数据库：
 
 ~~~powershell
 New-Item -ItemType Directory -Force artifacts/rag | Out-Null
@@ -76,7 +260,11 @@ python -m about_llm.rag.cli store-upsert `
   --tenant tenant-a `
   --source-id rag-security `
   --expect-absent
+~~~
 
+从持久化 store 检索：
+
+~~~powershell
 python -m about_llm.rag.cli store-retrieve `
   --database artifacts/rag/rag-demo.db `
   --query "ACL 权限过滤" `
@@ -85,7 +273,7 @@ python -m about_llm.rag.cli store-retrieve `
   --top-k 3
 ~~~
 
-首次写入要求 source 不存在；更新与删除必须携带读取到的 `expected-current-version`。`BEGIN IMMEDIATE` 串行化 writer，source fingerprint 同时绑定原文、ACL、metadata、chunk size 和 chunker revision；同 version 换内容或切分配置会 fail closed。删除只能显式执行，空抓取或空切分不会被推断为“删除全部来源”：
+更新与删除需要 expected current version。空抓取或空 split 不会被推断为“删除所有来源”。
 
 ~~~powershell
 python -m about_llm.rag.cli store-delete `
@@ -95,11 +283,11 @@ python -m about_llm.rag.cli store-delete `
   --expected-current-version 1
 ~~~
 
-Store 先按 tenant 限定 DB 行，再按 principal ACL 缩小候选，之后才创建 BM25。数据库仍含正文与 ACL，默认没有加密；生产环境必须另做文件权限、加密、审计、删除与密钥管理。它没有 embedding/ANN、replication、在线 alias、跨进程 lease 或远端索引事务。
+SQLite reference 证明单库事务、版本冲突与授权读取，不证明远端 ANN、多副本或跨存储原子性。
 
-## 可验证备份与恢复
+## 路径五：备份与恢复演练
 
-在删除前可对数据库演练一致快照。如果上一节已经执行 delete，请换一个全新数据库文件重新运行 upsert，再开始本节。Backup、manifest 和 restored path 都必须不存在，工具不会覆盖旧工件：
+如果上一节已经删除 source，请使用新数据库重新 upsert。输出路径必须不存在：
 
 ~~~powershell
 New-Item -ItemType Directory -Force artifacts/rag/backups | Out-Null
@@ -118,103 +306,64 @@ python -m about_llm.rag.cli store-restore `
   --database artifacts/rag/rag-restored.db
 ~~~
 
-Backup 使用 SQLite online backup API，再检查 `quick_check`、foreign keys、精确 schema object 集合和逻辑 source/chunk invariant。Manifest 绑定文件 byte size/SHA-256、row counts 与不依赖 page layout 的 ordered-row fingerprint；源库在快照后继续更新不会改变 backup。
+Manifest 绑定文件 bytes、schema、row count 和 ordered logical fingerprint。
+它无签名、未加密，也不包含远端 index、cache 和流量切换，所以不能声称完成灾备。
 
-这不是完整 disaster recovery。无密钥 manifest 不认证来源，`created_at_utc` 是本机自报时间，单文件 `fsync` 不证明 parent-directory durability；一次 tiny restore 不证明 RPO/RTO。远端 vector index、object store、cache、trace、删除传播和流量切换都未包含。
+## 路径六：本地 Persistent ASGI service
 
-## 检索表示学习 exact control { #retriever-learning-control }
-
-~~~powershell
-python projects/rag-foundations/retriever_learning_toy.py
-python -m pytest tests/test_retriever_learning.py -q
-~~~
-
-Reference 把 supplied query/document matrices 当成 encoder 输出，精确计算单正例和多正例 InfoNCE、softmax 分母、logit/query/document gradients，并用 finite difference 检查 analytic gradients。
-固定 fixture 中，easy negative loss 为约 `0.1269`，hard negative 为 `0.6444`；漏标的第二个相关文档收到降低 score 的梯度，改为 multi-positive mask 后梯度方向反转。脚本还验证 masked ColBERT-style MaxSim 与 SPLADE-style max pooling。
-
-这个 control 只隔离公式和反事实方向：没有执行 Transformer、训练 encoder、建立 ANN index、测量 GPU 或使用代表性 qrels。它不能支持“某 retriever 更好”的结论。
-机制、训练数据契约、negative mining leakage 和 exact/ANN 误差分层见[检索表示学习](../../applications/retrieval-learning.md)。
-
-## 检索、重排与指标分母 { #retrieval-reranking-metrics }
-
-Recorded-score rerank control 让 scorer 前再次执行 tenant/ACL gate，并严格绑定 query、candidate rank/chunk/content 和 scorer identity：
+先准备 SQLite，再为 loopback demo 注入 token：
 
 ~~~powershell
-python -m about_llm.rag.cli rerank-recorded `
-  --corpus projects/rag-foundations/sample_corpus.jsonl `
-  --scores projects/rag-foundations/reranker-scores.example.jsonl `
-  --query "RAG 为什么要先做 ACL 权限过滤" `
+$env:ABOUT_LLM_RAG_DEMO_TOKEN = "replace-with-a-long-local-demo-token"
+python projects/rag-foundations/serve_extractive.py `
+  --database artifacts/rag/rag-demo.db `
   --tenant tenant-a `
-  --principal engineering `
-  --candidate-k 3 `
-  --top-k 2
+  --subject local-demo-user `
+  --principal engineering
 ~~~
 
-缺分、余分、重复 document、非连续 rank、非有限 score、旧 query 或旧内容全部拒绝；score tie 回退到原 candidate rank。示例分数是 authored plumbing fixture，没有运行 learned reranker、目标 tokenizer 或质量/延迟评测。CrossEncoder adapter 可以复用同一 authorization-first core，但仍需固定 revision、truncation 和 held-out qrels。
+Request body 不能自报 tenant/principal；`/health/live` 与 `/health/ready` 含义不同。
+Response 使用 server request ID、`Cache-Control: no-store` 和 public allowlist。
 
-运行 source-level retrieval evaluation：
+运行不打开 TCP socket 的固定 control：
 
 ~~~powershell
-python -m about_llm.rag.cli evaluate `
-  --corpus projects/rag-foundations/sample_corpus.jsonl `
-  --cases projects/rag-foundations/sample_eval.jsonl `
-  --top-k 3
+python projects/rag-foundations/rag_service_control.py
 ~~~
 
-指标先按 chunk 排序、再按 source 去重，避免长文档多个 chunk 重复占位。Answerable cases 报告 Recall@k、MRR@k、graded nDCG@k、Precision@k 与 all-evidence recall@k；no-answer cases 单独报告 zero-result accuracy，不能共用分母。
+它真实执行 FastAPI/Starlette/HTTPX ASGI dispatch 与 SQLite reopen。
+它没有 TLS、JWT/OAuth、多 worker 全局容量或远端取消证据。
 
-- Precision@k 分母是实际返回并检查的前 k 个去重 source；零结果定义为 0，不固定除以 k。
-- All-evidence recall 是 query-level 完整集合命中率，所有 `required_source_ids` 都出现才记 1。
-- `acl_blocked` gold 表示 case 权限上下文与标注不一致，不能通过放宽 ACL 修复召回。
-- 未标注 top result 是 `unjudged`，不自动叫 false positive；真实 qrels 需 pooling 与补标。
-- 主题相关但知识库缺少所问事实时仍可能召回文档，zero-result accuracy 不等于 end-to-end abstention quality。
+## 路径七：保留真实模型的第一次失败
 
-## Context packing：byte 与目标 token 是两种预算
-
-依赖无关的 CPU 演示使用序列化 UTF-8 bytes：
+本地已有固定 Qwen snapshot 时运行：
 
 ~~~powershell
-python -m about_llm.rag.cli pack `
-  --corpus projects/rag-foundations/sample_corpus.jsonl `
-  --query "ACL 引用" `
-  --tenant tenant-a `
-  --principal engineering `
-  --candidate-k 20 `
-  --budget-bytes 500 `
-  --max-chunks-per-source 1
+python projects/rag-foundations/run_qwen_rag_control.py --local-files-only
+python -m pytest tests/test_rag_transformers_control.py -q
 ~~~
 
-每个候选都记录 `selected / duplicate_document / source_quota / budget`，并保留 prospective cost、canonical source map 和剩余预算。Byte budget 不能称为 model token budget。
+固定结果不是漂亮 Demo：
 
-真实部署应把目标 tokenizer、完整 system/user chat template 和输出预留一起纳入 prospective prompt 重计数：
+- Answerable case 复述证据却漏引。
+- Empty-context case 仍编造 Kubernetes 灾备步骤。
+- 行为 gate 为 `0/2`。
+
+接着比较两种不同证据：
 
 ~~~powershell
-python -m about_llm.rag.cli pack-tokenized `
-  --corpus projects/rag-foundations/sample_corpus.jsonl `
-  --query "RAG 为什么要先做 ACL 权限过滤" `
-  --tenant tenant-a `
-  --principal engineering `
-  --candidate-k 20 `
-  --max-total-tokens 4096 `
-  --reserved-output-tokens 512 `
-  --tokenizer C:\path\to\deployed-model-or-tokenizer `
-  --tokenizer-revision exact-checkpoint-revision `
-  --local-files-only `
-  --system-prompt-file projects/rag-foundations/system-prompt.example.txt `
-  --user-prompt-template-file projects/rag-foundations/user-prompt-template.example.txt `
-  --max-chunks-per-source 2
+python projects/rag-foundations/replay_qwen_rag_publication_policy.py `
+  --verify projects/rag-foundations/qwen2.5-0.5b-rag.publication-policy-replay.json
+
+python projects/rag-foundations/run_qwen_guarded_rag_control.py --local-files-only
 ~~~
 
-不能把各 chunk 独立 token 数相加，因为 chat template、分隔符和 context position 会改变最终 prompt。报告绑定 tokenizer/template identity、逐候选总成本、最终 prompt IDs 和 output reservation。Caller-supplied local revision 与无密钥 hash 不认证来源，工具也不会从 tokenizer 猜模型 context window；这个上限必须来自已固定的 model/runtime contract。
+第一条是 counterfactual replay，没有观察 guard 当时包裹模型；
+第二条真实包裹 `GenerationMixin.generate()`，但只有两个 authored case，也没有 GPU/vLLM 证据。
 
-## Recorded answer、generation trace 与 citation audit
+## Generation trace 与 citation audit
 
 ~~~powershell
-python -m about_llm.rag.cli evaluate-answers `
-  --corpus projects/rag-foundations/sample_corpus.jsonl `
-  --cases projects/rag-foundations/sample_eval.jsonl `
-  --answers projects/rag-foundations/sample_answers.jsonl
-
 python -m about_llm.rag.cli audit-traces `
   --corpus projects/rag-foundations/sample_corpus.jsonl `
   --cases projects/rag-foundations/sample_eval.jsonl `
@@ -227,93 +376,60 @@ python -m about_llm.rag.cli audit `
   --source-id S2
 ~~~
 
-Recorded answer 对 case exact join，并把 `answer / abstain / error` 全部留在分母。Context source 必须在当前 tenant/principals 下 visible；claim 引用必须属于可见 context；supplied verdict 还要带 judgment provenance。`sample_answers.jsonl` 是手写 fixture，`supported` 标签不是评测器自己推断的 entailment，也没有独立人工双标。
+Trace 绑定 query/security、chunk/version/content、rendered context、Prompt 和 raw output identity。
+Fixture 是手写协议样例；unsigned hash 不认证模型执行者，也不执行语义蕴含。
 
-Generation trace 进一步绑定 query/security、逐 chunk source/version/content hash、canonical context、prompt/raw output identity 和 answer fingerprint。Audit 会从当前 corpus 重建 context 并核对这些 join，但 authored regex-hash token IDs 不是部署 tokenizer；unsigned、可共同改写的文件不能证明真实模型调用或生产 provenance。
+## 代码阅读顺序
 
-Citation audit 只检查短 ID 是否已授权、是否未知和段落是否漏引。Syntax pass 绝不等于 claim-evidence entailment；语义忠实度仍需人工标注集、judge 校准、误报/漏报和切片分析。
+| 读者问题 | 文件 |
+|---|---|
+| 文档怎样切成稳定 chunk？ | `src/about_llm/rag/ingestion.py` |
+| ACL 怎样影响 BM25 统计？ | `src/about_llm/rag/bm25.py` |
+| Scorer 前怎样二次授权？ | `src/about_llm/rag/reranking.py` |
+| Budget 和 source quota 怎样决定 context？ | `src/about_llm/rag/context_packing.py` |
+| Exact span 与 abstain 怎样形成？ | `src/about_llm/rag/extractive.py` |
+| Citation syntax 检查什么？ | `src/about_llm/rag/citations.py` |
+| Publish/abstain/reject 怎样分开？ | `src/about_llm/rag/generation_policy.py` |
+| SQLite 版本与删除怎样实现？ | `src/about_llm/rag/sqlite_store.py` |
 
-## Persistent extractive ASGI service
+按请求流向读，不要先逐文件通读全部测试。
 
-先用 SQLite store 准备数据，再从环境变量注入 localhost demo token：
-
-~~~powershell
-$env:ABOUT_LLM_RAG_DEMO_TOKEN = "replace-with-a-long-local-demo-token"
-python projects/rag-foundations/serve_extractive.py `
-  --database artifacts/rag/rag-demo.db `
-  --tenant tenant-a `
-  --subject local-demo-user `
-  --principal engineering
-~~~
-
-Request body 不允许自报 tenant 或 principals，它们只能来自 `AuthResolver`；多余字段为 422。`/health/live` 只检查进程响应，`/health/ready` 会重开 SQLite 并验证 schema。每次 query 同样重开数据库、先 ACL 后 BM25，并返回 server-generated request id、answer/citations、retrieved IDs、完整 artifact/fingerprint 和 `Cache-Control: no-store`。
-
-运行不打开 TCP socket 的可复现 control：
+## 最小测试门禁
 
 ~~~powershell
-python projects/rag-foundations/rag_service_control.py
+python -m pytest `
+  tests/test_rag.py `
+  tests/test_rag_reranking.py `
+  tests/test_rag_context_packing.py `
+  tests/test_rag_citations.py `
+  tests/test_rag_extractive.py `
+  tests/test_rag_answer_eval.py `
+  tests/test_rag_generation_policy.py `
+  tests/test_rag_request_walkthrough.py `
+  -q
 ~~~
 
-它真实执行 FastAPI/Starlette/HTTPX ASGI dispatch 与 SQLite reopen；engineering/anonymous 分别只看到 2/1 个授权 source，body tenant injection=422、缺 credential=401。同步 SQLite/BM25 在线程中执行：HTTP 504 或 client cancellation 不能杀死 thread，因此 permit 会一直占用到后台工作真正结束，避免表面并发上限失真。
+完整专项还包括 ingestion、SQLite、backup、service、trace 与 fixed-Qwen controls。
+测试按 claim 解释，不以总用例数代表教材或系统完全正确。
 
-Static Bearer 只适合 loopback demo，不是 JWT/OAuth/IAM；ASGITransport 不打开 TCP/TLS。进程内 semaphore 也不是多 worker/replica 全局 admission。生产需要可信 proxy identity、集中认证授权、cooperative cancellation 或进程隔离、全局容量控制和受控 trace store。
+## 项目交付物
 
-## 固定 Qwen：失败、反事实策略与真实 guard
+不要只提交终端截图。一个可评审的结果应包含：
 
-### 1. 保留原始失败
+```text
+1. 请求 A/B 的阶段表和最终 action
+2. 去掉 engineering principal 的权限负例
+3. 一个 query/content binding 破坏实验
+4. Retrieval 与 answer 指标的分层报告
+5. Corpus/index/model/policy identity
+6. 一条失败 trace 的第一个错误环节
+7. 已证明、未证明和目标环境待验证清单
+```
 
-~~~powershell
-python projects/rag-foundations/run_qwen_rag_control.py --local-files-only
-python -m pytest tests/test_rag_transformers_control.py -q
-~~~
+可以写进简历的是具体证据，例如：
 
-Control 固定 Qwen2.5-0.5B-Instruct revision、7 个文件和 999,586,347 bytes，在 CPU FP32 eager 下真实执行 authorization-first BM25、目标 tokenizer packing、逐步 greedy/KV cache 与 `GenerationMixin.generate()` 对照。录制 report fingerprint 为 `sha256:829663e2…e5b60`。
+> 构建 authorization-first RAG reference，串联 versioned corpus、BM25、rerank、
+> token-aware packing、exact-span citation 与 typed refusal；用跨 tenant、non-empty no-answer
+> 和 stale-score 负例验证控制边界。
 
-Attempt-1 没有为追求漂亮结果调 prompt：answerable case 复述正确证据却漏掉 `[S1]`；no-answer case 的授权 context 为空，却生成无来源 Kubernetes 步骤并在 64-token cap 停止。行为 gate 是 **0/2**。这证明“检索为零不自动拒答”和“内容看似正确不等于引用合格”，不是模型质量通过。
-
-### 2. Counterfactual publication-policy replay
-
-~~~powershell
-python projects/rag-foundations/replay_qwen_rag_publication_policy.py `
-  --verify projects/rag-foundations/qwen2.5-0.5b-rag.publication-policy-replay.json
-python -m pytest tests/test_rag_generation_policy.py -q
-~~~
-
-Replay fingerprint 为 `sha256:ed4d16ad…b13239`。相同已录制输入/输出经过 fail-closed policy 后：有 context 但漏引的 case 是 `post_generation/reject`、logical generator call count=1；空 context case 是 `pre_generation/abstain`、count=0。Audit projection 可保留 raw output，public projection 只允许固定 response/action/stage/boundary 字段。
-
-它必须称为 counterfactual replay：没有观察 guard 当时真实包裹 Qwen，也没有测得 provider/GPU 调用或费用被省掉。
-
-### 3. 独立 guarded runtime control
-
-~~~powershell
-python projects/rag-foundations/run_qwen_guarded_rag_control.py --local-files-only
-python -m pytest tests/test_rag_guarded_transformers_control.py -q
-~~~
-
-独立 report fingerprint 为 `sha256:00706d00…f29ede`。有证据 case 的 callback 与 `GenerationMixin.generate` API 各调用 1 次，Qwen 因漏引被 post-generation reject；空证据 case 的 prompt 只为审计计算，generator/framework generate 都是 0 次并 pre-generation abstain。Public projection 不含 raw output 或 finding text。
-
-这里的 1/0 是 Python API invocation count，不是 forward/kernel/provider request 或 billing count。Verifier 不重放模型 decode；两个 query 共享 authored corpus 与设计过程，也不是代表性质量集。三层证据都不证明 claim-evidence entailment、总体质量、GPU/vLLM、性能、远程取消或生产安全。
-
-## 最小验证与故意破坏
-
-完整 RAG 项目测试入口：
-
-~~~powershell
-python -m pytest tests/test_rag.py tests/test_dense_rag.py tests/test_retriever_learning.py tests/test_rag_ingestion.py tests/test_rag_sqlite_store.py tests/test_rag_sqlite_backup.py tests/test_rag_citations.py tests/test_rag_reranking.py tests/test_rag_context_packing.py tests/test_rag_cli.py tests/test_rag_extractive.py tests/test_rag_answer_eval.py tests/test_rag_trace.py tests/test_rag_service.py tests/test_rag_service_control.py tests/test_rag_transformers_control.py tests/test_rag_generation_policy.py tests/test_rag_guarded_transformers_control.py -q
-~~~
-
-至少运行这些 fail-closed 反例：ACL 必须在 ranking/scorer 前执行；SQLite 中途失败必须回滚旧 version/chunks；backup 即使协同重算 manifest 也要发现语义 row/schema 漂移；budget 会丢弃的候选仍必须先授权；body 不得注入 tenant；trace/content、Qwen audit 与 framework invocation count 漂移都必须拒绝：
-
-~~~powershell
-python -m pytest tests/test_rag.py::test_bm25_filters_principal_acl_before_ranking tests/test_rag_reranking.py::test_reranker_filters_tenant_and_acl_before_scorer_call tests/test_rag_context_packing.py::test_every_candidate_is_authorized_even_when_budget_would_drop_it -q
-python -m pytest tests/test_rag_sqlite_store.py::test_database_trigger_failure_rolls_back_delete_and_version tests/test_rag_sqlite_backup.py::test_backup_verification_rejects_semantically_corrupted_rows_even_if_rehashed tests/test_rag_sqlite_backup.py::test_backup_verification_rejects_unversioned_schema_objects_even_if_rehashed -q
-python -m pytest tests/test_rag_service.py::test_body_cannot_self_report_security_context_and_auth_errors_are_closed tests/test_rag_trace.py::test_audit_detects_chunk_identity_version_and_content_changes tests/test_rag_transformers_control.py::test_report_cooperative_raw_output_rehash_cannot_hide_stale_local_audit tests/test_rag_guarded_transformers_control.py::test_cooperative_rehash_cannot_hide_semantic_drift -q
-~~~
-
-验收不能只看答案文本。至少保存：corpus/source/chunker identity、trusted caller identity、授权后 candidate count、retrieval/rerank/packing ledger、prompt/output/answer trace、指标分母、一个越权或篡改反例，以及不超过五行的证据边界。
-
-## 证据边界
-
-当前项目证明了 authored corpus 上的 ACL-before-ranking/scoring、透明 BM25/RRF/packing/metric、SQLite schema-v1 事务与本地备份恢复、extractive/ASGI control，以及固定 Qwen CPU FP32 的两条真实失败和独立 fail-closed guard。它没有完成 learned embedding/reranker 的目标语料消融、远端向量库事务/灾备、claim-evidence entailment、代表性生成评测、生产 IAM/TLS、多副本 admission、目标 GPU/vLLM、容量、延迟或 SLO。无密钥 hash 与 caller-supplied identity 不认证来源；CPU、ASGI、loopback 与少量 authored case 不得外推为生产安全、模型质量或性能结论。
-
-完整实现、schema 与逐项账本见 [projects/rag-foundations](https://github.com/NightLemon/about-llm/tree/main/projects/rag-foundations)。
+不要写“彻底解决幻觉”或“生产级零泄漏”。本地 fixture 无法支持这类结论。

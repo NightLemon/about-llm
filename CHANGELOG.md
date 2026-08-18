@@ -1,5 +1,7 @@
 # Changelog
 
+- 重构 RAG 学习主线：用请求 A“为什么 ACL 必须先于排序”和请求 B“Kubernetes 灾备步骤”串联可信身份、authorization-first BM25、recorded rerank、context packing、exact-span answer、citation 与 non-empty retrieval 拒答。新增独立请求生命周期教材、先预测再运行的实验 5、可执行 walkthrough 与 RAG claim→oracle→证据边界页；重写总览、召回/重排、上下文/引用/拒答、生产化和 RAG Foundations 项目页，把固定报告与测试矩阵移出首次阅读路径。Walkthrough 测试锁定 answer coverage 1.0、no-answer coverage `2/9` 及局部证据边界，不冒充 learned reranker、LLM、语义蕴含、来源真实性、目标性能或生产安全。
+
 - 重构推理部署学习主线：新增“一次请求如何穿过推理引擎”端到端教材，以请求 A/B 串联 admission、prefill/decode、block table、采样、SSE、四时钟和取消收口；新增 Paged KV/COW 引导实验，要求先预测 block/refcount/三份容量账本，再运行真实 CPU K/V tensor 与容量原子失败负例。推理基础、优化、vLLM 部署和 Inference Serving 项目页按“教材→引导实验→项目→证据”重新分工，精确 claim、测试与外推边界集中到独立证据页。导航、系统工程路线和 README 同步，重写页面清除既有可读性债务，同时保留所有原有实现深度与准确性门禁。
 
 - 新增组合现有 `PagedKVAllocator` 的 PyTorch-backed paged KV tensor control：预分配 `[layers, blocks, kv_heads, block_tokens, head_dim]` arena，支持真实 K/V append/materialize、prefix fork、partial-tail COW、refcount release/recycle、MHA/GQA causal dense reference 对账与 backend 更新失败后的 poisoned fail-closed 状态。9 个测试覆盖容量原子失败、父子 tensor 隔离、shared full-tail、stale-data 清理、layout 和数值契约；CPU float64 toy 明确不冒充 CUDA PagedAttention、模型 decode、VRAM 或性能证据。

@@ -9,7 +9,7 @@
 | 目标 | 建议起点 | 你会完成什么 |
 |---|---|---|
 | 理解语言模型 | [机器学习基础](docs/foundations/ml-dl.md) → [Tokenization](docs/core/tokenization.md) → [Transformer](docs/core/transformer.md) | 能解释训练、注意力和生成过程，并读懂常见模型结构 |
-| 构建 LLM 应用 | [RAG](docs/applications/rag.md) → [Agent](docs/applications/agents.md) → [评测](docs/quality/evaluation.md) | 完成一个可评测的 RAG 或 Agent 系统，而不止是 API demo |
+| 构建 LLM 应用 | [RAG 请求生命周期](docs/applications/rag-request-lifecycle.md) → [Agent](docs/applications/agents.md) → [评测](docs/quality/evaluation.md) | 完成一个可评测的 RAG 或 Agent 系统，而不止是 API demo |
 | 训练与部署模型 | [微调](docs/training/finetuning.md) → [请求生命周期](docs/systems/inference-request-lifecycle.md) → [vLLM](docs/systems/vllm-serving.md) | 理解数据、显存、吞吐和可靠性之间的工程权衡 |
 
 完整的阶段安排见[学习路径](docs/guide/learning-paths.md)。按岗位或项目选题时，参考[知识地图](docs/guide/knowledge-map.md)和[项目索引](docs/practice/project-index.md)。

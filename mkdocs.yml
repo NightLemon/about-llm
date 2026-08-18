@@ -134,6 +134,7 @@ nav:
       - Prompt 工程: applications/prompting.md
       - RAG:
           - 总览: applications/rag.md
+          - 一次请求如何变成可发布答案: applications/rag-request-lifecycle.md
           - 数据摄取与索引生命周期: applications/rag-ingestion.md
           - 召回、混合检索与重排: applications/rag-retrieval.md
           - 检索表示学习: applications/retrieval-learning.md
@@ -175,6 +176,7 @@ nav:
           - 0B 生成、停止与流式协议: practice/labs/lab-0b-generation-protocol.md
           - 0C 云 API 预算与对账: practice/labs/lab-0c-cloud-budget.md
           - 0D Opaque Reasoning 工件安全: practice/labs/lab-0d-reasoning-artifact-security.md
+          - 5 一次 RAG 问答: practice/labs/lab-5-rag-request.md
           - 7A Paged KV 与 COW: practice/labs/lab-7a-paged-kv.md
       - 工程项目:
           - 项目索引: practice/project-index.md
@@ -198,6 +200,7 @@ nav:
       - 概念依赖与易混淆地图: reference/concept-map.md
       - 证据台账:
           - 项目实验与证据: evidence/project-controls.md
+          - RAG 请求与回答证据: evidence/rag-answer-controls.md
           - 推理服务证据: evidence/inference-serving-controls.md
           - 作品集 claim 证据: evidence/resume-claims.md
           - Gemini 接入证据: evidence/gemini-controls.md

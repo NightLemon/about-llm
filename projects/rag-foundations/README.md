@@ -1,9 +1,27 @@
 # RAG Foundations
 
-目标：先用透明组件构建可诊断 RAG，再接入 learned embedding、reranker、LangChain 和 LlamaIndex。
+这是 RAG 项目的开发者运行手册。第一次进入时，不要先读完整个文件，也不要先启动模型。
 
-## 已实现的基线
+从仓库根目录运行：
 
+~~~powershell
+python -m pip install -c constraints/ci.txt -e .
+python projects/rag-foundations/rag_request_walkthrough.py
+~~~
+
+输出会用同一套 corpus 展示两个请求：
+
+- 请求 A 找到授权证据，经 BM25、recorded rerank 和 packing 后输出带 `[S1]` 的 exact span。
+- 请求 B 有三个主题相关结果，却因为没有 Kubernetes 灾备步骤而 abstain。
+
+先按 `security context → retrieval → rerank → packing → answer → citation → final` 阅读 JSON。
+完整讲解见[请求生命周期](../../docs/applications/rag-request-lifecycle.md)，动手步骤见
+[实验 5](../../docs/practice/labs/lab-5-rag-request.md)，精确 oracle 见
+[RAG 证据页](../../docs/evidence/rag-answer-controls.md)。
+
+## 能力地图：需要时再查
+
+- 一条可运行 walkthrough，把 answerable/no-answer 请求串过授权、召回、重排、packing、引用和拒答；
 - UTF-8/中英文透明 lexical tokenizer；
 - BM25，包含长度归一化和稳定排序；
 - 检索前 tenant ACL 过滤；

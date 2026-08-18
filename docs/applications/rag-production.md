@@ -1,185 +1,394 @@
-# RAG 生产架构、缓存与运维
+# 生产 RAG：从一次回答到长期运行
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：RAG 平台、API、SRE 和发布负责人。
-- **先修**：RAG 摄取、检索、生成链路和基本服务 SLO。
-- **首次阅读**：参考架构 → API → 延迟预算 → 版本一致性 → 降级/灾备。
-- **完成信号**：能定义版本、SLO、缓存身份、降级和恢复演练。
-- **卡住时**：先完成[RAG 权限与超时验收](../practice/project-index.md#arag)。
+- **适合读者**：要把 RAG baseline 做成多用户服务的平台、后端与算法工程师。
+- **先修**：[请求生命周期](rag-request-lifecycle.md)、[摄取](rag-ingestion.md)与[引用/拒答](rag-generation.md)。
+- **首次阅读**：边界 → 更新 → 服务 → 可观测性 → 评测发布 → 故障恢复。
+- **完成信号**：能为身份、索引版本、缓存、终态、删除和回滚画出一条完整证据链。
+- **卡住时**：先用单进程、单 tenant、SQLite/BM25 做正确性 control，再替换分布式组件。
 
 </div>
 
-生产 RAG 是一组独立扩缩、独立失败的服务：摄取、索引、检索、重排、生成、评测和反馈。把它们封装成一个同步 chain 会让故障边界、权限和成本不可见。本章给出从单机原型到多租户服务的演进路线。
+离线 Demo 只需要回答一次问题。生产 RAG 必须在文档变化、权限变化、流量波动、
+模型失败和依赖故障时，持续给出可解释且不越权的终态。
 
-## 参考架构
+生产化的核心不是换成更大的向量库，而是让每个边界都有 identity、状态、门禁和恢复方式。
+
+## 先把系统分成三个平面
 
 ```mermaid
 flowchart TB
-    subgraph Offline["Offline / asynchronous"]
-      S["Sources"] --> I["Ingestion workers"]
-      I --> M["Manifest + lineage"]
-      I --> X["Sparse / vector indexes"]
-      X --> V["Offline evaluation"]
-    end
-    subgraph Online["Online request path"]
-      U["Authenticated request"] --> Q["Query service"]
-      Q --> X
-      X --> R["Fusion + reranker"]
-      R --> C["Authorized context builder"]
-      C --> G["Generator"]
-      G --> A["Citation / policy checks"]
-      A --> U
-    end
-    Q --> T["Trace + metrics"]
-    R --> T
-    G --> T
+  subgraph CP["控制面"]
+    SRC["Source registry"] --> ING["Parse / chunk / embed"]
+    ING --> IDX["Versioned indexes"]
+    IDX --> REL["Validation / release / rollback"]
+  end
+  subgraph DP["在线数据面"]
+    API["Gateway + trusted identity"] --> RET["Authorized retrieval"]
+    RET --> RR["Rerank + packing"]
+    RR --> GEN["Generator"]
+    GEN --> PUB["Publication policy"]
+  end
+  subgraph EP["证据面"]
+    TRACE["Trace / metrics / evaluation"]
+    AUDIT["Security audit / incident evidence"]
+  end
+  REL --> RET
+  DP --> TRACE
+  CP --> TRACE
+  TRACE --> AUDIT
 ```
 
-离线数据面允许重试和批处理；在线路径有严格延迟预算。索引服务不应依赖生成模型可用，生成服务也不负责判断 ACL。
+- **控制面**把原始资料变成可发布、可回滚的索引版本。
+- **数据面**处理每个用户请求，不能继承控制面的宽权限。
+- **证据面**保存诊断与发布依据，也必须独立授权和脱敏。
 
-## API 契约
+把三者混在一个进程和一套数据库中，初期可以工作，但安全与恢复边界仍要在设计中明确。
 
-请求包含 tenant、认证主体、query、对话引用、locale、时间上下文和可选过滤；权限从可信身份层派生，不允许客户端直接传“我可访问 admin”。响应包含 answer、结构化 citations、insufficient 状态、request id、index version 和可公开的 usage。
+## 请求路径：可信身份必须先到
 
-内部检索响应要保留每阶段 rank/score/source，而外部响应只暴露经过授权的元数据。schema 版本必须显式；新增字段向后兼容，语义变化需要新版本。
+一次请求至少需要：
 
-仓库已有一个故意受限但真实运行的 reference boundary：`PersistentExtractiveRAGService` 从现有 SQLite schema-v1 文件启动，FastAPI body 只接受 `query_id/query/top_k/budget_units`，tenant/principals 必须由注入的 `AuthResolver` 提供。每个查询新开 SQLite connection，先 `visible_chunks`，再构建 BM25，并返回 server-generated request id、citations、ordered document IDs 与完整 extractive artifact。缺 credential 为 401，body 自报 tenant 因 extra field 为 422，数据库消失时 readiness 为 503；内部异常只返回稳定 code，不回显路径、token 或 exception。
+```text
+request_id
+authenticated subject
+tenant_id
+principals / entitlements
+authorization policy revision
+query + conversation state
+deadline and budget
+```
 
-该服务的 queue/execution deadline 还固定一个常被忽略的语义：`wait_for(asyncio.to_thread(...))` 超时不能终止同步 thread。若 504 后立即释放 semaphore，真实并发可能超过配置上限。reference 会 shield 后台 task，并在它真正结束前继续占用 permit；这保持单进程 capacity ledger，但卡死 thread 也会长期占位。多 Uvicorn worker/replica 的 semaphore 彼此独立，不能冒充全局 admission。项目 control 使用 HTTPX ASGI transport，不执行真实 TCP/TLS/reverse proxy/remote authentication，因此不构成线上可用性或安全证明。
+Query、top-k 和生成参数可以来自请求；tenant 与 principals 不能来自未验证 body。
 
-## 延迟预算
+请求 A 在生产环境中的顺序仍然是：
 
-总延迟大致为：
+```text
+authenticate
+-> authorize corpus scope
+-> retrieve
+-> rerank
+-> pack
+-> generate
+-> validate citations/claims
+-> publish or refuse
+```
+
+框架可以封装调用，不能改变这条安全顺序。
+
+## 摄取路径：先构建，再发布
+
+不要边写当前索引边服务流量。推荐 immutable version + alias：
+
+1. 为 source snapshot 分配版本。
+2. 解析、切分、提取 metadata 与 ACL。
+3. 生成 lexical/vector index 到新 namespace。
+4. 校验数量、失败率、抽样解析、ACL 与 retrieval regression。
+5. 发布 manifest，原子切换 read alias。
+6. 保留上一版，直到观察窗口结束。
+7. 异步清理旧版，但遵守审计和删除策略。
+
+Manifest 至少绑定：
+
+```text
+corpus snapshot
+parser/chunker revision
+embedding model/revision
+tokenizer/pooling/normalization
+index type and parameters
+metadata/ACL schema
+build time and validation report
+```
+
+只有 alias 切换成功，不代表新索引质量合格；发布前必须跑固定 qrels 和安全负例。
+
+## 更新、删除与权限变化
+
+文档生命周期不只是 upsert：
+
+```text
+create -> update -> supersede -> revoke -> delete -> purge evidence
+```
+
+需要分别定义：
+
+- 新版本何时生效；
+- 旧版本是否仍可回答历史问题；
+- Source 删除怎样传播到 chunks、vector index、cache 和备份；
+- ACL 收紧后旧 cache、trace 和 rendered context 怎样失效；
+- Partial failure 如何重试而不产生双版本；
+- 法务保留与用户删除请求冲突时谁决策。
+
+空抓取不能自动解释为“删除全部”。网络失败与来源真的为空必须是不同状态。
+
+## 索引一致性不是一个布尔值
+
+一个 source 可能同时存在于 object store、metadata DB、sparse index、vector index 和 cache。
+
+跨存储通常没有单个 ACID 事务。常见选择是：
+
+- Outbox / change log 驱动各索引更新；
+- 每份派生数据带 source version；
+- Query 只读取同一已发布 snapshot；
+- 后台 reconciliation 找 missing/extra/stale records；
+- 失败时回退到上一完整版本，而不是混合新旧。
+
+“最终一致”必须写出允许的 stale window、用户可见行为和删除 SLA。
+
+## 多租户与缓存
+
+多租户系统至少防四类混淆：
+
+1. Corpus 与 index namespace 混淆。
+2. Rerank 或 response cache key 缺少 caller/policy context。
+3. Trace、错误日志和 APM 收集越权正文。
+4. Shared embedding/cache 让隐藏文档影响可见 score 或时序。
+
+Cache key 至少考虑：
+
+```text
+tenant / subject or entitlement set
+policy revision
+query and rewrite
+corpus/index revision
+retriever/reranker/model revision
+generation and publication policy
+```
+
+高基数 entitlement 不能简单拼成长字符串。可以使用 canonical identity 或授权结果版本，
+但 hash 只绑定内容，不替代授权。
+
+ACL 收紧时，TTL 等待通常不够。需要主动失效或每次命中后重新授权。
+
+## API 契约与终态
+
+一个生产 endpoint 不应只返回 `answer: string`。至少区分：
+
+```text
+answer
+abstain
+reject
+error
+timeout
+cancelled
+```
+
+每个终态有唯一 reason code。HTTP status、业务 action 与模型 finish reason 是不同层，不能混成一个字段。
+
+Public response 可以包含：
+
+```json
+{
+  "request_id": "server-generated",
+  "action": "answer",
+  "answer": "... [S1]",
+  "citations": [{"id": "S1", "title": "..."}],
+  "missing_information": []
+}
+```
+
+不要返回内部 ACL、原始越权候选、被 reject 的 raw output 或完整审计对象。
+
+## Deadline、取消与并发
+
+客户端超时或断连，不等于后台工作已经停止。
+
+对每一层分别问：
+
+- HTTP handler 是否停止等待？
+- Retriever/reranker/model 调用是否支持 cooperative cancellation？
+- 线程、GPU sequence 或远端请求是否仍在运行？
+- 并发 permit 何时释放？
+- Usage 与费用最终是否已知？
+
+如果同步数据库或模型工作在线程中执行，取消 coroutine 不能杀死线程。
+Permit 应在后台工作真正结束后释放，否则系统会报告虚假的可用容量。
+
+并发控制要覆盖 retrieval、rerank 和 generation 各自瓶颈，不能只限制 HTTP request 数。
+
+## Trace：保存证据链，而不是全文堆积
+
+一次请求的最小 trace 可包含：
+
+```text
+request/caller/policy identity
+query and rewrite hash
+corpus/index revision
+authorized candidate count
+retrieval/rerank IDs, scores and truncation
+packing decisions and prompt token ledger
+model/runtime/generation identity
+raw-output hash and restricted location
+claim/citation findings
+final action, reason and timestamps
+```
+
+需要正文时，优先保存受控 snapshot reference 与 content hash；直接复制全文会扩大敏感数据面。
+
+Unsigned SHA-256 可以发现 bytes 漂移，不能认证谁产生了工件，也不能阻止攻击者协同改写全部文件。
+
+## 可观测性：先定义 attempt 分母
+
+每个用户请求可能触发 rewrite、multiple retrieval、rerank、生成 retry 或 judge。
+业务 request 与 provider attempt 要分别计数。
+
+至少监控：
+
+| 维度 | 指标 |
+|---|---|
+| 入口 | QPS、queue、认证/授权失败、deadline |
+| Retrieval | candidate count、zero results、Recall 切片、filter rate |
+| Rerank | candidate depth、truncation、额外 p95、GPU 利用 |
+| Packing | token 使用、budget drop、source concentration |
+| Generation | TTFT、E2E、token、provider error、cost |
+| Answer | answer/abstain/reject/error、citation 与 accepted risk |
+| Security | 跨权限 attempt、blocked candidate、注入与数据外传告警 |
+| Ingestion | freshness、parse failure、stale/delete backlog |
+
+平均值会隐藏 tenant、语言、文档类型和长尾 query。Dashboard 必须支持这些切片。
+
+## SLO 与质量门禁分开
+
+一个低延迟错误答案不是成功。上线门禁至少有四类：
+
+1. **质量**：evidence recall、claim support、completeness、false refusal。
+2. **安全**：tenant/ACL、注入、source exposure、public projection。
+3. **可靠性**：success rate、timeout、error、恢复与删除传播。
+4. **性能成本**：queue、p95/p99、token、GPU/CPU、每成功任务成本。
+
+发布规则应写成联合条件，例如：
+
+```text
+security regressions = 0
+and accepted-answer risk <= threshold
+and false-refusal increase <= threshold
+and p95/cost within budget
+```
+
+不能用平均正确率抵消一次跨租户泄漏。
+
+## 评测集与线上反馈
+
+离线集至少包含：
+
+- Answerable、no-answer、partial-answer；
+- 冲突版本、过期来源与时间查询；
+- 跨 tenant、ACL blocked 与 policy change；
+- 数字、否定、单位、条件和多跳；
+- 文档 Prompt injection 与伪造 citation；
+- Timeout、parser error、provider error 和取消。
+
+线上 thumbs-up/down 很稀疏且有选择偏差，不能直接当 gold。
+将用户反馈用于 error discovery，再经过隐私、标注与切分流程进入评测集。
+
+Judge 模型也要固定 revision、rubric 和 calibration。Judge 通过不替代人工高风险抽查。
+
+## 容量与成本账本
+
+每个业务请求的成本可能包括：
+
+```text
+query rewrite
+embedding
+sparse/vector retrieval
+reranker
+generator input/output
+claim judge
+storage and egress
+retry and failed attempts
+```
+
+报告每成功任务成本，而不只报告每次模型调用成本：
 
 \[
-T=T_{auth}+T_{rewrite}+\max(T_{sparse},T_{dense})+T_{rerank}+T_{prompt}+T_{generation}+T_{checks}
+\text{cost per successful task}=
+\frac{\text{all attempt cost}}{\text{verified successful tasks}}.
 \]
 
-并行 sparse/dense 可以降低 wall time；rerank 和生成通常占大头。流式输出能改善 TTFT，但引用/安全检查若只能在完整答案后执行，就不能未经策略直接把未验证 token 发给高风险用户。
+缓存可以省成本，也可能造成权限和新鲜度事故。先证明 cache key 与 invalidation，再讨论命中率。
 
-为各阶段设置 timeout 与降级：dense 超时可退到 BM25，reranker 超时可用融合排名；生成超时返回可恢复错误。任何降级都带 `degraded_reason` 并进入指标，不能把降级答案混入正常质量统计。
+## 备份、恢复与回滚
 
-## 缓存层次
+需要恢复的不只是 metadata DB：
 
-1. parse/cache：key 为 source content hash + parser version。
-2. embedding cache：normalized text hash + model revision + prefix/pooling。
-3. retrieval cache：tenant/ACL version + query/filter + index/config version。
-4. rerank cache：query + ordered candidate content hashes + reranker revision。
-5. response cache：完整授权上下文、生成配置和 policy version。
+- Source snapshot 与解析工件；
+- Sparse/vector index 与 alias；
+- Embedding/reranker/model manifest；
+- Policy、Prompt 与 schema；
+- Evaluation reports 与 release decision；
+- 必要的审计证据。
 
-越靠后越难安全命中。response cache 可能包含用户历史和敏感答案，默认不要跨主体共享。缓存内容应加密、TTL 明确，并支持 ACL/删除事件失效。cache hit 也要记录使用的版本。
+恢复演练应在新位置执行，验证 schema、row/chunk identity、索引可读性和固定 query。
 
-### Semantic cache
+单个 SQLite backup 成功，只证明该 fixture 的本地快照路径。
+它不证明远端 vector store、object store、cache 和流量切换的 RPO/RTO。
 
-用 query embedding 找相似历史问题可以节省生成成本，但“相似”不等于同一意图，数字、时间和否定尤其危险。只在低风险、稳定知识、相同权限与过滤条件下使用，并设置严格阈值、答案 freshness 和人工可关闭开关。
+## 常见事故与第一检查点
 
-## 一致性与版本
+| 事故 | 第一检查点 |
+|---|---|
+| 更新后答案突然变差 | corpus/index alias、parser/chunker 与 qrels regression |
+| 某 tenant 看到别人的标题 | trusted identity、namespace、cache key、public projection |
+| Recall 高但答案漏条件 | packing、truncation、claim completeness |
+| No-answer 问题大量硬答 | evidence sufficiency 与 publication action |
+| 延迟上升但模型没变 | queue、candidate depth、reranker、index compaction |
+| 删除后仍能引用旧内容 | cache、旧 snapshot、trace retention、备份策略 |
+| 客户端取消后容量不恢复 | 后台线程/远端调用与 permit 生命周期 |
 
-一次请求应固定 `index_snapshot`。embedding 模型、向量和距离配置构成不可分割版本；不能用新 query encoder 搜旧 document vectors。reranker、prompt、generator 和 policy 也进入 system version。
+事故复盘要保存第一个错误环节，不只贴最终坏答案。
 
-索引切换采用 build → validate → shadow → alias switch → monitor → retire。验证包括文档/chunk 数、向量维度、随机抽样可回链、ACL 完整、gold query 指标和性能。切换后保留旧 alias 以秒级回滚。
+## 渐进式生产路线
 
-## 可靠性
+1. 单机 BM25 + extractive answer，建立权限与分母。
+2. 加 SQLite/source version，演练更新、删除与恢复。
+3. 加 dense/ANN 与 reranker，分开测表示、索引和排序误差。
+4. 接目标 tokenizer 与 LLM，保留原始失败和 citation/refusal gate。
+5. 加 API 认证、deadline、并发、trace 与 public projection。
+6. 在 staging 使用真实 IAM、目标 corpus 和 shadow traffic。
+7. 小流量发布，联合观察质量、安全、可靠性与成本。
 
-### 重试与幂等
+每一步都应保留上一层透明 control，而不是被更复杂框架覆盖。
 
-摄取 job 使用 source/version 作为幂等键。embedding 批次可重试，但 upsert 与 manifest 提交要有事务或可恢复状态。在线生成重试可能产生两次费用和不同答案；只对明确的连接前失败自动重试，并保留 provider request id。
+## 可运行入口
 
-仓库的 `SQLiteChunkStore` 是这条原则的单机 reference：每次 source 更新用 `BEGIN IMMEDIATE` 读取当前 version，要求 caller 提供 expected-current-version；stale chunks、source manifest 和新 chunks 同事务提交。fingerprint 绑定 source bytes/ACL/metadata 以及 chunker revision/`max_chars`，所以同一 version 下改变内容或切分配置都会失败，删除必须走显式 API。SQLite trigger 注入失败测试证明单库 rollback，不证明远端向量库、object store 与 source DB 的分布式原子性。
+[RAG Foundations](../practice/projects/rag-foundations.md) 提供单机 reference：
 
-`about-llm-rag store-upsert/store-delete/store-retrieve` 把该契约暴露为可运行 JSON CLI。创建要求 `--expect-absent`，更新和删除要求 `--expected-current-version`；upsert 从 JSONL 里按 tenant/source 精确选一条，拒绝 duplicate key、`NaN/Infinity` 与溢出为无穷的 number。成功 JSON 中的 `committed: true` 只表示该 SQLite 事务已提交；`remote_vector_index_updated: false` 和 `cross_store_atomicity_proved: false` 防止把本地成功误读为完整生产索引已发布。冲突/输入/文件/SQLite 错误使用 exit code 2，调用方必须把非零退出作为失败，而不是解析一份假成功 stdout。
+- Markdown split 与 stable chunk；
+- Authorization-first BM25、rerank 与 packing；
+- Exact-span answer、citation 与拒答；
+- SQLite upsert/delete/backup/restore；
+- Persistent extractive ASGI service；
+- 固定 Qwen 原始失败、policy replay 与 guarded control。
 
-授权读取先用 tenant 限定行，再过滤 principal ACL，之后才允许构造 scorer。该实现把 ACL JSON 解码后在进程内过滤，适合小型 reference；大规模共享 collection 应把强制 tenant/ACL predicate 下推到受信查询层，并验证 ANN prefilter/postfilter 对召回和泄露面的影响。
+先运行：
 
-### Backpressure
+~~~powershell
+python projects/rag-foundations/rag_request_walkthrough.py
+python projects/rag-foundations/rag_service_control.py
+~~~
 
-索引重建、批量上传和在线 query 争用 embedding/GPU。分离队列与容量池，为在线流量保留并发；队列长度和最老任务年龄触发限流。不要让无限重试淹没下游。
+它们是本地教学 control，不是生产部署模板。精确边界见
+[RAG 证据页](../evidence/rag-answer-controls.md)。
 
-### 灾难恢复
+## 系统设计面试回答顺序
 
-保存 source manifest、解析产物或可重建原始引用、索引配置和版本；向量索引可以重建，但时间可能很长。定义 RPO/RTO，定期演练从备份恢复 metadata、重建索引、切换流量，而不是只确认备份文件存在。
+1. 先问 corpus、用户、权限、freshness、流量与质量目标。
+2. 画控制面、数据面和证据面。
+3. 沿请求讲授权、召回、重排、packing、生成与发布。
+4. 沿更新讲 version、alias、delete、reconciliation 与 rollback。
+5. 给出质量、安全、SLO、成本的联合门禁。
+6. 最后讨论缓存、分布式索引、多区域与灾备。
 
-仓库的 `store-backup` 使用 SQLite online backup API 创建不覆盖旧文件的一致快照，并生成 strict manifest：物理 size/SHA-256 之外，还检查 `quick_check`、foreign keys、schema-v1 精确对象集合，以及有序 source/chunk row fingerprint。逻辑检查会拒绝 chunk content hash/stable ID、ordinal、source version、ACL/metadata 一致性漂移，也拒绝在不升级 schema version 时偷偷加入 trigger/table/index。`store-verify-backup` 可在恢复前独立复查，`store-restore` 只写入不存在的新路径并再次验证恢复后逻辑 identity；原数据库在快照后继续变化不会改写 backup。
+不要从“选择哪家向量数据库”开始。数据库是组件，不是系统边界。
 
-这项证据只覆盖单机 SQLite schema-v1。manifest 的 canonical SHA-256 没有密钥，不认证操作者、主机、备份时间或来源；本工具不加密文件，也没有证明单文件 `fsync` 在断电后的目录项 durability。测试恢复 tiny fixture 不等于达到目标 RPO/RTO，更没有备份远端 ANN/vector collection、object store、cache、generation trace 或删除 tombstone。生产演练必须把这些依赖列入同一恢复 runbook，保存耗时与抽样 query 结果，并通过新 alias/canary 切流，不能因为 `quick_check=ok` 就直接替换线上索引。
+## 自测
 
-## 多租户隔离
-
-共享索引成本低但过滤错误影响面大；独立 collection 隔离强但运维和小租户资源浪费大。可按风险/规模分层：高敏租户独立，普通租户共享物理集群但逻辑分区和强制过滤。
-
-限额包括文档/向量数、摄取速率、query QPS、rerank 候选、生成 token 和费用。noisy neighbor 要在队列、CPU、内存、GPU 和 provider 配额各层控制。trace 和离线评测数据也必须继承 tenant 边界。
-
-## 安全与隐私
-
-- 来源接入前验证许可、数据分类和 retention；
-- 凭据使用 secret manager，连接器最小权限；
-- 文档和 query 在静态/传输中加密；
-- 日志默认不存完整敏感正文，debug 采样有审批与过期；
-- 防止 URL fetcher SSRF、压缩炸弹、恶意文件和解析器漏洞；
-- 模型供应商的数据保留、区域和训练政策进入选型；
-- 删除事件传播到索引、缓存、评测与备份策略。
-
-prompt injection、数据外泄和越权检索要有专门红队集。安全通过率是 release guardrail，不被平均答案分抵消。
-
-## 可观测性
-
-每个 request trace 包含：
-
-- authentication/tenant/policy version 的不可敏感标识；
-- rewrite 结果与过滤器；
-- 各路检索耗时、候选 ID、分数和 index version；
-- rerank/packing 决策、证据 token；
-- provider/model、TTFT、输出 token、结束原因和费用；
-- 引用审计、拒答/降级和用户反馈。
-
-高基数 ID 不宜全部做 metrics label，应放 trace/log。指标按 endpoint、tenant tier、模型版本和结果状态聚合。建立 SLO：可用性、p95、freshness、权限违规为零、答案/引用质量抽样。
-
-离线 gold 诊断可先比较 source manifest、case tenant/principals 与 required evidence：来源不在当前租户快照是 corpus/ingestion miss；来源存在但 caller 无权是 case/ACL context mismatch；来源可见却没进大候选才是 retrieval miss。评测工具可以输出这些状态，但不能在面向终端用户的响应或跨租户日志中暴露“其他租户存在同名秘密来源”。
-
-录制答案评测不能只保存 source id 列表。生产 trace 还应保存或可回链当次 source version/content hash、实际 packed text、短引用 ID 到稳定 ID 的授权映射、packer/prompt/generator/policy revision，以及后续 claim judgment 的独立 provenance。否则索引更新后，同一个 ID 可能对应不同正文，无法复现 judge 当时看到的证据。正文快照若含敏感数据，应使用受控 artifact store、加密、retention 和访问审计，而不是塞进普通 metrics label。
-
-仓库的 `audit-traces` 提供离线 reference gate：对 query hash、tenant/principals、逐 chunk identity/bytes、canonical context 和 recorded-answer fingerprint 做 exact join，并把 prompt/raw-output identity 纳入 canonical trace/manifest fingerprint。这是“提供的文件彼此一致且能由当前 corpus 重建”的证据，不是在线调用证明。生产实现还需让 gateway/runtime 直接签发 trace，把 decoding parameters、policy/index/packer/runtime revision 和 provider request id 纳入签名或 append-only ledger，并对历史 corpus snapshot 做受控保留。否则攻击者可一起改写 trace、answer、corpus 和无密钥 hash，仍得到一个自洽结果。
-
-非 LLM 的 `answer-extractive` 使用独立 artifact schema，而不伪造 tokenizer token IDs 或 chat-template identity。它绑定授权 packed context、source bytes/version、span offsets、lexical gate 和 recorded answer，适合定位“检索到了但证据 gate 拒答”与“span 被 budget 丢掉”等控制路径；接入真实 tokenizer/生成器后应切换到 generation trace，不能拿 extractive artifact 声称模型执行或 token-window 合规。
-
-## 成本模型
-
-单问成本可拆为 embedding/query、vector search、rerank、input tokens、output tokens 和基础设施摊销。长上下文会同时增加模型延迟和费用；盲目增大 top-k 不是免费保险。
-
-容量估算从流量分布而不是平均值出发：峰值 QPS、并发、query/文档长度、候选数、cache hit、模型 token/s。对每个优化报告质量变化和单位请求成本，避免只降低费用却提高人工升级率。
-
-## 发布流程
-
-1. 离线固定集：召回、答案、引用、权限、延迟和成本。
-2. 组件消融：确认变化来自哪个阶段。
-3. shadow：新系统接收真实请求但不返回，比较分布和错误。
-4. canary：小流量、明确自动回滚阈值。
-5. 扩量：观察关键切片与长尾，不只看总体。
-6. 复盘：保存配置、结果和决策，不覆盖旧报告。
-
-新 embedding 往往需要全量重建，应与 prompt/generator 变化分开发布，否则无法定位回归。
-
-## 故障演练
-
-至少演练：向量库超时、部分分片丢失、reranker OOM、provider 429/5xx、索引版本不匹配、ACL 服务不可用、缓存污染、删除事件卡住和恶意文档。对安全依赖应 fail closed；对非安全质量组件可显式降级。
-
-## 从原型到生产
-
-- L1：内存 BM25/dense，固定小语料和离线指标。
-- L2：可重放 ingestion、单机事务持久 store、真实 embedding/reranker、版本化评测集。
-- L3：API、持久索引、trace、ACL、缓存、故障测试。
-- L4：shadow/canary、SLO、容量/成本、删除与灾备、红队门禁。
-
-LangChain/LlamaIndex 可编排调用，但领域对象、ACL、评测和版本应保持框架无关。仓库的 adapter 项目不再只测对象构造：同一 canonical BM25 会被绑定到 LangChain `BaseRetriever.invoke()` 与 LlamaIndex `BaseRetriever.retrieve()`，并把框架结果与同次 canonical retrieval 逐字段对账。固定 control 中 engineering 主体得到两个文档、匿名主体得到一个，跨租户与错误 principal 文档均在评分前排除；两边的 Prompt SHA-256、deterministic extractive answer artifact、Recall@4 与 nDCG@4 对齐。
-
-这仍不证明框架默认提供 ACL。保护字段进入 LlamaIndex node 供审计时，会从默认 embed/LLM metadata content 排除；自定义 formatter 仍可主动读取它们。Round-trip validator 只能检测相对于 supplied canonical results 的本地漂移，不能认证 supplied results 的来源，也不覆盖 learned embedding、vector index、reranker、LLM query engine、网络或生产性能。只有把这些组件逐一固定并保存 trace 后，才能比较完整框架 RAG。
-
-Reference ASGI service 已补 API、持久 store、ACL、trace response、readiness 和 queue/timeout fault tests，但仍没有 production authentication、cache、真实网络压测、全局 admission、learned retrieval/LLM 或部署演练，所以当前项目不能仅因“有 FastAPI endpoint”就提升为完整 L3。
-
-## 系统设计回答框架
-
-面试中先问规模、freshness、权限、答案风险和延迟；给出数据面/在线面；再讲索引选择、版本与一致性、质量指标、缓存键、安全、降级和成本。不要一上来只说“向量数据库 + GPT”。优秀答案会指出：没有标注集无法声称优化，没有 lineage 无法审计，没有目标硬件压测无法承诺容量。
+1. 控制面有权读全部 corpus，为什么数据面仍要按请求重新授权？
+2. ACL 收紧后，只等待 response cache TTL 有什么风险？
+3. 为什么 `client cancelled` 不能自动记为后端工作已停止？
+4. Index alias 切换成功为什么不能作为质量发布依据？
+5. 每成功任务成本为什么要把失败 attempt 计入分子？

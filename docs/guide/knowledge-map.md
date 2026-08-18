@@ -51,11 +51,13 @@ flowchart TD
 先修：主干 2、4、5。
 
 1. [Prompt](../applications/prompting.md)：任务契约和结构化输出。
-2. [RAG 总览](../applications/rag.md)：检索、上下文、生成和引用。
-3. [RAG 生产化](../applications/rag-production.md)：权限、索引生命周期和监控。
-4. [Agent 总览](../applications/agents.md)：模型、工具、状态和停止条件。
-5. [Agent 决策理论](../applications/agent-decision-theory.md)与 [Runtime](../applications/agent-runtime.md)：部分可观测决策、授权、幂等、恢复和人工确认。
-6. [安全](../quality/safety.md)：提示注入、数据泄露和工具副作用。
+2. [RAG 请求生命周期](../applications/rag-request-lifecycle.md)：把权限、召回、重排、引用和拒答连起来。
+3. [RAG 实验 5](../practice/labs/lab-5-rag-request.md)：用一个回答和一个拒答验证证据链。
+4. [RAG 生产化](../applications/rag-production.md)：权限、索引生命周期和监控。
+5. [Agent 总览](../applications/agents.md)：模型、工具、状态和停止条件。
+6. [Agent 决策理论](../applications/agent-decision-theory.md)与
+   [Runtime](../applications/agent-runtime.md)：部分可观测决策、授权、幂等、恢复和人工确认。
+7. [安全](../quality/safety.md)：提示注入、数据泄露和工具副作用。
 
 出口成果：一个对无答案、冲突证据、越权请求和工具失败都有明确行为的应用。
 

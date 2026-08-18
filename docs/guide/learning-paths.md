@@ -20,7 +20,7 @@
 | 2 | [Tokenization](../core/tokenization.md) | 比较中英文、数字、代码和 emoji 的 byte/token 差异 |
 | 3 | [Transformer](../core/transformer.md) | 手算两 token 注意力，标注 `Q/K/V/score` 形状 |
 | 4 | [生成入门](../core/generation-basics.md) | 比较 greedy、temperature 与 top-p 的输出分布 |
-| 5 | [RAG](../applications/rag.md) | 构建带来源的问答，并区分检索错误与生成错误 |
+| 5 | [RAG](../applications/rag.md)与[请求生命周期](../applications/rag-request-lifecycle.md) | 跟踪一次回答与一次拒答的证据链 |
 | 6 | [评测](../quality/evaluation.md)与[安全](../quality/safety.md) | 完成 30 条样例、错误分类和一个越权负例 |
 
 完成标准：能从文本输入一路解释到模型输出，并为一个小任务建立可重复的评价方法。
@@ -30,7 +30,10 @@
 先修：基础路线第 2–6 周，外加 Python、HTTP 和数据库基础。
 
 1. **定义任务**：用 [Prompt](../applications/prompting.md) 写清输入、输出、拒答和结构化字段。
-2. **建立 RAG 基线**：完成[摄取](../applications/rag-ingestion.md)、[检索](../applications/rag-retrieval.md)、[检索表示学习](../applications/retrieval-learning.md)和[引用](../applications/rag-generation.md)。
+2. **建立 RAG 基线**：先走完[请求生命周期](../applications/rag-request-lifecycle.md)与
+   [实验 5](../practice/labs/lab-5-rag-request.md)，再学习[摄取](../applications/rag-ingestion.md)、
+   [检索](../applications/rag-retrieval.md)、[检索表示学习](../applications/retrieval-learning.md)和
+   [引用](../applications/rag-generation.md)。
 3. **加入权限与失败处理**：在[生产 RAG](../applications/rag-production.md)中处理 ACL、索引更新和无答案情况。
 4. **引入 Agent**：学习[架构](../applications/agent-architecture.md)、[决策理论](../applications/agent-decision-theory.md)与 [Runtime](../applications/agent-runtime.md)，把模型输出视为提议而不是授权。
 5. **建立评测**：先用[评测测量学](../quality/evaluation-measurement.md)验证 rubric、标注与指标解释，再按[评测方法](../quality/evaluation-methodology.md)区分任务成功、引用、工具执行和安全指标。

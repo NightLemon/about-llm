@@ -2,7 +2,9 @@
 
 本页保存官方来源快照、论文边界、逐项可执行 control 与尚未证明事项，供内容审计和维护使用。第一次学习请从[怎样判断教材结论是否可靠](../reference/accuracy.md)开始，不要把下列长表当作课程顺序。
 
-**证据导航**：[准确性方法](../reference/accuracy.md) · [项目实验台账](project-controls.md) · [Gemini 接入证据](gemini-controls.md) · [机器可读来源](../reference/official-sources.json)
+**证据导航**：[准确性方法](../reference/accuracy.md) · [项目实验台账](project-controls.md) ·
+[RAG 请求证据](rag-answer-controls.md) · [Gemini 接入证据](gemini-controls.md) ·
+[机器可读来源](../reference/official-sources.json)
 { .doc-nav }
 
 本页定义教材中的事实如何分类、验证和维护。目标不是用“官方”二字替代证据，而是让读者知道每条结论在什么边界内成立、仓库实际验证了什么、哪些仍需目标环境实测。
@@ -44,6 +46,21 @@
 5. 性能结论绑定硬件、dtype/量化、输入输出长度分布、batch/并发、runtime/kernel 版本和采样参数。
 6. OpenAI-compatible 只表示部分请求形状兼容；provider 的扩展字段、错误、usage、流式事件和工具语义分别验证。
 7. 工具调用是模型提出的候选动作，不是授权。参数校验、身份、权限、幂等和审计由外部 runtime 承担。
+
+## RAG 请求主线的准确性边界
+
+RAG 教材用两个固定请求建立同一条证据链：请求 A 在授权 BM25、recorded rerank、packing 后，
+从 `rag-security` 精确抽取带 `[S1]` 的回答；请求 B 虽有三个 topical 结果，lexical coverage 只有 `2/9`，
+因此 abstain。可执行 walkthrough、逐 claim oracle 与目标环境缺口集中在
+[RAG 请求、回答与拒答证据账本](rag-answer-controls.md)。
+
+正文采用以下限定：
+
+1. `BM25Index` 证明 authorization-before-query-statistics-and-ranking，不声称可信索引进程从未读取隐藏正文。
+2. Recorded rerank score 证明 query/chunk/scorer binding 与控制流，不声称 learned model 执行或质量提升。
+3. Exact span 与 citation syntax 证明 provenance、known ID 和段落覆盖，不证明来源真实、语义支持或答案完整。
+4. `0.55` lexical threshold 只是 authored fixture；目标域阈值必须用独立 calibration/test split 选择和报告。
+5. 固定 Qwen 的原始 `0/2`、policy replay 与 guarded runtime 是三类不同证据，不能相互借用为总体质量、远端调用、GPU/vLLM 或生产安全结论。
 
 ## 近期论文快照规则
 

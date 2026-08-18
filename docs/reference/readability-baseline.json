@@ -27,18 +27,6 @@
       "max_prose_line_length": 419,
       "overlong_prose_line_count": 2
     },
-    "docs/applications/rag-generation.md": {
-      "max_prose_line_length": 370,
-      "overlong_prose_line_count": 19
-    },
-    "docs/applications/rag-production.md": {
-      "max_prose_line_length": 470,
-      "overlong_prose_line_count": 13
-    },
-    "docs/applications/rag-retrieval.md": {
-      "max_prose_line_length": 331,
-      "overlong_prose_line_count": 5
-    },
     "docs/career/system-design.md": {
       "max_prose_line_length": 408,
       "overlong_prose_line_count": 8
@@ -105,10 +93,6 @@
     "docs/practice/projects/jax-minigpt.md": {
       "max_prose_line_length": 283,
       "overlong_prose_line_count": 7
-    },
-    "docs/practice/projects/rag-foundations.md": {
-      "max_prose_line_length": 412,
-      "overlong_prose_line_count": 14
     },
     "docs/practice/projects/rag-framework-adapters.md": {
       "max_prose_line_length": 273,

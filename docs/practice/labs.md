@@ -12,7 +12,7 @@
 | 第一次观察生成模型 | [实验 0A](labs/lab-0a-sampling.md) | 30–60 分钟 |
 | 理解 tokenizer 与注意力 | [实验 1](#lab-1)、[实验 2](#lab-2) | 2–4 小时 |
 | 训练或微调模型 | [实验 3](#lab-3)、[实验 4](#lab-4) | 1–3 天 |
-| 构建 RAG 或 Agent | [实验 5](#lab-5)、[实验 6](#lab-6) | 1–3 天 |
+| 构建 RAG 或 Agent | [RAG 实验 5](labs/lab-5-rag-request.md)、[实验 6](#lab-6) | 1–3 天 |
 | 学习服务与评测 | [实验 7](#lab-7)、[实验 8](#lab-8) | 1–3 天 |
 
 每次实验至少提交四项：运行配置、原始观察、一个负例、自己的解释。模型下载、GPU 和网络实验都是选修；先用 CPU 基线建立正确性分母。
@@ -115,6 +115,11 @@
 每题都应有 full-batch 或 uninterrupted 正对照，以及故意遗漏一个状态的负对照。具体脚本和参数在项目页维护，本页不固定录制数字。
 
 ## 实验 5：可诊断的 RAG { #lab-5 }
+
+先完成[独立实验页：追踪一次 RAG 问答](labs/lab-5-rag-request.md)。
+它用请求 A/B 串起授权、BM25、重排、packing、exact span、citation 与 non-empty retrieval 拒答。
+
+完成 walkthrough 后，再把固定小语料替换成自己的 corpus：
 
 建立一个小而可人工审阅的语料库：
 
