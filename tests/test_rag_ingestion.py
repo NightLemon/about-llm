@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from about_llm.rag import SourceDocument, plan_incremental_update, split_markdown
+
+pytestmark = [pytest.mark.contract, pytest.mark.security]
 
 
 def source(text: str, *, version: str = "v1") -> SourceDocument:

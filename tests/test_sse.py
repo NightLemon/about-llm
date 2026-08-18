@@ -9,6 +9,8 @@ from about_llm.inference.sse import (
     parse_sse_json_object,
 )
 
+pytestmark = pytest.mark.contract
+
 
 def test_parse_sse_json_done_and_ignored_lines() -> None:
     assert parse_sse_data_line("") is None

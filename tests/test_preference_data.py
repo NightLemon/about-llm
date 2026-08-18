@@ -18,6 +18,7 @@ from about_llm.finetuning.preference_data import (
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "projects" / "single-gpu-finetuning" / "preference.example.jsonl"
+pytestmark = pytest.mark.contract
 
 
 def test_fixture_preserves_annotation_context_and_passes_split_gate() -> None:

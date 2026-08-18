@@ -27,6 +27,8 @@ from about_llm.integrations.usage_budget import (
     UsageBudgetLimits,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -517,5 +519,4 @@ def test_sqlite_uncertain_transition_survives_reopen(tmp_path: Path) -> None:
         "uncertain",
     ]
     assert reopened.snapshot().committed_estimated_microusd == 80
-
 

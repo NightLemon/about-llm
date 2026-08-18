@@ -82,6 +82,8 @@ L=-\frac{1}{\sum_{b,t}m_{b,t}}
 
 `ignore_index` 位置先替换成合法的 safe target，再乘 mask；不能先用负 id gather。分母是有效 token 数，不是固定的 batch × sequence，否则不同 padding 比例会改变 loss 尺度。
 
+全 `ignore_index` 或可见 target 越界不是“loss 为 0”的正常 batch。低层 JIT-compatible primitive 对这两种输入返回非有限 sentinel；`make_train_step` 的 host wrapper 在进入 compiled update 前直接拒绝，避免 AdamW 在零监督下仍因 weight decay 修改参数。生产数据管线仍应更早统计并拒绝零监督样本和 batch。
+
 ### `value_and_grad`
 
 训练需要 loss 和梯度：

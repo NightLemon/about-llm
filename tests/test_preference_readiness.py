@@ -20,6 +20,7 @@ from about_llm.finetuning import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "single-gpu-finetuning"
+pytestmark = [pytest.mark.contract, pytest.mark.security]
 
 
 def _report() -> PreferenceTrainingReadinessReport:

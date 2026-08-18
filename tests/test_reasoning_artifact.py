@@ -15,6 +15,8 @@ from about_llm.integrations.reasoning_artifact import (
     issue_reasoning_envelope,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 KEY = bytes(range(32))
 KEY_ID = "fixture-key-2026-08"
 PREDECESSOR = "1" * 64

@@ -10,6 +10,8 @@ from about_llm.inference import (
     build_arrival_schedule,
 )
 
+pytestmark = pytest.mark.formula
+
 
 def test_burst_schedule_offers_every_request_at_start() -> None:
     schedule = build_arrival_schedule(4)

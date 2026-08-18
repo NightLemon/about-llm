@@ -32,6 +32,7 @@ from about_llm.finetuning.near_duplicate import (
 from about_llm.finetuning.readiness import SFTTrainingReadinessReport
 
 FULLWIDTH_ABC = "\uff21\uff22\uff23"
+pytestmark = [pytest.mark.formula, pytest.mark.contract]
 
 
 def _record(
@@ -174,8 +175,12 @@ def test_cross_split_user_candidate_has_exact_jaccard_evidence() -> None:
     assert finding.left_record_id == "train"
     assert finding.right_record_id == "test"
     assert finding.view is NearDuplicateView.USER_CONTENT
-    assert finding.similarity == finding.intersection_size / finding.union_size
-    assert finding.similarity >= 0.75
+    # USER_CONTENT is a canonical role-tagged view, not the raw user string.
+    assert finding.left_shingle_count == 15
+    assert finding.right_shingle_count == 15
+    assert finding.intersection_size == 14
+    assert finding.union_size == 16
+    assert finding.similarity == pytest.approx(14 / 16)
     assert report.manifest_fingerprint.startswith("sha256:")
     assert report.to_dict()["scope"]["semantic_equivalence_verified"] is False
 

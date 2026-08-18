@@ -13,6 +13,8 @@ from about_llm.integrations.openai_responses_replay import (
     replay_response_events,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "cloud-api-contracts"
 FIXTURE = PROJECT / "openai-responses-events.example.jsonl"
@@ -351,5 +353,4 @@ def test_state_snapshots_caller_events_before_later_mutation() -> None:
     receipt = state.finish()
 
     assert receipt.model == original["response"]["model"]
-
 

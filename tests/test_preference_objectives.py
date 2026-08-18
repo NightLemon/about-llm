@@ -11,6 +11,8 @@ from about_llm.finetuning.preference import (
     sequence_log_probability,
 )
 
+pytestmark = pytest.mark.formula
+
 
 def test_sequence_log_probability_makes_length_convention_explicit() -> None:
     token_logps = [-0.1, -0.2, -0.3]
@@ -58,15 +60,15 @@ def test_dpo_uses_reference_relative_not_raw_policy_margin() -> None:
 
 def test_preference_losses_are_stable_for_large_margins() -> None:
     assert bradley_terry_loss(1_000.0, -1_000.0) == pytest.approx(0.0)
-    assert math.isfinite(bradley_terry_loss(-1_000.0, 1_000.0))
-    assert math.isfinite(
-        dpo_loss(
-            chosen_policy_logp=-1_000.0,
-            rejected_policy_logp=0.0,
-            chosen_reference_logp=0.0,
-            rejected_reference_logp=-1_000.0,
-            beta=10.0,
-        )
+    assert bradley_terry_loss(-1_000.0, 1_000.0) == pytest.approx(2_000.0)
+    assert dpo_loss(
+        chosen_policy_logp=-1_000.0,
+        rejected_policy_logp=0.0,
+        chosen_reference_logp=0.0,
+        rejected_reference_logp=-1_000.0,
+        beta=10.0,
+    ) == pytest.approx(
+        20_000.0
     )
 
 

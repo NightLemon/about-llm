@@ -14,6 +14,8 @@ from about_llm.integrations.cloud_api import (
     parse_openai_compatible_response,
 )
 
+pytestmark = pytest.mark.contract
+
 MESSAGES = [
     ChatMessage("system", "Be concise."),
     ChatMessage("user", "What is RAG?"),

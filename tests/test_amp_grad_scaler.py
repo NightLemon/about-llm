@@ -11,6 +11,8 @@ from about_llm.finetuning.amp_scaler import (  # noqa: E402
     run_cpu_amp_grad_scaler_control,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "projects" / "single-gpu-finetuning" / "amp_grad_scaler_control.py"
 
@@ -127,5 +129,4 @@ def test_scope_does_not_overclaim(report: dict[str, object]) -> None:
         "target_model_trainer_tokenizer_or_dataset_executed": False,
         "convergence_quality_throughput_or_memory_proved": False,
     }
-
 

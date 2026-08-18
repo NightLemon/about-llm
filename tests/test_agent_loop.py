@@ -32,6 +32,8 @@ from about_llm.agents import (
     run_agent_loop,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 CONTEXT = ExecutionContext(
     "loop-task", "loop-user", "tenant-a", frozenset({"fixture:read", "fixture:write"})
 )

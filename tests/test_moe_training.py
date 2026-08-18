@@ -18,6 +18,8 @@ from about_llm.from_scratch.moe_training import (
     run_trainable_moe_control,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "projects" / "transformers-basics" / "moe_training_control.py"
 
@@ -966,5 +968,4 @@ def test_control_report_pins_gradient_semantics_and_scope() -> None:
     assert fingerprint == "sha256:" + hashlib.sha256(
         _canonical_bytes(report)
     ).hexdigest()
-
 

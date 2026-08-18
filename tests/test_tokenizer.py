@@ -4,6 +4,8 @@ import pytest
 
 from about_llm.from_scratch.tokenizer import ByteBPETokenizer, ByteTokenizer
 
+pytestmark = pytest.mark.formula
+
 
 @pytest.mark.parametrize("text", ["hello", "你好 LLM", "🙂\ncode\t123", ""])
 def test_byte_tokenizer_round_trip(text: str) -> None:

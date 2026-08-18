@@ -23,6 +23,8 @@ from about_llm.rag import (
     load_recorded_answers,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 
 def _sha256(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()

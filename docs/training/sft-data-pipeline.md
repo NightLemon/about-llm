@@ -131,6 +131,10 @@ J(A,B)=\frac{|A\cap B|}{|A\cup B|}
 
 报告给每个候选的分子、分母、两侧 shingle 数、record/split、比较总数、策略和 manifest identity。默认只比较跨 split pair；`--include-within-split` 才加入同 split。短于 n-gram size 的文本整体作为一个 shingle，因此大 n 对短文本会退化为接近 exact match。集合 Jaccard 也会丢失重复频次。
 
+三个 view 都使用带 role boundary 的 canonical serialization。full view 还包含 tool schema，assistant view 包含 tool call。
+公共 `<user>`/`<assistant>` framing 本身会贡献共享 shingle，尤其可能抬高短文本相似度。因此，阈值必须按该序列化而不是裸 content 校准。
+测试中的 `abcdefghij` 与 `abcdefghiX` 在裸 3-gram 上是 `7/9`，在当前 `user_content` view 上则是 `14/16`。
+
 profile 必须显式选择。`nfc_whitespace` 只做 NFC 与空白折叠；`nfkc_casefold_whitespace` 还会合并兼容字符、宽度和大小写，召回更多候选但可能破坏代码、标识符、表格或格式任务的含义。`prepare-training` 要求显式 profile，把 near manifest 与 exact train/combined binding 绑定；存在未处理 candidate 时 readiness 为失败，trainer fail closed。
 
 这里的“candidate”不是人工确认的 duplicate。阈值必须按语言、长度和任务用人工样本校准；无 finding 也不能证明没有改写、翻译、答案片段或 embedding-level 污染。Readiness 的 fail-closed gate 仍使用全对精确比较，复杂度为 \(O(N^2)\)；不能只把近似 LSH 的“未命中”当作无污染证明。

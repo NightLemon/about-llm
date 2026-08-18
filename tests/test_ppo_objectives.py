@@ -13,6 +13,7 @@ from about_llm.finetuning import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def test_gae_matches_two_step_analytic_result_and_ignores_padding() -> None:
@@ -156,5 +157,4 @@ def test_masked_mean_and_objectives_reject_invalid_contracts() -> None:
         ppo_clipped_surrogate(
             [1000.0], [0.0], [1.0], valid_mask=[True], clip_epsilon=0.2
         )
-
 

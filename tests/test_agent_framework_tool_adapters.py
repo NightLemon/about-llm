@@ -7,6 +7,8 @@ from types import ModuleType
 
 import pytest
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 pytest.importorskip("langchain_core")
 pytest.importorskip("llama_index.core")
 
@@ -50,5 +52,4 @@ def test_direct_framework_schema_behavior_is_not_overclaimed() -> None:
     assert report["contract"]["trusted_context_model_visible"] is False
     assert report["scope"]["framework_default_authorization_or_production_safety_proved"] is False
     assert report["scope"]["langgraph_or_llamaindex_agent_loop_executed"] is False
-
 

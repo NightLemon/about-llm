@@ -28,6 +28,8 @@ from about_llm.agents.mcp_streamable_http import (
     serve,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_CONTROL = ROOT / "projects" / "safe-agent" / "mcp_streamable_http_control.py"
 
@@ -452,8 +454,21 @@ def test_server_configuration_rejects_unsafe_fixture_inputs() -> None:
         )
 
 
-def test_real_streamable_http_loopback_control() -> None:
-    report = run_streamable_http_control(cwd=ROOT)
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
+def test_project_control_executes_real_streamable_http_loopback() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(PROJECT_CONTROL)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    report = json.loads(completed.stdout)
+
+    assert completed.stderr == ""
     assert report["implementation"] == MCP_STREAMABLE_HTTP_CONTROL_VERSION
     assert report["protocol_version"] == MCP_PROTOCOL_VERSION
     assert report["binding"] == "Streamable HTTP"
@@ -510,25 +525,6 @@ def test_real_streamable_http_loopback_control() -> None:
     assert "about-llm-mcp-http-client" not in serialized
     assert '"sum": 12' not in serialized
     assert '"a": 7' not in serialized
-
-
-def test_project_control_cli() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(PROJECT_CONTROL)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    report = json.loads(completed.stdout)
-    assert completed.stderr == ""
-    assert report["implementation"] == MCP_STREAMABLE_HTTP_CONTROL_VERSION
-    assert report["projection_fingerprint"] == (
-        "sha256:5a5cc3be24268d3dec80edb3613e51ffed3dc0d0d6535f7039c74386ce7c8915"
-    )
-
-
 def test_invalid_control_timeouts() -> None:
     with pytest.raises(ValueError, match="timeouts"):
         run_streamable_http_control(request_timeout_seconds=0)

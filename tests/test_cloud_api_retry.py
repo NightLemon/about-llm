@@ -6,6 +6,8 @@ import pytest
 
 from about_llm.integrations.retry import RetryPolicy, decide_retry, parse_retry_after
 
+pytestmark = pytest.mark.contract
+
 NOW = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
 

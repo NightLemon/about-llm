@@ -1,4 +1,8 @@
+import pytest
+
 from about_llm.rag import Document, SearchResult, audit_citations, build_citation_context
+
+pytestmark = [pytest.mark.contract, pytest.mark.security]
 
 
 def result(document_id: str, tenant_id: str, rank: int) -> SearchResult:

@@ -8,11 +8,14 @@ import pytest
 
 from about_llm.inference_analysis_cli import main
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 ATTEMPTS = ROOT / "projects" / "inference-serving" / "attempts.example.jsonl"
 MANIFEST = ROOT / "projects" / "inference-serving" / "attempts.manifest.example.json"
 
 
+@pytest.mark.smoke
 def test_cli_reports_attempt_reliability_and_success_latency(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

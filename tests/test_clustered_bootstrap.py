@@ -10,6 +10,7 @@ import pytest
 from about_llm.evaluation import clustered_paired_bootstrap, paired_bootstrap
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def test_exact_case_weighted_cluster_bootstrap_uses_ratio_per_resample() -> None:
@@ -164,5 +165,4 @@ def test_invalid_bootstrap_contracts_fail_closed(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         operation()
-
 

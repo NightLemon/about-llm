@@ -10,6 +10,8 @@ from about_llm.evaluation import (
     json_value_exact_metric,
 )
 
+pytestmark = pytest.mark.contract
+
 
 def test_json_schema_metric_checks_parse_types_and_required_fields() -> None:
     case = EvaluationCase(

@@ -19,6 +19,8 @@ from about_llm.evaluation import (
     write_evaluation_run_manifest,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "evaluation-gate"
 
@@ -82,6 +84,22 @@ def test_manifest_round_trip_and_current_artifacts_validate(tmp_path: Path) -> N
     assert loaded.system_id == "candidate@immutable-revision"
     assert loaded.manifest_fingerprint.startswith("sha256:")
     assert loaded.to_dict() == manifest.to_dict()
+
+    mutable_ids = ["q1", "q2"]
+    direct = EvaluationRunManifest(
+        system_id=manifest.system_id,
+        cases_fingerprint=manifest.cases_fingerprint,
+        results_fingerprint=manifest.results_fingerprint,
+        recorded_answers_fingerprint=manifest.recorded_answers_fingerprint,
+        ordered_case_ids=mutable_ids,  # type: ignore[arg-type]
+        metric_revisions=manifest.metric_revisions,
+        metadata=manifest.metadata,
+    )
+    identity_before_mutation = direct.manifest_fingerprint
+    mutable_ids[0] = "attacker-rewrite"
+
+    assert direct.ordered_case_ids == ("q1", "q2")
+    assert direct.manifest_fingerprint == identity_before_mutation
 
 
 @pytest.mark.parametrize("name", ["baseline", "candidate"])

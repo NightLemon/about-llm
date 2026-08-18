@@ -8,6 +8,8 @@ from typing import Any, ClassVar
 
 import pytest
 
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "projects" / "transformers-basics" / "inspect_checkpoint.py"
 

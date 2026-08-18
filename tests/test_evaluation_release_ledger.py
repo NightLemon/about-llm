@@ -18,6 +18,8 @@ from about_llm.evaluation import (
 )
 from about_llm.llmops import canonical_json_bytes
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "evaluation-gate"
 FIXTURE_KEYS = {
@@ -108,6 +110,11 @@ def test_round_trip_verifies_key_rotation_artifacts_and_trusted_head(
     assert verification.to_dict()["authenticated_chain"] is True
     assert verification.to_dict()["timestamp_authority_verified"] is False
     assert "tail truncation" in EVALUATION_RELEASE_LEDGER_EVIDENCE_BOUNDARY
+
+    mutable_records = list(loaded.records)
+    snapshotted = EvaluationReleaseLedger(mutable_records)  # type: ignore[arg-type]
+    mutable_records.clear()
+    assert snapshotted.records == loaded.records
 
 
 def test_project_fixture_authenticates_current_artifact_bytes() -> None:

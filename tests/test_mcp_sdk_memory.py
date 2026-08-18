@@ -16,6 +16,8 @@ from about_llm.agents.mcp_sdk_memory import (
 )
 from about_llm.llmops import artifact_fingerprint
 
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_CONTROL = ROOT / "projects" / "safe-agent" / "mcp_sdk_memory_control.py"
 
@@ -82,5 +84,3 @@ def test_report_rejects_cooperatively_rehashed_semantic_drift() -> None:
 
     with pytest.raises(ValueError, match="semantic drift"):
         verify_mcp_sdk_memory_report(report)
-
-

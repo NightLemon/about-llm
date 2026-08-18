@@ -2,6 +2,8 @@ import pytest
 
 from about_llm.inference import estimate_kv_cache_bytes
 
+pytestmark = pytest.mark.formula
+
 
 def test_kv_cache_example_is_exactly_one_gibibyte() -> None:
     value = estimate_kv_cache_bytes(

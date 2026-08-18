@@ -18,6 +18,8 @@ from about_llm.rag import (
 )
 from about_llm.rag.cli import main
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 
 def _source(text: str, *, version: str = "v1") -> SourceDocument:
     return SourceDocument(

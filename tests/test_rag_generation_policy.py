@@ -46,6 +46,7 @@ CHECKPOINT_MANIFEST = (
     / "target-checkpoints"
     / "qwen2.5-0.5b-instruct.control.json"
 )
+pytestmark = [pytest.mark.contract, pytest.mark.security]
 
 
 def _context() -> CitationContext:
@@ -385,5 +386,4 @@ def test_replay_verifier_rejects_extra_fields_duplicate_keys_and_nonfinite_json(
                 spec=spec,
                 source_report=source_report,
             )
-
 

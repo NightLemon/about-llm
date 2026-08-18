@@ -10,6 +10,8 @@ from about_llm.rag import (
     splade_max_pool,
 )
 
+pytestmark = pytest.mark.formula
+
 
 def test_contrastive_gradients_match_finite_difference() -> None:
     queries = np.array([[1.0, 0.2], [-0.3, 0.8]], dtype=np.float64)

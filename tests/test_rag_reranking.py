@@ -14,6 +14,8 @@ from about_llm.rag import (
     rerank_authorized_candidates,
 )
 
+pytestmark = pytest.mark.security
+
 
 class RecordingScorer:
     def __init__(self, scores: dict[str, float]) -> None:

@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax  # type: ignore[import-untyped]
 from jax import Array
 
@@ -123,15 +124,24 @@ def forward(params: PyTree, input_ids: Array, config: JAXGPTConfig) -> Array:
 
 
 def cross_entropy_loss(logits: Array, targets: Array, ignore_index: int = -100) -> Array:
-    """Mean next-token loss with an ignore mask."""
+    """Mean next-token loss with a JIT-compatible invalid-target sentinel.
+
+    Empty supervision or visible targets outside the vocabulary produce a
+    non-finite scalar instead of a plausible zero. ``make_train_step`` performs
+    a host-side check and raises before the compiled update is entered.
+    """
     if logits.shape[:-1] != targets.shape:
         raise ValueError("targets must match the batch and time dimensions of logits")
     visible = targets != ignore_index
-    safe_targets = jnp.where(visible, targets, 0)
+    target_in_range = (targets >= 0) & (targets < logits.shape[-1])
+    valid_targets = ~visible | target_in_range
+    safe_targets = jnp.where(visible & target_in_range, targets, 0)
     log_probs = jax.nn.log_softmax(logits, axis=-1)
     token_loss = -jnp.take_along_axis(log_probs, safe_targets[..., None], axis=-1).squeeze(-1)
-    denominator = jnp.maximum(visible.sum(), 1)
-    return (token_loss * visible).sum() / denominator
+    visible_count = visible.sum()
+    denominator = jnp.maximum(visible_count, 1)
+    mean_loss = (token_loss * visible).sum() / denominator
+    return jnp.where((visible_count > 0) & jnp.all(valid_targets), mean_loss, jnp.nan)
 
 
 def adamw_optimizer(
@@ -162,7 +172,7 @@ def make_train_step(
     config: JAXGPTConfig,
     optimizer: optax.GradientTransformation,
 ) -> TrainStep:
-    """Return one JIT-compiled next-token update with explicit optimizer state."""
+    """Return a checked wrapper around one JIT-compiled next-token update."""
 
     def step(
         params: PyTree,
@@ -181,4 +191,25 @@ def make_train_step(
         new_params = optax.apply_updates(params, updates)
         return cast(PyTree, new_params), new_optimizer_state, loss, gradient_norm
 
-    return cast(TrainStep, jax.jit(step))
+    compiled_step = cast(TrainStep, jax.jit(step))
+
+    def checked_step(
+        params: PyTree,
+        optimizer_state: optax.OptState,
+        input_ids: Array,
+        targets: Array,
+    ) -> tuple[PyTree, optax.OptState, Array, Array]:
+        target_values = np.asarray(jax.device_get(targets))
+        if target_values.dtype.kind not in "iu":
+            raise ValueError("targets must contain integer token ids")
+        visible = target_values != -100
+        if not np.any(visible):
+            raise ValueError("targets must contain at least one supervised token")
+        visible_targets = target_values[visible]
+        if np.any(visible_targets < 0) or np.any(
+            visible_targets >= config.vocab_size
+        ):
+            raise ValueError("supervised target ids must be in the vocabulary")
+        return compiled_step(params, optimizer_state, input_ids, targets)
+
+    return cast(TrainStep, checked_step)

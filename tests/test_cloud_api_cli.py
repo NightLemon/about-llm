@@ -16,6 +16,8 @@ from about_llm.integrations.cloud_api_cli import (
     verify_contracts,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / "projects" / "cloud-api-contracts" / "contracts.example.jsonl"
 RELEASE_TRAJECTORY = (

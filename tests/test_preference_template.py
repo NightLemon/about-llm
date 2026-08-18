@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = (
     ROOT / "projects" / "single-gpu-finetuning" / "preference.train.example.jsonl"
 )
+pytestmark = pytest.mark.contract
 
 
 def _render(_: dict[str, Any]) -> dict[str, list[int]]:

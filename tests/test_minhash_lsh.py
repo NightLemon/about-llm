@@ -14,6 +14,8 @@ from about_llm.finetuning.minhash_lsh import (
     minhash_signature,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -147,5 +149,4 @@ def test_exact_recheck_requires_finite_positive_threshold(threshold: float) -> N
 def test_invalid_item_snapshot_is_rejected(items) -> None:
     with pytest.raises(ValueError):
         generate_minhash_lsh_candidates(items, config=_config())
-
 

@@ -19,6 +19,8 @@ from about_llm.finetuning.peft_export import (
 )
 from about_llm.llmops import canonical_json_bytes
 
+pytestmark = pytest.mark.contract
+
 
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

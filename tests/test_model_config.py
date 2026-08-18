@@ -12,6 +12,8 @@ from about_llm.model_config import (
     load_model_config_json,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ROOT / "projects" / "transformers-basics" / "configs"
 

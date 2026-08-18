@@ -7,6 +7,8 @@ import pytest
 
 from about_llm.rag import SourceDocument, SQLiteChunkStore
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 
 def _source(
     text: str,

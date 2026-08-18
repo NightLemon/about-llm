@@ -13,6 +13,8 @@ from about_llm.inference import (
     quantized_kv_grouped_query_attention,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -159,5 +161,4 @@ def test_kv_quantization_rejects_invalid_contracts(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         operation()
-
 

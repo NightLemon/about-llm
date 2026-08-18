@@ -12,6 +12,8 @@ from about_llm.inference import (
     simulate_kv_preemption_batching,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -220,5 +222,4 @@ def test_invalid_kv_scheduler_contracts_fail_closed(
 
 def test_kv_preemption_simulation_is_deterministic() -> None:
     assert _fixture_report() == _fixture_report()
-
 

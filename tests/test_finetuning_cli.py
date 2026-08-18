@@ -7,10 +7,13 @@ import pytest
 
 from about_llm.finetuning_cli import main
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "single-gpu-finetuning"
 
 
+@pytest.mark.smoke
 def test_cli_audits_fixture_and_writes_machine_readable_manifest(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -54,6 +57,7 @@ def test_cli_returns_gate_failure_without_hiding_report(
     assert report["missing_splits"] == ["validation", "test"]
 
 
+@pytest.mark.smoke
 def test_cli_accepts_explicit_train_only_policy(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -99,6 +103,7 @@ def test_cli_rejects_malformed_jsonl(
     assert "duplicate JSON object key" in capsys.readouterr().err
 
 
+@pytest.mark.smoke
 def test_near_audit_fixture_passes_with_explicit_policy(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -194,6 +199,7 @@ def test_near_audit_rejects_invalid_numeric_policy(
     assert "threshold must be finite" in capsys.readouterr().err
 
 
+@pytest.mark.smoke
 def test_prepare_training_writes_reloadable_minimal_readiness(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -235,6 +241,7 @@ def test_prepare_training_writes_reloadable_minimal_readiness(
     assert (output / "sft-governance-audit.json").exists()
 
 
+@pytest.mark.smoke
 def test_governance_audit_cli_is_explicitly_time_scoped(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

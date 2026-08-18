@@ -13,6 +13,7 @@ from about_llm.inference import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def _exact_fixture() -> object:
@@ -216,5 +217,4 @@ def test_invalid_sampling_contracts_fail_closed(
 
 def test_sampling_is_deterministic_for_fixed_logits_config_history_and_uniform() -> None:
     assert _exact_fixture().to_dict() == _exact_fixture().to_dict()
-
 

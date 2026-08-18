@@ -13,6 +13,8 @@ from about_llm.generation_contract import (
     load_generation_protocol_json,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "transformers-basics"
 PROTOCOLS = PROJECT / "protocols"
@@ -178,5 +180,4 @@ def test_strict_document_loader_rejects_invalid_utf8(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="not valid UTF-8"):
         load_generation_protocol_json(path)
-
 

@@ -11,6 +11,8 @@ from about_llm.finetuning import (
     pairwise_reward_metrics,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -114,5 +116,4 @@ def test_reward_training_rejects_invalid_optimizer_contract(
             learning_rate=learning_rate,
             l2_penalty=l2_penalty,
         )
-
 

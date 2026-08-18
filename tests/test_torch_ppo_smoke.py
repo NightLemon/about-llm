@@ -9,6 +9,8 @@ import pytest
 
 pytest.importorskip("torch")
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "projects" / "single-gpu-finetuning" / "smoke_torch_ppo.py"
 
@@ -23,6 +25,7 @@ def _load_script() -> ModuleType:
     return module
 
 
+@pytest.mark.smoke
 def test_torch_ppo_smoke_executes_rollout_gae_and_optimizer() -> None:
     report = _load_script().run_smoke()
 

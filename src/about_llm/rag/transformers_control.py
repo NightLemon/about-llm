@@ -20,7 +20,11 @@ from about_llm.integrations.transformers_checkpoint_control import (
     verify_checkpoint_snapshot,
 )
 from about_llm.llmops import artifact_fingerprint, canonical_json_bytes
-from about_llm.rag.bm25 import BM25Index
+from about_llm.rag.bm25 import (
+    BM25_AUTHORIZED_STATISTICS_IMPLEMENTATION,
+    BM25_LEGACY_GLOBAL_STATISTICS_IMPLEMENTATION,
+    BM25Index,
+)
 from about_llm.rag.citations import audit_citations, build_citation_context
 from about_llm.rag.context_packing import (
     make_rag_chat_prompt_cost,
@@ -715,7 +719,7 @@ def execute_loaded_rag_transformers_control(
             else abstention_match
         )
         retrieval_projection = {
-            "implementation": "about_llm.rag.BM25Index",
+            "implementation": BM25_AUTHORIZED_STATISTICS_IMPLEMENTATION,
             "top_k": case.top_k,
             "authorization_filtered_before_scoring": True,
             "document_ids": list(retrieved_ids),
@@ -1057,8 +1061,10 @@ def verify_recorded_rag_transformers_report(
     if len(raw_cases) != len(spec.cases):
         raise ValueError("report.cases count mismatch")
     corpus_by_id = {item.document_id: item.to_document() for item in spec.corpus}
-    reconstructed_index = BM25Index(
-        item.to_document() for item in spec.corpus
+    corpus_documents = tuple(item.to_document() for item in spec.corpus)
+    reconstructed_index = BM25Index(corpus_documents)
+    legacy_reconstructed_index = BM25Index._for_legacy_global_statistics(
+        corpus_documents
     )
     gate_count = 0
     for index, (raw_case, expected_case) in enumerate(
@@ -1095,7 +1101,12 @@ def verify_recorded_rag_transformers_report(
         _require_exact_fields(
             retrieval, _REPORT_RETRIEVAL_FIELDS, f"{location}.retrieval"
         )
-        if retrieval.get("implementation") != "about_llm.rag.BM25Index":
+        implementation = retrieval.get("implementation")
+        if implementation == BM25_AUTHORIZED_STATISTICS_IMPLEMENTATION:
+            case_index = reconstructed_index
+        elif implementation == BM25_LEGACY_GLOBAL_STATISTICS_IMPLEMENTATION:
+            case_index = legacy_reconstructed_index
+        else:
             raise ValueError(f"{location}.retrieval implementation drift")
         if _positive_integer(
             retrieval.get("top_k"), f"{location}.retrieval.top_k"
@@ -1114,7 +1125,7 @@ def verify_recorded_rag_transformers_report(
         )
         if retrieved_ids != list(expected_case.expected_retrieved_document_ids):
             raise ValueError(f"{location}.retrieval document identity mismatch")
-        reconstructed_results = reconstructed_index.search(
+        reconstructed_results = case_index.search(
             expected_case.query,
             tenant_id=expected_case.tenant_id,
             principals=expected_case.principals,

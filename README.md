@@ -58,7 +58,7 @@ Python 支持 3.10–3.12。GPU、CUDA 和云 API 都不是入门路线的前置
 | `notebooks/` | 可交互的注意力、MiniGPT 与 RAG 实验 |
 | `projects/` | RAG、Agent、微调、推理与评测项目 |
 | `src/about_llm/` | 项目复用的 Python 实现 |
-| `tests/` | 核心代码的正确性与回归测试 |
+| `tests/` | 教学 oracle、核心契约与回归测试；分类规则见[测试与证据策略](docs/reference/testing.md) |
 | `artifacts/` | 机器可读的实验结果，不作为正文入口 |
 
 更详细的代码入口见[仓库地图](docs/guide/repo-map.md)。实验结果、适用范围和复现条件集中在[内容准确性与核验台账](docs/reference/accuracy.md)，版本变化记录在 [CHANGELOG](CHANGELOG.md)；README 不重复这些机器审计信息。

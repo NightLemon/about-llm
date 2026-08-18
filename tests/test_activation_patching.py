@@ -15,6 +15,8 @@ normalized_patch_recovery = patching.normalized_patch_recovery
 patch_block_residual = patching.patch_block_residual
 run_residual_patch_experiment = patching.run_residual_patch_experiment
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "projects" / "transformers-basics" / "activation_patching.py"
 
@@ -133,5 +135,4 @@ def test_experiment_rejects_ambiguous_tensor_contracts(
 
     with pytest.raises((ValueError, TypeError), match=message):
         _run(model, clean, corrupted, positions)
-
 

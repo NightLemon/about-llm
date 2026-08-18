@@ -9,6 +9,8 @@ from about_llm.continual_learning import (
     summarize_accuracy_matrix,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "projects" / "single-gpu-finetuning" / "continual_replay_toy.py"
 
@@ -85,5 +87,4 @@ def test_reservoir_sample_rejects_ambiguous_inputs(
 ) -> None:
     with pytest.raises(ValueError):
         reservoir_sample_indices(stream_length, capacity, seed=seed)
-
 

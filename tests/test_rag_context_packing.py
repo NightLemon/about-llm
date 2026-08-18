@@ -14,6 +14,8 @@ from about_llm.rag import (
     utf8_byte_length,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 
 def result(
     document_id: str,

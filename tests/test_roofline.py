@@ -6,6 +6,8 @@ import pytest
 
 from about_llm.inference import roofline_lower_bound
 
+pytestmark = pytest.mark.formula
+
 
 def test_roofline_identifies_memory_bound_workload() -> None:
     bound = roofline_lower_bound(

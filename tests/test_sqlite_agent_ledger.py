@@ -22,6 +22,8 @@ from about_llm.agents import (
     execution_fingerprint,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 CONTEXT = ExecutionContext(
     "task-ledger", "user-1", "tenant-a", frozenset({"test:write"})
 )

@@ -15,6 +15,8 @@ from about_llm.agents import (
     load_trace_cases,
 )
 
+pytestmark = [pytest.mark.formula, pytest.mark.contract, pytest.mark.security]
+
 
 def step(
     call_id: str,
@@ -174,6 +176,23 @@ def test_policy_over_refusal_has_its_own_denominator_and_fails_gate() -> None:
     }
     assert report.gate_passed is False
     assert "policy-allowed proposal" in report.case_findings["over-refusal"][0]
+
+
+def test_direct_trace_api_rejects_integer_approval_instead_of_passing_gate() -> None:
+    malformed = step("call-7", approved=1)  # type: ignore[arg-type]
+    case = AgentTraceCase(
+        "integer-approval",
+        "simulator@v1",
+        "policy@v1",
+        TaskVerifierResult.PASSED,
+        "state_verifier@v1",
+        1,
+        1,
+        (malformed,),
+    )
+
+    with pytest.raises(ValueError, match="approved must be boolean"):
+        evaluate_agent_traces([case])
 
 
 def test_load_trace_fixture_and_strict_consistency(tmp_path: Path) -> None:

@@ -5,6 +5,8 @@ import pytest
 
 from about_llm.evaluation import binary_calibration, risk_coverage_curve
 
+pytestmark = pytest.mark.formula
+
 
 def test_binary_calibration_known_example() -> None:
     result = binary_calibration([0, 1, 1, 0], [0.1, 0.8, 0.6, 0.4], bins=2)

@@ -7,6 +7,8 @@ import pytest
 
 from about_llm.preference_cli import main
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "projects" / "single-gpu-finetuning" / "preference.example.jsonl"
 TRAIN_FIXTURE = (
@@ -20,6 +22,7 @@ JUDGMENT_FIXTURE = (
 )
 
 
+@pytest.mark.smoke
 def test_preference_cli_writes_machine_readable_audit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -62,6 +65,7 @@ def test_preference_cli_rejects_invalid_split_policy(
     assert "unknown split" in capsys.readouterr().err
 
 
+@pytest.mark.smoke
 def test_preference_cli_prepares_held_out_free_training_envelope(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -151,6 +155,7 @@ def test_preference_prepare_emits_failed_lexical_readiness(
     assert report["gate_passed"] is False
 
 
+@pytest.mark.smoke
 def test_preference_cli_evaluates_bound_raw_judgments(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

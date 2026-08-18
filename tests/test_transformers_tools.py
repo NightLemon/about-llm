@@ -7,6 +7,8 @@ import pytest
 
 from about_llm.integrations.transformers_tools import parameter_report, render_chat
 
+pytestmark = pytest.mark.contract
+
 
 class FakeParameter:
     def __init__(self, elements: int, bytes_per_element: int, trainable: bool) -> None:

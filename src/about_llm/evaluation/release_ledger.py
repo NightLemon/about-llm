@@ -144,12 +144,16 @@ class EvaluationReleaseLedger:
     records: tuple[EvaluationReleaseRecord, ...]
 
     def __post_init__(self) -> None:
-        if not self.records:
+        records = tuple(self.records)
+        if not records:
             raise ValueError("release ledger must contain at least one record")
+        if any(not isinstance(record, EvaluationReleaseRecord) for record in records):
+            raise TypeError("release ledger records must be EvaluationReleaseRecord values")
+        object.__setattr__(self, "records", records)
         release_ids: set[str] = set()
         artifact_ids: set[str] = set()
         previous: str | None = None
-        for expected_sequence, record in enumerate(self.records, start=1):
+        for expected_sequence, record in enumerate(records, start=1):
             if record.sequence != expected_sequence:
                 raise ValueError(
                     "record sequence must be contiguous from 1: "

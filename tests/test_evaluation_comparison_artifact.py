@@ -13,6 +13,8 @@ from about_llm.evaluation import (
     write_evaluation_comparison_artifact,
 )
 
+pytestmark = [pytest.mark.formula, pytest.mark.contract]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "evaluation-gate"
 

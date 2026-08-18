@@ -18,6 +18,8 @@ from about_llm.agents import (
     ToolRegistry,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 
 def object_schema(
     properties: Mapping[str, Any],

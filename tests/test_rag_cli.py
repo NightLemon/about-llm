@@ -18,6 +18,8 @@ from about_llm.rag.cli import (
     main,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "rag-foundations"
 CORPUS = PROJECT / "sample_corpus.jsonl"
@@ -204,6 +206,7 @@ def test_all_no_answer_report_does_not_publish_answerable_metric_aliases() -> No
     assert "recall_at_k" not in report
 
 
+@pytest.mark.smoke
 def test_cli_retrieve_prints_authorized_context(capsys: pytest.CaptureFixture[str]) -> None:
     exit_code = main(
         [
@@ -230,6 +233,7 @@ def test_cli_retrieve_prints_authorized_context(capsys: pytest.CaptureFixture[st
     assert set(payload["context"]["sources"]) == {"S1", "S2"}
 
 
+@pytest.mark.smoke
 def test_sqlite_store_cli_upsert_retrieve_update_and_delete(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -362,6 +366,7 @@ def test_sqlite_store_cli_upsert_retrieve_update_and_delete(
     assert deleted["deleted_chunk_ids"]
 
 
+@pytest.mark.smoke
 def test_cli_pack_labels_byte_budget_without_calling_it_tokens(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -401,6 +406,7 @@ def test_cli_pack_labels_byte_budget_without_calling_it_tokens(
     }
 
 
+@pytest.mark.smoke
 def test_cli_pack_tokenized_uses_full_chat_template_and_output_reservation(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -466,6 +472,7 @@ def test_cli_pack_tokenized_uses_full_chat_template_and_output_reservation(
     assert payload["scope"]["generation_quality_or_grounding_verified"] is False
 
 
+@pytest.mark.smoke
 def test_cli_evaluate_prints_explicit_metric_scopes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -488,6 +495,7 @@ def test_cli_evaluate_prints_explicit_metric_scopes(
     assert payload["legacy_metric_scope"] == "answerable cases only"
 
 
+@pytest.mark.smoke
 def test_cli_evaluate_answers_keeps_supplied_judgment_scope_explicit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -510,6 +518,7 @@ def test_cli_evaluate_answers_keeps_supplied_judgment_scope_explicit(
     assert "not entailment inferred" in payload["scope_warning"]
 
 
+@pytest.mark.smoke
 def test_cli_audit_traces_passes_reconstructable_fixture(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -570,6 +579,7 @@ def test_cli_audit_traces_returns_one_for_content_tampering(
     assert payload["finding_counts"] == {"source_content_mismatch": 1}
 
 
+@pytest.mark.smoke
 def test_recorded_rerank_cli_binds_scores_and_reorders_authorized_candidates(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -15,6 +15,12 @@ from about_llm.agents.cli import (
     run_scenario,
 )
 
+pytestmark = [
+    pytest.mark.contract,
+    pytest.mark.security,
+    pytest.mark.integration,
+]
+
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIO = ROOT / "projects" / "safe-agent" / "scenario.example.jsonl"
 LOOP_CASES = ROOT / "projects" / "safe-agent" / "loop.example.jsonl"
@@ -66,6 +72,7 @@ def test_scenario_covers_approval_cache_and_uncertain_failure(tmp_path: Path) ->
     assert [item.call_id for item in pending] == ["uncertain-1"]
 
 
+@pytest.mark.smoke
 def test_cli_lists_and_reconciles_pending_call(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -114,6 +121,7 @@ def test_cli_lists_and_reconciles_pending_call(
     assert entry.state is LedgerState.ABANDONED
 
 
+@pytest.mark.smoke
 def test_cli_evaluates_recorded_trajectory_with_explicit_denominators(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -133,6 +141,7 @@ def test_cli_evaluates_recorded_trajectory_with_explicit_denominators(
     assert payload["unapproved_side_effect_attempts"]["numerator"] == 0
 
 
+@pytest.mark.smoke
 def test_cli_runs_typed_loop_stop_conditions(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -156,6 +165,7 @@ def test_cli_runs_typed_loop_stop_conditions(
     assert payload["scripted_planner"] is True
 
 
+@pytest.mark.smoke
 def test_cli_persists_and_resumes_approval_checkpoint(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -28,6 +28,8 @@ from about_llm.finetuning.minigpt_training_checkpoint import (
 from about_llm.from_scratch import ByteBPETokenizer, GPTConfig, MiniGPT
 from about_llm.llmops import canonical_json_bytes
 
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 _HEADER = struct.Struct("<8sB3xIII")
 _DIGEST_BYTES = 32
 

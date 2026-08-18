@@ -32,6 +32,7 @@ from about_llm.finetuning.governance import (
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "single-gpu-finetuning"
 AS_OF = datetime(2026, 8, 6, 12, tzinfo=timezone.utc)
+pytestmark = [pytest.mark.contract, pytest.mark.security]
 
 
 def _policy() -> SFTGovernancePolicy:

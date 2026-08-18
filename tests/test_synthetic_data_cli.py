@@ -12,6 +12,8 @@ from about_llm.synthetic_data_cli import (
     verify_synthetic_audit_artifact,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "synthetic-data-audit"
 VALID_RECORD = (
@@ -55,6 +57,7 @@ def test_recorded_fixture_passes_full_local_recomputation() -> None:
     )
 
 
+@pytest.mark.smoke
 def test_cli_audits_fixture_and_writes_report(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

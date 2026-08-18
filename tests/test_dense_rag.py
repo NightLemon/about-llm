@@ -8,6 +8,8 @@ from numpy.typing import NDArray
 
 from about_llm.rag import DenseIndex, Document
 
+pytestmark = pytest.mark.security
+
 
 class ControlledEmbedder:
     def __init__(self, values: dict[str, tuple[float, ...]]) -> None:

@@ -12,6 +12,7 @@ from about_llm.inference import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def test_one_step_marginal_equals_target_and_acceptance_is_one_minus_tv() -> None:
@@ -175,5 +176,4 @@ def test_block_rejects_mismatched_input_lengths() -> None:
             bonus_target_probabilities=[1.0],
             bonus_uniform=0.0,
         )
-
 

@@ -13,6 +13,8 @@ from about_llm.finetuning.preference_evaluation import (
     summarize_preference_judgments,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "single-gpu-finetuning"
 CASES = PROJECT / "preference.example.jsonl"

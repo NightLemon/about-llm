@@ -6,6 +6,7 @@ torch = pytest.importorskip("torch")
 nn = torch.nn
 lora_module = pytest.importorskip("about_llm.finetuning.lora")
 LoRALinear = lora_module.LoRALinear
+pytestmark = [pytest.mark.formula, pytest.mark.integration]
 
 
 def test_zero_initialized_adapter_preserves_base_and_freezes_it() -> None:

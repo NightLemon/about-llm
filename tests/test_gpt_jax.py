@@ -13,8 +13,10 @@ cross_entropy_loss = gpt_jax.cross_entropy_loss
 forward = gpt_jax.forward
 init_params = gpt_jax.init_params
 make_train_step = gpt_jax.make_train_step
+pytestmark = [pytest.mark.formula, pytest.mark.contract, pytest.mark.integration]
 
 
+@pytest.mark.slow
 def test_jax_forward_loss_and_causality() -> None:
     config = JAXGPTConfig(
         vocab_size=32,
@@ -48,6 +50,7 @@ def test_config_rejects_invalid_sizes_and_head_partition() -> None:
         JAXGPTConfig(vocab_size=0)
 
 
+@pytest.mark.slow
 def test_forward_rejects_rank_and_context_overflow() -> None:
     config = JAXGPTConfig(
         vocab_size=8,
@@ -64,7 +67,7 @@ def test_forward_rejects_rank_and_context_overflow() -> None:
         forward(params, jnp.array([[0, 1, 2, 3, 4]]), config)
 
 
-def test_masked_loss_rejects_shape_drift_and_handles_empty_supervision() -> None:
+def test_masked_loss_rejects_shape_drift_and_surfaces_invalid_supervision() -> None:
     logits = jnp.zeros((1, 3, 5), dtype=jnp.float32)
     with pytest.raises(ValueError, match="targets must match"):
         cross_entropy_loss(logits, jnp.zeros((1, 2), dtype=jnp.int32))
@@ -72,9 +75,47 @@ def test_masked_loss_rejects_shape_drift_and_handles_empty_supervision() -> None
         logits,
         jnp.full((1, 3), -100, dtype=jnp.int32),
     )
-    assert float(empty) == 0.0
+    out_of_range = cross_entropy_loss(
+        logits,
+        jnp.array([[0, -1, 5]], dtype=jnp.int32),
+    )
+    assert not np.isfinite(float(empty))
+    assert not np.isfinite(float(out_of_range))
 
 
+@pytest.mark.slow
+def test_train_step_rejects_invalid_supervision_before_compiled_update() -> None:
+    config = JAXGPTConfig(
+        vocab_size=5,
+        context_length=3,
+        model_dim=4,
+        num_heads=2,
+        num_layers=1,
+        mlp_ratio=2,
+    )
+    params = init_params(jax.random.key(7), config)
+    optimizer = adamw_optimizer(learning_rate=0.01)
+    optimizer_state = optimizer.init(params)
+    train_step = make_train_step(config, optimizer)
+    input_ids = jnp.array([[0, 1, 2]], dtype=jnp.int32)
+
+    with pytest.raises(ValueError, match="at least one supervised token"):
+        train_step(
+            params,
+            optimizer_state,
+            input_ids,
+            jnp.full((1, 3), -100, dtype=jnp.int32),
+        )
+    with pytest.raises(ValueError, match="in the vocabulary"):
+        train_step(
+            params,
+            optimizer_state,
+            input_ids,
+            jnp.array([[1, -1, 5]], dtype=jnp.int32),
+        )
+
+
+@pytest.mark.slow
 def test_jitted_optax_step_updates_params_and_overfits_tiny_batch() -> None:
     config = JAXGPTConfig(
         vocab_size=8,

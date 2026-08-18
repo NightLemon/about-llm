@@ -10,6 +10,7 @@ import pytest
 from about_llm.inference import beam_search_from_probabilities
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def test_finite_beam_can_prune_the_globally_better_finished_sequence() -> None:
@@ -250,5 +251,4 @@ def test_invalid_beam_contracts_fail_closed(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         operation()
-
 

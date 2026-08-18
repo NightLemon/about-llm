@@ -12,6 +12,8 @@ from about_llm.integrations.cloud_stream import (
     StreamProtocolError,
 )
 
+pytestmark = pytest.mark.contract
+
 
 def _event(data: object, *, event: str = "message") -> SSEEvent:
     payload = data if isinstance(data, str) else json.dumps(data, separators=(",", ":"))

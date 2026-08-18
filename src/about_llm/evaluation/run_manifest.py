@@ -46,9 +46,13 @@ class EvaluationRunManifest:
             ("recorded_answers_fingerprint", self.recorded_answers_fingerprint),
         ):
             _fingerprint(value, name)
-        _unique_strings(self.ordered_case_ids, "ordered_case_ids")
-        if not self.ordered_case_ids:
+        if isinstance(self.ordered_case_ids, (str, bytes, bytearray)):
+            raise ValueError("ordered_case_ids must be a sequence of case ids")
+        ordered_case_ids = tuple(self.ordered_case_ids)
+        _unique_strings(ordered_case_ids, "ordered_case_ids")
+        if not ordered_case_ids:
             raise ValueError("ordered_case_ids must not be empty")
+        object.__setattr__(self, "ordered_case_ids", ordered_case_ids)
         revisions = dict(self.metric_revisions)
         if not revisions:
             raise ValueError("metric_revisions must not be empty")

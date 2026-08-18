@@ -11,6 +11,8 @@ from about_llm.conversation import (
     MemoryStatus,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 NOW = datetime(2026, 8, 6, 4, tzinfo=timezone.utc)
 
 

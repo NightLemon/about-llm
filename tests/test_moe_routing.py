@@ -12,6 +12,8 @@ from about_llm.from_scratch import (
     routed_linear_expert_forward,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -236,5 +238,4 @@ def test_sparse_expert_forward_rejects_invalid_shapes(
     routing = route_topk_capacity(np.ones((1, 2)), top_k=1)
     with pytest.raises(ValueError, match=message):
         routed_linear_expert_forward(hidden, weights, routing)
-
 

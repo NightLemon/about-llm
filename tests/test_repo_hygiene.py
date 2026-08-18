@@ -1,4 +1,8 @@
+import pytest
+
 from scripts.check_repo_hygiene import forbidden_generated_paths
+
+pytestmark = pytest.mark.contract
 
 
 def test_forbidden_generated_paths_normalizes_and_filters() -> None:

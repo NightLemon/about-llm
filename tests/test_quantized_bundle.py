@@ -20,6 +20,8 @@ from about_llm.inference import (
 )
 from about_llm.llmops import canonical_json_bytes
 
+pytestmark = [pytest.mark.formula, pytest.mark.contract]
+
 HEADER = struct.Struct("<8sB3xIII")
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -221,6 +223,7 @@ def test_resource_limits_apply_before_or_during_payload_materialization() -> Non
         )
 
 
+@pytest.mark.slow
 def test_exclusive_file_round_trip_releases_windows_handle(tmp_path: Path) -> None:
     bundle = _bundle()
     path = tmp_path / "bundle.allmqb"
@@ -257,5 +260,3 @@ def test_bundle_rejects_duplicate_names_invalid_identity_and_missing_tensor() ->
         )
     with pytest.raises(KeyError):
         bundle.get("missing.weight")
-
-

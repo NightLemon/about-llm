@@ -155,6 +155,13 @@ class MiniGPT(nn.Module):
         if targets is not None:
             if targets.shape != (batch_size, sequence_length):
                 raise ValueError("targets must have the same [batch, time] shape as input_ids")
+            supervised_targets = targets[targets != -100]
+            if supervised_targets.numel() == 0:
+                raise ValueError("targets must contain at least one supervised token")
+            if torch.any(supervised_targets < 0) or torch.any(
+                supervised_targets >= self.config.vocab_size
+            ):
+                raise ValueError("supervised target ids must be in the vocabulary")
             loss = F.cross_entropy(
                 logits.reshape(-1, self.config.vocab_size),
                 targets.reshape(-1),

@@ -9,6 +9,8 @@ from about_llm.scaling import (
     estimate_dense_training_flops,
 )
 
+pytestmark = pytest.mark.formula
+
 
 def test_dense_training_flops_uses_explicit_budgeting_convention() -> None:
     assert estimate_dense_training_flops(1e9, 20e9) == pytest.approx(1.2e20)

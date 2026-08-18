@@ -6,6 +6,8 @@ import pytest
 
 from about_llm.evaluation import box_iou, character_error_rate, temporal_iou
 
+pytestmark = pytest.mark.formula
+
 
 def test_character_error_rate_counts_unicode_code_point_edits() -> None:
     assert character_error_rate("语言模型", "语言大模") == pytest.approx(0.5)

@@ -25,6 +25,7 @@ PROJECT = ROOT / "projects" / "rag-foundations"
 CORPUS = PROJECT / "sample_corpus.jsonl"
 CASES = PROJECT / "sample_eval.jsonl"
 ANSWERS = PROJECT / "sample_answers.jsonl"
+pytestmark = [pytest.mark.formula, pytest.mark.security]
 
 
 def claim(

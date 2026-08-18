@@ -10,6 +10,8 @@ from about_llm.agents import (
     value_of_information,
 )
 
+pytestmark = [pytest.mark.formula, pytest.mark.contract]
+
 
 def test_belief_update_matches_binary_bayes_rule() -> None:
     report = update_belief(

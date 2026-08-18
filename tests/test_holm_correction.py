@@ -9,6 +9,7 @@ import pytest
 from about_llm.evaluation import holm_bonferroni_correction
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def test_holm_fixture_uses_running_maximum_and_maps_back_to_input_order() -> None:
@@ -73,5 +74,4 @@ def test_invalid_holm_contracts_fail_closed(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         operation()
-
 

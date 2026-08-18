@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, NoReturn, cast
 from urllib.parse import urlsplit
 
@@ -99,13 +100,49 @@ class ReleaseEvidenceReport:
     records: tuple[Mapping[str, object], ...]
     projection_fingerprint: str
 
+    def __post_init__(self) -> None:
+        try:
+            date.fromisoformat(self.manifest_checked_at)
+        except (TypeError, ValueError) as error:
+            raise ValueError("manifest_checked_at must be an ISO date") from error
+        _sha256(self.manifest_fingerprint, "report.manifest_fingerprint")
+        if not isinstance(self.upstream_verified, bool):
+            raise ValueError("upstream_verified must be a boolean")
+        try:
+            snapshot = json.loads(canonical_json_bytes(self.records))
+        except (TypeError, ValueError) as error:
+            raise ValueError("report records must be finite JSON") from error
+        if not isinstance(snapshot, list) or not snapshot or any(
+            not isinstance(record, dict) for record in snapshot
+        ):
+            raise ValueError("report records must be a non-empty sequence of objects")
+        frozen_records = tuple(
+            cast(Mapping[str, object], _freeze_json(record)) for record in snapshot
+        )
+        object.__setattr__(self, "records", frozen_records)
+        _sha256(self.projection_fingerprint, "report.projection_fingerprint")
+        expected_projection = _canonical_sha256(
+            {
+                "report_version": MODEL_RELEASE_EVIDENCE_REPORT_VERSION,
+                "manifest_checked_at": self.manifest_checked_at,
+                "manifest_fingerprint": self.manifest_fingerprint,
+                "upstream_verified": self.upstream_verified,
+                "records": snapshot,
+                "evidence_boundary": MODEL_RELEASE_EVIDENCE_BOUNDARY,
+            }
+        )
+        if not hmac.compare_digest(
+            self.projection_fingerprint, expected_projection
+        ):
+            raise ValueError("projection_fingerprint does not match report content")
+
     def to_dict(self) -> dict[str, object]:
         return {
             "report_version": MODEL_RELEASE_EVIDENCE_REPORT_VERSION,
             "manifest_checked_at": self.manifest_checked_at,
             "manifest_fingerprint": self.manifest_fingerprint,
             "upstream_verified": self.upstream_verified,
-            "records": [dict(record) for record in self.records],
+            "records": [_thaw_json(record) for record in self.records],
             "projection_fingerprint": self.projection_fingerprint,
             "evidence_boundary": MODEL_RELEASE_EVIDENCE_BOUNDARY,
         }
@@ -405,6 +442,24 @@ def _validate_vendor_reported(value: Mapping[str, Any], location: str) -> None:
         raise ValueError(
             f"{location}.vendor_reported.parameters must contain non-empty strings"
         )
+
+
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
 
 
 def _verify_upstream_identity(

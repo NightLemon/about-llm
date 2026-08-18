@@ -14,6 +14,21 @@ from about_llm.from_scratch.attention_numpy import (
     scaled_dot_product_attention,
 )
 
+pytestmark = pytest.mark.formula
+
+
+def test_scaled_attention_matches_hand_computed_two_key_distribution() -> None:
+    """Use an analytic fixture rather than another attention implementation."""
+
+    query = np.array([[1.0]])
+    key = np.array([[0.0], [np.log(3.0)]])
+    value = np.array([[2.0], [6.0]])
+
+    output, probabilities = scaled_dot_product_attention(query, key, value)
+
+    np.testing.assert_allclose(probabilities, [[0.25, 0.75]], rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(output, [[5.0]], rtol=1e-12, atol=1e-12)
+
 
 def test_rms_norm_matches_definition_and_preserves_dtype() -> None:
     x = np.array([[3.0, 4.0], [0.0, 2.0]], dtype=np.float32)

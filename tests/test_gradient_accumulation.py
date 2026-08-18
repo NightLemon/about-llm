@@ -19,6 +19,7 @@ TOY = (
     / "single-gpu-finetuning"
     / "gradient_accumulation_toy.py"
 )
+pytestmark = pytest.mark.formula
 
 
 def fixture_microbatches() -> tuple[CategoricalMicrobatch, ...]:
@@ -204,5 +205,4 @@ def test_report_dict_preserves_exact_fraction_payloads() -> None:
         {"numerator": 23, "denominator": 40, "decimal": 0.575},
         {"numerator": -23, "denominator": 40, "decimal": -0.575},
     ]
-
 

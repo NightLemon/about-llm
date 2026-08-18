@@ -10,6 +10,8 @@ from about_llm.inference import (
     StopMatcherStateError,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -206,5 +208,4 @@ def test_invalid_stop_contracts_fail_closed(
 ) -> None:
     with pytest.raises(error_type, match=message):
         operation()
-
 

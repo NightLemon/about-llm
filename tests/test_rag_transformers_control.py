@@ -23,6 +23,8 @@ from about_llm.rag.transformers_control import (
     verify_recorded_rag_transformers_report,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "projects" / "rag-foundations" / "qwen2.5-0.5b-rag.control.json"
 CHECKPOINT_MANIFEST = (
@@ -314,5 +316,3 @@ def test_manifest_rejects_unknown_nested_field(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=r"manifest.generation: field set mismatch"):
         load_rag_transformers_control_spec(path)
-
-

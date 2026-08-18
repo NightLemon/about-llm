@@ -24,6 +24,8 @@ from about_llm.agents import (
 )
 from about_llm.integrations.cloud_api import ChatResponse
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 MODEL_REVISION = "recorded-model-2026-08-07"
 STATE = AgentLoopState("planner-task")
 BUDGET = RemainingBudget(steps=3, model_tokens=100, cost_units=1.0, wall_time_seconds=10.0)

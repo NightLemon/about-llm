@@ -71,7 +71,8 @@ Causal mask 只允许位置 \(t\) 访问 \(j\le t\)。专项测试把后两个 i
 \log p_\theta(y_{b,t}\mid x_{b,\le t}).
 \]
 
-实现把 ignored target 暂替换为 0 以安全 gather，再乘 mask；分母最小为 1，因此全 ignored batch 返回 0，而不是除零。真实训练仍应在数据门禁处拒绝没有监督 token 的 batch，不能把有限的 0 loss 当成有效更新。
+实现把 ignored target 暂替换为 0 以安全 gather，再乘 mask。全 ignored batch 或可见 target 越界会让低层 primitive 返回非有限 sentinel；`make_train_step` 的 host wrapper 会在 compiled update 前拒绝它们。
+这样不会把零监督误报成有限的 0 loss，也避免 AdamW weight decay 在错误 batch 上悄悄改参数；真实训练仍应在更早的数据门禁统计并拒绝零监督记录。
 
 ### JIT train step
 

@@ -17,6 +17,8 @@ from about_llm.agents import (
     SQLiteTransactionalOutbox,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 EXECUTION_FINGERPRINT = "sha256:" + "a" * 64
 ROOT = Path(__file__).resolve().parents[1]
 

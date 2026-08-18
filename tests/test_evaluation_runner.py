@@ -12,6 +12,8 @@ from about_llm.evaluation.text_metrics import (
     token_f1,
 )
 
+pytestmark = pytest.mark.contract
+
 
 def test_load_run_and_write_evaluation(tmp_path: Path) -> None:
     case_path = tmp_path / "cases.jsonl"

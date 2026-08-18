@@ -6,6 +6,7 @@ torch = pytest.importorskip("torch")
 gpt_torch = pytest.importorskip("about_llm.from_scratch.gpt_torch")
 GPTConfig = gpt_torch.GPTConfig
 MiniGPT = gpt_torch.MiniGPT
+pytestmark = [pytest.mark.formula, pytest.mark.contract, pytest.mark.integration]
 
 
 def tiny_model() -> MiniGPT:
@@ -31,6 +32,16 @@ def test_forward_shape_loss_and_weight_tying() -> None:
     assert logits.shape == (2, 4, 32)
     assert loss is not None and loss.ndim == 0 and torch.isfinite(loss)
     assert model.lm_head.weight.data_ptr() == model.token_embedding.weight.data_ptr()
+
+
+def test_loss_rejects_empty_and_out_of_vocabulary_supervision() -> None:
+    model = tiny_model()
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+
+    with pytest.raises(ValueError, match="at least one supervised token"):
+        model(input_ids, torch.full_like(input_ids, -100))
+    with pytest.raises(ValueError, match="in the vocabulary"):
+        model(input_ids, torch.tensor([[2, -1, 32, -100]]))
 
 
 def test_causality_future_tokens_do_not_change_past_logits() -> None:

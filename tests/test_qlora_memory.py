@@ -2,6 +2,8 @@ import pytest
 
 from about_llm.finetuning import estimate_qlora_memory, oom_degradation_order
 
+pytestmark = pytest.mark.formula
+
 
 def test_memory_estimate_exposes_components_and_scales_with_sequence() -> None:
     common = dict(

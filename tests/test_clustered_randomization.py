@@ -11,6 +11,7 @@ from about_llm.evaluation import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def test_joint_cluster_flip_avoids_treating_repeated_cases_as_six_units() -> None:
@@ -161,5 +162,4 @@ def test_invalid_clustered_contracts_fail_closed(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         operation()
-
 

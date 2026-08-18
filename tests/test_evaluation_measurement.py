@@ -12,6 +12,8 @@ from about_llm.evaluation import (
     one_sided_sign_test_power,
 )
 
+pytestmark = pytest.mark.formula
+
 
 def test_cohen_kappa_reports_observed_chance_and_corrected_agreement() -> None:
     result = cohen_kappa(

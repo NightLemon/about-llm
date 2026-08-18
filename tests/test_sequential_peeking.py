@@ -13,6 +13,7 @@ from about_llm.evaluation import (
 
 ROOT = Path(__file__).resolve().parents[1]
 TOY = ROOT / "projects" / "evaluation-gate" / "sequential_peeking_toy.py"
+pytestmark = pytest.mark.formula
 
 
 @pytest.mark.parametrize(
@@ -176,5 +177,4 @@ def test_sign_test_rejects_invalid_counts(
             positive_count=positive_count,
             sample_count=sample_count,
         )
-
 

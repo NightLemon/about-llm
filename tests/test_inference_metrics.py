@@ -12,6 +12,8 @@ from about_llm.inference import (
     summarize_measurements,
 )
 
+pytestmark = pytest.mark.formula
+
 
 def test_measurement_defines_ttft_tpot_and_e2e() -> None:
     measurement = InferenceMeasurement(

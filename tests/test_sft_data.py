@@ -23,6 +23,7 @@ from about_llm.finetuning.data import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "single-gpu-finetuning"
+pytestmark = pytest.mark.contract
 
 
 def _record(

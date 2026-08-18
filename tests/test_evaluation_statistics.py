@@ -5,6 +5,33 @@ import pytest
 
 from about_llm.evaluation import ReleaseGate, paired_bootstrap
 
+pytestmark = pytest.mark.formula
+
+
+def test_paired_bootstrap_constant_difference_has_exact_degenerate_oracle() -> None:
+    result = paired_bootstrap(
+        baseline=[-2.0, 0.0, 7.0],
+        candidate=[-1.75, 0.25, 7.25],
+        samples=17,
+        seed=91,
+    )
+
+    assert result.baseline_mean == pytest.approx(5 / 3)
+    assert result.candidate_mean == pytest.approx(23 / 12)
+    assert result.mean_difference == pytest.approx(0.25)
+    assert result.confidence_low == pytest.approx(0.25)
+    assert result.confidence_high == pytest.approx(0.25)
+    assert result.probability_of_improvement == 1
+
+
+def test_paired_bootstrap_counts_zero_difference_as_not_strictly_improved() -> None:
+    result = paired_bootstrap([1.0, 2.0], [1.0, 2.0], samples=11, seed=3)
+
+    assert result.mean_difference == 0
+    assert result.confidence_low == 0
+    assert result.confidence_high == 0
+    assert result.probability_of_improvement == 0
+
 
 def test_paired_bootstrap_is_reproducible_and_detects_improvement() -> None:
     baseline = np.array([0, 0, 1, 0, 1, 0, 0, 1], dtype=float)

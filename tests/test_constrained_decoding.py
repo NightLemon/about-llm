@@ -13,6 +13,8 @@ from about_llm.inference import (
     constrained_greedy_from_probabilities,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -284,5 +286,4 @@ def test_state_and_token_text_validation() -> None:
         constraint.is_accepting(99)
     with pytest.raises(ValueError, match="non-empty string"):
         constraint.advance(0, "")
-
 

@@ -25,6 +25,8 @@ from about_llm.integrations.usage_budget import (
     request_model_identifier,
 )
 
+pytestmark = [pytest.mark.formula, pytest.mark.contract, pytest.mark.security]
+
 _REQUEST_FINGERPRINT = "sha256:" + "a" * 64
 
 

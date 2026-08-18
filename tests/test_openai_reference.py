@@ -26,6 +26,8 @@ from about_llm.inference.openai_reference import (
 )
 from about_llm.inference.sse import STREAM_FINISHED, parse_sse_data_line
 
+pytestmark = pytest.mark.contract
+
 
 class FixtureBackend:
     model_id = "fixture/model"

@@ -26,6 +26,8 @@ from about_llm.rag.guarded_transformers_control import (
 )
 from about_llm.rag.transformers_control import load_rag_transformers_control_spec
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "rag-foundations"
 MANIFEST = PROJECT / "qwen2.5-0.5b-rag.guarded.control.json"
@@ -532,5 +534,3 @@ def test_manifest_requires_policy_abstention_text(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="abstention text differs from the policy"):
         load_guarded_rag_transformers_control_spec(path)
-
-

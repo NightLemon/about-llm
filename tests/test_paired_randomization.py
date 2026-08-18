@@ -10,6 +10,7 @@ import pytest
 from about_llm.evaluation import paired_randomization_test
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.formula
 
 
 def test_exact_one_sided_and_two_sided_p_values_include_observed_assignment() -> None:
@@ -183,5 +184,4 @@ def test_invalid_randomization_contracts_fail_closed(
 ) -> None:
     with pytest.raises(error_type, match=message):
         operation()
-
 

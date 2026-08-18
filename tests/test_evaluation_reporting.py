@@ -7,6 +7,8 @@ from about_llm.evaluation import (
     summarize_by_slice,
 )
 
+pytestmark = pytest.mark.formula
+
 
 def test_slice_summary_keeps_overall_and_exposes_regressions() -> None:
     cases = [

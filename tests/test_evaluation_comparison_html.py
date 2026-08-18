@@ -18,6 +18,8 @@ from about_llm.evaluation import (
 )
 from about_llm.evaluation.cli import compare_results, main
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "evaluation-gate"
 COMPARISON = PROJECT / "comparison.example.json"
@@ -145,6 +147,7 @@ def test_cluster_report_exposes_estimand_and_resampling_ledger() -> None:
     assert "resamples=4" in rendered
 
 
+@pytest.mark.smoke
 def test_render_comparison_html_cli_writes_report_and_scope_receipt(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -91,9 +91,15 @@ where = ["src"]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 markers = [
+  "formula: validates a mathematical definition or algorithmic invariant used by the curriculum",
+  "contract: validates an input, output, artifact, or protocol contract",
+  "security: validates a fail-closed authorization or safety boundary",
+  "smoke: validates that a documented learner or packaging entry point executes",
+  "integration: crosses a framework, process, socket, database, or other component boundary",
+  "extended: runs outside the pull-request test tier and must also be integration or slow",
   "gpu: requires a CUDA-capable GPU",
   "network: performs an external network or paid API call",
-  "slow: takes longer than the default unit-test budget",
+  "slow: takes longer than the one-second per-case review budget; importance is independent of speed",
 ]
 
 [tool.ruff]

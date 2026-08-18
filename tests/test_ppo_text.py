@@ -14,6 +14,8 @@ from about_llm.finetuning.ppo_text import (  # noqa: E402
     render_text_control_prompt,
 )
 
+pytestmark = pytest.mark.contract
+
 
 def test_text_control_tokenizer_prompt_and_padding_are_explicit() -> None:
     tokenizer = build_text_control_tokenizer()

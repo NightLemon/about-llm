@@ -4,6 +4,8 @@ import pytest
 
 from about_llm.evaluation import pass_at_k
 
+pytestmark = pytest.mark.formula
+
 
 def test_pass_at_k_matches_combinatorial_definition() -> None:
     assert pass_at_k(num_samples=10, num_correct=2, k=1) == pytest.approx(0.2)

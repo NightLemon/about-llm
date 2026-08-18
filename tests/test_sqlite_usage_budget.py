@@ -24,6 +24,8 @@ from about_llm.integrations.usage_budget import (
     UsageBudgetStateError,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 REQUEST_FINGERPRINT = "sha256:" + "a" * 64
 NOW = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[1]
@@ -368,5 +370,4 @@ def test_durable_reserve_request_rejects_model_mismatch(tmp_path: Path) -> None:
         )
 
     assert ledger.snapshot().active_reservations == 0
-
 

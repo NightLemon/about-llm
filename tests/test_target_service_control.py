@@ -33,6 +33,7 @@ from about_llm.llmops import artifact_fingerprint
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "inference-serving"
+pytestmark = pytest.mark.contract
 CONTROL = PROJECT / "qwen2.5-0.5b-service.control.json"
 RECORDED_REPORT = PROJECT / "qwen2.5-0.5b-service.recorded-report.json"
 CHECKPOINT_CONTROL = (
@@ -219,6 +220,8 @@ def test_manifest_loader_rejects_unknown_duplicate_nonfinite_and_binding_drift(
         target_module._validate_checkpoint_binding(spec, drifted)
 
 
+@pytest.mark.integration
+@pytest.mark.extended
 def test_fake_backend_exercises_real_tcp_control_and_offline_verifier(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -319,5 +322,4 @@ def test_recorded_real_qwen_report_verifies_without_loading_weights() -> None:
     assert report["scope"]["real_ipv4_loopback_tcp_http_executed"] is True
     assert report["scope"]["performance_capacity_or_slo_proven"] is False
     assert verify_recorded_target_service_report(spec, checkpoint, report) == report
-
 

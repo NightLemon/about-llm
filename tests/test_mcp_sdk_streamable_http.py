@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 
 pytest.importorskip("mcp")
-
 from about_llm.agents.mcp_sdk_streamable_http import (
     MCP_SDK_HTTP_EVIDENCE_BOUNDARY,
     MCP_SDK_HTTP_TOKEN_ENV,
@@ -22,6 +21,8 @@ from about_llm.agents.mcp_sdk_streamable_http import (
     verify_mcp_sdk_http_report,
 )
 from about_llm.llmops import artifact_fingerprint
+
+pytestmark = pytest.mark.contract
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_CONTROL = (
@@ -34,6 +35,9 @@ def official_http_report() -> dict[str, Any]:
     return run_mcp_sdk_http_control()
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
 def test_official_sdk_http_control_executes_real_transport(
     official_http_report: dict[str, Any],
 ) -> None:
@@ -83,6 +87,9 @@ def test_official_sdk_http_control_executes_real_transport(
     assert verify_mcp_sdk_http_report(report) == report
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -106,6 +113,9 @@ def test_report_rejects_unrehased_drift(
         verify_mcp_sdk_http_report(tampered)
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
 def test_report_rejects_cooperatively_rehashed_semantic_drift(
     official_http_report: dict[str, Any],
 ) -> None:
@@ -138,6 +148,9 @@ def test_server_receipt_loader_rejects_noncanonical_or_unsafe_json(
         _load_server_receipt(receipt)
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
 def test_server_mode_refuses_to_overwrite_receipt(tmp_path: Path) -> None:
     receipt = tmp_path / "receipt.json"
     receipt.write_text("sentinel", encoding="utf-8")
@@ -165,5 +178,3 @@ def test_server_mode_refuses_to_overwrite_receipt(tmp_path: Path) -> None:
 
     assert completed.returncode != 0
     assert receipt.read_text(encoding="utf-8") == "sentinel"
-
-

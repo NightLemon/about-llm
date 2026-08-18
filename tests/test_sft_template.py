@@ -20,6 +20,7 @@ from about_llm.finetuning.template import (
 )
 
 RENDERER_IDENTITY = {"tokenizer": "fixture@v1", "chat_template": "fixture-template"}
+pytestmark = pytest.mark.contract
 
 
 def _record() -> SFTRecord:
@@ -88,6 +89,8 @@ def test_mask_audit_reports_explicit_unit_and_scope() -> None:
     assert payload["manifest_fingerprint"].startswith("sha256:")
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 def test_tool_features_are_rendered_before_arrow_and_collate_without_drift() -> None:
     datasets = pytest.importorskip("datasets")
     sft_trainer = pytest.importorskip("trl.trainer.sft_trainer")
@@ -330,6 +333,7 @@ def test_mask_audit_rejects_unusable_renderer_identity(identity: dict[str, Any])
         )
 
 
+@pytest.mark.integration
 def test_real_transformers_template_returns_generation_mask() -> None:
     tokenizers = pytest.importorskip("tokenizers")
     transformers = pytest.importorskip("transformers")

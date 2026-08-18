@@ -19,6 +19,8 @@ from about_llm.integrations.cloud_http import (
 from about_llm.integrations.cloud_stream import OpenAICompatibleTextStream, StreamUpdate
 from about_llm.integrations.retry import RetryPolicy
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 URL = "https://api.example/v1/chat/completions"
 NOW = datetime(2025, 1, 1, tzinfo=timezone.utc)
 

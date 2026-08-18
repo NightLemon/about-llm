@@ -15,6 +15,7 @@ from about_llm.rag.sqlite_store import SQLiteChunkStore
 ROOT = Path(__file__).resolve().parents[1]
 CONTROL = ROOT / "projects" / "rag-foundations" / "rag_service_control.py"
 SERVER = ROOT / "projects" / "rag-foundations" / "serve_extractive.py"
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
 
 
 def _load(path: Path, name: str) -> ModuleType:

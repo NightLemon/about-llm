@@ -6,6 +6,8 @@ import pytest
 
 from about_llm.llmops import artifact_fingerprint, canonical_json_bytes
 
+pytestmark = pytest.mark.contract
+
 
 def test_fingerprint_is_independent_of_mapping_insertion_order() -> None:
     first = {

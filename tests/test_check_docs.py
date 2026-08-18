@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.check_docs import (
     READABILITY_DEFAULTS,
     check_evidence_entrypoints,
@@ -14,6 +16,8 @@ from scripts.check_docs import (
     check_test_references,
     parse_document,
 )
+
+pytestmark = pytest.mark.contract
 
 
 def _write_readability_baseline(path: Path, pages: dict[str, dict[str, int]]) -> None:

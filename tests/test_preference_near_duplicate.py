@@ -16,6 +16,7 @@ from about_llm.finetuning import (
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "projects" / "single-gpu-finetuning" / "preference.example.jsonl"
+pytestmark = [pytest.mark.formula, pytest.mark.contract]
 
 
 def test_preference_fixture_has_explicit_cross_surface_comparison_denominator() -> None:

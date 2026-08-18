@@ -15,6 +15,8 @@ from about_llm.synthetic_data import (
     plan_mixture,
 )
 
+pytestmark = [pytest.mark.formula, pytest.mark.contract, pytest.mark.security]
+
 
 def verification(
     verifier_id: str, *, revision: str = "verifier@v1", passed: bool = True

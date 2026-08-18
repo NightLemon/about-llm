@@ -26,6 +26,8 @@ from about_llm.inference import (
 )
 from about_llm.llmops import canonical_json_bytes
 
+pytestmark = pytest.mark.contract
+
 _HEADER = struct.Struct("<8sB3xIII")
 _DIGEST_BYTES = 32
 

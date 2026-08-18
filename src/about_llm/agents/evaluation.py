@@ -542,8 +542,10 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _validate_typed_case(case: AgentTraceCase) -> None:
+    if not isinstance(case, AgentTraceCase):
+        raise ValueError("cases must contain AgentTraceCase values")
     if not all(
-        value.strip()
+        isinstance(value, str) and value.strip()
         for value in (
             case.case_id,
             case.environment_id,
@@ -552,11 +554,14 @@ def _validate_typed_case(case: AgentTraceCase) -> None:
         )
     ):
         raise ValueError("case identity, environment, policy, and verifier cannot be empty")
+    if not isinstance(case.task_verifier, TaskVerifierResult):
+        raise ValueError("task_verifier must be a TaskVerifierResult")
     if (
         isinstance(case.max_steps, bool)
+        or not isinstance(case.max_steps, int)
         or case.max_steps < 0
-        or
-        isinstance(case.max_handler_attempts, bool)
+        or isinstance(case.max_handler_attempts, bool)
+        or not isinstance(case.max_handler_attempts, int)
         or case.max_handler_attempts < 0
     ):
         raise ValueError("step and handler budgets must be non-negative integers")
@@ -564,10 +569,39 @@ def _validate_typed_case(case: AgentTraceCase) -> None:
         raise ValueError(f"case {case.case_id!r} must contain at least one step")
     for index, step in enumerate(case.steps, 1):
         prefix = f"case {case.case_id!r} step {index}"
-        if not step.call_id.strip() or not step.tool_name.strip():
+        if not isinstance(step, RecordedAgentStep):
+            raise ValueError(f"{prefix}: steps must be RecordedAgentStep values")
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (step.call_id, step.tool_name)
+        ):
             raise ValueError(f"{prefix}: call_id and tool_name cannot be empty")
+        if not isinstance(step.proposal_fingerprint, str) or not isinstance(
+            step.execution_fingerprint, str
+        ):
+            raise ValueError(f"{prefix}: fingerprints must be strings")
         _validate_sha256(step.proposal_fingerprint, prefix, "proposal_fingerprint")
         _validate_sha256(step.execution_fingerprint, prefix, "execution_fingerprint")
+        if not isinstance(step.side_effect, SideEffect):
+            raise ValueError(f"{prefix}: side_effect must be a SideEffect")
+        if not isinstance(step.status, RecordedStepStatus):
+            raise ValueError(f"{prefix}: status must be a RecordedStepStatus")
+        for field_name, value in (
+            ("approved", step.approved),
+            ("handler_attempted", step.handler_attempted),
+            ("effect_applied", step.effect_applied),
+            ("unresolved_pending", step.unresolved_pending),
+        ):
+            if not isinstance(value, bool):
+                raise ValueError(f"{prefix}: {field_name} must be boolean")
+        if step.policy_allowed is not None and not isinstance(
+            step.policy_allowed, bool
+        ):
+            raise ValueError(f"{prefix}: policy_allowed must be boolean or null")
+        if step.effect_id is not None and (
+            not isinstance(step.effect_id, str) or not step.effect_id.strip()
+        ):
+            raise ValueError(f"{prefix}: effect_id must be non-empty or null")
         if step.effect_applied and not step.handler_attempted:
             raise ValueError(f"{prefix}: applied effect requires handler attempt")
         if step.effect_applied and step.side_effect is SideEffect.READ_ONLY:

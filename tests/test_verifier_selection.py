@@ -13,6 +13,7 @@ from about_llm.inference import (
 
 ROOT = Path(__file__).resolve().parents[1]
 TOY = ROOT / "projects" / "inference-serving" / "verifier_best_of_n_toy.py"
+pytestmark = pytest.mark.formula
 
 
 @pytest.fixture
@@ -213,5 +214,4 @@ def test_candidate_rejects_noncanonical_or_unbounded_fields(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         VerifierCandidate(*args)  # type: ignore[arg-type]
-
 

@@ -213,6 +213,7 @@ nav:
       - 常见问题: reference/faq.md
       - 资料与论文: reference/resources.md
       - 内容准确性与核验台账: reference/accuracy.md
+      - 教材测试与证据策略: reference/testing.md
 
 exclude_docs: |
   _templates/

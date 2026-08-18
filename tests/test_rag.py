@@ -13,6 +13,8 @@ from about_llm.evaluation import (
 )
 from about_llm.rag import BM25Index, Document, SearchResult, reciprocal_rank_fusion
 
+pytestmark = [pytest.mark.formula, pytest.mark.security]
+
 
 @pytest.fixture
 def documents() -> list[Document]:
@@ -47,6 +49,32 @@ def test_bm25_filters_principal_acl_before_ranking() -> None:
 
     assert [result.document.document_id for result in anonymous] == ["public"]
     assert [result.document.document_id for result in engineer] == ["restricted", "public"]
+
+
+def test_hidden_documents_cannot_change_visible_bm25_scores() -> None:
+    visible = [
+        Document("visible-a", "RAG ACL baseline", "tenant-a"),
+        Document("visible-b", "RAG retrieval baseline", "tenant-a"),
+    ]
+    hidden = [
+        Document("other-tenant", "RAG RAG RAG secret", "tenant-b"),
+        Document(
+            "restricted",
+            "RAG private private private private details",
+            "tenant-a",
+            acl=("finance",),
+        ),
+    ]
+
+    baseline = BM25Index(visible).search("RAG", tenant_id="tenant-a")
+    with_hidden = BM25Index([*visible, *hidden]).search("RAG", tenant_id="tenant-a")
+
+    assert [item.document.document_id for item in with_hidden] == [
+        item.document.document_id for item in baseline
+    ]
+    assert [item.score for item in with_hidden] == pytest.approx(
+        [item.score for item in baseline], rel=0, abs=0
+    )
 
 
 def test_rrf_ignores_duplicate_document_within_one_ranking(

@@ -6,6 +6,8 @@ import pytest
 
 from about_llm.inference import KVCapacityError, PagedKVAllocator
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -124,5 +126,4 @@ def test_allocator_rejects_invalid_and_unknown_sequences() -> None:
         allocator.append("missing", 1)
     with pytest.raises(ValueError, match="positive integer"):
         allocator.append("a", 0)
-
 

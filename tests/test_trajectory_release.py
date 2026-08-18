@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from about_llm.integrations.trajectory_release import (
     TRAJECTORY_RELEASE_VERSION,
     build_trajectory_release_report,
 )
+
+pytestmark = [pytest.mark.contract, pytest.mark.security]
 
 
 def safe_trajectory() -> dict[str, object]:

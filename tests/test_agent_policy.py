@@ -23,6 +23,8 @@ from about_llm.agents import (
     execution_fingerprint,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 
 def validate_resource(arguments: Mapping[str, Any]) -> None:
     if set(arguments) != {"resource_id", "claimed_tenant"} or not all(
@@ -257,6 +259,14 @@ def test_execution_identity_binds_subject_resource_tool_and_policy_versions() ->
         ),
     }
 
+    # Fixed vector calculated from the documented canonical JSON payload with
+    # Python's hashlib/json primitives, rather than copied from a runtime run.
+    assert proposal.fingerprint() == (
+        "sha256:ca3b23ff25f75a091e25e99d06205d0ec32a76151c78f2199ec5ba804f2044d5"
+    )
+    assert base_identity == (
+        "sha256:f7add395ffa043aa93c807e6c7b7636899313cfb98a4d14e04d95642b3d41dd5"
+    )
     assert len(identities) == 5
 
 

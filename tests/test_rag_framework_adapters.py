@@ -14,6 +14,8 @@ from about_llm.integrations.rag_frameworks import (
 )
 from about_llm.rag import BM25Index, Document, SearchResult
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 
 @pytest.fixture
 def result() -> SearchResult:

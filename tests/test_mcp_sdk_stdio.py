@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 
 pytest.importorskip("mcp")
-
 from about_llm.agents.mcp_sdk_stdio import (
     MCP_SDK_PROTOCOL_VERSION,
     MCP_SDK_REVIEWED_VERSION,
@@ -21,12 +20,24 @@ from about_llm.agents.mcp_sdk_stdio import (
 )
 from about_llm.llmops import artifact_fingerprint
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_CONTROL = ROOT / "projects" / "safe-agent" / "mcp_sdk_stdio_control.py"
 
 
-def test_official_sdk_real_stdio_control_executes_sdk_and_os_pipes() -> None:
-    report = run_mcp_sdk_stdio_control()
+@pytest.fixture(scope="module")
+def official_stdio_report() -> dict[str, Any]:
+    return run_mcp_sdk_stdio_control()
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
+def test_official_sdk_real_stdio_control_executes_sdk_and_os_pipes(
+    official_stdio_report: dict[str, Any],
+) -> None:
+    report = official_stdio_report
 
     assert report["runtime"]["sdk_version"] == MCP_SDK_REVIEWED_VERSION
     assert report["initialization"]["protocol_version"] == MCP_SDK_PROTOCOL_VERSION
@@ -63,6 +74,9 @@ def test_official_sdk_real_stdio_control_executes_sdk_and_os_pipes() -> None:
     assert verify_mcp_sdk_stdio_report(report) == report
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -78,25 +92,30 @@ def test_official_sdk_real_stdio_control_executes_sdk_and_os_pipes() -> None:
     ],
 )
 def test_report_rejects_unrehased_drift(
+    official_stdio_report: dict[str, Any],
     mutate: Callable[[dict[str, Any]], None],
 ) -> None:
-    report = run_mcp_sdk_stdio_control()
-    tampered = copy.deepcopy(report)
+    tampered = copy.deepcopy(official_stdio_report)
     mutate(tampered)
 
     with pytest.raises(ValueError, match="fingerprint"):
         verify_mcp_sdk_stdio_report(tampered)
 
 
-def test_report_rejects_cooperatively_rehashed_semantic_drift() -> None:
-    report = run_mcp_sdk_stdio_control()
-    report["scope"]["production_readiness_proven"] = True
-    unsigned = copy.deepcopy(report)
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
+def test_report_rejects_cooperatively_rehashed_semantic_drift(
+    official_stdio_report: dict[str, Any],
+) -> None:
+    tampered = copy.deepcopy(official_stdio_report)
+    tampered["scope"]["production_readiness_proven"] = True
+    unsigned = copy.deepcopy(tampered)
     del unsigned["report_fingerprint"]
-    report["report_fingerprint"] = artifact_fingerprint(unsigned)
+    tampered["report_fingerprint"] = artifact_fingerprint(unsigned)
 
     with pytest.raises(ValueError, match="semantic drift"):
-        verify_mcp_sdk_stdio_report(report)
+        verify_mcp_sdk_stdio_report(tampered)
 
 
 @pytest.mark.parametrize(
@@ -118,6 +137,9 @@ def test_server_receipt_loader_rejects_noncanonical_or_unsafe_json(
         _load_server_receipt(receipt)
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
 def test_server_mode_refuses_to_overwrite_receipt(tmp_path: Path) -> None:
     receipt = tmp_path / "receipt.json"
     receipt.write_text("sentinel", encoding="utf-8")
@@ -139,5 +161,3 @@ def test_server_mode_refuses_to_overwrite_receipt(tmp_path: Path) -> None:
 
     assert completed.returncode != 0
     assert receipt.read_text(encoding="utf-8") == "sentinel"
-
-

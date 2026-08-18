@@ -8,6 +8,8 @@ from types import ModuleType
 
 import pytest
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "projects" / "inference-serving" / "benchmark_openai.py"
 
@@ -20,6 +22,7 @@ def _load_script() -> ModuleType:
     return module
 
 
+@pytest.mark.smoke
 def test_benchmark_cli_accepts_reproducible_open_loop_configuration() -> None:
     module = _load_script()
 
@@ -94,6 +97,7 @@ def test_sleep_until_retries_after_an_early_wakeup(
     assert delays == [1.0, 0.5]
 
 
+@pytest.mark.smoke
 def test_benchmark_applies_open_loop_offsets_before_semaphore_queue(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

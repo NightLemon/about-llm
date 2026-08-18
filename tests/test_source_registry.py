@@ -4,7 +4,11 @@ import json
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from scripts.content_quality import check_encoding, check_ledger
+
+pytestmark = [pytest.mark.contract, pytest.mark.security]
 
 
 def _write_registry(path: Path, sources: list[dict[str, str]]) -> None:

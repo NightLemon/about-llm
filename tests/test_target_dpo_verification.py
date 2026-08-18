@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from about_llm.finetuning.target_dpo_control import (
     load_target_dpo_control_spec,
     verify_recorded_target_dpo_report,
@@ -12,6 +14,8 @@ from about_llm.finetuning.target_dpo_verification import (
 from about_llm.integrations.transformers_checkpoint_control import (
     load_checkpoint_control_spec,
 )
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "single-gpu-finetuning"

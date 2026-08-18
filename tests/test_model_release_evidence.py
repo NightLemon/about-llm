@@ -14,6 +14,8 @@ from about_llm.model_release_evidence import (
     verify_model_release_evidence,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "projects" / "transformers-basics" / "release-evidence"
 MANIFEST = EVIDENCE / "manifest.json"
@@ -79,6 +81,11 @@ def test_offline_release_evidence_locks_three_distinct_evidence_types() -> None:
         "vendor_model_card_claims_not_independent_measurements"
     )
     assert llama["vendor_reported"]["reported_context_length"] == "128k"
+
+    llama["family"] = "attacker-rewrite"
+    assert report.records[0]["family"] == "Llama"
+    with pytest.raises(TypeError):
+        report.records[0]["family"] = "attacker-rewrite"  # type: ignore[index]
 
     qwen = records["qwen2.5-0.5b-instruct-config"]
     assert qwen["contract"] == {
@@ -208,5 +215,4 @@ def test_duplicate_snapshot_json_is_rejected_before_hash_comparison(
 def test_fetcher_rejects_untrusted_source_url_without_network(url: str) -> None:
     with pytest.raises(ValueError, match="allowlisted public HTTPS origin"):
         fetch_release_artifact(url)
-
 

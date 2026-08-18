@@ -19,7 +19,11 @@ from about_llm.integrations.transformers_checkpoint_control import (
     verify_checkpoint_snapshot,
 )
 from about_llm.llmops import artifact_fingerprint, canonical_json_bytes
-from about_llm.rag.bm25 import BM25Index
+from about_llm.rag.bm25 import (
+    BM25_AUTHORIZED_STATISTICS_IMPLEMENTATION,
+    BM25_LEGACY_GLOBAL_STATISTICS_IMPLEMENTATION,
+    BM25Index,
+)
 from about_llm.rag.citations import CitationContext, build_citation_context
 from about_llm.rag.context_packing import (
     make_rag_chat_prompt_cost,
@@ -439,7 +443,7 @@ def execute_loaded_guarded_rag_transformers_control(
             raise AssertionError("guarded generation invocation ledger mismatch")
 
         retrieval_projection = {
-            "implementation": "about_llm.rag.BM25Index",
+            "implementation": BM25_AUTHORIZED_STATISTICS_IMPLEMENTATION,
             "top_k": case.top_k,
             "authorization_filtered_before_scoring": True,
             "document_ids": list(retrieved_ids),
@@ -733,6 +737,7 @@ def verify_recorded_guarded_rag_transformers_report(
     documents = tuple(item.to_document() for item in spec.corpus)
     document_by_id = {document.document_id: document for document in documents}
     index = BM25Index(documents)
+    legacy_index = BM25Index._for_legacy_global_statistics(documents)
     raw_cases = _array(report.get("cases"), "report.cases")
     if len(raw_cases) != len(spec.cases):
         raise ValueError("guarded report case count mismatch")
@@ -753,7 +758,15 @@ def verify_recorded_guarded_rag_transformers_report(
         ):
             raise ValueError(f"{location} workload binding mismatch")
 
-        actual_results = index.search(
+        retrieval = _mapping(case.get("retrieval"), f"{location}.retrieval")
+        implementation = retrieval.get("implementation")
+        if implementation == BM25_AUTHORIZED_STATISTICS_IMPLEMENTATION:
+            case_index = index
+        elif implementation == BM25_LEGACY_GLOBAL_STATISTICS_IMPLEMENTATION:
+            case_index = legacy_index
+        else:
+            raise ValueError(f"{location}.retrieval implementation drift")
+        actual_results = case_index.search(
             case_spec.query,
             tenant_id=case_spec.tenant_id,
             principals=case_spec.principals,
@@ -994,7 +1007,11 @@ def _verify_retrieval(
     retrieval = _mapping(case.get("retrieval"), f"{location}.retrieval")
     _require_exact_fields(retrieval, _RETRIEVAL_FIELDS, f"{location}.retrieval")
     if not (
-        retrieval.get("implementation") == "about_llm.rag.BM25Index"
+        retrieval.get("implementation")
+        in {
+            BM25_AUTHORIZED_STATISTICS_IMPLEMENTATION,
+            BM25_LEGACY_GLOBAL_STATISTICS_IMPLEMENTATION,
+        }
         and retrieval.get("top_k") == top_k
         and retrieval.get("authorization_filtered_before_scoring") is True
         and retrieval.get("document_ids")

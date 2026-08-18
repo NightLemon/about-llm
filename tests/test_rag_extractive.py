@@ -19,6 +19,8 @@ from about_llm.rag.context_packing import PackingReason, utf8_byte_length
 from about_llm.rag.extractive import ExtractiveAnswerArtifact, generate_extractive_answer
 from about_llm.rag.models import Document, SearchResult
 
+pytestmark = pytest.mark.security
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "rag-foundations"
 CORPUS = PROJECT / "sample_corpus.jsonl"

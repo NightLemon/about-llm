@@ -22,6 +22,8 @@ from about_llm.rag.service import (
 )
 from about_llm.rag.sqlite_store import SQLiteChunkStore
 
+pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
 
 def _database(path: Path) -> Path:
     sources = (

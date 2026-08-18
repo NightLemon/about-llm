@@ -16,6 +16,8 @@ from about_llm.inference import (
     quantized_linear,
 )
 
+pytestmark = pytest.mark.formula
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -227,5 +229,4 @@ def test_quantized_matrix_constructor_and_linear_input_fail_closed() -> None:
         quantized_linear([[1.0]], quantized)
     with pytest.raises(ValueError, match="bias"):
         quantized_linear([[1.0, 2.0]], quantized, bias=[1.0, 2.0])
-
 

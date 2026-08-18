@@ -18,6 +18,7 @@ TOY = (
     / "inference-serving"
     / "self_consistency_correlation_toy.py"
 )
+pytestmark = pytest.mark.formula
 
 INDEPENDENT = (BinaryVoteRegime("iid", 1, 3, 2),)
 CORRELATED = (
@@ -194,5 +195,4 @@ def test_regime_rejects_noncanonical_or_unbounded_fields(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         BinaryVoteRegime(*args)  # type: ignore[arg-type]
-
 

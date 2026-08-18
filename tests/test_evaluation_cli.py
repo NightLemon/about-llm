@@ -27,6 +27,8 @@ from about_llm.evaluation.cli import (
     main,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "evaluation-gate"
 CASES = PROJECT / "cases.example.jsonl"
@@ -292,6 +294,7 @@ def test_verify_evidence_recomputes_cluster_exact_comparison(
     assert verification["comparison_fingerprint"] == comparison["comparison_fingerprint"]
 
 
+@pytest.mark.smoke
 def test_score_cli_writes_results_and_slice_report(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -314,6 +317,7 @@ def test_score_cli_writes_results_and_slice_report(
     assert set(manifest.metric_revisions) == {"exact_match", "token_f1"}
 
 
+@pytest.mark.smoke
 def test_score_cli_exposes_literal_exact_as_opt_in_metric(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -384,6 +388,7 @@ def test_score_cli_exposes_literal_exact_as_opt_in_metric(
     }
 
 
+@pytest.mark.smoke
 def test_score_cli_distinguishes_strict_schema_from_json_value_equality(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -433,6 +438,7 @@ def test_score_cli_distinguishes_strict_schema_from_json_value_equality(
     }
 
 
+@pytest.mark.smoke
 def test_score_cli_keeps_evidence_span_identity_separate_from_entailment(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -480,6 +486,7 @@ def test_score_cli_keeps_evidence_span_identity_separate_from_entailment(
     }
 
 
+@pytest.mark.smoke
 def test_compare_cli_runs_paired_gate_and_protected_slice(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -789,6 +796,7 @@ def test_load_results_rejects_non_finite_latency(tmp_path: Path) -> None:
         load_results(path)
 
 
+@pytest.mark.smoke
 def test_calibrate_cli_writes_brier_ece_and_risk_coverage(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

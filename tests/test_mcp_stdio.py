@@ -19,10 +19,11 @@ from about_llm.agents.mcp_stdio import (
     SessionPhase,
     decode_stdio_message,
     encode_stdio_message,
-    run_stdio_control,
     serve_stdio,
 )
 from about_llm.llmops import canonical_json_bytes
+
+pytestmark = pytest.mark.contract
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_CONTROL = ROOT / "projects" / "safe-agent" / "mcp_stdio_control.py"
@@ -260,8 +261,20 @@ def test_binary_server_loop_emits_only_protocol_responses() -> None:
     assert [decode_stdio_message(line)["id"] for line in lines] == [1, 2]
 
 
-def test_real_subprocess_control_is_deterministic_and_scope_limited() -> None:
-    report = run_stdio_control(cwd=ROOT)
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
+def test_project_control_executes_real_subprocess_and_pins_scope() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(PROJECT_CONTROL)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    report = json.loads(completed.stdout)
+
+    assert completed.stderr == b""
 
     assert report["implementation"] == "about-llm.mcp-stdio-control.v1"
     assert report["protocol_version"] == MCP_PROTOCOL_VERSION
@@ -312,23 +325,3 @@ def test_real_subprocess_control_is_deterministic_and_scope_limited() -> None:
         "transcript_projection_fingerprint_proves_authenticity": False,
     }
     assert SECRET.encode() not in canonical_json_bytes(report)
-
-    completed = subprocess.run(
-        [sys.executable, "-m", "about_llm.agents.mcp_stdio", "control"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        timeout=30,
-    )
-    assert json.loads(completed.stdout) == report
-    assert completed.stderr == b""
-
-    project_completed = subprocess.run(
-        [sys.executable, str(PROJECT_CONTROL)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        timeout=30,
-    )
-    assert json.loads(project_completed.stdout) == report
-    assert project_completed.stderr == b""

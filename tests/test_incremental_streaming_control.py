@@ -28,6 +28,8 @@ from about_llm.inference.openai_reference import (
 from about_llm.inference.sse import STREAM_FINISHED, parse_sse_data_line
 from about_llm.llmops import artifact_fingerprint
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "projects" / "inference-serving"
 RECORDED_REPORT = PROJECT / "incremental-streaming.recorded-report.json"
@@ -206,6 +208,9 @@ def test_incremental_service_rejects_backend_protocol_drift(
     asyncio.run(exercise())
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
 def test_real_loopback_disconnect_control_and_recorded_report_verify() -> None:
     live = run_incremental_streaming_control()
     assert live["disconnect_stream"]["postclose_backend_asyncio_cancelled_error_observed"] is True

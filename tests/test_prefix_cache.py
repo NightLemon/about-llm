@@ -14,6 +14,8 @@ from about_llm.inference import (
     sha256_prefix_fingerprint,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -203,5 +205,4 @@ def test_default_fingerprint_is_deterministic_but_not_a_security_boundary() -> N
     assert sha256_prefix_fingerprint(identity, (1, 2)) != sha256_prefix_fingerprint(
         identity, (1, 3)
     )
-
 

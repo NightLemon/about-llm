@@ -19,6 +19,8 @@ from about_llm.agents import (
     ToolRegistry,
 )
 
+pytestmark = [pytest.mark.contract, pytest.mark.security]
+
 CONTEXT = ExecutionContext(
     "task-1", "user-1", "tenant-a", frozenset({"test:tool"})
 )
@@ -106,13 +108,20 @@ def test_call_id_reuse_with_changed_arguments_is_rejected() -> None:
 
 
 def test_budget_blocks_new_calls_but_allows_cached_replay() -> None:
+    handler_values: list[str] = []
+
+    def handler(arguments: Mapping[str, Any]) -> str:
+        value = str(arguments["message"])
+        handler_values.append(value)
+        return value
+
     tool = Tool(
         "echo",
         "test-tool@v1",
         "Return a message.",
         SideEffect.READ_ONLY,
         validate_message,
-        lambda arguments: arguments["message"],
+        handler,
         required_capability="test:tool",
         resolve_resource=fixture_resource,
     )
@@ -123,6 +132,8 @@ def test_budget_blocks_new_calls_but_allows_cached_replay() -> None:
     assert runtime.execute(first, context=CONTEXT).status is ExecutionStatus.COMPLETED
     assert runtime.execute(second, context=CONTEXT).status is ExecutionStatus.FAILED
     assert runtime.execute(first, context=CONTEXT).status is ExecutionStatus.CACHED
+    assert handler_values == ["one"]
+    assert runtime.executed_tool_calls == 1
 
 
 def test_validation_happens_before_approval_request() -> None:
@@ -226,7 +237,11 @@ def test_tool_call_rejects_values_outside_strict_json_domain(
 
 
 def test_failed_handler_attempt_consumes_budget() -> None:
+    attempts = 0
+
     def fail(_: Mapping[str, Any]) -> None:
+        nonlocal attempts
+        attempts += 1
         raise TimeoutError("remote state unknown")
 
     tool = Tool(
@@ -260,6 +275,7 @@ def test_failed_handler_attempt_consumes_budget() -> None:
     assert "pending" in first.message
     assert second.status is ExecutionStatus.FAILED
     assert "budget exhausted" in second.message
+    assert attempts == 1
     assert runtime.executed_tool_calls == 1
 
 

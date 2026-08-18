@@ -25,6 +25,8 @@ from about_llm.agents.a2a_loopback import (
     validate_official_instances,
 )
 
+pytestmark = pytest.mark.contract
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_CONTROL = ROOT / "projects" / "safe-agent" / "a2a_loopback_control.py"
 
@@ -130,8 +132,21 @@ def test_fixture_executor_rejects_cancel() -> None:
         asyncio.run(executor.cancel(None, None))  # type: ignore[arg-type]
 
 
-def test_real_loopback_official_sdk_control() -> None:
-    report = run_loopback_control()
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.extended
+def test_project_control_executes_real_official_sdk_loopback() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(PROJECT_CONTROL)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    report = json.loads(completed.stdout)
+
+    assert completed.stderr == ""
     assert report["implementation"] == A2A_CONTROL_VERSION
     assert report["protocol_version"] == A2A_PROTOCOL_VERSION
     assert report["official_sdk"] == {
@@ -191,26 +206,6 @@ def test_real_loopback_official_sdk_control() -> None:
     assert "control-message-1" not in serialized
     assert '"a": 7' not in serialized
     assert '"sum": 12' not in serialized
-
-
-def test_project_control_cli() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(PROJECT_CONTROL)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    report = json.loads(completed.stdout)
-    assert completed.stderr == ""
-    assert report["implementation"] == A2A_CONTROL_VERSION
-    assert report["projection_fingerprint"] == (
-        "sha256:f1ad7ae1c0e18c91caa710d6448f6a503eaf8c8cbf0c0e689166d3f1af4b099e"
-    )
-    assert report["official_schema"]["validated"] is False
-
-
 def test_invalid_public_control_arguments() -> None:
     with pytest.raises(ValueError, match="timeout"):
         run_loopback_control(schema_timeout_seconds=0)

@@ -9,6 +9,17 @@ from about_llm.finetuning import (
     variance_minimizing_score_baseline,
 )
 
+pytestmark = pytest.mark.formula
+
+
+def test_binary_uniform_policy_gradient_matches_hand_computed_oracle() -> None:
+    report = categorical_policy_gradient([0.0, 0.0], [0.0, 2.0], baseline=3.0)
+
+    np.testing.assert_array_equal(report.probabilities, [0.5, 0.5])
+    assert report.expected_reward == 1
+    np.testing.assert_array_equal(report.exact_gradient, [-0.5, 0.5])
+    np.testing.assert_array_equal(report.expected_score_gradient, [-0.5, 0.5])
+
 
 def test_categorical_policy_gradient_matches_finite_difference() -> None:
     logits = np.array([-0.4, 0.1, 0.3], dtype=np.float64)

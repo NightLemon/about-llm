@@ -40,11 +40,14 @@
 
 ## 提交前检查
 
+测试不是覆盖率竞赛。修改教材 claim 或对应实现时，先按[教材测试与证据策略](docs/reference/testing.md)写清 oracle 来源、实际证明范围和不能外推的结论；新增测试必须选择证据性质，跨组件或高成本测试还要标记运行属性。
+
 ```powershell
 mkdocs build --strict
 python scripts/check_docs.py
 python scripts/check_content_accuracy.py
 python -m pytest tests/test_check_docs.py -q
+python -m pytest -m "not extended and not gpu and not network"
 ```
 
 `docs/`、`mkdocs.yml` 与 `overrides/` 是站点源码；`site/` 是 `mkdocs build` 的生成物，不直接编辑或提交。部署前 `python scripts/check_built_site.py` 只检查 sitemap 和静态资源结构，不锁定教材原句。
