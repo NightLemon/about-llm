@@ -73,4 +73,4 @@ python -m about_llm.preference_cli audit --jsonl projects/single-gpu-finetuning/
 
 ## 进入完整章节
 
-准备实现或评审算法时，再读[对齐、奖励模型与偏好优化完整章节](alignment.md)。其中保留 Bradley–Terry、KL/PPO、DPO、RLAIF、process supervision、拒答、发布门禁和所有可执行证据边界。
+准备实现或评审算法时，再读[对齐、奖励模型与偏好优化完整章节](alignment.md)。需要从 policy gradient 推导到 PPO、GRPO 与 RLVR 时，进入[LLM 强化学习](reinforcement-learning.md)。

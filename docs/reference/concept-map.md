@@ -48,6 +48,24 @@ flowchart LR
 
 这条链最重要的分叉是：SFT 学条件分布中的理想回答；偏好优化使用比较或奖励信号；LoRA/QLoRA 描述参数更新方式，不描述训练目标。
 
+强化学习分支从决策问题而不是算法缩写开始：
+
+```mermaid
+flowchart LR
+  B["Contextual bandit"] --> M["MDP"]
+  P["Policy"] --> PG["Policy gradient"]
+  M --> R["Return"]
+  R --> A["Advantage"]
+  PG --> RF["REINFORCE"]
+  A --> GAE["GAE"]
+  GAE --> PPO["PPO"]
+  PG --> GRPO["GRPO-style group advantage"]
+  V["Verifier"] --> RLVR["RLVR"]
+  GRPO --> RLVR
+```
+
+对应的公式、边界和 exact categorical control 见[LLM 强化学习](../training/reinforcement-learning.md)。
+
 ## 推理与服务链
 
 ```mermaid
@@ -142,6 +160,10 @@ flowchart LR
 | [Prefix cache](glossary.md#term-prefix-cache) | [Prompt cache](glossary.md#term-prompt-cache) | 前者是 runtime 的 token/KV identity，后者常是 provider 产品契约 | 谁定义命中、权限和计费？ |
 | [Groundedness](glossary.md#term-groundedness) | [Faithfulness](glossary.md#term-faithfulness) | 前者问是否接入证据，后者问具体 claim 是否被证据支持 | 引用存在但论断不被支持时哪个失败？ |
 | [MCP](glossary.md#term-mcp) | [A2A](glossary.md#term-a2a) | MCP 连接 host/client 与能力 server，A2A 连接独立 Agent 的任务生命周期 | 交换的是工具能力还是独立任务状态？ |
+| [Reward](glossary.md#term-reward) | [Return](glossary.md#term-return) | reward 是单步或 outcome 信号，return 是从某时刻开始累计的随机量 | 当前公式使用即时反馈还是未来累计结果？ |
+| [Old policy](glossary.md#term-ppo) | [Reference policy](glossary.md#term-rlhf-rlaif) | old policy 产生 rollout 并定义 ratio，reference policy 约束行为漂移 | 它会随每轮 rollout 刷新吗？ |
+| [On-policy](glossary.md#term-on-policy) | [Off-policy](glossary.md#term-off-policy) | 前者主要从当前策略分布学习，后者复用其他 behavior policy 数据并需校正 | 是否保存了 behavior identity 和 log probability？ |
+| [ORM](glossary.md#term-orm) | [PRM](glossary.md#term-prm) | ORM 只评价 outcome，PRM 给中间 step/state 信号 | 多条合法过程怎样标注？ |
 
 ## 掌握一个术语的最低证据
 

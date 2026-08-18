@@ -409,6 +409,7 @@ Offline evaluation 使用固定 prompts，对 baseline/candidate 做 paired comp
 
 ## 继续学习
 
+- [LLM 强化学习](reinforcement-learning.md)：从 contextual bandit、REINFORCE 和 MDP 进入 GAE/PPO、GRPO 与 RLVR。
 - [单卡微调项目](../practice/projects/single-gpu-finetuning.md)：SFT、LoRA 与 DPO 的渐进路线。
 - [SFT 数据闭环](sft-data-pipeline.md)：模板、labels、数据治理和切分。
 - [Agent Runtime](../applications/agent-runtime.md)：权限、副作用和回放。

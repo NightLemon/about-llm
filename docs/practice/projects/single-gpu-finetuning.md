@@ -294,6 +294,22 @@ python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
 
 第六个 PID 恢复完整 gradients/ledger，却故意沿用 commit-boundary RNG。它仍执行 5 次 optimizer/StepLR step并得到 LR `0.0125`，但终态 RNG 不同、参数最大差为 `0.017878893573032573`。四种 publication fault snapshots 分别覆盖 base-only、两 payload 无 manifest、manifest 缺 sidecar 与 sidecar post-manifest tamper，sidecar 路径都在 `torch.load` 前拒绝；base-only 仍可走 commit replay。8 个测试还拒绝 duplicate/noncanonical/unknown manifest，并检查 scheduler/RNG schema。两种正确协议与两个隔离负例在同一路径执行；但 manifest-last 只是 completeness marker，base/sidecar/manifest 分次发布不是 sample—optimizer—checkpoint 原子事务，也无目录 `fsync`、断电/文件系统故障、来源认证、不可变目录或并发 directory-swap 证据。control 覆盖 main-process Torch RNG/StepLR，不覆盖 worker/Python/NumPy/CUDA RNG、原生随机模型、GradScaler、CUDA、distributed 或目标 Trainer。
 
+## Policy gradient、GAE 与 PPO 公式控制
+
+在运行模型 rollout 前，先把 score-function gradient、baseline 和 group-relative advantage 放到可枚举分布上对账：
+
+~~~powershell
+python projects/single-gpu-finetuning/policy_gradient_toy.py
+python projects/single-gpu-finetuning/ppo_objective_toy.py
+python -m pytest tests/test_policy_gradient.py tests/test_ppo_objectives.py -q
+~~~
+
+三动作 categorical control 的 expected reward 为 `2.081241`，exact gradient 为 `[-0.446381,-0.382343,0.828724]`。
+baseline 取 0、expected reward 和当前向量方差口径的最优常数时，枚举后的 estimator expectation 相同，total variance 分别约为 `2.609983/0.884520/0.784108`。
+
+Group-relative control 对 `[0,1,4,4]` 产生零均值、单位标准差 advantage；全 tied reward 返回零向量并标记 degenerate。
+PPO control 另验证 terminated/truncated、padding、GAE 和 ratio clip。它们都是 NumPy/CPU 公式控制，没有执行语言模型、rollout engine、完整 GRPO/RLVR、reward validity 或训练收敛。
+
 ## 固定 Qwen 目标权重控制
 
 ### Tool-aware SFT final labels

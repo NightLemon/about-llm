@@ -117,6 +117,7 @@ nav:
           - LoRA、QLoRA 与单卡工程: training/peft-qlora-engineering.md
       - 对齐与偏好优化:
           - 入门: training/alignment-basics.md
+          - 强化学习基础: training/reinforcement-learning.md
           - 方法、实验与证据: training/alignment.md
       - 持续学习与模型合并: training/continual-learning.md
       - JAX、Optax 与函数式训练: training/jax-optax.md

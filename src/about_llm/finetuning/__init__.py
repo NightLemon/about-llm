@@ -87,6 +87,13 @@ from about_llm.finetuning.peft_export import (
     verify_peft_export_directory,
     write_peft_export_manifest_new,
 )
+from about_llm.finetuning.policy_gradient import (
+    CategoricalPolicyGradientReport,
+    GroupRelativeAdvantageReport,
+    categorical_policy_gradient,
+    group_relative_advantages,
+    variance_minimizing_score_baseline,
+)
 from about_llm.finetuning.ppo import (
     GeneralizedAdvantageEstimate,
     PPOClippedSurrogateReport,
@@ -304,6 +311,7 @@ __all__ = [
     "CandidateDisposition",
     "CandidateException",
     "CategoricalMicrobatch",
+    "CategoricalPolicyGradientReport",
     "CategoricalTokenRecord",
     "ChatMessage",
     "ChatTemplateRenderer",
@@ -318,6 +326,7 @@ __all__ = [
     "GovernanceOutcome",
     "GovernancePurpose",
     "GradientAccumulationAnalysis",
+    "GroupRelativeAdvantageReport",
     "LinearRewardTrainingReport",
     "LoRALinear",
     "MessageRole",
@@ -397,6 +406,7 @@ __all__ = [
     "audit_sft_near_duplicates",
     "audit_sft_records",
     "bradley_terry_loss",
+    "categorical_policy_gradient",
     "character_ngrams",
     "dpo_logit",
     "dpo_loss",
@@ -408,6 +418,7 @@ __all__ = [
     "fit_linear_pairwise_reward_model",
     "generalized_advantage_estimation",
     "generate_minhash_lsh_candidates",
+    "group_relative_advantages",
     "load_preference_judgments",
     "load_preference_records",
     "load_preference_training_readiness",
@@ -443,6 +454,7 @@ __all__ = [
     "validate_sft_training_readiness",
     "validate_training_records",
     "validate_training_subset",
+    "variance_minimizing_score_baseline",
     "verify_peft_export_directory",
     "verify_recorded_target_dpo_report",
     "verify_recorded_target_lora_report",
