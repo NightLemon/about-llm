@@ -149,6 +149,7 @@ nav:
   - 质量与责任:
       - 评测:
           - 总览（基础）: quality/evaluation.md
+          - 测量学、标注与功效设计（进阶）: quality/evaluation-measurement.md
           - 方法、统计与发布决策（进阶）: quality/evaluation-methodology.md
           - Agent 仿真与红队: quality/agent-evaluation.md
       - 安全、隐私与治理: quality/safety.md

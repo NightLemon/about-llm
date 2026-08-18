@@ -7,13 +7,13 @@
 
 - **适合读者**：评测、数据、统计和发布门禁负责人。
 - **先修**：[评测总览](evaluation.md)、均值/比例、置信区间和基本抽样概念。
-- **首次阅读**：决策问题 → case schema → 切片/指标 → 配对比较 → 发布门槛。
+- **首次阅读**：测量计划 → 决策问题 → case schema → 切片/指标 → 配对比较 → 发布门槛。
 - **完成信号**：能固定 estimand、配对单位、effect threshold 和完整失败清单。
 - **卡住时**：先完成[评测最小验收路径](../practice/project-index.md#acceptance-evaluation)。
 
 </div>
 
-本页属于进阶评测。尚未建立 case、评分规则和错误分类时，先完成[评测总览](evaluation.md)；不要从显著性检验或复杂 bootstrap 开始建设评测体系。
+本页属于进阶评测。尚未建立 case、评分规则和错误分类时，先完成[评测总览](evaluation.md)；若人工标签或 judge 是核心测量仪器，再完成[评测测量学](evaluation-measurement.md)。不要从显著性检验或复杂 bootstrap 开始建设评测体系。
 
 评测不是在几个例子上“感觉更好”，而是把产品目标转成 case、指标、切片、统计比较和发布门禁。对 RAG、Agent、微调和模型升级使用同一 case identity 与报告协议，才能知道变化来自系统还是样本。
 

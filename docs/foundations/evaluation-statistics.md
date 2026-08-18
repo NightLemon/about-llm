@@ -13,10 +13,11 @@
 
 </div>
 
-**学习入口**：[数学基础](math.md) · [评测方法](../quality/evaluation-methodology.md) · [Evaluation Gate](../practice/projects/evaluation-gate.md) · [评测实验](../practice/labs.md#lab-8)
+**学习入口**：[评测测量学](../quality/evaluation-measurement.md) · [评测方法](../quality/evaluation-methodology.md) · [Evaluation Gate](../practice/projects/evaluation-gate.md)
 { .doc-nav }
 
 “模型 A 得分 82，模型 B 得分 80”还不是结论。你需要知道测量的对象是什么、case 从哪里来、两分是否配对、失败是否进入分母，以及观察差异有多不确定。
+若还没有验证 construct、rubric、标注 reliability 与 criterion validity，先读[评测测量学](../quality/evaluation-measurement.md)；统计精度不能修复错误测量。
 
 本章不把统计学变成公式目录，而是回答一次真实发布决策中的五个问题。
 

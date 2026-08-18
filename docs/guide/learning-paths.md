@@ -33,7 +33,7 @@
 2. **建立 RAG 基线**：完成[摄取](../applications/rag-ingestion.md)、[检索](../applications/rag-retrieval.md)、[检索表示学习](../applications/retrieval-learning.md)和[引用](../applications/rag-generation.md)。
 3. **加入权限与失败处理**：在[生产 RAG](../applications/rag-production.md)中处理 ACL、索引更新和无答案情况。
 4. **引入 Agent**：学习[架构](../applications/agent-architecture.md)、[决策理论](../applications/agent-decision-theory.md)与 [Runtime](../applications/agent-runtime.md)，把模型输出视为提议而不是授权。
-5. **建立评测**：按[评测方法](../quality/evaluation-methodology.md)区分任务成功、引用、工具执行和安全指标。
+5. **建立评测**：先用[评测测量学](../quality/evaluation-measurement.md)验证 rubric、标注与指标解释，再按[评测方法](../quality/evaluation-methodology.md)区分任务成功、引用、工具执行和安全指标。
 6. **完成项目**：从 [RAG Foundations](../practice/projects/rag-foundations.md) 或 [Safe Agent](../practice/projects/safe-agent.md) 选择一个项目。
 
 完成标准：系统对无答案、冲突证据、提示注入、越权请求、工具超时和重复请求都有可测试的行为。
@@ -84,7 +84,8 @@
 - 看不懂矩阵和广播：读[数学基础](../foundations/math.md)的线性代数部分。
 - 看不懂 softmax、交叉熵或 KL：读概率与信息论部分。
 - 看不懂反向传播：读链式法则与自动微分，再回到[预训练](../training/pretraining.md)。
-- 看不懂显著性和置信区间：读统计与实验设计，再回到[评测方法](../quality/evaluation-methodology.md)。
+- 分不清一致性、正确性和指标有效性：先读[评测测量学](../quality/evaluation-measurement.md)。
+- 看不懂显著性、功效和置信区间：读[评测测量学](../quality/evaluation-measurement.md)与[评测统计](../foundations/evaluation-statistics.md)，再回到[评测方法](../quality/evaluation-methodology.md)。
 
 ## 每个阶段怎样验收
 

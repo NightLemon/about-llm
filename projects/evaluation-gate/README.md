@@ -210,6 +210,18 @@ python -m about_llm.evaluation.cli render-comparison-html `
 
 也可以直接用仓库中已经评分的 authored fixture 验证 compare 协议：`results.baseline/candidate.example.jsonl` 分别由 `run.baseline/candidate.manifest.example.json` 绑定。fixture 只用于回归 loader、fingerprint 和 gate 数学，不代表任何真实模型质量或延迟。
 
+### Measurement reliability、validity 与 power control
+
+在统计比较之前运行：
+
+~~~powershell
+python projects/evaluation-gate/measurement_toy.py
+~~~
+
+四条 authored label 构造出“两个 rater 完全一致、却都与 supplied criterion 完全相反”的反例，精确报告 observed/chance agreement、Cohen's κ、criterion accuracy 和以 criterion 为行、observed label 为列的 confusion。它证明 reliability 与 criterion validity 不能互换；不证明 supplied criterion 本身正确、独立或代表目标 construct。
+
+同一脚本按 fixed-horizon i.i.d. binomial sign model 精确给出 one-sided rejection threshold、realized null rejection probability、conditional power、target-power minimum informative-pair count，以及声明 rational grid 上的 MDE。Ties 不进入 informative-pair count；真实总 case 需求还依赖未知 discordance rate。该 control 不支持 cluster dependence、repeated looks、多重选择或从 MDE 推出业务价值，完整解释见[评测测量学](../../docs/quality/evaluation-measurement.md)。
+
 ### Cluster bootstrap 正式门禁
 
 若多条 case 属于同一用户、文档或会话，在每条 case 的 `metadata` 中写入稳定、非空字符串 cluster id，并显式选择 estimand：

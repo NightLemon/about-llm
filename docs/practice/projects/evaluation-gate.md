@@ -199,6 +199,26 @@ python -m about_llm.evaluation.cli render-comparison-html `
 
 Renderer 先严格加载 comparison，再生成 deterministic、自包含、无 JavaScript/外部资源的页面；动态文本经过 HTML escape，CSP 默认拒绝所有资源，只允许当前内联 CSS。回执范围是 `artifact_only_render`：页面没有调用 `verify-evidence`、验证 HMAC 或重算统计。HTML 可被覆盖，也不是 canonical decision identity；发布判断必须回到 JSON artifact 与 verifier，不能从页面颜色或四舍五入后的值反推。
 
+## Measurement control { #measurement-control }
+
+Bootstrap 或 p-value 之前，先运行测量学反例与功效设计：
+
+~~~powershell
+python projects/evaluation-gate/measurement_toy.py
+python -m pytest tests/test_evaluation_measurement.py -q
+~~~
+
+固定四条 authored labels 中，两位 rater 完全一致：observed agreement=1、chance agreement=0.5、Cohen's κ=1；但两人相对 authored criterion 的 accuracy 都是 0，confusion matrix 全在反对角线上。
+这把 inter-rater reliability 与 criterion validity 分成两个不能互相替代的问题。
+
+同一个 toy 还对 fixed-horizon one-sided paired sign test 做 exact `Fraction` 计算。
+5 个 informative non-tied pairs、alpha=0.05 时，只有 5 次全胜才拒绝，实际 null rejection probability=1/32；alternative positive probability=0.8 时 power=0.32768。
+若规划 alternative=0.75、target power=0.8，需要至少 23 个 informative pairs；固定 25 个 informative pairs 时，千分之一网格上的 MDE positive probability=0.770。
+
+这里的样本量是删除 tie 后的 informative pair 数，不是总 cases；MDE 是 conditional positive-sign probability 相对 0.5 的 margin，不是 accuracy 百分点，也不是 minimum meaningful business effect。
+Toy 不估真实 discordance rate，不验证 criterion、construct/content validity、抽样代表性、cluster independence 或 repeated peeking。
+先填写[measurement plan](../../quality/evaluation-measurement.md#measurement-plan)，再把 estimand、sampling unit、rubric revision、power contract 和 evidence boundary 固定到真实实验协议。
+
 ## Cluster、随机化与多重检验
 
 若同一用户、文档或会话贡献多条 case，不要把这些行默认当成独立样本。在 case metadata 中记录稳定的 cluster id，并显式选择 estimand：
@@ -271,7 +291,7 @@ HMAC 是共享密钥认证，不提供公钥不可否认性；被 MAC 的 timest
 完整的项目级测试入口：
 
 ~~~powershell
-python -m pytest tests/test_evaluation_cli.py tests/test_evaluation_comparison_artifact.py tests/test_evaluation_comparison_html.py tests/test_evaluation_release_ledger.py tests/test_clustered_bootstrap.py tests/test_paired_randomization.py tests/test_clustered_randomization.py tests/test_holm_correction.py tests/test_sequential_peeking.py -q
+python -m pytest tests/test_evaluation_cli.py tests/test_evaluation_comparison_artifact.py tests/test_evaluation_comparison_html.py tests/test_evaluation_release_ledger.py tests/test_evaluation_measurement.py tests/test_clustered_bootstrap.py tests/test_paired_randomization.py tests/test_clustered_randomization.py tests/test_holm_correction.py tests/test_sequential_peeking.py -q
 ~~~
 
 不要只验证 happy path。以下测试分别证明 recorded answer 漂移、自洽但错误的 score、自洽但错源的 comparison、阈值篡改、artifact byte 漂移和合法前缀截断会 fail closed：

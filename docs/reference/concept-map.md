@@ -169,10 +169,17 @@ flowchart LR
 
 ```mermaid
 flowchart LR
+  CT["Construct"] --> OP["Operationalization"]
+  OP --> REL["Reliability"]
+  OP --> VAL["Construct / content / criterion validity"]
+  REL --> EST["Estimand"]
+  VAL --> EST
+  EST --> POW["Statistical power / MDE"]
   B["Baseline"] --> C["Control"]
   C --> A["Artifact"]
   A --> E["Evidence boundary"]
   DS["Dataset split"] --> EV["Evaluation"]
+  POW --> EV
   EV --> M["Metric"]
   M --> CAL["Calibration"]
   CAL --> BS["Brier score"]
@@ -184,7 +191,7 @@ flowchart LR
   PV --> H["Holm correction"]
 ```
 
-统计量只有在系统身份、采样单位、分母和决策规则固定后才有意义。Artifact 保存观察；evidence boundary 约束能从观察推出什么。
+先确定 construct 怎样被操作化，再分别检查 reliability 与 validity；二者共同约束 estimand 和 power 设计。统计量只有在系统身份、采样单位、分母和决策规则固定后才有意义。Artifact 保存观察；evidence boundary 约束能从观察推出什么。完整反例与 exact control 见[评测测量学](../quality/evaluation-measurement.md)。
 
 ## 最重要的易混淆概念
 
@@ -214,6 +221,10 @@ flowchart LR
 | [Reward](glossary.md#term-reward) | [Utility](glossary.md#term-utility) | reward 是训练/环境信号，utility 表示特定决策主体对结果的偏好尺度 | 这个数用于学习更新，还是用于业务选择？ |
 | [Safety property](glossary.md#term-safety-property) | [Liveness](glossary.md#term-liveness) | 前者要求坏事不发生，后者要求好事最终发生 | 是发现 reachable forbidden，还是发现 cycle/dead end？ |
 | [Constrained MDP](glossary.md#term-constrained-mdp) | Hard authorization | 前者常约束期望累计 cost，后者把动作直接移出可执行集合 | 少量违规能否被平均收益抵消？ |
+| [Reliability](glossary.md#term-reliability) | [Criterion validity](glossary.md#term-criterion-validity) | 前者问重复测量是否稳定，后者问是否与外部 criterion 一致 | 两个标注者能否完全一致却同时全部标错？ |
+| Observed agreement | [Cohen's κ](glossary.md#term-cohen-kappa) | 前者直接数相同标签，后者还扣除由两位标注者边际分布给出的 chance agreement | 类别 prevalence 改变后 κ 与 agreement 是否一起变化？ |
+| [Minimum Detectable Effect](glossary.md#term-minimum-detectable-effect) | Minimum meaningful effect | 前者是给定设计的统计分辨力，后者是值得改变产品决策的业务阈值 | 是实验看不见，还是效果不值得发布？ |
+| [Sampling unit](glossary.md#term-sampling-unit) | Measurement unit | 前者承载抽样/独立性假设，后者承载一次 label | 同一用户的一百个 claims 是多少个独立样本？ |
 
 ## 掌握一个术语的最低证据
 
