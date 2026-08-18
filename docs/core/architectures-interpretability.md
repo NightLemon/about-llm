@@ -129,6 +129,78 @@ SSM 的潜在优势是长序列扫描和受限 recurrent state，但“线性复
 
 混合模型可交替 attention、SSM、convolution 或 recurrent layers，用 attention 做精确 content addressing，用其他模块做廉价混合。评价应在相同质量、上下文、batch 与硬件上比较，而不是只对 Big-O。
 
+### 6.5 从架构推导运行时依赖 { #architecture-runtime-dependencies }
+
+一个 checkpoint 能下载，不等于任意模型库都能运行它。`safetensors` 只保存 tensor；真正的执行路径还要让多层契约同时匹配：
+
+```text
+config 与 tensor identity
+→ tokenizer / processor / chat template
+→ model graph 与算子语义
+→ decode state / cache layout
+→ kernel 与量化实现
+→ batch、调度、取消和输出解析
+```
+
+因此“支持某个模型”必须说明支持到哪一层。Transformers 能实例化模型，不证明 serving runtime 能正确管理它的 cache；服务能返回文本，也不证明多模态输入被读取或额外预测 head 被使用。
+
+#### 架构特征会要求什么
+
+| 架构特征 | 模型图需要实现 | 推理时保存的状态 | 依赖库必须额外支持 | 常见假兼容 |
+|---|---|---|---|---|
+| 标准 causal MHA/GQA | causal attention、位置编码、Norm、MLP | 每层 K/V | 对应 model class、GQA attention、KV allocator 与 cached decode | `AutoModel` 能加载就宣称 vLLM/nano runtime 已支持 |
+| Sliding-window / block-sparse attention | 特定 mask、位置与跨块可见性 | 窗口化或分层 K/V | mask-aware kernel、cache eviction 与 prefix 复用语义 | fallback 到 full attention 后能出字，却沿用原性能和容量结论 |
+| Latent/compressed KV | 压缩、投影与还原路径 | latent 或其他非标准 cache | 专用 model graph、cache object、kernel 和容量公式 | 看到 query/KV head 字段就套标准 GQA 公式 |
+| SSM/Delta/linear recurrent | prefill scan、recurrent update | recurrent state，可能含 convolution state | scan kernel、state cache 与序列重排 | 只有普通 KV Cache 就复用 decoder 调度 |
+| Attention + recurrent hybrid | 按层执行两类信息混合 | K/V 与 recurrent state 并存 | heterogeneous cache、层级 state 生命周期、兼容的 graph capture | 用单一“每 token KV 字节数”解释全部显存 |
+| Sparse MoE | router、top-k、expert 与 combine | 权重常驻、token-to-expert assignment 与 capacity 状态 | fused MoE、量化 expert、expert placement；多卡还需 all-to-all | 只因 active parameters 较小就推断能加载或更快 |
+| Vision/audio encoder + LM | media encoder、融合与语言模型 | media tensor、encoder output、位置 metadata | `processor`、model class、媒体 kernel 与 multimodal batching | 文本成功便宣称多模态支持 |
+| Early-fusion multimodal | 媒体与文本 token 的联合位置、mask 和融合 | 联合序列状态及媒体 metadata | 与 checkpoint 一致的 processor、mask、RoPE/position 和 serving schema | 图片字段能通过 HTTP schema，就认为模型实际使用了图片 |
+| MTP 或其他额外预测 head | 主 head 外的多步候选与验证路径 | 候选、验证位置及接受状态 | checkpoint loader、speculative scheduler、验收/回退逻辑 | 权重中存在 head，就宣称服务已经获得解码加速 |
+
+这张表描述依赖形状，不把架构名称绑定到品牌。一个模型家族可以同时发布 text-only、多模态、dense、MoE 或混合 checkpoint；同一品牌下的两个 checkpoint 可能需要不同 processor、model class、cache manager 和 kernel。
+
+#### 常见库分别负责哪一层
+
+| 库或组件 | 主要职责 | 它单独不能证明什么 |
+|---|---|---|
+| Transformers/JAX model implementation | 解析 config、构建模型图、加载 tensor、提供 eager/compiled forward 与 generation 接口 | 高吞吐调度、Paged KV、取消释放或目标 GPU 性能 |
+| tokenizer / processor | 文本模板、特殊 token、图片/音频/视频预处理与位置 metadata | 模型一定使用了媒体，或服务端采用了同一 revision |
+| vLLM/SGLang 等 serving runtime | 模型注册、cache/state、continuous batching、调度、流式和服务协议 | 新 model class 的所有 kernel、模板、parser 和量化组合都已正确覆盖 |
+| nano 教学 runtime | 暴露精简的 engine、scheduler、cache 和 model runner，便于读懂执行链 | 未注册架构、混合 state、多模态 processor 或生产服务语义会自动兼容 |
+| FlashAttention/Triton/CUTLASS/fused MoE 等 kernel | 加速一个或一组受 shape、dtype、mask 与硬件约束的算子 | 完整模型、cache 生命周期、协议或端到端一定加速 |
+| PEFT/TRL/训练框架 | adapter 注入、数据 collator、loss、optimizer 与训练循环 | target module、assistant mask、多模态 batch 或 serving reload 与新架构天然兼容 |
+| llama.cpp/GGUF 等转换与执行栈 | 转换 tensor、量化并执行已实现的模型图 | Hugging Face 有权重就一定可无损转换或运行全部模态 |
+
+框架名不是能力证明。每个框架还存在版本、backend、dtype、量化格式和硬件矩阵；一次成功可能走了慢速 fallback。报告应记录实际 model class、processor、cache/state 类型、attention/scan/MoE backend、是否 fallback，以及目标硬件峰值。
+
+#### 用能力阶梯判断“支持”
+
+不要用一个布尔值记录兼容性。至少分成以下层级：
+
+1. **识别**：config、`model_type`、`architectures` 与 tensor names 能对应；
+2. **实例化**：目标 dtype/device 能加载，缺失和 unexpected keys 符合预期；
+3. **模型执行**：固定输入的 prefill、cached/recurrent decode 与 reference 对账；
+4. **模态或额外路径**：媒体反事实、MoE routing、MTP/推测验证等目标特征确实执行；
+5. **服务执行**：batch、序列重排、prefix、取消、OOM/回退和输出 parser 正确；
+6. **目标设备验收**：在固定 workload 上测质量、峰值显存、TTFT、TPOT、吞吐和失败。
+
+低层通过不能继承高层结论。最小兼容记录可以写成：
+
+```yaml
+checkpoint: repo@immutable-revision
+frontend: tokenizer-or-processor@revision
+model_class: exact-class-and-library-version
+state: kv | recurrent | hybrid | encoder-plus-kv
+backend: attention-scan-moe-kernel-and-fallback
+serving: runtime-version-and-enabled-features
+hardware: gpu-driver-cuda-dtype
+verified: [instantiate, prefill, decode]
+not_verified: [multimodal, mtp, cancellation, throughput]
+```
+
+拿到新模型时，先填这张卡，再决定是升级现有 runtime、切换框架，还是只把它作为架构阅读对象。这样模型更新不会把教材退化成追逐型号的兼容列表。
+
 ## 7. Transformer 内部仍有多个架构轴
 
 即使都叫 decoder-only Transformer，也可能在以下方面不同：

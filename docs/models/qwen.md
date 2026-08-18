@@ -108,6 +108,13 @@ Base 模型通常学习续写；Instruct 模型依赖特定对话模板。把普
 
 ## 架构怎样读
 
+不要按型号代际背架构。先从目标 checkpoint 的 config、processor、tensor shape 和实现读取信息流，再把特征翻译成依赖清单：
+前端是 tokenizer 还是 multimodal processor，主体是标准 attention、MoE、recurrent/linear attention 还是混合图，decode 保存 K/V、recurrent state 还是两者。
+最后检查目标 runtime 是否拥有对应 model class、cache manager、kernel、scheduler 和输出 parser。
+
+完整方法和兼容性阶梯见[从架构推导运行时依赖](../core/architectures-interpretability.md#architecture-runtime-dependencies)。
+本页固定 Qwen2.5 control 只为它实际执行的标准 text-only decoder 路径提供证据；不能把这条证据借给同品牌下的多模态、MoE、混合 state 或额外预测 head checkpoint。
+
 ### Dense 与 MoE 不能共用参数口径
 
 Dense 模型的每层通常激活全部 MLP 参数。MoE 每个 token 只路由到部分 experts，但设备仍需存放更多总权重，并承担 routing、capacity、通信和负载不均。
