@@ -7,7 +7,7 @@
 
 - **适合读者**：搜索、召回、排序和 RAG 评测工程师。
 - **先修**：[RAG 总览](rag.md)、token/向量和基本排序指标。
-- **首次阅读**：相关性定义 → BM25 → dense → hybrid → rerank → Recall/nDCG。
+- **首次阅读**：相关性定义 → BM25 → dense → [检索学习](retrieval-learning.md) → hybrid → rerank → Recall/nDCG。
 - **完成信号**：能用固定 qrels 比较召回与重排，并保存失败 query。
 - **卡住时**：先用[实验 5](../practice/labs.md#lab-5)的 BM25 基线建立分母。
 
@@ -61,6 +61,14 @@ s(q,d)=\frac{e_q^\top e_d}{\|e_q\|\|e_d\|}
 - 新旧模型切换时的索引重建成本。
 
 向量维度高不自动更好。它增加存储、内存带宽和 ANN 成本，质量要看目标 evidence recall。
+
+### Embedding 怎样学出来
+
+Bi-encoder 通常用 query-positive pair 和候选 negatives 做 contrastive learning。InfoNCE 的分母究竟包含哪些文档，决定了模型被要求区分什么；in-batch/hard negatives 能增强信号，也可能把漏标相关文档当作 false negative 主动推远。
+Pooling、normalization、temperature、跨设备候选和 mining split 都属于训练目标的一部分。
+
+完整公式、梯度、DPR-style 数据流、ColBERT late interaction、SPLADE learned sparse retrieval，以及可运行的 NumPy exact control 见[检索表示学习](retrieval-learning.md)。
+先学这一章，再把训练出的 scorer 接到下面的 ANN 与 reranker 漏斗；否则很容易把表示误差和索引误差混在一起。
 
 ## Approximate Nearest Neighbor
 

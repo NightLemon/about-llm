@@ -13,7 +13,7 @@
 
 </div>
 
-本章建立端到端概念图。重点进阶内容分为[数据摄取与索引生命周期](rag-ingestion.md)、[召回/混合检索/重排](rag-retrieval.md)、[上下文/引用/忠实度](rag-generation.md)和[生产架构与运维](rag-production.md)四章；阅读本章后按这个顺序深入。
+本章建立端到端概念图。重点进阶内容分为[数据摄取与索引生命周期](rag-ingestion.md)、[召回/混合检索/重排](rag-retrieval.md)、[检索表示学习](retrieval-learning.md)、[上下文/引用/忠实度](rag-generation.md)和[生产架构与运维](rag-production.md)；阅读本章后按这个顺序深入。
 
 ## 它解决什么
 
@@ -98,7 +98,7 @@ RRF 常用：
 
 逐字抽取通过只能说明答案来自授权上下文，不说明片段相关、来源正确或答案完整。真实模型能运行也不说明会引用或拒答。两者是不同层的证据，应保留各自失败样例。
 
-仓库中的最小实现与运行顺序见 [RAG Foundations](../practice/projects/rag-foundations.md)；深入讨论见[检索与重排](rag-retrieval.md)、[生成与忠实度](rag-generation.md)和[生产 RAG](rag-production.md)。
+仓库中的最小实现与运行顺序见 [RAG Foundations](../practice/projects/rag-foundations.md)；深入讨论见[检索与重排](rag-retrieval.md)、[检索表示学习](retrieval-learning.md)、[生成与忠实度](rag-generation.md)和[生产 RAG](rag-production.md)。
 
 ## 高级模式
 

@@ -88,6 +88,25 @@ flowchart LR
 
 ## RAG 诊断链
 
+检索表示不是黑盒 API；它有自己的训练依赖：
+
+```mermaid
+flowchart LR
+  E["Embedding"] --> B["Bi-encoder"]
+  P["Pooling"] --> B
+  C["Contrastive learning"] --> I["InfoNCE"]
+  N["In-batch / hard negatives"] --> I
+  F["False-negative mask"] --> I
+  I --> B
+  B --> D["Dense retrieval"]
+  D --> A["ANN"]
+  B --> L["Late interaction"]
+  L --> CB["ColBERT"]
+  LS["Learned sparse retrieval"] --> SP["SPLADE"]
+```
+
+InfoNCE 的候选分母就是训练问题的一部分。Hard negative 提供更细判别信号，false negative 却会把真实相关文档推远；模型 exact ranking 与 ANN approximation 必须分开评测。完整推导与可运行反事实见[检索表示学习](../applications/retrieval-learning.md)。
+
 ```mermaid
 flowchart LR
   DOC["Document"] --> CH["Chunk"]
@@ -146,7 +165,7 @@ flowchart LR
 
 统计量只有在系统身份、采样单位、分母和决策规则固定后才有意义。Artifact 保存观察；evidence boundary 约束能从观察推出什么。
 
-## 十组最重要的易混淆概念
+## 最重要的易混淆概念
 
 | 概念 A | 概念 B | 真正的区别 | 判断问题 |
 |---|---|---|---|
@@ -164,6 +183,10 @@ flowchart LR
 | [Old policy](glossary.md#term-ppo) | [Reference policy](glossary.md#term-rlhf-rlaif) | old policy 产生 rollout 并定义 ratio，reference policy 约束行为漂移 | 它会随每轮 rollout 刷新吗？ |
 | [On-policy](glossary.md#term-on-policy) | [Off-policy](glossary.md#term-off-policy) | 前者主要从当前策略分布学习，后者复用其他 behavior policy 数据并需校正 | 是否保存了 behavior identity 和 log probability？ |
 | [ORM](glossary.md#term-orm) | [PRM](glossary.md#term-prm) | ORM 只评价 outcome，PRM 给中间 step/state 信号 | 多条合法过程怎样标注？ |
+| [Bi-encoder](glossary.md#term-bi-encoder) | [Cross-encoder](glossary.md#term-cross-encoder) | 前者可预计算 document vectors，后者要为每个 query-document pair 联合前向 | 这个 final score 能否离线绑定单个文档？ |
+| [Hard negative](glossary.md#term-hard-negative) | [False negative](glossary.md#term-false-negative) | 前者按任务定义不相关但难区分，后者其实相关却漏标 | 梯度应该排斥它，还是标签缺失？ |
+| [InfoNCE](glossary.md#term-infonce) | [Calibration](glossary.md#term-calibration) | InfoNCE 概率只在训练候选分母内归一化，不自动表示线上相关概率 | 换 batch/candidate pool 后数值含义是否保持？ |
+| [Pooling](glossary.md#term-pooling) | Qrels pooling | 前者聚合 token representations，后者汇总多系统候选供人工标注 | 聚合的是隐藏向量还是待 judging 文档？ |
 
 ## 掌握一个术语的最低证据
 

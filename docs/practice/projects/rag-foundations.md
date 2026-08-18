@@ -1,6 +1,8 @@
 # RAG Foundations
 
-**项目导航**：[返回项目索引](../project-index.md) · [RAG 总览](../../applications/rag.md) · [检索与重排](../../applications/rag-retrieval.md) · [生产 RAG](../../applications/rag-production.md) · [实验 5](../labs.md#lab-5)
+**项目导航**：
+[返回项目索引](../project-index.md) · [RAG 总览](../../applications/rag.md) · [检索与重排](../../applications/rag-retrieval.md) ·
+[检索表示学习](../../applications/retrieval-learning.md) · [生产 RAG](../../applications/rag-production.md) · [实验 5](../labs.md#lab-5)
 { .doc-nav }
 
 ## 目标
@@ -120,7 +122,20 @@ Backup 使用 SQLite online backup API，再检查 `quick_check`、foreign keys�
 
 这不是完整 disaster recovery。无密钥 manifest 不认证来源，`created_at_utc` 是本机自报时间，单文件 `fsync` 不证明 parent-directory durability；一次 tiny restore 不证明 RPO/RTO。远端 vector index、object store、cache、trace、删除传播和流量切换都未包含。
 
-## 检索、重排与指标分母
+## 检索表示学习 exact control { #retriever-learning-control }
+
+~~~powershell
+python projects/rag-foundations/retriever_learning_toy.py
+python -m pytest tests/test_retriever_learning.py -q
+~~~
+
+Reference 把 supplied query/document matrices 当成 encoder 输出，精确计算单正例和多正例 InfoNCE、softmax 分母、logit/query/document gradients，并用 finite difference 检查 analytic gradients。
+固定 fixture 中，easy negative loss 为约 `0.1269`，hard negative 为 `0.6444`；漏标的第二个相关文档收到降低 score 的梯度，改为 multi-positive mask 后梯度方向反转。脚本还验证 masked ColBERT-style MaxSim 与 SPLADE-style max pooling。
+
+这个 control 只隔离公式和反事实方向：没有执行 Transformer、训练 encoder、建立 ANN index、测量 GPU 或使用代表性 qrels。它不能支持“某 retriever 更好”的结论。
+机制、训练数据契约、negative mining leakage 和 exact/ANN 误差分层见[检索表示学习](../../applications/retrieval-learning.md)。
+
+## 检索、重排与指标分母 { #retrieval-reranking-metrics }
 
 Recorded-score rerank control 让 scorer 前再次执行 tenant/ACL gate，并严格绑定 query、candidate rank/chunk/content 和 scorer identity：
 
@@ -284,7 +299,7 @@ python -m pytest tests/test_rag_guarded_transformers_control.py -q
 完整 RAG 项目测试入口：
 
 ~~~powershell
-python -m pytest tests/test_rag.py tests/test_rag_ingestion.py tests/test_rag_sqlite_store.py tests/test_rag_sqlite_backup.py tests/test_rag_citations.py tests/test_rag_reranking.py tests/test_rag_context_packing.py tests/test_rag_cli.py tests/test_rag_extractive.py tests/test_rag_answer_eval.py tests/test_rag_trace.py tests/test_rag_service.py tests/test_rag_service_control.py tests/test_rag_transformers_control.py tests/test_rag_generation_policy.py tests/test_rag_guarded_transformers_control.py -q
+python -m pytest tests/test_rag.py tests/test_dense_rag.py tests/test_retriever_learning.py tests/test_rag_ingestion.py tests/test_rag_sqlite_store.py tests/test_rag_sqlite_backup.py tests/test_rag_citations.py tests/test_rag_reranking.py tests/test_rag_context_packing.py tests/test_rag_cli.py tests/test_rag_extractive.py tests/test_rag_answer_eval.py tests/test_rag_trace.py tests/test_rag_service.py tests/test_rag_service_control.py tests/test_rag_transformers_control.py tests/test_rag_generation_policy.py tests/test_rag_guarded_transformers_control.py -q
 ~~~
 
 至少运行这些 fail-closed 反例：ACL 必须在 ranking/scorer 前执行；SQLite 中途失败必须回滚旧 version/chunks；backup 即使协同重算 manifest 也要发现语义 row/schema 漂移；budget 会丢弃的候选仍必须先授权；body 不得注入 tenant；trace/content、Qwen audit 与 framework invocation count 漂移都必须拒绝：

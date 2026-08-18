@@ -75,6 +75,13 @@ from about_llm.rag.reranking import (
     RerankScorer,
     rerank_authorized_candidates,
 )
+from about_llm.rag.retriever_learning import (
+    ContrastiveRetrievalReport,
+    contrastive_retrieval_loss,
+    late_interaction_scores,
+    single_positive_info_nce,
+    splade_max_pool,
+)
 from about_llm.rag.sqlite_backup import (
     SQLITE_BACKUP_MANIFEST_VERSION,
     SQLITE_LOGICAL_FINGERPRINT_REVISION,
@@ -133,6 +140,7 @@ __all__ = [
     "CitationContext",
     "ClaimVerdict",
     "ContextCost",
+    "ContrastiveRetrievalReport",
     "DenseIndex",
     "Document",
     "EmbeddingModel",
@@ -172,6 +180,7 @@ __all__ = [
     "audit_rag_generation_traces",
     "build_citation_context",
     "build_publication_policy_replay_report",
+    "contrastive_retrieval_loss",
     "create_sqlite_chunk_backup",
     "evaluate_post_generation",
     "evaluate_pre_generation",
@@ -180,6 +189,7 @@ __all__ = [
     "execute_loaded_rag_transformers_control",
     "generate_extractive_answer",
     "guard_rag_generation",
+    "late_interaction_scores",
     "load_guarded_rag_transformers_control_spec",
     "load_rag_generation_traces",
     "load_rag_transformers_control_spec",
@@ -193,6 +203,8 @@ __all__ = [
     "restore_sqlite_chunk_backup",
     "run_guarded_rag_transformers_control",
     "run_rag_transformers_control",
+    "single_positive_info_nce",
+    "splade_max_pool",
     "split_markdown",
     "utf8_byte_length",
     "validate_checkpoint_binding",

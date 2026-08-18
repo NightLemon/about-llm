@@ -9,6 +9,7 @@
 - 检索前 tenant ACL 过滤；
 - Reciprocal Rank Fusion；
 - 注入式 dense cosine index；
+- 单/多正例 InfoNCE exact control、analytic embedding gradients、hard/false-negative 反事实、ColBERT-style MaxSim 与 SPLADE-style pooling；
 - authorization-first rerank core、严格 recorded-score artifact 与复用该核心的 sentence-transformers cross-encoder adapter；
 - source-level Recall@k、MRR@k、nDCG@k、Precision@k 与 all-evidence recall@k；
 - graded relevance、必须同时出现的多证据集合、显式无答案 query 与零结果诊断；
@@ -45,6 +46,15 @@ python -m about_llm.rag.cli retrieve `
 ~~~
 
 输出 JSON 保留 rank、score、稳定 chunk id、source/version、heading path、授权后的 `<source>` 上下文和 `[S1]` 来源映射。`tenant-b-secret` 即使包含高相关词也不会进入 tenant-a 候选；没有 `--principal engineering` 时，受限的 `rag-security` 也不会被评分。空 ACL 表示租户内公开，非空 ACL 需要与调用者 principals 至少匹配一项。
+
+### 检索表示学习 exact control
+
+~~~powershell
+python projects/rag-foundations/retriever_learning_toy.py
+python -m pytest tests/test_retriever_learning.py -q
+~~~
+
+该 CPU toy 对 supplied embeddings 精确计算单/多正例 InfoNCE、query/document gradients，并比较 easy negative、hard negative、漏标相关文档与 multi-positive mask；同一脚本还隔离验证 ColBERT-style MaxSim 和 SPLADE-style max pooling。它没有运行 encoder、训练 checkpoint 或建立 ANN index，不能证明 authored vectors、labels 或结果代表真实检索质量。完整推导见[检索表示学习](../../docs/applications/retrieval-learning.md)。
 
 ### 端到端 exact-span 回答基线
 

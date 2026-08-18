@@ -135,6 +135,7 @@ nav:
           - 总览: applications/rag.md
           - 数据摄取与索引生命周期: applications/rag-ingestion.md
           - 召回、混合检索与重排: applications/rag-retrieval.md
+          - 检索表示学习: applications/retrieval-learning.md
           - 上下文、引用与忠实度: applications/rag-generation.md
           - 生产架构与运维: applications/rag-production.md
       - Agent:
