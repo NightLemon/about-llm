@@ -6,12 +6,15 @@
 **学习导航**
 
 - **适合读者**：LLM API、SRE、平台和质量运营工程师。
-- **先修**：[推理基础](inference.md)、HTTP、队列和基本 SLO 概念。
+- **先修**：[请求生命周期](inference-request-lifecycle.md)、HTTP、队列和基本 SLO 概念。
 - **首次阅读**：SLO → API 契约 → 路由/降级 → 背压 → 质量监控。
 - **完成信号**：能写含失败分母、容量、取消和降级的服务 SLO。
-- **卡住时**：先区分[推理指标](inference.md)中的 TTFT、TPOT 与端到端延迟。
+- **卡住时**：先区分[推理指标](inference.md)中的 queue、TTFT、TPOT 与端到端延迟。
 
 </div>
+
+系统工程路线建议先完成[vLLM 单卡验收](vllm-serving.md)，再用本章把单实例扩展到网关、路由、SLO、发布和事故响应。
+最终交付落在 [Inference Serving 项目](../practice/projects/inference-serving.md)。
 
 ## 先画清服务边界
 

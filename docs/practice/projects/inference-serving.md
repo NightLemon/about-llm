@@ -1,32 +1,144 @@
-# Inference Serving
+# Inference Serving：从一个请求到容量报告
 
-**项目导航**：[返回项目索引](../project-index.md) · [推理基础](../../systems/inference.md) · [服务与可观测性](../../systems/serving.md) · [实验 7](../labs.md#lab-7)
+**项目导航**：[项目索引](../project-index.md) ·
+[请求生命周期](../../systems/inference-request-lifecycle.md) ·
+[Paged KV 实验](../labs/lab-7a-paged-kv.md) ·
+[vLLM 部署](../../systems/vllm-serving.md) ·
+[证据账本](../../evidence/inference-serving-controls.md)
 { .doc-nav }
 
-## 目标
+这个项目的目标不是“成功启动一个模型 API”，而是交付一条可以解释、复算和故障收口的推理服务路径。
 
-把“解码公式正确”“本地 HTTP 路径执行”“客户端断连传播”“调度/KV 状态机正确”“目标 GPU 服务达到 SLO”拆成不同证据层。这个项目同时提供精确 CPU oracle、固定 Qwen 权重的 Transformers reference service、两种取消 control、离线 workload gate 和真实 vLLM 压测入口；它们不能互相借用证据等级。
+完成后，你应该能用同一份请求 trace 回答：
 
-| 层级 | 本项目可运行内容 | 能回答的问题 |
-|---|---|---|
-| 数学/状态机 oracle | sampling、beam、constraint、stop、speculative、batching、KV、量化 | 固定契约的公式、排序、状态转移和字节账本是否正确 |
-| 本地集成 control | 固定 Qwen HTTP、authored async SSE、tiny Transformers thread | 指定本地框架/网络路径是否真实执行 |
-| Workload contract | offered/dispatch 双时钟、attempt artifact、SLO gate | 给定 trace 的分母、分位数和失败原因是否正确 |
-| 目标运行证据 | Linux/GPU vLLM + 固定 workload | 目标模型、硬件、版本与负载下的质量、容量和 SLO |
+- 请求在客户端、网关、scheduler、model runner 和 streamer 中分别发生了什么；
+- Prefill、decode、KV block 与输出 token 怎样对齐；
+- TTFT、TPOT、吞吐和失败率的分母是什么；
+- 断连后 HTTP、生成任务和 KV 资源是否分别结束；
+- 结论由 CPU oracle、本地集成还是目标 GPU 实测支持。
 
-前 3 层可在仓库中复算；第 4 层必须由你的目标环境产生，不能用 Windows CPU fixture 或 README 命令代替。
+## 最终交付物
 
-## 最小验收路径 { #run }
+不要把完整终端日志当作项目报告。最终交付以下五项：
 
-先离线复核三份录制报告，不加载 0.5B 权重，也不启动服务：
+1. 一张端到端请求图，以及一次成功请求的逐阶段 trace。
+2. 一份 Paged KV/COW 实验记录，包含预测、结果和容量失败负例。
+3. 一份固定 model/tokenizer/runtime/hardware 的 workload contract。
+4. 原始 attempts、服务端 trace 和质量/性能/失败汇总。
+5. 一页结论：当前容量点、主要瓶颈、回滚配置和证据边界。
+
+## 项目怎样分层
+
+```mermaid
+flowchart TD
+  A["教材：请求生命周期"] --> B["引导实验：Paged KV / COW"]
+  B --> C["本地 control：协议、取消、指标"]
+  C --> D["目标运行：vLLM + 固定 workload"]
+  D --> E["报告：质量、SLO、容量与失败"]
+  C --> F["证据账本"]
+  D --> F
+```
+
+- **教材**建立共同语言，不保存完整测试矩阵。
+- **引导实验**隔离一个机制，要求先预测再运行。
+- **项目路径**组合组件并形成可交付成果。
+- **证据页**记录精确 oracle、测试和不能外推的结论。
+
+不要用后一层的命令代替前一层的理解，也不要用前一层的 CPU 结果冒充目标 GPU 证据。
+
+## 阶段 0：先能复述一次请求 { #run }
+
+阅读[一次请求如何穿过 LLM 推理引擎](../../systems/inference-request-lifecycle.md)，
+然后不看正文画出下面的时间线：
+
+```text
+offered -> dispatch -> admission -> prefill -> first token
+        -> decode ... -> terminal -> sequence/KV release
+```
+
+对 (P=4,O=3) 的请求写出三轮模型工作，并解释为什么模型处理 6 个 positions、API 却返回 3 个输出 token。
+
+完成标准：能把输出 token、KV 长度、block table 和四个时间戳放到同一张表中。
+
+## 阶段 1：运行 Paged KV 引导实验
+
+先完成[实验 7A](../labs/lab-7a-paged-kv.md)，不要直接跳到测试命令。
 
 ~~~powershell
-python projects/inference-serving/run_qwen_target_service.py --verify projects/inference-serving/qwen2.5-0.5b-service.recorded-report.json
-python projects/inference-serving/incremental_streaming_control.py --verify projects/inference-serving/incremental-streaming.recorded-report.json
-python projects/inference-serving/transformers_thread_cancellation_control.py --verify projects/inference-serving/transformers-thread-cancellation.recorded-report.json
+python projects/inference-serving/paged_kv_tensor_toy.py
 ~~~
 
-再分析 3 个成功、1 个 429 的合成 attempt fixture：
+你需要解释的不是 `true`，而是：
+
+- 为什么五 token prefix 使用两个 block；
+- 为什么 fork 后 logical references 多于 physical blocks；
+- 为什么 A append 时发生 `1 -> 2` 的 partial-tail COW；
+- 为什么 B 的 tensor 保持不变；
+- 为什么 11 logical tokens 只对应 8 个 physical token values；
+- 为什么 dense parity 不等于执行了 GPU PagedAttention。
+
+再运行容量不足负例：
+
+~~~powershell
+python -m pytest `
+  tests/test_paged_kv_torch.py::test_capacity_failure_preserves_allocator_and_tensor_state `
+  -q
+~~~
+
+完成标准：异常发生后 allocator 与 K/V tensor 都没有留下半更新状态。
+
+## 阶段 2：把协议和终态跑通
+
+这一阶段不要求 GPU。先离线复核三份录制报告：
+
+~~~powershell
+python projects/inference-serving/run_qwen_target_service.py --verify `
+  projects/inference-serving/qwen2.5-0.5b-service.recorded-report.json
+python projects/inference-serving/incremental_streaming_control.py --verify `
+  projects/inference-serving/incremental-streaming.recorded-report.json
+python projects/inference-serving/transformers_thread_cancellation_control.py --verify `
+  projects/inference-serving/transformers-thread-cancellation.recorded-report.json
+~~~
+
+三条 control 分别回答不同问题：
+
+| Control | 它能证明什么 | 它不能证明什么 |
+|---|---|---|
+| 固定 Qwen HTTP | 指定权重、tokenizer、loopback API 和 generate audit | vLLM/CUDA、增量生成、质量与性能 |
+| Authored async stream | ASGI/backend task 能观察断连并停止 authored token | 模型 forward、不可中断 kernel、KV 释放 |
+| Tiny Transformers thread | 显式 event/StoppingCriteria 下 generate thread 退出 | 未修改 runtime、目标模型或 GPU 资源回收 |
+
+### 主动制造一次断连
+
+运行 live control 后，让 client 在首个内容 delta 后关闭连接。报告中分开记录：
+
+```text
+response task terminal
+backend generation terminal
+worker/thread terminal
+sequence/KV/permit released or unobserved
+```
+
+若只能证明前三项中的一部分，就把其余项标为 unobserved，不能根据“请求已经断开”推断资源已释放。
+
+完成标准：成功、取消、协议错误和超时都有唯一终态，且未定义指标不被填成 0。
+
+## 阶段 3：建立 workload contract
+
+在发压前固定：
+
+| 维度 | 需要记录的内容 |
+|---|---|
+| Identity | model/tokenizer/template/runtime/container/driver/hardware |
+| Input | Prompt/output 长度联合分布、语言与模板 |
+| Arrival | Burst、constant、Poisson 或生产 trace |
+| Concurrency | Client in-flight 与 server admission 上限 |
+| Generation | Temperature、top-k/top-p、stop、最大输出 |
+| Timing | Offered、started、first-token、terminal 的定义 |
+| Failure | 429、timeout、5xx、protocol、client cancel 是否进入分母 |
+| Quality | 任务 case、基线、错误 taxonomy 和通过门槛 |
+
+先用合成 attempts 验证分析口径：
 
 ~~~powershell
 python -m about_llm.inference_analysis_cli `
@@ -43,181 +155,115 @@ python -m about_llm.inference_analysis_cli `
   --output artifacts/inference/workload-report.json
 ~~~
 
-最后运行两个选择统计反例：
+这份 fixture 有 3 个成功 attempt 和 1 个 429。它只能验证分析器的分母、时钟和门禁，
+不能证明任何真实服务达到这些阈值。
 
-~~~powershell
-python projects/inference-serving/self_consistency_correlation_toy.py
-python projects/inference-serving/verifier_best_of_n_toy.py
-~~~
+完成标准：能解释为什么快速 429 可能降低 offered-to-terminal，同时服务质量反而更差。
 
-相同 0.6 单样本正确率下，N=11 的 independent majority 是 `0.75349813248`，latent-correlated fixture 是 `0.53896454244`。Best-of-N 中 oracle@N、verifier-selected@N 与期望 proxy score 分开计算；N=16 时 oracle 约 `0.9997178890`，selected success 却降到 `0.1852867601`。这两个 authored finite/binary oracle 没有运行模型、tokenizer、judge、PRM 或 provider。
+## 阶段 4：在目标 GPU 上启动 vLLM
 
-## 三层服务与取消证据
-
-### 固定 Qwen 的 Transformers HTTP reference
-
-已有缓存时可重放目标权重 control：
-
-~~~powershell
-python projects/inference-serving/run_qwen_target_service.py --local-files-only
-~~~
-
-它在加载前按 immutable revision manifest 重哈希 7 个文件、999,586,347 bytes，以 `trust_remote_code=False` 加载 `Qwen2ForCausalLM`，启动只监听 `127.0.0.1` 的受 Bearer 保护子进程，并真实执行 health/models、错误请求、non-stream 与 SSE。两次 chat 都触发一次 `GenerationMixin.generate()`；录制 report fingerprint 为 `sha256:63e566ca…617ddb`。
-
-这仍是 CPU FP32 eager、单进程、单 admission slot 的教学 reference。它先完成 generation 再发送 SSE chunk，所以 `[DONE]`、usage 和两次 generate 只能证明当前 API/execution contract，不证明 incremental decode、断连取消、KV 释放、vLLM/CUDA、容量或性能。
-
-### Authored async iterator 的断连传播
-
-~~~powershell
-python projects/inference-serving/incremental_streaming_control.py
-~~~
-
-完整 case 在 backend 完成前交付 `甲`、`🙂`、`终`；断连 case 在首个 `首`/token id 201 后关闭 response，真实 Uvicorn subprocess 观察 ASGI stream task 与 backend iterator 的 `asyncio.CancelledError`，active 回到 0，后续 authored token 未产生。录制 fingerprint 为 `sha256:25846822…2b5d00`。
-
-它只证明专门设计的 async iterator 协作取消，没有 tokenizer、模型 forward、Transformers thread、vLLM、CUDA 或 KV memory 观测。
-
-### Tiny Transformers thread 的显式协作退出
-
-~~~powershell
-python projects/inference-serving/transformers_thread_cancellation_control.py
-~~~
-
-子进程构造随机 1,272 参数 tiny GPT-2，在 Python thread 中真实执行一次 forward 与 `GenerationMixin.generate()`。Client 收到首 token 后断连，backend 设置 `threading.Event`；authored `StoppingCriteria` 在下一次 termination check 观察事件，使 generation 返回并 join。录制 fingerprint 为 `sha256:eadcab54…f62bc7`。
-
-人为 streamer pause 用于固定竞争窗口；证据只覆盖植入 cooperative event/`StoppingCriteria` 的 tiny CPU 路径。它不证明未修改的阻塞调用、目标 Qwen、已进入的不可中断 kernel、vLLM/CUDA 或 KV/CPU/GPU memory 已释放。
-
-## vLLM 与真实压测
-
-vLLM 的支持平台和版本变化较快。按目标版本的官方安装说明在受支持 Linux/GPU 环境安装，先用适合显存与许可证的模型做单请求 smoke：
-
-~~~bash
-vllm serve Qwen/Qwen2.5-0.5B-Instruct \
-  --dtype auto \
-  --max-model-len 4096 \
-  --gpu-memory-utilization 0.85
-~~~
-
-这只是启动示例，不是仓库已经取得的 GPU 结果。不要未经测量就把 context length 和 memory utilization 拉满；先保存 model/runtime/driver/hardware identity，再逐步增加长度与并发。
-
-安装 API 依赖后运行 OpenAI-compatible workload generator：
+按[vLLM 部署页](../../systems/vllm-serving.md#first-start)固定版本并启动服务。
+先完成单请求 token/usage/finish 对账，再运行负载发生器：
 
 ~~~powershell
 python -m pip install -e ".[api]"
-python projects/inference-serving/benchmark_openai.py --model Qwen/Qwen2.5-0.5B-Instruct --requests 50 --concurrency 4
 
 python projects/inference-serving/benchmark_openai.py `
-  --model Qwen/Qwen2.5-0.5B-Instruct `
-  --requests 100 --concurrency 8 `
+  --model my-model --requests 20 --concurrency 1
+
+python projects/inference-serving/benchmark_openai.py `
+  --model my-model --requests 100 --concurrency 8 `
   --arrival-process constant --request-rate 4
 
 python projects/inference-serving/benchmark_openai.py `
-  --model Qwen/Qwen2.5-0.5B-Instruct `
-  --requests 100 --concurrency 8 `
+  --model my-model --requests 100 --concurrency 8 `
   --arrival-process poisson --request-rate 4 --arrival-seed 7
 ~~~
 
-默认 `burst` 同时 offer 全部有限请求；constant 的第 \(i\) 条在 \(i/\lambda\) 秒到达；Poisson 把首条锚定在 0，后续间隔来自 seeded exponential realization。`--concurrency` 只限制在途 HTTP attempt，不改变预生成 arrival schedule。服务变慢时，请求应积累 client queue，而不是通过等待前一请求完成降低 offered rate。
+按 `1 -> 2 -> 4 -> 8 -> ...` 逐级扫描并发，不要直接跳到目标最大值。
+每一级都保存全部 attempts 和 server trace，而不是只保留聚合 dashboard。
 
-每个 request 必须保留四个时刻：
+### 每个容量点都报告什么
 
-- `offered_at = benchmark_started_at + scheduled_offset`；
-- `started_at`：取得 client semaphore 后开始 HTTP dispatch；
-- `first_token_at`：首个非空 content delta；
-- `completed_at`：成功或失败终态。
+```text
+成功率与各类失败计数
+client queue / offered TTFT / dispatch TTFT
+TPOT / E2E / requests per second / output tokens per second
+输入输出长度切片
+GPU utilization / peak memory / KV blocks / preemption
+质量与安全回归
+原始失败样例
+```
 
-只从 `started_at` 计时会漏掉 event-loop lag 和 semaphore 前等待，形成 client-side coordinated omission。`client_queue = started_at - offered_at` 也不等于 gateway/vLLM server queue。
+找到吞吐增加但 TTFT/TPOT、失败率、KV preemption 或 OOM 首次越过门槛的拐点。
+最后一个仍满足全部门槛的档位，是当前 workload 下的候选容量，而不是跨环境承诺。
 
-报告时分开：
+完成标准：报告明确指出饱和点由哪个指标首先暴露，以及回退到哪组配置。
 
-- `success_rate = successful / attempted` 与各类 timeout/429/5xx/protocol/client error；
-- all-attempt 的 client queue 和 offered-to-terminal；
-- success-conditional 的 dispatch TTFT/E2E/TPOT；
-- successful-offered TTFT；
-- attempted/successful requests/s 与 successful output tokens/s；
-- 服务端 GPU、KV、preemption、queue 与 request-id trace。
+## 阶段 5：只改变一个优化变量
 
-SSE chunk 不是 token，`completion_tokens` 必须来自服务端 usage；单 token 输出的 TPOT 未定义；没有成功样本时 latency 是 `null`，不是 0。快速 429 可能让 offered-to-terminal 变小，必须和 success rate 一起读。
+从[推理优化](../../systems/inference-optimization.md)选择一个与当前瓶颈匹配的改动：
 
-当前 generator 是一次性物化有限 coroutine 的教学工具，不是无限到达、bounded pending queue 或分布式 load generator。高 nominal rate 可能在客户端堆积任务并产生费用；先小规模扫描，并监控 generator lag/CPU、预算与紧急停止。
+- TTFT 被重复 system prompt 主导：评估 prefix cache。
+- KV 容量先到上限：评估更短 context、GQA 模型、KV/weight quantization 或 admission。
+- 小 batch decode 明显受带宽/launch 限制：评估 batch policy、兼容 kernel 或 CUDA Graph。
+- Target decode 串行成本主导：在接受率与 draft 成本可测时评估 speculative decoding。
 
-## 解码与选择 oracle
+保持 workload、质量 case 和其他配置不变，重新运行同一容量扫描。
 
-下面命令不加载模型，作用是锁定容易写错的算法契约：
+完成标准：同时报告收益、质量/失败回归和不适用切片，而不是只挑最好的一档性能。
 
-~~~powershell
-python projects/inference-serving/sampling_toy.py
-python projects/inference-serving/beam_search_toy.py
-python projects/inference-serving/constrained_decoding_toy.py
-python projects/inference-serving/stop_matching_toy.py
-python projects/inference-serving/speculative_decoding_toy.py --seed 23 --trials 20000
-~~~
+## 故意破坏清单
 
-- Sampling 顺序固定为 sign-aware repetition penalty → temperature → exact top-k → top-p → renormalization → token-id-order inverse CDF。Top-p 必须保留第一个让 cumulative probability 达到或越过阈值的 token。
-- Beam oracle 明确 active/finished set、EOS、length finish、generated-token-only normalization 与 tie-break；有限 beam 不保证找到全局最高概率序列。
-- Constraint oracle 对完整 token fragment 做 trie 状态转移，合法质量为零时 fail closed；它不是 JSON Schema/CFG，也没有 tokenizer byte semantics。
-- Stop matcher 对同一 UTF-8 stream 做 strict incremental decode，处理跨 byte/chunk/stop-prefix 边界；客户端命中 stop 不证明服务端停算或停止计费。
-- Speculative oracle 逐 token 验证 `min(1,p/q)` acceptance 与 positive `(p-q)` residual。默认一步 acceptance=0.6、TV/rejection=0.4；恒等式通过不证明目标 runtime、KV rollback 或加速。
+一个有学习价值的项目必须保留负例。至少完成其中四项：
 
-接入 Transformers、vLLM 或 provider 时，必须把 tokenizer、sampling transform、EOS/stop、length penalty、tie-break、grammar/runtime revision 固定到 token-level differential fixture；“参数名相同”不代表默认语义相同。
+1. 把 KV 总 block 降到 COW 无法预留，确认失败前没有 mutation。
+2. 删除成功 attempt 的 token usage，确认 TPOT/吞吐分析拒绝继续。
+3. 混用有/无 `offered_at` 的 attempts，确认分析器拒绝模糊时钟。
+4. 流式收到首 token 后断连，检查哪些生命周期真正结束。
+5. 使用错误 model name、过长请求和非法采样字段，保存 typed error。
+6. 把 arrival rate 提到过载区，比较 429、queue age 与成功延迟。
+7. 修改 tokenizer/template revision，观察 token ids、usage 或输出是否漂移。
+8. 在 canary 中注入错误配置，执行实际回滚而不只描述步骤。
 
-## 调度、KV 与 prefix cache oracle
+失败路径的预期结果应在运行前写下。否则很容易把任何异常都解释成“实验成功”。
 
-~~~powershell
-python projects/inference-serving/continuous_batching_toy.py
-python projects/inference-serving/kv_preemption_batching_toy.py
-python projects/inference-serving/kv_block_allocator_toy.py
-python projects/inference-serving/prefix_cache_toy.py
-~~~
+## 报告模板
 
-Continuous-batching fixture 用离散 scheduler boundary、FCFS admission、decode-first 与 chunked prefill 记录每轮 token-position work。固定 3 请求的 prompt/output 为 7/6 tokens，执行工作量是
+```markdown
+# 单卡推理服务验收
 
-\[
-W=\sum_i(P_i+O_i-1)=10,
-\]
+## 目标与 SLO
+任务、用户体验目标、质量/安全门槛。
 
-不是计费 token 总数 13；最后一个 prompt position 已产生首个输出分布。离散 slot utilization 不能解释成 GPU utilization、秒、TTFT 或吞吐。
+## Identity 与 workload
+模型、tokenizer、runtime、硬件、长度、到达、并发、采样。
 
-KV-preemption fixture 把 scheduler 与 metadata-only block allocator 连接：容量 3 blocks×2 positions 时发生一次抢占与 2 positions recompute，logical/executed work 为 9/11；6 blocks 对照无抢占且二者都是 9。它不分配真实 K/V tensor，也不是任一 vLLM release 的算法。
+## 一次请求 trace
+协议、admission、prefill、decode、KV、stream、terminal。
 
-Allocator fixture 验证 prefix sharing、partial-tail COW、refcount、fragmentation 与 no-mutation capacity failure。Prefix-cache fixture 即使把 fingerprint function 故意固定成碰撞，也必须继续核对 trusted tenant/visibility/policy/model/tokenizer/template/adapter/RoPE/KV-dtype identity 和 exact token tuple；leased entry 不可被 LRU 淘汰。Unkeyed hash 不能授权或隐藏低熵 prompt。
+## 容量曲线
+各并发档的成功率、TTFT、TPOT、吞吐、显存和 preemption。
 
-## Weight、checkpoint 与 KV 量化 oracle
+## 失败与取消
+429、timeout、OOM、断连和资源回收证据。
 
-~~~powershell
-python projects/inference-serving/quantization_toy.py --seed 17 --bit-width 4 --group-size 8 --output-features 16 --input-features 33 --batch-size 8
-python projects/inference-serving/quantized_bundle_toy.py
-python projects/inference-serving/minigpt_checkpoint_toy.py
-python projects/inference-serving/kv_quantization_toy.py --seed 31 --query-heads 4 --key-value-heads 2 --cached-tokens 8 --query-tokens 3 --key-head-dim 16 --value-head-dim 16
-~~~
+## 优化对照
+只改变的变量、收益、退化和不适用切片。
 
-单矩阵 control 真实执行 symmetric group-wise code、scale、dense bit packing、strict binary artifact 与 reload，但 `quantized_linear` 先反量化为 FP32 NumPy matmul。Bundle 再把两个 name-sorted matrix artifacts 与 model/tokenizer/config identity 放进严格容器。Repo-native MiniGPT checkpoint 更进一步保存 Byte-BPE merges、固定 architecture、全部唯一参数和 tied LM-head contract，并用受信任 loader 恢复 tiny causal LM。
+## 结论与回滚
+当前可接受容量、最可能瓶颈、回退配置、证据边界。
+```
 
-这些 artifact 的 SHA-256 是无密钥内容 identity，不认证来源；exclusive-create + file `fsync` 不证明 parent-directory durability 或崩溃原子性。所有低位矩阵最终仍恢复为 FP32 参数，没有 low-bit GPU kernel、resident VRAM 降低、GGUF/safetensors/vLLM compatibility、速度或目标模型质量证据。
+## 项目完成标准
 
-KV oracle 对每个 `[batch, kv_head, token, :]` 向量物化 INT8 code + FP32 scale，再反量化并执行 GQA attention。相同 K/V head dimension \(D\) 时，理想 payload ratio 是 \(4D/(D+4)\)，不是无条件 4×；allocator、alignment 和 workspace 尚未计入。
+- 能沿一次请求解释模型工作、KV 和用户可见事件。
+- 至少一个机制实验包含预测、负例与解释。
+- 目标 workload 的身份、分母和失败终态固定。
+- 质量、安全、延迟、吞吐、显存和成本没有互相替代。
+- 结论只绑定当前模型、硬件、版本和 workload。
+- 回滚经过实际演练。
 
-## 最小验证与故意破坏
-
-项目级验证：
-
-~~~powershell
-python -m pytest tests/test_inference_analysis_cli.py tests/test_openai_reference.py tests/test_target_service_control.py tests/test_incremental_streaming_control.py tests/test_sampling.py tests/test_beam_search.py tests/test_constrained_decoding.py tests/test_stop_matching.py tests/test_continuous_batching.py tests/test_kv_preemption_batching.py tests/test_kv_allocator.py tests/test_prefix_cache.py tests/test_inference_quantization.py tests/test_quantized_bundle.py tests/test_minigpt_checkpoint.py tests/test_kv_quantization.py tests/test_speculative_decoding.py tests/test_self_consistency.py tests/test_verifier_selection.py -q
-~~~
-
-故意失败路径至少覆盖：门禁一次返回全部失败原因、success 行缺 token contract、同一 attempt 文件混用 offered/no-offered 时钟、报告协同重哈希后语义漂移、断连后继续产生 token、KV capacity failure 发生部分 mutation、prefix hash collision 绕过 full identity、量化/checkpoint inner/outer tamper：
-
-~~~powershell
-python -m pytest tests/test_inference_analysis_cli.py::test_cli_failure_exit_retains_every_gate_reason tests/test_inference_analysis_cli.py::test_cli_rejects_success_row_without_token_contract tests/test_inference_analysis_cli.py::test_cli_rejects_ambiguous_attempt_artifacts -q
-python -m pytest tests/test_target_service_control.py::test_offline_verifier_rejects_cooperatively_rehashed_drift tests/test_incremental_streaming_control.py::test_report_verifier_rejects_cooperatively_rehashed_drift -q
-python -m pytest tests/test_kv_allocator.py::test_capacity_failure_is_atomic_before_mutating_an_exclusive_tail tests/test_prefix_cache.py::test_injected_hash_collision_never_bypasses_full_identity_or_token_comparison tests/test_minigpt_checkpoint.py::test_checkpoint_rejects_truncation_outer_and_inner_tamper -q
-~~~
-
-参数化 drift 测试会展开多个 case；它们通过的含义是“篡改被拒绝”，不是篡改后的报告有效。
-
-真实部署验收还应固定模型/tokenizer/runtime/container/driver/hardware、prompt 与输入/输出长度联合分布、arrival process、warmup、并发和网络位置；先验证任务/安全质量不退化，再扫描并发直到尾延迟、错误率、KV preemption 或 OOM 不可接受。保存 client attempts、server trace、GPU/KV 指标、原始配置和失败样例，而不只保留 dashboard 截图。
-
-## 证据边界
-
-仓库证明了固定 CPU oracle 的公式/状态机、固定 Qwen Transformers loopback reference、authored async cancellation、显式 cooperative tiny-Transformers thread，以及合成 attempt/SLO 聚合。它没有在本机执行 vLLM、CUDA、PagedAttention、低位或 INT8 KV kernel、目标 GPU workload，也不证明真实 tokenizer/model quality、开放文本 self-consistency、verifier calibration、远程 provider cancellation/billing、TLS/IAM、多 worker、峰值显存、容量、性能或生产 SLO。CPU、loopback 与录制报告的结果不得外推为 GPU/NCCL、目标模型或生产性能结论。
-
-完整实现与每个 fixture 的精确账本见 [projects/inference-serving](https://github.com/NightLemon/about-llm/tree/main/projects/inference-serving)。
+精确测试与每条 claim 的证据等级见[推理服务证据与准确性账本](../../evidence/inference-serving-controls.md)。
+项目目录的完整实现说明位于
+[projects/inference-serving](https://github.com/NightLemon/about-llm/tree/main/projects/inference-serving)。

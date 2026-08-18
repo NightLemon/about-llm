@@ -102,10 +102,6 @@
       "max_prose_line_length": 383,
       "overlong_prose_line_count": 9
     },
-    "docs/practice/projects/inference-serving.md": {
-      "max_prose_line_length": 414,
-      "overlong_prose_line_count": 9
-    },
     "docs/practice/projects/jax-minigpt.md": {
       "max_prose_line_length": 283,
       "overlong_prose_line_count": 7
@@ -158,21 +154,9 @@
       "max_prose_line_length": 750,
       "overlong_prose_line_count": 29
     },
-    "docs/systems/inference-optimization.md": {
-      "max_prose_line_length": 443,
-      "overlong_prose_line_count": 30
-    },
-    "docs/systems/inference.md": {
-      "max_prose_line_length": 401,
-      "overlong_prose_line_count": 10
-    },
     "docs/systems/serving.md": {
       "max_prose_line_length": 351,
       "overlong_prose_line_count": 17
-    },
-    "docs/systems/vllm-serving.md": {
-      "max_prose_line_length": 445,
-      "overlong_prose_line_count": 19
     },
     "docs/training/continual-learning.md": {
       "max_prose_line_length": 331,

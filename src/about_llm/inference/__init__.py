@@ -137,6 +137,10 @@ if TYPE_CHECKING:
         serialize_quantized_minigpt_checkpoint,
         write_quantized_minigpt_checkpoint_new,
     )
+    from about_llm.inference.paged_kv_torch import (
+        KVTensorStorePoisonedError,
+        PagedKVTensorStore,
+    )
 
 _MINIGPT_CHECKPOINT_EXPORTS = frozenset(
     {
@@ -154,12 +158,20 @@ _MINIGPT_CHECKPOINT_EXPORTS = frozenset(
     }
 )
 
+_PYTORCH_EXPORTS = frozenset(
+    {"KVTensorStorePoisonedError", "PagedKVTensorStore"}
+)
+
 
 def __getattr__(name: str) -> object:
     if name in _MINIGPT_CHECKPOINT_EXPORTS:
         from about_llm.inference import minigpt_checkpoint
 
         return cast(object, getattr(minigpt_checkpoint, name))
+    if name in _PYTORCH_EXPORTS:
+        from about_llm.inference import paged_kv_torch
+
+        return cast(object, getattr(paged_kv_torch, name))
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
@@ -200,6 +212,7 @@ __all__ = [
     "KVPreemptionEvent",
     "KVPreemptionRequestSchedule",
     "KVSequenceState",
+    "KVTensorStorePoisonedError",
     "KVWorkSlice",
     "LiteralSetConstraint",
     "LoadedMiniGPTCheckpoint",
@@ -209,6 +222,7 @@ __all__ = [
     "NextTokenSamplingStep",
     "PackedGroupwiseQuantizedMatrix",
     "PagedKVAllocator",
+    "PagedKVTensorStore",
     "PrefillSlice",
     "PrefixCache",
     "PrefixCacheCapacityError",

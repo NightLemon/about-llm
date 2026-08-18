@@ -1,5 +1,9 @@
 # Changelog
 
+- 重构推理部署学习主线：新增“一次请求如何穿过推理引擎”端到端教材，以请求 A/B 串联 admission、prefill/decode、block table、采样、SSE、四时钟和取消收口；新增 Paged KV/COW 引导实验，要求先预测 block/refcount/三份容量账本，再运行真实 CPU K/V tensor 与容量原子失败负例。推理基础、优化、vLLM 部署和 Inference Serving 项目页按“教材→引导实验→项目→证据”重新分工，精确 claim、测试与外推边界集中到独立证据页。导航、系统工程路线和 README 同步，重写页面清除既有可读性债务，同时保留所有原有实现深度与准确性门禁。
+
+- 新增组合现有 `PagedKVAllocator` 的 PyTorch-backed paged KV tensor control：预分配 `[layers, blocks, kv_heads, block_tokens, head_dim]` arena，支持真实 K/V append/materialize、prefix fork、partial-tail COW、refcount release/recycle、MHA/GQA causal dense reference 对账与 backend 更新失败后的 poisoned fail-closed 状态。9 个测试覆盖容量原子失败、父子 tensor 隔离、shared full-tail、stale-data 清理、layout 和数值契约；CPU float64 toy 明确不冒充 CUDA PagedAttention、模型 decode、VRAM 或性能证据。
+
 - 收敛测试调度与重复 transport 成本：1797 个 collected tests 现在都必须声明 formula/contract/security/smoke 证据性质，`extended` 仍必须给出 integration/slow 理由；将整文件继承的 105 个 smoke 收窄为 32 个真实正向入口。MCP SDK 的 8 个纯 strict-JSON loader case 回到 PR 核心层，stdio live report 改为 module-scoped 只读基准后由各 tamper case 深复制；authored MCP stdio、Streamable HTTP 与 A2A 各自合并重复 API/project-CLI 控制，只执行读者项目入口一次并保留完整 transport/protocol/scope 断言。Extended 从 27 项收敛为 17 项，未删除安全边界；本机专项由 60.07 秒降至 43.06 秒，慢例标签按实际单 case 一秒阈值校准。
 
 - 完成 Artifact/SDK/协议测试首轮准确性审查。修正三处“`frozen=True` 但仍保留 caller-owned mutable alias”的身份漂移：evaluation run manifest 现快照 ordered case IDs，HMAC release ledger 现快照 records，model release report 现深快照嵌套 records、返回 detached `to_dict()` 并在构造时复核 projection fingerprint。测试用构造后修改原 list、清空 records 和改写导出嵌套 dict 的反例锁定身份不变。无密钥 self-fingerprint 仍只表示 canonical content identity，不认证来源；HMAC 认证、artifact rehash 与外部 trusted-head 回滚检测继续分开表述。补齐 evaluation artifact、checkpoint、release evidence、MCP memory、Responses replay、reasoning/trajectory publication 的 marker；跨独立 loader 的相同 strict-JSON payload 保留为各自边界回归，不机械删成只测一个实现。

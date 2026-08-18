@@ -1,6 +1,14 @@
 # 单卡推理服务与压测
 
-目标：用同一组 workload 比较 Transformers 与 vLLM，并正确区分 TTFT、TPOT、端到端延迟和系统吞吐。
+本页是实现与运行参考，保存脚本参数、fixture 账本和证据边界。第一次学习时不要从这里顺序通读。
+
+- 先读[一次请求如何穿过推理引擎](../../docs/systems/inference-request-lifecycle.md)，建立端到端心智模型。
+- 再做[Paged KV 引导实验](../../docs/practice/labs/lab-7a-paged-kv.md)，按预测、运行、负例的顺序学习。
+- 项目交付顺序见[Inference Serving 项目页](../../docs/practice/projects/inference-serving.md)。
+- 测试与 claim 对照见[推理服务证据页](../../docs/evidence/inference-serving-controls.md)。
+
+本目录的工程目标是用同一组 workload 比较 Transformers 与 vLLM，并正确区分 TTFT、TPOT、
+端到端延迟和系统吞吐。下面的 control/oracle 各自只证明标题所述的局部契约，不能相互借用证据等级。
 
 ## 固定 Qwen 的真实 HTTP reference control
 
@@ -394,6 +402,18 @@ python projects/inference-serving/kv_block_allocator_toy.py
 报告同时给 logical block references、sharing saved blocks、logical tokens、physical token values、allocated slots 和 physical fragmentation。Logical tokens 对共享 prefix 重复计数；物理碎片只能用 physical values 计算。
 
 脚本没有分配真实 K/V tensor，所谓 COW 只复制 occupancy metadata；也没有 CUDA page table/PagedAttention、连续批处理、prefix key/ACL、eviction/preemption/swap 或并发压测。因此它是 allocator 状态机 oracle，不是 vLLM 行为、VRAM 或性能证据。
+
+## PyTorch-backed paged KV tensor control
+
+在相同 allocator 状态机上预分配真实 CPU K/V tensor arena：
+
+~~~powershell
+python projects/inference-serving/paged_kv_tensor_toy.py
+~~~
+
+固定 float64 fixture 写入 5-token prefix、fork block table，然后让父序列 append 触发 shared partial-tail COW。输出验证子序列 tensor 不受污染、父序列可按逻辑顺序 materialize，并将 4 query heads/2 KV heads 的 causal GQA 与独立 dense reference 对账。`resident_bytes` 只计算两个固定 arena 的 tensor 字节，不包括 allocator metadata、PyTorch runtime 或进程 RSS。
+
+这里存储和复制真实 K/V 数值，但 attention 会 gather 完整 sequence 并物化 dense scores/probability。它没有 CUDA PagedAttention kernel、模型 decode、scheduler、并发、eviction/swap 或性能测量，不能据此声称 VRAM 节省、latency 或 throughput 改善。
 
 ## Prefix cache identity / lease oracle
 

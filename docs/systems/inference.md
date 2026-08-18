@@ -1,103 +1,220 @@
-# 推理基础与优化
+# 推理基础：模型怎样逐个生成 token
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：推理实现、服务和容量规划工程师。
-- **先修**：[Transformer](../core/transformer.md)与[生成](../core/generation.md)基础。
-- **首次阅读**：prefill/decode → KV Cache → batching → 采样契约 → 优化顺序。
-- **完成信号**：能区分 TTFT、TPOT、吞吐、缓存容量和生成质量。
-- **卡住时**：先回到[生成与解码](../core/generation.md)的最小循环。
+- **适合读者**：第一次系统学习 LLM 推理，或准备进入推理服务与容量规划的开发者。
+- **先修**：[Transformer](../core/transformer.md)与[生成基础](../core/generation-basics.md)。
+- **首次阅读**：一次生成 → prefill/decode → KV Cache → 多请求调度 → 指标。
+- **完成信号**：能用一条请求解释 TTFT、TPOT、KV 容量和 (P+O-1) 的工作量账本。
+- **卡住时**：先只看“请求 A 的三轮模型工作”，暂时忽略分页、量化和服务协议。
 
 </div>
 
-本章建立生成计算的基础。性能与部署继续阅读[从算子到 KV Cache 的推理优化](inference-optimization.md)和[vLLM/OpenAI-compatible 单卡服务](vllm-serving.md)。
+用户看到的是一段连续文字，模型看到的却是一串“预测下一个 token”的重复工作。
+推理系统的任务，就是在显存和时间预算内，把这些重复工作安排好，并把结果可靠地送回客户端。
 
-## 两个阶段
+本章先回答“模型在算什么”。请求怎样进入调度器、KV block 怎样变化、流式响应怎样结束，
+将在[端到端请求生命周期](inference-request-lifecycle.md)中串起来。
 
-自回归推理分为：
+## 从一次最小生成开始
 
-1. **Prefill**：一次并行处理整个输入，生成每层 K/V 并存入缓存；通常计算密集。
-2. **Decode**：每步只输入新 token，读取此前 KV Cache 生成下一个 token；通常受内存带宽和调度影响。
+假设 prompt 被 tokenizer 编码成四个 token：
 
-TTFT（Time To First Token）主要受排队与 prefill 影响；TPOT（Time Per Output Token）描述稳态解码速度；端到端延迟还包含网络、tokenize、后处理和工具调用。
+```text
+[x1, x2, x3, x4]
+```
 
-标准 causal LM 的 prefill 最后位置已经产生首个输出分布。若 prompt 为 \(P\)、实际输出 \(O\ge1\)，且没有 prefix reuse、speculative verification 或 beam，模型 forward positions 的一阶账本是 \(P+O-1\)：后续 \(O-1\) 个输出才各需要一次 decode forward。它不是 API 计费口径，也没有包含 padding、cache 命中或 kernel 实际工作。
+模型不是一次写出完整答案，而是计算下一个 token 的概率分布，选出 `y1`，再根据
+`[x1,x2,x3,x4,y1]` 预测 `y2`，如此继续。
 
-## KV Cache
+```text
+prompt                         -> y1
+prompt + y1                    -> y2
+prompt + y1 + y2               -> y3
+```
 
-因果注意力中，旧 token 的 K/V 不随新 token 改变，因此可缓存，避免每步重算整个前缀。粗略元素数：
+如果每次都重算全部历史，前面四个 prompt token 的 K/V 会被反复计算。
+KV Cache 的作用，就是保存这些以后仍会使用的 K/V。
+
+## Prefill 与 decode 是同一生成过程的两个阶段
+
+### Prefill：先读完整个输入
+
+Prefill 对整段 prompt 做 causal forward。Prompt 内多个位置可以并行计算，
+每层的 K/V 被写入缓存，最后一个位置的 logits 用来选择第一个输出 token。
+
+```text
+输入模型: x1 x2 x3 x4
+写入 KV:  x1 x2 x3 x4
+产生输出:             y1
+```
+
+长 prompt 的 prefill 通常包含较大的矩阵计算，常更偏向计算受限；
+但是否真正 compute-bound 仍取决于模型、batch、序列长度、kernel 和硬件。
+
+### Decode：一次让每条序列前进一步
+
+下一轮只把新 token `y1` 输入模型。它读取已有 KV、追加 `y1` 的 K/V，再产生 `y2`。
+
+```text
+输入模型: y1
+读取 KV:  x1 x2 x3 x4
+追加 KV:              y1
+产生输出:                 y2
+```
+
+Decode 必须串行等待前一个输出，单步工作又相对小。小 batch 时常反复读取大量权重和 KV，
+因此通常更受显存带宽、kernel launch 和调度影响。Batch 增大后，这一判断可能改变。
+
+### 为什么工作量是 (P+O-1)
+
+若 prompt 长度 (P=4)，模型输出 (O=3) 个 token：
+
+| Forward | 处理的位置数 | 产生的输出 |
+|---|---:|---|
+| Prefill | 4 | `y1` |
+| Decode 1 | 1 | `y2` |
+| Decode 2 | 1 | `y3` |
+
+总 forward positions 是 (4+3-1=6)。最后一个 prompt position 已经产生 `y1`，
+所以后续只需 (O-1) 次普通 decode。
+
+这个等式只适用于标准 decoder-only causal generation，且没有 prefix reuse、speculative verification 或 beam。
+它是模型工作量的教学账本，不是 API usage、计费 token 或 GPU kernel work 的通用定义。
+
+## KV Cache 保存了什么
+
+在一层 attention 中，历史 token 的 K/V 在生成过程中不会因新 token 到来而改变。
+缓存它们后，新 query 可以直接和历史 key 做 attention，再用得到的权重组合 value。
+
+标准布局下，每个已缓存 token 的理想化 K/V 字节数约为：
 
 \[
-2\times L\times T\times H_{kv}\times D
+M_{KV/token}=2\times L\times H_{kv}\times D\times bytes(dtype),
 \]
 
-其中 2 表示 K 和 V，\(L\) 为层数，\(T\) 为已缓存长度，\(H_{kv}\) 为 K/V 头数，\(D\) 为头维；再乘每元素字节数和 batch/并发序列数。GQA/MQA 通过减少 \(H_{kv}\) 显著降低缓存。
+其中：
 
-长上下文会线性增加每请求 KV 内存。PagedAttention 将 KV 划为固定页，按需映射，减少连续大块分配和内部碎片，并支持更灵活共享前缀。
+- 2 表示 K 与 V；
+- (L) 是层数；
+- (H_{kv}) 是 K/V head 数；
+- (D) 是 head dimension；
+- `bytes(dtype)` 是每个元素的字节数。
 
-固定页并不消灭碎片：每条序列的最后一页仍可能空置；共享 partial tail 后追加还需要 copy-on-write。容量不足必须在写 tail 前整体拒绝 append。仓库 metadata-only allocator 可验证 block table/refcount/COW 与碎片账本，但没有真实 K/V tensor 或 GPU kernel。
+例如 32 层、8 个 KV heads、head dimension 128、BF16 每元素 2 bytes：
 
-## 批处理与调度
+```text
+2 * 32 * 8 * 128 * 2 = 131072 bytes = 128 KiB / token
+```
 
-静态批处理等待一组请求一起运行，简单但长度差异导致 padding 和空闲。连续批处理允许每个 decode step 动态加入新请求、移除完成请求，提高利用率。调度必须在吞吐、公平、TTFT 和长请求饥饿之间权衡。
+8192 个缓存位置的理想化单序列 KV 就是 1 GiB。真实 runtime 还需要 block metadata、对齐、workspace，
+也可能使用与标准 MHA 不同的布局，所以不能直接把公式结果当作峰值 VRAM。
 
-Chunked prefill 把很长 prompt 分块，与 decode 请求交错，避免长 prefill 阻塞所有生成；过小分块会增加调度开销。
+### GQA 与 MQA 为什么能降低 KV
 
-仓库的离散 continuous-batching oracle 固定 FCFS admission、sequence/token cap、decode-first 和 per-request prefill chunk，逐 boundary 记录首 token与完成，并验证 `sum(P+O-1)` work conservation。它是 CPU state machine；step 不是秒、slot utilization 不是 GPU utilization，也不等于特定 vLLM 版本的 scheduler。
+MHA 通常让 query heads 和 K/V heads 数量相同。GQA 让一组 query heads 共享一个 K/V head，
+MQA 更进一步让所有 query heads 共享同一组 K/V。
 
-## 采样分布也是服务契约
+公式中决定缓存大小的是 (H_{kv})，不是 query head 数。因此在其他条件相同时，减少 K/V heads
+可以显著降低长上下文和高并发时的缓存容量。
 
-只记录 `temperature=0.8, top_p=0.9` 不足以重放：还要固定 repetition/presence/frequency processor、执行顺序、top-k/top-p 边界、并列 token 的 tie-break、重新归一化时点、RNG/CDF 映射和框架版本。仓库单步 NumPy oracle 固定 repetition → temperature → exact top-k → post-top-k top-p → token-id-order inverse CDF，并用 `[0.4,0.3,0.2,0.1]` fixture 精确得到最终 `[4/7,3/7,0,0]`。它用于核对概率账本，不代表 provider/vLLM/Transformers 默认值，也没有多 token、模型质量或性能证据。
+## 为什么 KV 需要分页管理
 
-停止条件还要区分 config 与 call override。仓库 Transformers runtime control 用强制 token plan 真实执行三条生成循环：config EOS `{2,3}` 在 3 停止；call EOS=5 后 3 不再停止、5 才停止；call `max_new_tokens=2` 在无 EOS 时按长度停。它验证当前依赖版本的受控 `GenerationMixin` 路径，不执行真实 tokenizer、正常模型 token 选择、vLLM/provider 或 GPU。该返回对象没有 provider 风格 finish reason，因此报告的 stop 分类是依据已知 plan 与条件推断，而不是服务端 receipt。
+若每个请求一开始就预留最大长度的连续 KV，短请求会浪费大量空间；请求不断到达和结束时，
+寻找足够大的连续区域也很困难。
 
-仓库还有一条不同层级的 target-service control：固定 Qwen2.5-0.5B-Instruct selected snapshot 在加载前逐文件重哈希，真实加载 tokenizer/权重，并由独立子进程经 IPv4 loopback TCP/HTTP 各处理一次 non-stream 与 SSE chat completion。它对账 31-token prompt、continuation `[17,151645]`、usage、`stop`、后端 fingerprint 和两次 `GenerationMixin.generate()` audit；这证明目标权重到 reference HTTP API 的固定路径。它仍是 CPU FP32 eager、单 worker，SSE 在完整 generation 后才发出，不证明 vLLM/CUDA、incremental decode、断流取消、性能或质量。
+Paged KV 把物理缓存切成固定大小的 block。每条序列用 block table 记录自己的逻辑第 0、1、2 块
+分别落在哪些物理 block 上。它类似虚拟内存分页，但只是帮助理解映射关系，两者实现并不相同。
 
-Beam search 还要单独固定 active-prefix 的累计 log probability、最终 length normalization、EOS 是否计入生成长度、prompt 是否计入长度、finished-candidate cap、early stopping 与并列规则。仓库 table-driven oracle 使用 \(s=\log p/T^\alpha\)，其中 \(T\) 只计生成 token、包含 EOS、不含 prompt；EOS 立即完成且不再展开，不做 heuristic early stopping，并保留所有从 active prefix 产生的 EOS。它用 beam 1 返回概率 0.306、beam 2 返回概率 0.4 的反例证明有限 beam 可剪掉更优路径，但不等价于 Transformers、vLLM 或 provider 的实现。
+```text
+逻辑 block:   0   1   2
+物理 block:   5   1   8
+block table: [5, 1, 8]
+```
 
-约束解码还要固定 grammar state 与 tokenization 的组合语义：每个 token 的完整 decoded fragment 都必须能穿过状态机，EOS 只在 accepting state 开放，屏蔽后的 allowed probability mass 必须重新归一化，质量为零则 typed failure。仓库 finite-literal trie oracle 用高概率 `1]` 反例证明只检查 token 首字符会放过非法输出；它假设 supplied text fragment 可直接拼接，不覆盖真实 tokenizer byte state、JSON Schema/CFG 或 runtime 性能。
+物理 block 不必连续。固定 block 也不会消灭所有碎片：每条序列最后一个 block 仍可能没有填满。
+共享未满尾块后继续 append，还需要 copy-on-write。
 
-## 量化
+具体状态变化见[端到端请求生命周期](inference-request-lifecycle.md#kv-block-table)和
+[Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)。
 
-- **权重量化**：把 FP16/BF16 权重压到 INT8、INT4 等，减少容量与带宽。
-- **激活量化**：进一步加速矩阵乘，但动态范围和 outlier 更难处理。
-- **KV Cache 量化**：降低长上下文和高并发内存，可能影响注意力精度。
-- **PTQ**：训练后用校准数据确定尺度/舍入。
-- **QAT**：训练时模拟量化误差，成本高但可能恢复质量。
+## 一个请求变成多个请求
 
-常见粒度有 per-tensor、per-channel、per-group；group 越小通常越准，但尺度元数据与内核开销更高。权重大小约为“参数量 × 每参数位数/8”，实际还包含 scale、zero point、未量化层、运行时缓冲和 KV Cache。
+在线服务里，请求会在不同时间到达，prompt 和输出长度也不同。
 
-量化是否加速取决于硬件和内核。一个 4-bit 文件更小，不代表端到端一定更快；若频繁反量化或缺少优化 kernel，可能反而变慢。
+静态 batching 先组成一批再执行。若一条请求很长，已经完成的短请求可能留下空位。
+Continuous batching 在调度边界加入新请求、移除完成请求，让 batch 成员动态变化。
 
-## 投机解码
+Scheduler 每轮要在四个目标之间权衡：
 
-小型 draft 模型先提出多个 token，大模型一次并行验证，按拒绝采样规则接受前缀，从而在保持目标模型分布的条件下减少串行大模型步数。加速取决于接受率、draft 成本、验证长度和内核效率。自投机方法也可用目标模型的早退层或多个 head。
+- 新请求的首 token 不应等待太久；
+- 正在 decode 的请求不应频繁停顿；
+- GPU 应获得足够工作，避免 batch 太小；
+- KV 容量、token budget 和公平性不能被突破。
 
-“按规则”是必要条件：sampling 版本以 `min(1, p/q)` 接受，首次拒绝从 normalized positive `(p-q)` residual 采样；全部 proposal 接受时才从额外 target position 发一个 bonus token。一步接受率是 `1 - TV(p,q)`。Greedy 前缀一致算法是另一份契约；任意“大模型挑小模型输出”不保证 target sampling distribution。仓库的概率级 CPU oracle 只证明该数学和 block 控制流，不证明模型/kernel 实现或速度。
+Chunked prefill 会把长 prompt 分成片段，使它有机会与 decode 工作交错。
+KV 不足时，有的系统会拒绝新请求，有的会抢占并在以后重算 context，也可能使用其他策略。
 
-## 前缀缓存
+Continuous batching 不等于固定的 prefill-first、decode-first 或抢占规则。
+这些行为必须针对具体 runtime 和版本确认。
 
-多个请求共享完全相同的系统提示或文档前缀时，可复用其 KV。命中必须同时满足可信 tenant/security domain、authorization/policy revision、model/tokenizer/chat template/adapter revision、RoPE/position config、KV dtype 相等，以及 cached token ids 是请求 token ids 的 exact prefix；不能只比较 raw text 或 hash。若有多个候选，选择最长 exact prefix。
+## 用户体验由哪些指标描述
 
-Hash 只适合索引候选，命中仍做完整 identity/token comparison；未加密 hash 也不隐藏低熵 prompt。使用中的 entry 由 lease/refcount pin 住，不能被 LRU 淘汰。跨安全域共享、命中时延和删除生命周期都可能泄漏信息，需隔离、审计并按威胁模型处理。仓库 metadata oracle 用强制 hash collision 验证这些状态机边界，但没有真实 K/V、GPU、vLLM 或性能证据。
+只报告“每秒 token 数”无法解释用户等在哪里。
 
-## 内存预算
+| 指标 | 回答的问题 | 常见影响因素 |
+|---|---|---|
+| Queue time | 请求在执行前等了多久？ | admission、并发上限、过载 |
+| TTFT | 多久看到第一个 token？ | queue、tokenize、prefill、网络 |
+| TPOT / ITL | 首 token 后，token 以多快速度出现？ | decode batch、带宽、调度、kernel |
+| E2E latency | 请求多久得到终态？ | 排队、输入输出长度、错误和重试 |
+| Throughput | 系统单位时间完成多少工作？ | batch、容量、硬件、失败分母 |
 
-推理显存包括：权重、KV Cache、临时激活、CUDA graph/工作区、量化元数据和框架开销。容量规划不能只把显存除以模型文件大小。保留峰值余量，测试最长输入/输出和最大并发。
+提高 batch 往往能增加吞吐，却可能让单请求排队更久。没有一个脱离 SLO 的“最大吞吐最优值”。
 
-## 优化顺序
+TPOT 常用首 token 后的生成区间除以 `output_tokens - 1`。只有一个输出 token 时分母为零，
+因此 TPOT 应记为未定义，而不是 0。
 
-1. 固定质量与流量分布基线。
-2. 分解排队、prefill、decode、网络和外部工具耗时。
-3. 判断是算力、带宽、容量还是调度瓶颈。
-4. 一次改变一个变量：batch、量化、并行度、缓存或模型。
-5. 同时回归质量、尾延迟、OOM 和成本。
+## 其他优化在解决什么
+
+先建立 prefill、decode、KV 和调度的心智模型，再看优化名词会简单很多：
+
+| 技术 | 主要想减少什么 | 不能自动保证什么 |
+|---|---|---|
+| FlashAttention | Attention 中间结果的 HBM 往返 | KV 持久容量或端到端一定加速 |
+| Weight quantization | 权重容量与读取带宽 | 质量不变、已有高效低位 kernel |
+| KV quantization | 长上下文和并发的 KV payload | Attention 误差可接受或 runtime 支持 |
+| Prefix cache | 重复前缀的 prefill 工作 | 后续 decode 变快或跨权限安全共享 |
+| Speculative decoding | 串行 target decode 次数 | 接受率足够高或一定加速 |
+| CUDA Graph | 重复 decode 的 CPU launch 开销 | 动态 shape 与所有控制流都可捕获 |
+| Tensor parallelism | 单设备放不下的权重与计算 | 通信免费或单卡小模型更快 |
+
+下一章[推理优化](inference-optimization.md)会从症状出发，说明何时选择这些技术，而不是逐项堆术语。
+
+## 第一次读推理代码的顺序
+
+不要从最底层 kernel 随机跳读。沿一条请求走：
+
+1. 请求怎样保存 prompt、长度上限和 sampling config。
+2. Scheduler 如何把 waiting 请求变成当前 batch。
+3. Model Runner 如何准备 token、position、block table 和张量边界。
+4. Attention 如何读写 KV。
+5. Sampler 如何从 logits 产生 token。
+6. Postprocess 如何判断 EOS、长度、stop、取消和资源释放。
+
+仓库中可以先读[端到端请求生命周期](inference-request-lifecycle.md)，再运行
+[Inference Serving 项目](../practice/projects/inference-serving.md)。
+精确 oracle 与测试范围位于[推理服务证据页](../evidence/inference-serving-controls.md)。
 
 ## 自测
 
-1. 为什么长输入主要影响 TTFT，而长输出显著影响总延迟和服务占用？
-2. GQA 如何改变 KV Cache 公式？
-3. 4-bit 权重模型为什么可能没有 2× 的 FP8 推理速度？
+1. Prompt 有 5 个 token、输出 4 个 token时，普通生成需要处理多少 forward positions？逐轮写出来。
+2. Prefill 产生首 token 后，首 token 的 K/V 是否已经写入缓存？它在什么时候写入？
+3. 为什么 GQA 改变 KV 容量，却不要求 query head 数和 KV head 数相同？
+4. Paged KV 为什么仍会有内部碎片？
+5. TTFT 很高时，为什么不能直接断言 prefill kernel 很慢？
+
+下一步：[一次请求如何穿过 LLM 推理引擎](inference-request-lifecycle.md)。
