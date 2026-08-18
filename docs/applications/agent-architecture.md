@@ -7,7 +7,7 @@
 
 - **适合读者**：Agent 架构、平台和状态管理工程师。
 - **先修**：[Agent 总览](agents.md)和基本状态机；无框架前置要求。
-- **首次阅读**：Agent/Workflow → 控制循环 → 状态与记忆 → 停止 → verifier。
+- **首次阅读**：Agent/Workflow → 控制循环 → [不确定决策](agent-decision-theory.md) → 状态与记忆 → 停止 → verifier。
 - **完成信号**：能画 typed state machine，并写可测试的完成判定。
 - **卡住时**：先用[Safe Agent 最小路径](../practice/projects/safe-agent.md#run)观察 trace。
 
@@ -56,6 +56,12 @@ stateDiagram-v2
   Reconciling --> Completed: externally confirmed
   Reconciling --> Failed: abandoned/compensated
 ```
+
+### 从控制循环到决策问题
+
+Observe 并不表示看见了真实 state：tool result、网页和 receipt 都只是可能带噪或不可信的 observation。Decide 也不只是让模型挑最高分 action；控制面先形成 allowed action set，再比较 expected utility，并判断是否值得先获取信息。存在 terminal path 也不保证所有路径会结束。
+
+这些形式化区别、Bayesian belief update、value of information、constrained decision，以及 safety/liveness 检查见[Agent 决策理论](agent-decision-theory.md)。本章后续继续讨论它们怎样落到 state machine、memory、budget 和 verifier。
 
 ## 规划模式
 

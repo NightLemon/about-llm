@@ -128,6 +128,27 @@ flowchart LR
 
 ## Agent 控制链
 
+先把“不确定地选择下一步”还原为决策对象：
+
+```mermaid
+flowchart LR
+  S["Hidden state"] --> O["Observation"]
+  T["Transition model"] --> B["Belief update"]
+  O --> B
+  M["MDP"] --> P["POMDP"]
+  B --> P
+  U["Utility"] --> EU["Expected utility"]
+  B --> EU
+  EU --> VI["Value of information"]
+  P --> PU["Planning under uncertainty"]
+  VI --> PU
+  SP["Safety property"] --> C["Allowed action set"]
+  C --> EU
+  L["Liveness"] --> ST["Stop / escalate"]
+```
+
+Observation 不是真实 state，context 也不是可审计 belief。Utility 只能在 policy/approval 已允许的 action set 内比较；terminal reachable 只表示可能结束，reachable cycle 仍会破坏 guaranteed termination。公式与有限图 exact control 见[Agent 决策理论](../applications/agent-decision-theory.md)。
+
 ```mermaid
 flowchart LR
   SO["Structured output"] --> TC["Tool calling"]
@@ -187,6 +208,12 @@ flowchart LR
 | [Hard negative](glossary.md#term-hard-negative) | [False negative](glossary.md#term-false-negative) | 前者按任务定义不相关但难区分，后者其实相关却漏标 | 梯度应该排斥它，还是标签缺失？ |
 | [InfoNCE](glossary.md#term-infonce) | [Calibration](glossary.md#term-calibration) | InfoNCE 概率只在训练候选分母内归一化，不自动表示线上相关概率 | 换 batch/candidate pool 后数值含义是否保持？ |
 | [Pooling](glossary.md#term-pooling) | Qrels pooling | 前者聚合 token representations，后者汇总多系统候选供人工标注 | 聚合的是隐藏向量还是待 judging 文档？ |
+| [State](glossary.md#term-state) | [Observation](glossary.md#term-observation) | state 是环境实际状况，observation 是系统收到且可能带噪的信号 | Provider 写了 completed，还是外部 effect 已被独立证明？ |
+| [Belief state](glossary.md#term-belief-state) | Model confidence | belief 绑定事件、先验和 observation model，模型自述数字不天然校准 | 能否重放 prior、likelihood 与 evidence？ |
+| [Planning](glossary.md#term-planning) | [Policy](glossary.md#term-policy) | plan 常是候选动作序列，policy 规定不同 observation/state 下怎样选 action | 中间结果变化时是否定义了分支？ |
+| [Reward](glossary.md#term-reward) | [Utility](glossary.md#term-utility) | reward 是训练/环境信号，utility 表示特定决策主体对结果的偏好尺度 | 这个数用于学习更新，还是用于业务选择？ |
+| [Safety property](glossary.md#term-safety-property) | [Liveness](glossary.md#term-liveness) | 前者要求坏事不发生，后者要求好事最终发生 | 是发现 reachable forbidden，还是发现 cycle/dead end？ |
+| [Constrained MDP](glossary.md#term-constrained-mdp) | Hard authorization | 前者常约束期望累计 cost，后者把动作直接移出可执行集合 | 少量违规能否被平均收益抵消？ |
 
 ## 掌握一个术语的最低证据
 

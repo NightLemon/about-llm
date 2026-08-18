@@ -141,6 +141,7 @@ nav:
       - Agent:
           - 总览: applications/agents.md
           - 架构、规划与记忆: applications/agent-architecture.md
+          - 决策理论与安全终止: applications/agent-decision-theory.md
           - 工具协议与故障恢复: applications/agent-runtime.md
           - MCP、A2A 与互操作: applications/agent-interoperability.md
       - 代码、对话与 LLMOps: applications/code-conversation-llmops.md

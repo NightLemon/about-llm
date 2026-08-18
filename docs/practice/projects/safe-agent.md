@@ -1,6 +1,7 @@
 # Safe Agent
 
-**项目导航**：[返回项目索引](../project-index.md) · [Agent 架构](../../applications/agent-architecture.md) · [Agent Runtime](../../applications/agent-runtime.md) · [互操作协议](../../applications/agent-interoperability.md) · [实验 6](../labs.md#lab-6)
+**项目导航**：[返回项目索引](../project-index.md) · [Agent 架构](../../applications/agent-architecture.md) · [决策理论](../../applications/agent-decision-theory.md) ·
+[Agent Runtime](../../applications/agent-runtime.md) · [互操作协议](../../applications/agent-interoperability.md) · [实验 6](../labs.md#lab-6)
 { .doc-nav }
 
 ## 目标
@@ -21,6 +22,19 @@ flowchart LR
 ```
 
 核心不变量：default deny；ACL/capability 不来自模型参数；approval 绑定 subject/resource/tool/arguments/policy version/expiry；handler 一旦 claim 就消耗预算；`completed` 必须由 verifier 建立；相同 call id 换身份或参数是冲突，不能覆盖。
+
+## Agent 决策理论 exact control { #decision-theory-control }
+
+~~~powershell
+python projects/safe-agent/decision_theory_toy.py
+python -m pytest tests/test_agent_decision_theory.py -q
+~~~
+
+Reference 在两个 hidden states 上执行 transition prediction、Bayesian observation update 和 hard-constrained expected-utility decision。
+强诊断 signal 的 posterior 为约 `[0.8947, 0.1053]`，EVSI 为 `6.0`，扣除 1.0 observation cost 后 net VOI 为 `5.0`；弱 signal 不改变 action，净值为 `-1.0`。即使 forbidden shortcut 的 expected utility 是 `100`，hard allow-mask 仍先把它排除。
+
+四状态 transition graph 分开检查 reachable forbidden、terminal reachability、nonterminal dead end/cycle 和 guaranteed termination。
+Terminal 可达但存在 self-cycle 时只能说“可能结束”，不能说“所有路径会结束”。实现不调用 LLM、tool、provider、network 或审批，也没有从数据学习 probability/utility；它只证明 authored finite model 的算法口径。完整推导见[Agent 决策理论](../../applications/agent-decision-theory.md)。
 
 ## 故障、pending 与人工对账 { #run }
 
@@ -174,7 +188,7 @@ python projects/safe-agent/a2a_loopback_control.py --verify-official-schema
 ## 最小验证与故意破坏
 
 ~~~powershell
-python -m pytest tests/test_agent_runtime.py tests/test_agent_policy.py tests/test_agent_schema.py tests/test_agent_loop.py tests/test_model_planner.py tests/test_agent_framework_tool_adapters.py tests/test_agent_outbox.py tests/test_sqlite_agent_ledger.py tests/test_agent_cli.py tests/test_agent_evaluation.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py tests/test_a2a_loopback.py -q
+python -m pytest tests/test_agent_decision_theory.py tests/test_agent_runtime.py tests/test_agent_policy.py tests/test_agent_schema.py tests/test_agent_loop.py tests/test_model_planner.py tests/test_agent_framework_tool_adapters.py tests/test_agent_outbox.py tests/test_sqlite_agent_ledger.py tests/test_agent_cli.py tests/test_agent_evaluation.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py tests/test_a2a_loopback.py -q
 ~~~
 
 重点反例：撤权后 cached result 必须重新授权；同 call id 换参数/身份/版本冲突；approval 漂移或过期拒绝；resume 不得重复 usage；handler 非 JSON 结果保持 pending；provider success/ack 前 crash 只允许 at-least-once 重投；schema-invalid 必须在 handler 前停止；远端 completed 不能跳过本地 verifier：

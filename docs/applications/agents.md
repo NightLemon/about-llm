@@ -17,7 +17,7 @@ Agent 不是“更聪明的聊天框”，而是一个允许模型反复选择�
 
 本章用一个售后助手贯穿讲解：它可以查询订单、读取退款规则，并在获得批准后申请退款。
 
-深入实现分别见[架构、规划与记忆](agent-architecture.md)、[工具协议与故障恢复](agent-runtime.md)、[MCP、A2A 与互操作](agent-interoperability.md)以及[Agent 评测与红队](../quality/agent-evaluation.md)。
+深入实现分别见[架构、规划与记忆](agent-architecture.md)、[决策理论与安全终止](agent-decision-theory.md)、[工具协议与故障恢复](agent-runtime.md)、[MCP、A2A 与互操作](agent-interoperability.md)以及[Agent 评测与红队](../quality/agent-evaluation.md)。
 
 ## 定义
 

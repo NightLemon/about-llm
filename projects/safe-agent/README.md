@@ -20,6 +20,18 @@
 - 可列出超时 pending，人工确认外部成功、标记放弃或已补偿；
 - SQLite completion/reconciliation value 同样使用严格 canonical JSON，拒绝 NaN、非字符串 object key 和不透明 Python 对象；
 - reconciliation 保留审计事件，放弃/补偿后的重试必须使用新审批的新 call_id。
+- 有限决策理论 control 精确验证 POMDP belief update、hard-constrained expected utility、value of information，以及 transition graph 的 safety/termination 区别。
+
+## Agent 决策理论 exact control
+
+~~~powershell
+python projects/safe-agent/decision_theory_toy.py
+python -m pytest tests/test_agent_decision_theory.py -q
+~~~
+
+二状态 fixture 把真实 fault 当 hidden state、诊断结果当 observation。强 signal 把 posterior 更新为约 `[0.8947, 0.1053]`，EVSI 为 `6.0`、扣除查询成本后为 `5.0`；弱 signal 不改变 action，净信息价值为 `-1.0`。一个 unconstrained utility 为 `100` 的 shortcut 仍因 hard allow-mask 不可选。有限 transition graph 另证明 terminal reachable 不等于 guaranteed termination，reachable forbidden 与 cycle 是不同失败。
+
+这个纯 NumPy control 没有调用模型、工具、provider 或审批服务，也没有学习概率和 utility；它只验证固定有限抽象，不能证明真实 Agent 校准、最优、安全或必然完成。完整理论见[Agent 决策理论](../../docs/applications/agent-decision-theory.md)。
 
 ## 可运行故障/恢复实验
 

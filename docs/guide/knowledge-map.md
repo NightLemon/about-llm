@@ -54,7 +54,7 @@ flowchart TD
 2. [RAG 总览](../applications/rag.md)：检索、上下文、生成和引用。
 3. [RAG 生产化](../applications/rag-production.md)：权限、索引生命周期和监控。
 4. [Agent 总览](../applications/agents.md)：模型、工具、状态和停止条件。
-5. [Agent Runtime](../applications/agent-runtime.md)：授权、幂等、恢复和人工确认。
+5. [Agent 决策理论](../applications/agent-decision-theory.md)与 [Runtime](../applications/agent-runtime.md)：部分可观测决策、授权、幂等、恢复和人工确认。
 6. [安全](../quality/safety.md)：提示注入、数据泄露和工具副作用。
 
 出口成果：一个对无答案、冲突证据、越权请求和工具失败都有明确行为的应用。

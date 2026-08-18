@@ -1,6 +1,16 @@
 """Safe execution primitives for tool-using agents."""
 
 from about_llm.agents.approval import ApprovalGrant, approval_rejection_reason
+from about_llm.agents.decision_theory import (
+    BeliefUpdateReport,
+    ExpectedUtilityDecision,
+    TransitionSystemReport,
+    ValueOfInformationReport,
+    analyze_transition_system,
+    select_expected_utility_action,
+    update_belief,
+    value_of_information,
+)
 from about_llm.agents.evaluation import (
     AgentEvaluationReport,
     AgentTraceCase,
@@ -101,6 +111,7 @@ __all__ = [
     "AgentRuntime",
     "AgentTraceCase",
     "ApprovalGrant",
+    "BeliefUpdateReport",
     "CapabilityPolicy",
     "CompletionVerifier",
     "DefaultDenyPolicy",
@@ -109,6 +120,7 @@ __all__ = [
     "ExecutionContext",
     "ExecutionOutcome",
     "ExecutionStatus",
+    "ExpectedUtilityDecision",
     "FinishProposal",
     "IdempotencyConflict",
     "InMemoryLedger",
@@ -153,8 +165,11 @@ __all__ = [
     "ToolCall",
     "ToolProposal",
     "ToolRegistry",
+    "TransitionSystemReport",
+    "ValueOfInformationReport",
     "VerificationResult",
     "VerificationStatus",
+    "analyze_transition_system",
     "approval_rejection_reason",
     "evaluate_agent_traces",
     "execution_fingerprint",
@@ -165,4 +180,7 @@ __all__ = [
     "planner_response_from_chat_response",
     "resume_agent_loop",
     "run_agent_loop",
+    "select_expected_utility_action",
+    "update_belief",
+    "value_of_information",
 ]
