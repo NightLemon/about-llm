@@ -1,6 +1,6 @@
 # Single-GPU Finetuning：从数据到可发布 Adapter
 
-**项目导航**：[返回项目索引](../project-index.md) · [微调总览](../../training/finetuning.md) · [SFT 数据管线](../../training/sft-data-pipeline.md) · [PEFT/QLoRA 工程](../../training/peft-qlora-engineering.md) · [评测项目](evaluation-gate.md) · [实验 4](../labs.md#lab-4)
+**项目导航**：[返回项目索引](../project-index.md) · [微调总览](../../training/finetuning.md) · [SFT 数据管线](../../training/sft-data-pipeline.md) · [PEFT/QLoRA 工程](../../training/peft-qlora-engineering.md) · [评测项目](evaluation-gate.md) · [实验 4A](../labs/lab-4a-sft-sample.md)
 { .doc-nav }
 
 本项目把“能启动训练”拆成一条可审计的交付链：训练数据与 held-out 数据分权、readiness artifact、目标 tokenizer 的 assistant mask、Trainer 最终 labels、LoRA/QLoRA 训练、adapter 重载、偏好优化以及独立评测。默认先跑不下载权重的前置检查，再选择离线 tiny control、固定 Qwen recorded control 或目标 GPU 实验。

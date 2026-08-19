@@ -11,7 +11,7 @@
 |---|---|---:|
 | 第一次观察生成模型 | [实验 0A](labs/lab-0a-sampling.md) | 30–60 分钟 |
 | 理解 tokenizer 与注意力 | [实验 1](#lab-1)、[实验 2](#lab-2) | 2–4 小时 |
-| 训练或微调模型 | [实验 3](#lab-3)、[实验 4](#lab-4) | 1–3 天 |
+| 训练或微调模型 | [实验 3](#lab-3)、[实验 4A](labs/lab-4a-sft-sample.md) | 1–3 天 |
 | 构建 RAG 或 Agent | [RAG 实验 5](labs/lab-5-rag-request.md)、[实验 6](#lab-6) | 1–3 天 |
 | 学习服务与评测 | [实验 7](#lab-7)、[实验 8](#lab-8) | 1–3 天 |
 
@@ -85,6 +85,8 @@
 选修 activation patching：预先固定 clean/corrupt pair、连续 metric 和 hook 位置，加入未来位置与随机来源负对照。热图或单样本高 recovery 不足以定位“事实存储层”。
 
 ## 实验 4：LoRA 领域适配 { #lab-4 }
+
+第一次做微调时，先完成[实验 4A：追踪一个 SFT 样本](labs/lab-4a-sft-sample.md)。它在 CPU 上把 template、shifted labels、LoRA backward、adapter-only reload 和 held-out comparison 串成一条可观察路径。
 
 选择一个可以自动评价的任务，例如分类、结构抽取或受限 SQL。比较同一评测集上的 base + Prompt、RAG（若适用）和 LoRA；固定 template 与 decoding。
 

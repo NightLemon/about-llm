@@ -46,6 +46,8 @@ OFFICIAL_URLS = {
     "https://developers.openai.com/api/docs/guides/streaming-responses",
     "https://developers.openai.com/api/reference/resources/responses/streaming-events",
     "https://developers.openai.com/api/docs/guides/structured-outputs",
+    "https://developers.openai.com/api/docs/guides/function-calling",
+    "https://developers.openai.com/api/docs/guides/evals",
     "https://platform.claude.com/docs/en/api/messages",
     "https://ai.google.dev/gemini-api/docs/interactions-overview",
     "https://ai.google.dev/api/interactions-api",

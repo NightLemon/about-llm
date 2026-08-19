@@ -259,6 +259,10 @@ def test_service_limits_readiness_and_disabled_schema_surface(tmp_path: Path) ->
     )
 
     assert live.json()["status"] == "live"
+    assert live.headers["x-content-type-options"] == "nosniff"
+    assert live.headers["x-frame-options"] == "DENY"
+    assert live.headers["referrer-policy"] == "no-referrer"
+    assert live.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"
     assert ready.json()["status"] == "ready"
     assert schema.status_code == 404
     assert over_limit.status_code == 422
@@ -393,3 +397,34 @@ def test_request_and_config_reject_bool_or_nonfinite_limits() -> None:
         RAGServiceConfig(queue_timeout_seconds=float("inf"))
     with pytest.raises(TypeError, match="integers"):
         RAGServiceConfig(max_concurrency=True)
+    with pytest.raises(TypeError, match="integers"):
+        RAGServiceConfig(max_request_body_bytes=True)
+
+
+def test_host_allowlist_and_actual_body_limit_fail_closed(tmp_path: Path) -> None:
+    app = create_rag_app(
+        PersistentExtractiveRAGService(
+            _database(tmp_path / "rag.db"),
+            config=RAGServiceConfig(max_request_body_bytes=256),
+            request_id_factory=_request_ids(),
+        ),
+        _resolver(),
+    )
+    rejected_host = asyncio.run(
+        _call(app, "GET", "/health/live", headers={"Host": "attacker.example"})
+    )
+    oversized = asyncio.run(
+        _call(
+            app,
+            "POST",
+            "/v1/rag/query",
+            headers={"Authorization": "Bearer engineering-token"},
+            json={"query_id": "large", "query": "R" * 1000},
+        )
+    )
+
+    assert rejected_host.status_code == 400
+    assert rejected_host.headers["x-content-type-options"] == "nosniff"
+    assert oversized.status_code == 413
+    assert oversized.json()["error"]["code"] == "request_too_large"
+    assert oversized.headers["cache-control"] == "no-store"

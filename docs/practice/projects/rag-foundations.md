@@ -323,7 +323,9 @@ python projects/rag-foundations/serve_extractive.py `
 ~~~
 
 Request body 不能自报 tenant/principal；`/health/live` 与 `/health/ready` 含义不同。
-Response 使用 server request ID、`Cache-Control: no-store` 和 public allowlist。
+认证作为受保护 route 的 dependency 执行；Host 使用显式 allowlist，实际 ASGI body 默认限制为 64 KiB，
+Response 使用 server request ID、`Cache-Control: no-store`、安全响应头和 public allowlist。
+生产部署仍需在反向代理设置 body/rate limit、TLS 与真实 IAM；应用内上限不能替代 edge admission control。
 
 运行不打开 TCP socket 的固定 control：
 

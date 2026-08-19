@@ -70,7 +70,11 @@ def build_app(args: argparse.Namespace) -> object:
             execution_timeout_seconds=args.execution_timeout_seconds,
         ),
     )
-    return create_rag_app(service, StaticBearerAuthResolver({token: context}))
+    return create_rag_app(
+        service,
+        StaticBearerAuthResolver({token: context}),
+        allowed_hosts=(args.host, "localhost"),
+    )
 
 
 def main() -> None:

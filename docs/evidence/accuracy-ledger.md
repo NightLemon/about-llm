@@ -96,11 +96,13 @@ RAG 教材用两个固定请求建立同一条证据链：请求 A 在授权 BM2
 
 | 主题 | 已核对结论 | 官方来源 |
 |---|---|---|
-| OpenAI model catalog | 2026-08-14 的目录列出 GPT-5.6 Sol/Terra/Luna 产品档位，并把当前模型使用入口指向 Responses API/SDK；这是带日期的产品事实，不是内部架构、账号可用性或永久选型保证 | [Model catalog](https://developers.openai.com/api/docs/models)；核对日期 2026-08-14 |
-| OpenAI Responses object | Create reference 定义 Responses 请求与 response/output 对象；不能把多 item typed output 无损压成 Chat Completions 的单个 choices text | [Create a response](https://developers.openai.com/api/reference/resources/responses/methods/create)；核对日期 2026-08-14 |
-| OpenAI Responses streaming | Streaming guide 要求按 typed semantic events 处理流，而不是假定网络 chunk 等于 text token 或完整事件 | [Streaming API responses](https://developers.openai.com/api/docs/guides/streaming-responses)；核对日期 2026-08-14 |
-| OpenAI Responses events | Event reference 是 response/item/content/text/refusal/function arguments/terminal 等事件类型的当前来源；本仓库只审核其中一个显式子集 | [Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)；核对日期 2026-08-14 |
-| OpenAI Structured Outputs | 支持的 JSON Schema 子集内约束结构；JSON mode 仅保证有效 JSON；refusal 与 incomplete 必须独立处理 | [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)；核对日期 2026-08-12 |
+| OpenAI model catalog | 2026-08-19 的目录把 GPT-5.6 Sol/Terra/Luna 作为通用起点，并另列特定任务条目；当前模型使用入口指向 Responses API/SDK。这是带日期的产品事实，不是完整型号榜、内部架构、账号可用性或永久选型保证 | [Model catalog](https://developers.openai.com/api/docs/models)；核对日期 2026-08-19 |
+| OpenAI Responses object | Create reference 定义 Responses 请求与 response/output 对象；不能把多 item typed output 无损压成 Chat Completions 的单个 choices text | [Create a response](https://developers.openai.com/api/reference/resources/responses/methods/create)；核对日期 2026-08-19 |
+| OpenAI Responses streaming | Streaming guide 要求按 typed semantic events 处理流，而不是假定网络 chunk 等于 text token 或完整事件 | [Streaming API responses](https://developers.openai.com/api/docs/guides/streaming-responses)；核对日期 2026-08-19 |
+| OpenAI Responses events | Event reference 是 response/item/content/text/refusal/function arguments/terminal 等事件类型的当前来源；本仓库只审核其中一个显式子集 | [Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)；核对日期 2026-08-19 |
+| OpenAI Structured Outputs | 支持的 JSON Schema 子集内约束结构；JSON mode 仅保证有效 JSON；refusal 与 incomplete 必须独立处理 | [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)；核对日期 2026-08-19 |
+| OpenAI Function Calling | 当前 guide 把 tool use 写成应用提供定义、模型返回 call、应用执行并按 `call_id` 回传 `function_call_output` 的多步流程；它不替业务执行 schema、ACL、审批、幂等和副作用验证 | [Function calling](https://developers.openai.com/api/docs/guides/function-calling)；核对日期 2026-08-19 |
+| OpenAI Evals | 当前 guide 用 `data_source_config` 定义数据 schema、`testing_criteria`/graders 定义评分，并以异步 run 处理每个 item；run 完成不证明样本/指标有效或候选达到发布标准 | [Evals guide](https://developers.openai.com/api/docs/guides/evals)；核对日期 2026-08-19 |
 | Anthropic Messages | 普通对话用顶层 `system` 与客户端提供的无状态历史；content blocks、input/output usage 与 stop reason 属于 Messages 契约 | [Messages API](https://platform.claude.com/docs/en/api/messages)；核对日期 2026-08-12 |
 | Gemini Interactions | 2026-08-15 时已 GA 且推荐新项目使用；Interaction resource、status、steps、后台执行、存储与 API version 必须独立建模。流式生命周期为 interaction→step→typed terminal→done，不能借用 `generateContent` 的 finishReason+EOF | [Overview](https://ai.google.dev/gemini-api/docs/interactions-overview)、[API reference](https://ai.google.dev/api/interactions-api)、[Streaming](https://ai.google.dev/gemini-api/docs/streaming)；核对日期 2026-08-15 |
 | Gemini GenerateContent | `contents`/`parts`、`systemInstruction`、candidates、prompt feedback、finish reason 与 usage 属于该接口；仍受支持但已标为 legacy | [GenerateContent reference](https://ai.google.dev/api/generate-content)；核对日期 2026-08-15 |

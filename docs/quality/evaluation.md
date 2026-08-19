@@ -55,6 +55,21 @@ RAG 引用同样不能压成“有 `[S1]` 就忠实”。`citation_syntax` 只�
 
 这七次确实加载固定 Qwen 权重并真实调用 `GenerationMixin.generate()`，只能建立固定执行路径和逐例输出事实；suite 是 authored、未外部预注册、未独立抽样/留出且没有统计功效。真实执行不自动建立 construct validity、sampling validity、总体模型质量或发布有效性。
 
+## Hosted Evals API 与本地发布门禁不是同一层
+
+截至 2026-08-19，OpenAI 官方 [Evals guide](https://developers.openai.com/api/docs/guides/evals) 用 `data_source_config` 描述测试数据 schema，用 `testing_criteria`/graders 描述评分条件；创建 eval 后，再用具体数据源和模型启动异步 run，读取逐条件结果与报告。
+
+这套产品流程可以编排 provider 调用与 grader，但不能替你证明 case 有代表性、gold/rubric 有效、切片完整、阈值符合业务效用或结果可发布。对应关系应这样理解：
+
+| 层 | Hosted Evals API 可承担 | 本仓库仍需承担 |
+|---|---|---|
+| 数据接口 | item schema、上传/引用数据源 | 来源、许可、case identity、split 与泄漏审计 |
+| 执行 | 对每个 item 调模型并排队运行 | 固定 Prompt/tool/environment identity 与失败重放 |
+| 评分 | 配置 string/model 等 grader | construct validity、人工校准、指标 revision 与切片 |
+| 结果 | run 状态、逐 criterion 结果、报告入口 | paired comparison、统计假设、发布 gate 与回滚证据 |
+
+因此可以把 hosted run 接入 Evaluation Gate，但不能用“run completed”代替“候选通过发布门禁”。异步失败、缺失 case、grader 漂移和多次试验选择仍要进入 artifact 与决策记录。
+
 ## LLM-as-judge
 
 适合大规模初筛和复杂 rubric，但会有位置偏差、冗长偏差、自我偏好、提示敏感和知识盲区。使用方式：

@@ -42,7 +42,7 @@ Collection 门禁要求每个测试至少声明一种证据性质；否则新增
 
 `extended` 是调度决定，不是证据类型。它必须同时带 `integration` 或 `slow`，以说明延后的真实原因。
 
-- Pull request：运行所有非 `extended`、非 `network`、非 `gpu` 测试，以及完整文档、三个 Notebook 和跨平台 wheel smoke。
+- Pull request：运行所有非 `extended`、非 `network`、非 `gpu` 测试，以及完整文档、全部 Notebook 和跨平台 wheel smoke。
 - Main push：在 PR 层之外补跑 `extended` transport/子进程矩阵。
 - Weekly/manual：重复两层离线门禁，用于发现依赖和环境漂移。
 - 真实网络、付费 API、目标 GPU 与生产 benchmark：仍属于外部验证，不能由默认 CI 冒充。

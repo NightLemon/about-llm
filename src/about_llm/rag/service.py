@@ -12,15 +12,18 @@ import hmac
 import math
 import re
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.datastructures import MutableHeaders
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from about_llm.rag.bm25 import BM25Index
 from about_llm.rag.context_packing import utf8_byte_length
@@ -36,6 +39,92 @@ _EVIDENCE_BOUNDARY = (
     "no learned retriever/reranker, LLM generation, remote auth, network transport, "
     "multi-process admission control, or production SLO is proved"
 )
+_DEFAULT_ALLOWED_HOSTS = ("127.0.0.1", "localhost", "test")
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+}
+
+
+class _RequestBodyLimitMiddleware:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_bytes: int,
+        request_id_factory: Callable[[], str],
+    ) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+        self.request_id_factory = request_id_factory
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("method") not in {
+            "POST",
+            "PUT",
+            "PATCH",
+        }:
+            await self.app(scope, receive, send)
+            return
+        received = 0
+        messages: list[Message] = []
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    identifier = self.request_id_factory()
+                    response = JSONResponse(
+                        status_code=413,
+                        headers={
+                            "X-Request-ID": identifier,
+                            "Cache-Control": "no-store",
+                        },
+                        content={
+                            "error": {
+                                "code": "request_too_large",
+                                "message": "request body exceeds the configured byte limit",
+                                "request_id": identifier,
+                            }
+                        },
+                    )
+                    await response(scope, receive, send)
+                    return
+                if not message.get("more_body", False):
+                    break
+            elif message["type"] == "http.disconnect":
+                break
+
+        cursor = 0
+
+        async def replay_receive() -> Message:
+            nonlocal cursor
+            if cursor < len(messages):
+                message = messages[cursor]
+                cursor += 1
+                return message
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
+
+
+class _SecurityHeadersMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in _SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 @dataclass(frozen=True)
@@ -129,6 +218,7 @@ class RAGServiceConfig:
     queue_timeout_seconds: float = 0.25
     execution_timeout_seconds: float = 3.0
     sqlite_busy_timeout_ms: int = 1000
+    max_request_body_bytes: int = 65_536
 
     def __post_init__(self) -> None:
         integer_fields = (
@@ -137,6 +227,7 @@ class RAGServiceConfig:
             self.max_budget_units,
             self.max_chunks_per_source,
             self.max_concurrency,
+            self.max_request_body_bytes,
         )
         if any(isinstance(value, bool) or not isinstance(value, int) for value in integer_fields):
             raise TypeError("service limits must be integers")
@@ -425,8 +516,23 @@ def _chunk_document(chunk: SourceChunk) -> Document:
 def create_rag_app(
     service: PersistentExtractiveRAGService,
     auth_resolver: AuthResolver,
+    *,
+    allowed_hosts: Sequence[str] = _DEFAULT_ALLOWED_HOSTS,
 ) -> FastAPI:
-    """Create a closed-schema app with no interactive docs or default auth."""
+    """Create a bounded, closed-schema app with explicit transport trust."""
+    if isinstance(allowed_hosts, (str, bytes)):
+        raise TypeError("allowed_hosts must be a sequence of host patterns")
+    host_patterns = tuple(allowed_hosts)
+    if not host_patterns or any(
+        not isinstance(host, str)
+        or not host
+        or host == "*"
+        or host.strip() != host
+        or "://" in host
+        or "/" in host
+        for host in host_patterns
+    ):
+        raise ValueError("allowed_hosts must contain explicit host patterns")
     app = FastAPI(
         title="About LLM deterministic RAG service",
         version=RAG_SERVICE_REVISION,
@@ -434,6 +540,13 @@ def create_rag_app(
         redoc_url=None,
         openapi_url=None,
     )
+    app.add_middleware(
+        _RequestBodyLimitMiddleware,
+        max_bytes=service.config.max_request_body_bytes,
+        request_id_factory=service.issue_request_id,
+    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(host_patterns))
+    app.add_middleware(_SecurityHeadersMiddleware)
 
     def request_id(request: Request) -> str:
         existing = getattr(request.state, "request_id", None)
@@ -514,14 +627,17 @@ def create_rag_app(
             return HealthResponse(service_revision=RAG_SERVICE_REVISION, status="not_ready")
         return HealthResponse(service_revision=RAG_SERVICE_REVISION, status="ready")
 
+    def resolve_auth(request: Request) -> AuthContext:
+        return auth_resolver.resolve(request.headers.get("authorization"))
+
     @app.post("/v1/rag/query", response_model=RAGQueryResponse)
     async def query_rag(
         payload: RAGQueryRequest,
         request: Request,
         response: Response,
+        auth: AuthContext = Depends(resolve_auth),  # noqa: B008 - FastAPI dependency marker
     ) -> RAGQueryResponse:
         identifier = request_id(request)
-        auth = auth_resolver.resolve(request.headers.get("authorization"))
         result = await service.query(payload, auth, request_id=identifier)
         response.headers["X-Request-ID"] = identifier
         response.headers["Cache-Control"] = "no-store"

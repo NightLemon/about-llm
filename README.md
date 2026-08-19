@@ -55,7 +55,7 @@ Python 支持 3.10–3.12。GPU、CUDA 和云 API 都不是入门路线的前置
 | 路径 | 用途 |
 |---|---|
 | `docs/` | 教材正文、学习路线和参考资料 |
-| `notebooks/` | 可交互的注意力、MiniGPT 与 RAG 实验 |
+| `notebooks/` | 可交互的 Attention、MiniGPT、RAG 与 SFT/LoRA 样本生命周期实验 |
 | `projects/` | RAG、Agent、微调、推理与评测项目 |
 | `src/about_llm/` | 项目复用的 Python 实现 |
 | `tests/` | 教学 oracle、核心契约与回归测试；分类规则见[测试与证据策略](docs/reference/testing.md) |

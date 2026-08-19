@@ -21,7 +21,7 @@
 2. **当前产品契约**：官方 model catalog 与 Responses API reference 在某个检查日期公开的型号、请求对象、输出对象和事件类型；
 3. **本地可执行证据**：本仓库对一份 authored JSONL 的解析、状态迁移和对账不变量。
 
-这三类证据不能互相借用。旧论文不能证明当前闭源产品的参数量、层数、训练数据、稀疏/稠密结构或完整后训练配方；接口文档也不披露模型内部机制；离线 replay 更不能证明真实服务执行、模型质量、账单或生产可靠性。当前产品信息属于**时间敏感**事实，本页最近核对日期为 **2026-08-14**。
+这三类证据不能互相借用。旧论文不能证明当前闭源产品的参数量、层数、训练数据、稀疏/稠密结构或完整后训练配方；接口文档也不披露模型内部机制；离线 replay 更不能证明真实服务执行、模型质量、账单或生产可靠性。当前产品信息属于**时间敏感**事实，本页最近核对日期为 **2026-08-19**。
 
 ## 一个 GPT 系统不只是一组权重
 
@@ -73,7 +73,7 @@ RLHF 不是一个跨时代固定的配方。当前产品是否使用某个 rewar
 
 ## 当前产品目录：只把它当成带日期的快照
 
-截至 **2026-08-14**，OpenAI 官方 model catalog 把 GPT-5.6 Sol、Terra、Luna 列为当前 GPT-5.6 产品档位，并分别面向高难专业任务、智能/成本平衡和高吞吐成本敏感场景。目录同时把最新模型的使用入口指向 Responses API 与官方 SDK。
+截至 **2026-08-19**，OpenAI 官方 model catalog 把 GPT-5.6 Sol、Terra、Luna 作为通用起点，分别面向高难专业任务、智能/成本平衡和高吞吐成本敏感场景；目录还可能包含面向特定任务的专用条目。目录同时把最新模型的使用入口指向 Responses API 与官方 SDK。本教材不维护完整型号榜。
 
 这是产品目录快照，不是架构披露，也不是永久选型结论。型号、alias、价格、上下文窗口、最大输出、模态与工具支持都可能变化。本教材因此不复制价格表；实际选型要保存具体 model page、检查日期、账号/区域可用性和一份目标 workload 评测。
 
@@ -84,7 +84,7 @@ RLHF 不是一个跨时代固定的配方。当前产品是否使用某个 rewar
   "provider": "openai",
   "api_surface": "responses",
   "model": "<pinned-model-id-or-snapshot>",
-  "checked_at": "2026-08-14",
+  "checked_at": "2026-08-19",
   "sampling": {"temperature": 0},
   "max_output_tokens": 1024,
   "tool_schema_version": "sha256:...",
@@ -144,6 +144,8 @@ terminal status
 Responses 中的 function call arguments 仍是模型生成文本。即使它恰好解析成 JSON object，也只证明语法可解析。生产 runtime 要重新检查类型、资源归属、身份、权限、预算、审批、幂等键与前置状态，再把受控结果提交给 handler。
 
 若 arguments 不是有效 JSON object，不应“尽力修复后假装原参数已校验”。本仓库 replay 保留原字符串，并把 `arguments_is_strict_object` 设为 `false`，让后续策略显式拒绝或进入隔离修复流程。
+
+截至 2026-08-19，官方 Function Calling guide 把这条链路明确写成多步交互：应用提供 tool definition，模型返回 tool call，**应用侧**执行代码，再用对应 `call_id` 回传 `function_call_output`，模型才继续生成最终响应或下一次调用。这里的“应用侧执行”描述 API 编排位置，不替应用完成 schema、ACL、审批、幂等或副作用验证。
 
 ## Responses streaming 是 typed lifecycle
 
@@ -350,10 +352,11 @@ temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格
 
 ## 一手资料
 
-- OpenAI，[Model catalog](https://developers.openai.com/api/docs/models)，当前产品目录与 Responses 入口；核对日期 2026-08-14。
-- OpenAI，[Create a response](https://developers.openai.com/api/reference/resources/responses/methods/create)，response 请求/对象 reference；核对日期 2026-08-14。
-- OpenAI，[Streaming API responses](https://developers.openai.com/api/docs/guides/streaming-responses)，Responses 流式处理指南；核对日期 2026-08-14。
-- OpenAI，[Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)，typed streaming event reference；核对日期 2026-08-14。
-- OpenAI，[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON Schema 子集、JSON mode、refusal 与 incomplete 边界；核对日期 2026-08-12。
+- OpenAI，[Model catalog](https://developers.openai.com/api/docs/models)，当前产品目录与 Responses 入口；核对日期 2026-08-19。
+- OpenAI，[Create a response](https://developers.openai.com/api/reference/resources/responses/methods/create)，response 请求/对象 reference；核对日期 2026-08-19。
+- OpenAI，[Streaming API responses](https://developers.openai.com/api/docs/guides/streaming-responses)，Responses 流式处理指南；核对日期 2026-08-19。
+- OpenAI，[Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)，typed streaming event reference；核对日期 2026-08-19。
+- OpenAI，[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON Schema 子集、JSON mode、refusal 与 incomplete 边界；核对日期 2026-08-19。
+- OpenAI，[Function calling](https://developers.openai.com/api/docs/guides/function-calling)，tool call、应用执行与 `function_call_output` 多步流程；核对日期 2026-08-19。
 - Brown 等，[Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165)，GPT-3 与 in-context learning。
 - Ouyang 等，[Training language models to follow instructions with human feedback](https://arxiv.org/abs/2203.02155)，InstructGPT。

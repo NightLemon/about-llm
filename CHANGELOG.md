@@ -1,5 +1,7 @@
 # Changelog
 
+- 使用教学 Notebook、官方资料校验、安全审查与浏览器验收四条工作流做内容优化：前三本离线 Notebook 补齐读者、先修、阅读路线、完成信号、练习与证据边界；新增“追踪一个 SFT 样本”实验，从 template/shifted assistant-only labels 串到 LoRA 初始函数不变、冻结基座、adapter-only 独立重载与 held-out comparison，并以合法 next-token all-token 反例防止把当前 token 误当 target。RAG FastAPI demo 新增显式 Host allowlist、64 KiB 实际 ASGI body 上限、统一安全响应头和 dependency-based 认证，负例覆盖恶意 Host 与超限 body；生产 edge rate/body limit、TLS、真实 IAM 和未知漏洞仍不由本地测试证明。OpenAI GPT、Function Calling 与 Hosted Evals 内容按 2026-08-19 官方页面复核，明确应用执行 tool call 不替代 ACL/审批/幂等，hosted run 也不替代测量有效性和本地发布门禁。MkDocs 在桌面、390px 移动端、深浅色、抽屉、404 恢复和长表格状态完成交互与视觉检查。
+
 - 重构 RAG 学习主线：用请求 A“为什么 ACL 必须先于排序”和请求 B“Kubernetes 灾备步骤”串联可信身份、authorization-first BM25、recorded rerank、context packing、exact-span answer、citation 与 non-empty retrieval 拒答。新增独立请求生命周期教材、先预测再运行的实验 5、可执行 walkthrough 与 RAG claim→oracle→证据边界页；重写总览、召回/重排、上下文/引用/拒答、生产化和 RAG Foundations 项目页，把固定报告与测试矩阵移出首次阅读路径。Walkthrough 测试锁定 answer coverage 1.0、no-answer coverage `2/9` 及局部证据边界，不冒充 learned reranker、LLM、语义蕴含、来源真实性、目标性能或生产安全。
 
 - 重构推理部署学习主线：新增“一次请求如何穿过推理引擎”端到端教材，以请求 A/B 串联 admission、prefill/decode、block table、采样、SSE、四时钟和取消收口；新增 Paged KV/COW 引导实验，要求先预测 block/refcount/三份容量账本，再运行真实 CPU K/V tensor 与容量原子失败负例。推理基础、优化、vLLM 部署和 Inference Serving 项目页按“教材→引导实验→项目→证据”重新分工，精确 claim、测试与外推边界集中到独立证据页。导航、系统工程路线和 README 同步，重写页面清除既有可读性债务，同时保留所有原有实现深度与准确性门禁。

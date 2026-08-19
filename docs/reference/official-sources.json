@@ -3,28 +3,38 @@
   "sources": [
     {
       "url": "https://developers.openai.com/api/docs/models",
-      "checked_at": "2026-08-14",
+      "checked_at": "2026-08-19",
       "scope": "OpenAI current model catalog and Responses entrypoint"
     },
     {
       "url": "https://developers.openai.com/api/reference/resources/responses/methods/create",
-      "checked_at": "2026-08-14",
+      "checked_at": "2026-08-19",
       "scope": "OpenAI Responses create method and response object reference"
     },
     {
       "url": "https://developers.openai.com/api/docs/guides/streaming-responses",
-      "checked_at": "2026-08-14",
+      "checked_at": "2026-08-19",
       "scope": "OpenAI Responses streaming guide and typed-event processing model"
     },
     {
       "url": "https://developers.openai.com/api/reference/resources/responses/streaming-events",
-      "checked_at": "2026-08-14",
+      "checked_at": "2026-08-19",
       "scope": "OpenAI Responses typed streaming-event reference"
     },
     {
       "url": "https://developers.openai.com/api/docs/guides/structured-outputs",
-      "checked_at": "2026-08-12",
+      "checked_at": "2026-08-19",
       "scope": "OpenAI Structured Outputs and JSON mode boundary"
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/function-calling",
+      "checked_at": "2026-08-19",
+      "scope": "OpenAI tool-call, application execution, call_id, and function_call_output flow"
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/evals",
+      "checked_at": "2026-08-19",
+      "scope": "OpenAI Evals data source, testing criteria, graders, and asynchronous run workflow"
     },
     {
       "url": "https://platform.claude.com/docs/en/api/messages",
