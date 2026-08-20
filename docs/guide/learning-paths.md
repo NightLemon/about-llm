@@ -1,65 +1,71 @@
 # 学习路径
 
-路径不是考试，也不要求一次补齐所有数学。选择最接近当前目标的一条，完成一个可展示的成果后再扩展。
+学习路径用来减少选择，不是给所有人安排同一张课表。先选最近要解决的问题，做出一个能运行、能解释的成果；
+遇到缺口时再回补数学或相邻主题。
 
-| 目标 | 路线 | 建议投入 |
-|---|---|---:|
-| 从零理解 LLM | [基础路线](#beginner) | 6 周 |
-| 构建 RAG 或 Agent | [应用工程路线](#application) | 6–8 周 |
-| 学习微调与训练 | [模型工程路线](#model-engineering) | 6–10 周 |
-| 学习推理部署 | [系统工程路线](#systems) | 6–10 周 |
-| 做论文复现 | [研究路线](#research) | 按项目 |
+| 你现在想解决的问题 | 路线 | 第一个可交付成果 |
+|---|---|---|
+| 想知道 LLM 到底怎样工作 | [基础路线](#beginner) | 一次从文本、token 到生成结果的手算与实验 |
+| 想构建 RAG 或 Agent | [应用工程路线](#application) | 一个会引用、会拒答、能处理权限失败的小系统 |
+| 想训练或适配模型 | [模型工程路线](#model-engineering) | 一次数据、loss、adapter 和 held-out 结果可对账的训练 |
+| 想部署和压测模型 | [系统工程路线](#systems) | 一份包含 TTFT、TPOT、吞吐、容量和失败终态的报告 |
+| 想复现论文结论 | [研究路线](#research) | 一项带基线、消融和负结果的复现实验 |
 
 ## 基础路线 { #beginner }
 
-适合第一次系统学习 LLM 的读者。每周约 5–8 小时。
+这条路线适合第一次系统学习 LLM 的读者。六站按依赖排列，进度由右栏的成果决定，不按周数决定。
 
-| 周 | 学习内容 | 可交付成果 |
+| 站点 | 先回答的问题 | 离开这一站时留下什么 |
 |---|---|---|
-| 1 | [机器学习](../foundations/ml-dl.md)与 [NLP](../foundations/nlp.md) | 解释训练/验证/测试集，并从 logits 算一次 NLL |
-| 2 | [Tokenization](../core/tokenization.md) | 比较中英文、数字、代码和 emoji 的 byte/token 差异 |
-| 3 | [Transformer](../core/transformer.md) | 手算两 token 注意力，标注 `Q/K/V/score` 形状 |
-| 4 | [生成入门](../core/generation-basics.md) | 比较 greedy、temperature 与 top-p 的输出分布 |
-| 5 | [RAG](../applications/rag.md)与[请求生命周期](../applications/rag-request-lifecycle.md) | 跟踪一次回答与一次拒答的证据链 |
-| 6 | [评测](../quality/evaluation.md)与[安全](../quality/safety.md) | 完成 30 条样例、错误分类和一个越权负例 |
+| [机器学习与 NLP](../foundations/ml-dl.md) | 模型从什么数据学习，怎样知道它没有只记住训练集？ | 一次 train/validation/test 切分解释和 logits→NLL 手算 |
+| [Tokenization](../core/tokenization.md) | 文本为什么会变成不同长度的整数序列？ | 中英文、数字、代码和 emoji 的 byte/token 对照 |
+| [Transformer](../core/transformer.md) | 一个 token 怎样读取前文信息？ | 两 token Attention 手算和 `Q/K/V/score` shape 图 |
+| [生成入门](../core/generation-basics.md) | 下一 token 怎样被选中，循环为什么停？ | Greedy、temperature、top-p 的同分布对照 |
+| [RAG 请求](../applications/rag-request-lifecycle.md) | 模型怎样获得外部证据，并在证据不足时停下？ | 一次回答和一次拒答的完整证据链 |
+| [评测与安全](../quality/evaluation.md) | 怎样判断系统变好，同时没有制造新的高风险失败？ | 小型 case set、错误分类和一个越权负例 |
 
 完成标准：能从文本输入一路解释到模型输出，并为一个小任务建立可重复的评价方法。
 
 ## 应用工程路线 { #application }
 
-先修：基础路线第 2–6 周，外加 Python、HTTP 和数据库基础。
+应用路线最终要做出一个可诊断的助手。开始前应熟悉 token 与生成循环，并能使用 Python、HTTP 和数据库。
+下面每一步都在给同一个系统补一项能力。
 
-1. **定义任务**：用 [Prompt](../applications/prompting.md) 写清输入、输出、拒答和结构化字段。
-2. **建立 RAG 基线**：先走完[请求生命周期](../applications/rag-request-lifecycle.md)与
+1. **先让任务可检查**：用 [Prompt](../applications/prompting.md) 写清输入、输出、拒答和结构化字段。
+2. **给回答接上证据**：走完[请求生命周期](../applications/rag-request-lifecycle.md)与
    [实验 5](../practice/labs/lab-5-rag-request.md)，再学习[摄取](../applications/rag-ingestion.md)、
    [检索](../applications/rag-retrieval.md)、[检索表示学习](../applications/retrieval-learning.md)和
    [引用](../applications/rag-generation.md)。
-3. **加入权限与失败处理**：在[生产 RAG](../applications/rag-production.md)中处理 ACL、索引更新和无答案情况。
-4. **引入 Agent**：先跟完[一次退款任务](../applications/agent-task-lifecycle.md)，再学习
+3. **处理证据之外的现实问题**：在[生产 RAG](../applications/rag-production.md)中加入 ACL、索引更新和无答案路径。
+4. **确实需要开放决策时再引入 Agent**：先跟完[一次退款任务](../applications/agent-task-lifecycle.md)，再学习
    [架构](../applications/agent-architecture.md)、[决策理论](../applications/agent-decision-theory.md)与
    [Runtime](../applications/agent-runtime.md)，把模型输出视为提议而不是授权。
-5. **建立评测**：先用[评测测量学](../quality/evaluation-measurement.md)验证 rubric、标注与指标解释，再按[评测方法](../quality/evaluation-methodology.md)区分任务成功、引用、工具执行和安全指标。
-6. **完成项目**：从 [RAG Foundations](../practice/projects/rag-foundations.md) 或 [Safe Agent](../practice/projects/safe-agent.md) 选择一个项目。
+5. **让失败可以被统计**：用[评测测量学](../quality/evaluation-measurement.md)检查 rubric 和标注，再按
+   [评测方法](../quality/evaluation-methodology.md)分别记录任务成功、引用、工具执行和安全指标。
+6. **收束成一个项目**：从 [RAG Foundations](../practice/projects/rag-foundations.md) 或
+   [Safe Agent](../practice/projects/safe-agent.md) 选择一个，把前面的 trace 和失败样例保留下来。
 
 完成标准：系统对无答案、冲突证据、提示注入、越权请求、工具超时和重复请求都有可测试的行为。
 
 ## 模型工程路线 { #model-engineering }
 
-先修：基础路线第 1–4 周，熟悉 PyTorch 和基本优化算法。
+模型工程路线围绕一次权重更新展开：数据从哪里来，哪些 token 产生 loss，参数怎样改变，以及 held-out 行为
+是否真的改善。开始前需要 PyTorch、反向传播和基本优化算法。
 
-1. [数据工程](../training/data.md)：建立数据 schema、切分、去重和污染检查。
-2. [预训练](../training/pretraining.md)：理解 token budget、优化器、稳定性和 checkpoint。
-3. [微调总览](../training/finetuning.md)：先判断问题是否真的需要改权重。
-4. [SFT 数据流水线](../training/sft-data-pipeline.md)：处理模板、mask、截断和 held-out 数据。
-5. [LoRA/QLoRA](../training/peft-qlora-engineering.md)：建立显存预算、训练基线和 adapter 发布流程。
-6. [偏好对齐](../training/alignment-basics.md)：理解偏好数据、DPO/RLHF 和 reward hacking 风险。
-7. 完成 [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) 项目中的一个小实验。
+1. 从[数据工程](../training/data.md)建立 schema、切分、去重和污染检查。
+2. 用[预训练](../training/pretraining.md)理解 token budget、优化器状态和 checkpoint 为什么必须一起保存。
+3. 阅读[微调总览](../training/finetuning.md)，先确认问题是否需要改权重，还是 Prompt 或 RAG 已经足够。
+4. 在 [SFT 数据流水线](../training/sft-data-pipeline.md)中打印最终 token、mask、截断和 held-out identity。
+5. 进入 [LoRA/QLoRA](../training/peft-qlora-engineering.md)，建立显存预算、基线和 adapter 发布流程。
+6. 需要偏好优化时，再学习[偏好对齐](../training/alignment-basics.md)中的 DPO/RLHF 与 reward hacking。
+7. 最后用 [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md)把一个样本从模板追到独立重载。
 
 完成标准：报告数据版本、训练预算、曲线、基线、held-out 结果、失败样例和资源消耗；“loss 下降”不能单独作为完成信号。
 
 ## 系统工程路线 { #systems }
 
-先修：基础路线第 2–4 周，熟悉 Linux、HTTP 和性能测量。
+系统工程路线追踪“一次请求怎样占用机器，又怎样释放资源”。开始前应理解 token、生成循环，并熟悉 Linux、
+HTTP 和基本性能测量。
 
 1. [推理基础](../systems/inference.md)：区分 prefill、decode 和 KV Cache。
 2. [请求生命周期](../systems/inference-request-lifecycle.md)：沿一次请求串起调度、KV、采样、流式和终态。
@@ -70,11 +76,12 @@
 7. [硬件与端侧](../systems/hardware-edge.md)：用算力、带宽和容量账本解释瓶颈。
 8. 完成 [Inference Serving](../practice/projects/inference-serving.md) 项目的一次压测与故障实验。
 
-完成标准：能说明负载模型、计时边界、资源上限和失败恢复；不使用单次延迟或平均值代表容量。
+完成标准：能说明负载怎样到达、每只时钟从哪里开始、资源上限在哪里，以及失败后何时真正释放。
+容量结论应来自一段分布和一组终态，而不是某次请求的延迟截图。
 
 ## 研究路线 { #research }
 
-研究路线从问题开始，不从“复现一个热门模型”开始。
+研究路线从一个可能被实验推翻的问题开始。热门模型可以是实验对象，但不应代替研究问题。
 
 1. 写出一个可证伪假设和最小实验。
 2. 固定数据、模型、训练预算、评价代码和随机种子。
@@ -96,7 +103,7 @@
 
 ## 每个阶段怎样验收
 
-无论选择哪条路线，都保留四样东西：
+无论走哪条路线，最后都检查桌面上是否留下了四样东西：
 
 1. 一个能运行的最小基线；
 2. 一个主动制造的失败案例；

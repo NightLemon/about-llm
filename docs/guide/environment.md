@@ -28,14 +28,33 @@
 
 核心包按需安装，避免把 JAX、CUDA、vLLM 和多个 Agent 框架塞进一个不可维护环境：
 
-| Profile | 用途 | 安装命令 | 检查命令 |
+| Profile | 用途 | Extras | Doctor profile |
 |---|---|---|---|
-| docs | 只读/构建教材 | `python -m pip install -c constraints/ci.txt -e ".[docs]"` | `python scripts/doctor.py --profile docs` |
-| cpu-starter | tokenizer 与 NumPy 机制 | `python -m pip install -c constraints/ci.txt -e .` | `python scripts/doctor.py --profile cpu-starter` |
-| notebooks | 四本离线 Notebook | `python -m pip install -c constraints/ci.txt -e ".[dev,torch,jax]"` | `python scripts/doctor.py --profile notebooks` |
-| full-ci | 本地 CPU 全门禁 | `python -m pip install -c constraints/ci.txt -e ".[docs,dev,torch,jax,transformers,finetune,rag,langchain,llamaindex,api,evaluation,agents]"` | `python scripts/doctor.py --profile full-ci` |
+| docs | 只读/构建教材 | `docs` | `docs` |
+| cpu-starter | Tokenizer 与 NumPy 机制 | 无 | `cpu-starter` |
+| notebooks | 四本离线 Notebook | `dev,torch,jax` | `notebooks` |
+| full-ci | 本地 CPU 全门禁 | 见下方完整命令 | `full-ci` |
 
-Python 支持 3.10–3.12。`doctor` 的 `fail` 会返回非零退出码并附修复命令，`warn` 表示任务仍可运行但环境未完全隔离。`constraints/ci.txt` 是 CI 直接依赖的已复核快照，不是传递依赖或 CUDA wheel 的全平台 lock。MkDocs 保持 1.x，以匹配当前 Material 9.x 主题、插件和 overrides；升级到 MkDocs 2 前必须单独验证迁移。JAX GPU 版按官方平台说明安装；CPU 版可使用 jax 依赖组。vLLM 更新快且平台约束强，不固定进通用依赖组，在对应项目记录已验证组合。
+安装时都使用 `constraints/ci.txt`。例如：
+
+```powershell
+python -m pip install -c constraints/ci.txt -e ".[docs]"
+python scripts/doctor.py --profile docs
+```
+
+需要在本机运行全部 CPU 门禁时：
+
+```powershell
+python -m pip install -c constraints/ci.txt -e `
+  ".[docs,dev,torch,jax,transformers,finetune,rag,langchain,llamaindex,api,evaluation,agents]"
+python scripts/doctor.py --profile full-ci
+```
+
+`doctor` 的 `fail` 会返回非零退出码并给出修复命令；`warn` 表示任务仍可运行，但环境没有完全隔离。
+`constraints/ci.txt` 是 CI 直接依赖的复核快照，不是传递依赖或 CUDA wheels 的跨平台 lock。
+
+MkDocs 保持 1.x，以匹配当前 Material 9.x theme、plugins 与 overrides。JAX GPU 版按官方平台说明安装；CPU 版
+可使用 `jax` extras。vLLM 的平台约束变化较快，不固定进通用依赖组，具体项目单独记录已验证组合。
 
 ## 云 API
 

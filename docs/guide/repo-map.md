@@ -1,70 +1,117 @@
-# 仓库地图与实现契约
+# 仓库地图：想学一个主题时，应该从哪里进去
 
-**相关导航**：[如何使用](how-to-use.md) · [学习路径](learning-paths.md) · [知识地图](knowledge-map.md) · [环境配置](environment.md) · [工程项目索引](../practice/project-index.md)
+**相关导航**：[如何使用](how-to-use.md) · [学习路径](learning-paths.md) · [知识地图](knowledge-map.md) ·
+[环境配置](environment.md) · [工程项目索引](../practice/project-index.md)
 { .doc-nav }
 
-## 四层结构
+这个仓库同时放了教材、实验、可复用实现和端到端项目。它们不是同一内容的四份拷贝，而是回答四种问题：
 
-### 教材层：docs/
+```text
+docs/      我为什么需要这个机制，它在什么条件下成立？
+notebooks/ 我能否亲眼看到一个最小现象？
+src/       这个机制怎样实现成可测试模块？
+projects/  怎样把模块组成一次可交付的工程任务？
+```
 
-解释 Why、What 与 Trade-off。每章以直觉为入口，给张量形状、机制、工程选择、失败模式和面试追问；公式服务于理解，不以推导长度衡量深度。
+第一次学习一个主题时，通常按这个顺序走；定位 bug 时则经常从 project trace 反向进入 `src/` 与测试。
 
-### 实验层：notebooks/
+## 四层内容各自承担什么责任
 
-展示一个可观察现象：token 切分、attention mask、训练曲线、检索召回、量化误差等。Notebook 必须能 Restart & Run All；默认使用小数据和固定随机种子，不把大段核心逻辑藏在单元格中，而是调用 src/。
+### 教材层：`docs/`
 
-### 实现层：src/about_llm/
+正文负责建立直觉、因果链、公式和工程取舍。关键章节会给出“完成信号”和下一步实验，但不会把所有 fixture、
+hash 与测试排列组合塞进主线。精确验证结果集中在 `docs/evidence/`。
 
-提供可测试模块。from_scratch/ 为教学实现，追求透明和等价性；工程模块追求清晰接口、错误处理和可组合性。教学实现不会冒充高性能生产 kernel。
+### 实验层：`notebooks/` 与 `docs/practice/labs/`
 
-### 项目层：projects/
+实验让读者观察一个现象，例如 token merge、causal mask、训练 loss、检索排序或量化误差。
+Notebook 应能 Restart & Run All；核心逻辑放在 `src/` 或 `projects/`，避免隐藏在不可测试的长单元格中。
 
-围绕真实交付组织，包含 README、配置、数据契约、基线、评测、测试、故障注入和部署说明。框架版本和外部服务是可替换 adapter，核心领域逻辑不绑定 LangChain/LlamaIndex。
+### 实现层：`src/about_llm/`
 
-## 实现矩阵
+`from_scratch/` 优先透明、可手算和 correctness oracle；其他模块提供明确接口、错误类型和可组合状态。
+教学实现不会冒充生产 kernel，工程模块也不会在 import 时下载模型、访问网络或初始化 GPU。
 
-| 方向 | 从零/原生基线 | 主流框架 | 生产项目 | 关键验收 |
-|---|---|---|---|---|
-| Tokenizer | UTF-8 byte、确定性 byte-level BPE | checkpoint tokenizer/chat template | tokenizer 机制与契约实验 | round-trip、document boundary、merge rank、special token/offset/版本边界 |
-| Transformer/MoE | NumPy RMSNorm/RoPE/GQA/cache 与 top-k/capacity/sparse-linear oracle、PyTorch trainable top-k router/MLP 与 PyTorch/JAX MiniGPT | Transformers + immutable Llama/Qwen/DeepSeek release evidence + 固定 Qwen CPU FP32 权重/activation-patching controls | 微型 GPT/路由/配置/目标 checkpoint 证据实验 | 局部代数/因果/cache 等价；PyTorch/JAX LayerNorm parity 对齐 forward/backward/SGD，并以 RMSNorm 反事实证明默认模型不等价，但不含 AdamW/RNG/JIT/GPU。MoE 单进程 controls 覆盖 assignment/drop/combine、sparse—dense forward/backward、gate/balance gradient、padding/group competition、full-ranking reroute、dropless excess 与 materialized-zero gradient。独立 two-process CPU/Gloo control 用 hidden `all_gather`/count `all_reduce` 对比 local kept=2 与 replicated-global kept=1；该 capacity control 仍无 expert ownership/token `all_to_all`。后续同机 Gloo controls 分别执行 owner-only variable-split dispatch/return、无 capacity 的 reverse-split training，以及 global drop + kept-only all-to-all backward + owner/router SGD；仍无 distributed reroute/dropless、GPU/NCCL、目标 MoE checkpoint或性能。固定 Qwen 权重只覆盖单 prompt/pair 的 prefill/cache/generate 与 activation patching；不声称 authored MoE policy 是框架默认，也不声称 shared/fine-grained expert、完整生产 expert-parallel/grouped-GEMM、事实存储层、唯一 circuit、Llama/DeepSeek 权重、有效上下文、总体质量、CUDA/vLLM 或 GPU hook/kernel 等价 |
-| JAX 训练与恢复 | 纯函数 MiniGPT、JIT/Optax、PyTorch parity 与 JAX strict checkpoint/resume | JAX + Optax | JAX MiniGPT | tiny-batch overfit；LayerNorm SGD parity；shared-mask AdamW trajectory 对账 raw/clipped gradients、moments/count、schedule 与三步更新；13,476-byte artifact 保存 params/Optax/PRNG/data cursor，跨独立进程 bit-exact。共享 mask 不证明 native RNG 等价；当前不含 Orbax/TensorStore、sharding、accelerator、目标模型或性能证据 |
-| 微调 | loss mask、tool-aware SFT、LoRA、DPO、token-mean reduction | PEFT/TRL + 固定 Qwen CPU FP32 target controls + PyTorch CPU/Gloo DDP + CPU FP16 GradScaler/resume controls | 单卡领域 SFT/偏好训练 | 固定 Qwen final labels/no-grad forward、LoRA/adapter reload 与 DPO 单步均已执行；另有 masked-token oracle、DDP `D/N`/`no_sync`/clip/SGD、独立 AMP 与单参数 DDP+AMP 共识 gate。统一 6 参数 CPU resume control 保存 model/AdamW/StepLR/scaler/RNG/custom shuffle；独立 2-worker prefetch control 证明 emitted cursor 可跳样本与 fresh worker RNG 不重放；后续六进程 2-worker/stochastic-forward/backward/SGD/StepLR accumulation control 在 consumed=3/committed=2 时证明 commit-RNG replay 与完整 gradients+crash-RNG sidecar resume bit-exact。隔离负例又证明：正确 RNG、相同 steps/LR 仍会因漏 gradients/sample 漂移；完整 ledger/gradients/steps/LR 仍会因错误 RNG 漂移。sidecar 路径新增 manifest-last completeness 与四种 incomplete/tamper fault snapshots，但 base-only 仍可 replay。仍无 queue/worker/Python/NumPy/CUDA RNG、原子 sample—optimizer—base+sidecar+manifest 事务、directory `fsync`/断电与来源认证/不可变快照、分布式 checkpoint、自然 overflow、多 bucket、CUDA 或目标 Trainer；SFT 无 backward，LoRA loss 上升，DPO 仅同 batch 下降。均不证明数据合法性、held-out 质量/收敛，QLoRA/CUDA/峰值仍未验证 |
-| RAG | BM25/dense/hybrid/RRF + fail-closed publication policy | LangChain/LlamaIndex ACL-bound Retriever/Prompt adapter + 固定 Qwen generation/guarded controls | SQLite + persistent extractive ASGI API | framework/API 前授权、closed body schema、readiness、queue/deadline、ordered result/metadata/Prompt/artifact identity、Recall@k、nDCG、忠实度、权限；固定 Qwen attempt-1 真实执行得到漏引/拒答失败（gate 0/2），policy replay 仅为反事实；独立 guarded runtime 又真实观察有证据 `generate()` method=1、空证据=0，但不计内部 forward/provider billing，也不证明语义或生产修复 |
-| Agent | 显式状态机、strict proposal/schema、SDK-memory/stdio/HTTP protocol fixtures | MCP 2025-11-25 official-SDK memory + stdio + Streamable HTTP，以及 authored local transport controls、A2A 1.0 official SDK | 可恢复工具执行与 transactional outbox | 幂等、确认、预算、注入；official SDK stdio/HTTP 同时覆盖 SDK+具体 transport，但不继承 authored negative matrix/conformance；私有 control token 不是 MCP auth，所有 loopback/A2A 证据都不证明 OAuth/TLS/远程或业务授权 |
-| Cloud API 安全 | strict provider fixture、retry oracle、context-bound AES-GCM 与 trajectory allowlist | HTTPX、cryptography | Cloud API Contracts | subject/tenant/session/predecessor/model/expiry/key/replay 负例，reasoning/signature/unknown block 发布拒绝；authored 离线 control 不证明当前 provider 协议、KMS/HSM、分布式 ledger 或 secret/PII 清理 |
+### 项目层：`projects/`
 
-Transformer/MoE 还有一条独立的 two-process CPU/Gloo dispatch fixture：variable-split `all_to_all_single` 建立 owner-only expert placement，完成 token/gate/metadata dispatch、owner forward、return 与 source scatter；source→owner counts 为 `[[1,2],[1,0]]`，当前 416-byte logical payload 与单进程 oracle 对账。它不测 wire bytes，也不含 capacity、backward、CUDA/NCCL、目标模型或性能；不能借用表内其他 controls 的证据升级。
+项目围绕一次交付组织：输入契约、运行命令、artifact、测试、故障注入和验收。LangChain、LlamaIndex、Provider SDK
+等框架放在 adapter 边界，核心数据/权限/状态语义保持可独立验证。
 
-后续 training fixture 再用 authored autograd reverse-split 把 gradient 发回 owner/source，对 owner expert + synchronized replicated router执行一步 SGD，并与单进程 global MSE 对账。它自身仍不含 capacity、DDP 或 CUDA。
+## 按主题找入口
 
-最新 capacity-aware training fixture 对 global mask `[F,T,T,F]` 执行 kept-only all-to-all backward，覆盖全零 source splits 与 dropped-token zero task gradient，并再次对齐单进程 oracle。它仍不证明目标 MoE、distributed reroute/dropless、生产拓扑、CUDA/NCCL、收敛或性能。
-| 推理 | 单步 sampling、UTF-8 stop matcher、continuous batching、KV Cache、量化实验、repo-native MiniGPT checkpoint | Transformers reference + authored incremental ASGI/thread controls + vLLM 目标路线 | OpenAI-compatible 服务 | processor/top-k/top-p/CDF、partial stop/overlap、admission/work conservation、严格 tokenizer/config/全参数 reload、TTFT、TPOT、吞吐、显存、质量；固定 Qwen 已走真实 post-completion Transformers HTTP，纯 async control 验证断连传播，tiny GPT-2 又验证显式 event/`StoppingCriteria` 下的真实 generate-thread join；仍不冒充未修改/目标模型取消、vLLM/CUDA、KV/CPU/GPU release、完整 API、性能或生产证据 |
-| 评测 | 指标与 bootstrap | dataset/runner adapter | 发布门禁 | 可复现、分层、置信区间、回归 |
+| 想学什么 | 先读 | 再运行 | 完成信号 |
+|---|---|---|---|
+| Tokenization | [Tokenizer](../core/tokenization.md) | 实验 1 / tokenizer tests | 能解释 round-trip、merge 与 chat-template identity |
+| Transformer | [Transformer](../core/transformer.md) | `transformers-basics` | 能手算 shape，并对账 causal/cache 不变量 |
+| 生成 | [生成基础](../core/generation-basics.md) | 实验 0A/0B | 能复算采样并说明停止原因 |
+| 推理服务 | [请求生命周期](../systems/inference-request-lifecycle.md) | `inference-serving` | 能分解 queue、prefill、decode 与 KV 容量 |
+| RAG | [一次 RAG 请求](../applications/rag.md) | `rag-foundations` | 能追踪 ACL、检索、packing、引用与拒答 |
+| Agent | [一次退款任务](../applications/agent-task-lifecycle.md) | `safe-agent` / 实验 6 | 能处理 timeout unknown、幂等与 reconciliation |
+| SFT/QLoRA | [SFT 数据闭环](../training/sft-data-pipeline.md) | `single-gpu-finetuning` | 能审计 final labels、训练、重载与 held-out gate |
+| JAX | [JAX/Optax](../training/jax-optax.md) | `jax-minigpt` | 能解释 PyTree、JIT、PRNG 与完整 resume state |
+| 评测 | [评测总览](../quality/evaluation.md) | `evaluation-gate` | 能从 recorded answers 重建发布决定 |
+| Cloud API | [云 API 契约](../models/cloud-api-contracts.md) | `cloud-api-contracts` | 能判断 partial、retry、usage 与 uncertain outcome |
 
-## 质量等级
+项目目录与完整命令可从[项目索引](../practice/project-index.md)进入。
 
-- **L0 文档**：解释准确，有术语、边界和自测。
-- **L1 最小实现**：CPU 可运行，单元测试覆盖核心不变量。
-- **L2 可复现实验**：Notebook/脚本固定输入、种子和指标。
-- **L3 工程样例**：配置化、日志、错误处理、集成测试。
-- **L4 生产设计**：容量、安全、监控、回滚和成本齐全。
+## 三类实现不要混成同一份证据
 
-同一主题只有达到标注等级才能宣称完成。外部 API/GPU 测试必须显式 opt-in，CI 默认不产生费用。
+仓库经常同时提供：
 
-## 代码约定
+1. **数学 oracle**：NumPy/精确分数实现，用于检查公式和边界；
+2. **框架 control**：真实调用 PyTorch、JAX、Transformers 或 SDK，但输入很小且固定；
+3. **目标环境实验**：在指定 checkpoint、GPU、runtime 与 workload 上测行为或性能。
 
-- Python 3.10–3.12，路径使用 pathlib，配置与密钥分离。
-- 公共函数有类型标注和 docstring；错误消息包含可操作上下文。
-- 浮点测试使用容差；随机测试固定种子但不只测一个样本。
-- 不在 import 时下载模型/数据、访问网络或初始化 GPU。
-- 任何执行模型输出的代码都先做 schema、权限和副作用校验。
+例如 NumPy GQA 可以证明 head mapping，不能证明 CUDA kernel 快；固定 Qwen CPU forward 说明真实权重路径执行过，
+不能证明总体质量；MockTransport 的 response close 说明客户端释放资源，不能证明云端停止计费。
 
-## 数据约定
+想查看每条 control 的精确版本、fixture 与未覆盖项，请用：
 
-小型教学数据可随仓库分发，但要标注来源和许可。大型、受限或可能变化的数据只提供下载说明和校验值。评测数据与训练数据隔离；生成物写入 outputs/，权重写入 checkpoints/，两者默认不提交。
+- [项目控制台账](../evidence/project-controls.md)：项目级可执行证据；
+- [准确性台账](../evidence/accuracy-ledger.md)：重要结论与验证入口；
+- 各主题的 `docs/evidence/*-controls.md`：精确结果与边界。
+
+## 质量等级怎样理解
+
+| 等级 | 表示什么 | 尚不能默认说明什么 |
+|---|---|---|
+| L0 文档 | 机制、术语、边界和自测完整 | 代码可运行 |
+| L1 最小实现 | CPU 实现与核心单元测试通过 | 框架/目标模型兼容 |
+| L2 可复现实验 | 固定输入、seed、artifact 和结果 | 真实 workload 代表性 |
+| L3 工程样例 | 配置、日志、错误与集成路径完整 | 已满足生产 SLO |
+| L4 生产设计 | 容量、安全、监控、回滚和成本方案齐全 | 目标组织已实地验收 |
+
+同一主题可以在数学机制上达到 L2，而在 CUDA 性能上仍只有“待目标环境实测”。证据等级必须绑定具体结论，
+不能给整个目录贴一个笼统等级。
+
+## 一个推荐的工作循环
+
+```mermaid
+flowchart LR
+  Q["从一个具体问题开始"] --> D["读对应主线章节"]
+  D --> L["运行最小 lab"]
+  L --> P["运行端到端 project"]
+  P --> F["故意触发一个失败"]
+  F --> E["核对 evidence / tests"]
+  E --> N["记录结论与未覆盖项"]
+```
+
+例如学习 Agent 时，不必先跑所有 MCP transport tests。先运行退款生命周期，看懂为什么 `pending` 不能直接重试；
+需要接框架时再运行 LangChain/LlamaIndex adapter；准备协议互操作时才进入 MCP/A2A controls。
+
+## 代码与数据约定
+
+- Python 支持 3.10–3.12；路径优先使用 `pathlib`，配置与 secret 分离。
+- 公共函数提供类型标注和可操作错误信息。
+- 浮点测试使用有理由的 tolerance；随机实验固定 seed，也保留至少一个反例。
+- Import 不下载模型/数据、不访问网络、不初始化 GPU。
+- 执行模型 proposal 前，外部 Runtime 继续做 Schema、权限、审批和副作用校验。
+- 小型 authored 教学数据可以随仓库分发；大型或受限数据只保存获取说明、identity 与校验方式。
+- 训练与评测数据分权；生成 artifact 默认不提交到 Git。
 
 ## 下一步
 
-- 运行前先完成[环境检查](environment.md)。
-- 从[实验与项目](../practice/labs.md)选择任务，再到[工程项目索引](../practice/project-index.md)核对入口和证据等级。
-- 准备交付时使用[生产检查表](../practice/production-checklist.md)，并在[准确性台账](../reference/accuracy.md)确认结论边界。
+1. 先运行[环境检查](environment.md)。
+2. 按[学习路径](learning-paths.md)选择一条主线。
+3. 到[实验与项目](../practice/labs.md)完成最小可运行练习。
+4. 准备交付时使用[生产检查表](../practice/production-checklist.md)。
