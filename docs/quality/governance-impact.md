@@ -13,11 +13,15 @@
 
 </div>
 
-治理把技术风险转成明确的责任、证据、发布决定和救济机制。它不是一张发布前表格，也不能用“模型卡存在”代替控制有效性。
+同一个模型，放在员工 FAQ 里可能只会给出一条错误链接；放在退款审核或招聘筛选里，同样的错误会改变一个人的
+财务结果或机会。治理的对象因此不是“这个模型好不好”，而是**谁把哪个系统用于什么决定，并由谁承担后果**。
+
+治理把技术风险转成明确的责任、证据、发布决定和救济机制。它不是一张发布前表格，也不能用“模型卡存在”
+代替控制有效性。
 
 本章提供工程治理框架，不构成法律意见。法律、监管解释和生效日期依地区、用途与时间变化；具体上线必须由当地法律、隐私、安全和行业专家基于当时官方文本审查。
 
-## 1. 治理对象是系统与用途
+## 1. 先登记用途，不要只登记模型名
 
 同一底层模型用于写诗、客服建议、招聘筛选和医疗分诊，风险完全不同。资产登记至少包含：
 
@@ -32,7 +36,7 @@
 
 仅登记“使用 GPT/Qwen/Claude”不足以判断风险。
 
-## 2. 风险治理生命周期
+## 2. 上线只是治理生命周期的中点
 
 ```mermaid
 flowchart LR
@@ -49,7 +53,7 @@ flowchart LR
 
 每一步都有输入、owner、证据和退出条件。上线不是生命周期终点；模型、数据、流量、法律和供应商都会变化。
 
-## 3. 风险分级
+## 3. 严重度、暴露与可逆性要分开看
 
 考虑：
 
@@ -71,7 +75,7 @@ flowchart LR
 
 只有已经实现并有测试证据的控制才能降低 residual risk。计划中的 classifier、未来审计或文档声明不能算已生效控制。
 
-## 4. 责任与独立性
+## 4. 谁真的有权按下暂停键
 
 最低角色：
 
@@ -85,7 +89,7 @@ flowchart LR
 
 RACI 表不能替代资源与权限。负责阻止发布的人必须能访问证据、有时间复核，并能在商业压力下真正暂停上线。
 
-## 5. AI/Algorithmic Impact Assessment
+## 5. 用影响评估追问现实伤害
 
 影响评估至少回答：
 
@@ -102,7 +106,7 @@ RACI 表不能替代资源与权限。负责阻止发布的人必须能访问证
 
 影响评估应在设计早期开始。系统已经部署后才补文档，往往无法改变数据和产品架构。
 
-## 6. 法规映射方法
+## 6. 从用途映射义务，而不是背法律清单
 
 不要维护一张脱离 use case 的“全球 AI 法律清单”。使用矩阵：
 
@@ -139,9 +143,13 @@ RACI 表不能替代资源与权限。负责阻止发布的人必须能访问证
 - 是否用于 provider/model training；
 - export、correction、objection 和 appeal 流程。
 
-Opaque reasoning/signature block 必须作为独立数据类别进入清单，而不是归入“不可读 metadata”。记录谁能让 provider 再次处理它、绑定的 subject/session/model audience、key/格式版本、是否允许 replay、公开导出策略和撤销方式。只清理 visible text 不能证明 raw trajectory 已脱敏；公开数据集默认移除 reasoning、signature 与未知 opaque field。
+Opaque reasoning/signature block 要作为独立数据类别进入清单，而不是归入“不可读 metadata”。记录谁能让 Provider
+再次处理它、绑定的 subject/session/model audience、key/格式版本、是否允许 replay、公开导出策略和撤销方式。
+只清理 visible text 不能证明 raw trajectory 已脱敏；公开数据集默认移除 reasoning、signature 与未知 opaque field。
 
-需要保存暂停 Agent workflow 时，说明保存目的是恢复还是审计。恢复副本进入受控存储并绑定身份、会话、expiry 和迁移策略；审计副本优先保存结构化 decision/effect/receipt，而不是完整隐藏推理。历史 key retirement、重新签发和公开副本删除属于事故响应，不应由普通 retention job 静默处理。
+需要保存暂停的 Agent workflow 时，先说明保存目的是恢复还是审计。恢复副本进入受控存储，并绑定身份、会话、
+expiry 和迁移策略；审计副本优先保存结构化 decision、effect 和 receipt，而不是完整隐藏推理。
+历史 key retirement、重新签发和公开副本删除属于事故响应，不应交给普通 retention job 静默处理。
 
 ### 7.2 删除与衍生物
 
@@ -166,7 +174,7 @@ Opaque reasoning/signature block 必须作为独立数据类别进入清单，�
 
 高影响决定应提供可理解理由、人工复核和救济；不要把不可验证的模型自我解释当作真实决策因果。
 
-## 9. Human oversight
+## 9. “有人在环”要说明人能看见什么
 
 “人在环中”有效需要：
 
@@ -179,7 +187,7 @@ Opaque reasoning/signature block 必须作为独立数据类别进入清单，�
 
 若人工每分钟审核数百项、只能点击“同意”，它更像责任转移而非控制。
 
-## 10. 透明度分层
+## 10. 不同对象需要不同透明度
 
 不同受众需要不同信息：
 
@@ -211,7 +219,7 @@ Opaque reasoning/signature block 必须作为独立数据类别进入清单，�
 
 文档中的每个重要结论链接：测试 artifact、dataset/model revision、运行日期、owner 和适用范围。截图和精选 demo 不是充分证据。
 
-## 12. 变更管理
+## 12. 哪些变化会让旧审批失效
 
 需要重新评审的变化包括：
 
@@ -224,7 +232,7 @@ Opaque reasoning/signature block 必须作为独立数据类别进入清单，�
 
 每次变更记录 risk delta、回归集、approval 和 rollback。供应商“同名模型”静默升级也属于变更；用固定 probe/replay 检测行为漂移。
 
-## 13. 监控与事件治理
+## 13. 线上指标怎样触发行动
 
 线上监控：
 
@@ -240,7 +248,7 @@ Opaque reasoning/signature block 必须作为独立数据类别进入清单，�
 
 Incident 记录时间线、影响用户、版本、控制为何失效、containment、notification、reconciliation 和复发预防。安全指标改善不应靠删除失败样本。
 
-## 14. 第三方与采购
+## 14. 外包能力不会外包责任
 
 对模型 API、数据、embedding、插件和托管商审查：
 
@@ -309,7 +317,7 @@ Carbon estimate 依地点/时间电力因子、location-based 或 market-based �
 
 这些影响难以用一个 benchmark 表示，需要用户研究、申诉、市场指标和长期监控。
 
-## 18. 发布审批包
+## 18. 把发布决定写成可复核工件
 
 最低内容：
 
@@ -326,11 +334,15 @@ Carbon estimate 依地点/时间电力因子、location-based 或 market-based �
 
 Exception 应有范围、补偿控制、owner 和到期复审，不能永久存在。
 
-可直接复制的 use-case inventory、impact assessment、数据卡、模型卡、系统卡、control evidence、供应商尽调、发布决定、exception、incident 和 retirement 字段见[治理工件模板](governance-templates.md)。模板只提供一致结构；每个字段仍需真实 owner、当前 artifact 和独立证据。
+可直接复制的 use-case inventory、impact assessment、数据卡、模型卡、系统卡、control evidence、供应商尽调、
+发布决定、exception、incident 和 retirement 字段见[治理工件模板](governance-templates.md)。模板只提供一致结构；
+每个字段仍需真实 owner、当前 artifact 和独立证据。
 
 ## 19. 当前仓库证据边界
 
-仓库已有数据/模型/API 准确性台账、项目成熟度、ACL/审批/评测门禁和 changelog，可作为治理证据的技术组成部分。但没有特定司法辖区的正式法律意见、真实组织责任签署、生产 impact assessment、供应商合同审计或环境实测。因此不能把本仓库通过自动化测试等同于法规合规或治理完成。
+仓库已有数据、模型和 API 准确性台账，以及项目成熟度、ACL、审批、评测门禁和 changelog；这些可以成为治理证据
+的一部分。但仓库没有特定司法辖区的正式法律意见、真实组织责任签署、生产 impact assessment、
+供应商合同审计或环境实测。因此，自动化测试通过不等于法规合规或治理完成。
 
 ## 20. 常见错误结论
 

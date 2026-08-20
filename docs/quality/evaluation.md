@@ -5,112 +5,159 @@
 
 **学习导航**
 
-- **适合读者**：第一次建立 LLM 质量体系的工程和产品团队。
-- **先修**：能描述任务输入、输出和失败；不要求先掌握统计检验。
-- **首次阅读**：定义“好” → case → 指标 → judge → 错误分析 → 回归门禁。
-- **完成信号**：能建立小型评测集、评分规则、切片和失败 taxonomy。
-- **卡住时**：先用 20–30 条真实 case 建基线，再读[评测方法](evaluation-methodology.md)。
+- **适合读者**：第一次为 LLM 应用建立质量标准的工程和产品团队。
+- **先修**：能描述任务输入、期望输出和一种失败；暂时不需要统计检验知识。
+- **首次阅读**：先跟完“客服助手”例子，再为自己的任务写 20–30 个 case。
+- **完成信号**：能说明每个指标在测什么，并根据失败切片做出发布或回滚决定。
+- **卡住时**：先只用人工 pass/fail 和错误分类；需要比较版本时再读[评测方法](evaluation-methodology.md)。
 
 </div>
 
-本章给出评测地图。实验设计、统计和 LLM-as-judge 校准详见[评测方法与发布决策](evaluation-methodology.md)，工具型系统另见[Agent 评测、仿真与红队](agent-evaluation.md)。
+假设你做了一个客服助手。版本 B 在 30 个问题里答对 24 个，版本 A 答对 22 个。B 可以发布吗？
+
+单看总数还回答不了。多出来的两次成功可能只是措辞更接近标准答案；与此同时，B 也可能开始泄露别人的订单，
+或者把响应时间从 2 秒拖到 20 秒。评测的工作，就是把“感觉更好”拆成足以支持决策的证据。
 
 ## 先定义“好”
 
-评测把目标变成可测量行为。一个模型不存在脱离任务的单一“智力分数”。至少区分：能力、指令遵循、事实性、鲁棒性、安全、公平、延迟、成本和真实业务价值。
+先写任务，再选指标。对于客服助手，“好”至少有四层：
+
+| 层 | 一个可测问题 | 失败示例 |
+|---|---|---|
+| 任务结果 | 用户的问题有没有解决？ | 退款规则解释错了 |
+| 风险边界 | 系统有没有做不该做的事？ | 查询了其他租户的订单 |
+| 交互质量 | 用户是否等得到、看得懂、能恢复？ | 请求超时后仍显示“处理中” |
+| 资源代价 | 每次成功需要多少时间和费用？ | 重试三次才得到同一答案 |
+
+这四层不能合成一个天然正确的“智力分数”。团队需要先决定哪些失败是硬门禁，哪些指标允许权衡。
+例如越权率必须为零，而平均措辞偏好可以和延迟、成本一起讨论。
 
 ## 评测集设计
 
-从真实流量分层抽样，补充边界、少数群体、长尾、多语言、对抗和应拒绝案例。每条样本记录来源、许可、难度、标签协议和版本。训练/dev/test 隔离；保留一个开发者无法反复查看的最终集。
+评测集不是随手收集的一袋问题。每个 case 都应该代表一个你愿意为之做决策的场景。
 
-稳定 `case_id` 不是不可变评测集。每次运行还要绑定该 ID 下的 input、expected/rubric、slice 和 metadata；metric 名称也必须带实现 revision。否则换了 gold 或评分实现仍可能被误报为“同集配对比较”。canonical manifest 能检测已列字段漂移，但无签名 hash 不能认证来源，也不证明样本或指标有效。
+先从真实请求中选一小批，再主动补上容易漏掉的角落：
 
-发布证据还要区分 content identity、认证链和外部历史锚点。仓库 HMAC release ledger 可认证连续记录并可选重哈希引用 artifact；但没有 ledger 外 trusted head 时，合法前缀截断仍会通过。HMAC 也不证明 key custody、真实时间、模型实际执行或评测有效性，详见[评测方法与发布决策](evaluation-methodology.md#artifact)。
+- 正常、常见的问题，用来测主路径；
+- 信息不足或相互冲突的问题，用来测澄清和拒答；
+- 长输入、多语言、错别字等边界，用来测鲁棒性；
+- 越权、注入和高风险动作，用来测安全门禁；
+- 过去发生过的线上故障，用来防止同类问题回来。
 
-`verify-comparison` 只重载最终 artifact；`verify-evidence` 则重开 cases/answers/results/manifests，重新评分并重跑 bootstrap/gate。后者能发现更多跨文件不一致，但仍不认证本地 bytes 或重放模型调用，不能把“可复算”写成“来源真实”。
+每条 case 保存稳定 ID、输入、期望或 rubric、来源、切片和版本。稳定 ID 只是名字；如果输入或评分规则变了，
+也要产生新的内容 identity。开发过程中可以反复看 dev set，最终发布集则要限制查看和调参次数。
 
-`render-comparison-html` 可把严格 artifact 生成无脚本、无外部资源且动态文本转义的可读报告；页面明确是 `artifact_only_render`，不能代替 JSON identity、全图复算或 HMAC/trusted-head 验证。
+开放问题通常没有唯一标准句子。与其强迫标注者写一段“黄金答案”，不如列清楚：哪些事实必须出现，
+哪些说法可以接受，哪些错误足以判失败。高风险领域还要记录标注者是谁、依据什么资料，以及彼此是否一致。
 
-黄金答案不一定唯一。开放任务可写 rubric：必须覆盖哪些事实、允许哪些变体、哪些错误致命。高风险领域由合格专家标注，并测量标注者一致性而非强行假设一个客观标签。
+## 先评每个 case，再看平均分
 
-## 指标
+平均分会把完全不同的失败混在一起。先为每条 case 保存结果和原因，再聚合：
 
-- 精确匹配、F1：适合答案较确定的抽取/短问答。
-- Pass@k：代码/数学多个候选中至少一个通过验证的概率；估计时注意采样数公式。
-- ROUGE/BLEU：表面重叠，不能充分代表事实或语义质量。
-- BERTScore/Embedding 相似：语义更宽松，但可能忽略关键否定与数字。
-- Pairwise win rate：两个系统成对比较；对顺序和长度偏差敏感。
-- 校准：Binary Brier score、明确分箱的 ECE、tie-aware risk-coverage 曲线；概率必须对应结果发生前定义的事件。
-- 系统：TTFT、TPOT、成功任务成本、工具错误率。
+```text
+case_id: refund-policy-07
+result: fail
+reason: omitted_eligibility_condition
+severity: high
+slice: zh / refund / policy
+```
 
-不要把不同维度随意加权成一个总分，除非权重对应真实效用并报告各分项。
+这样才能回答“版本 B 好在哪里、坏在哪里”。总体从 73% 升到 80%，如果中文退款问题从 90% 降到 50%，
+发布决定就不应只看那个 80%。
 
-指标名称不够，必须固定实现 revision 与 normalization policy。仓库的固定 Qwen 七例 control 给出一个可执行反例：目标 `LLM-2026`、输出 `llm-2026` 时，raw decoded string 的 literal exact 为 0，但 NFKC + `casefold()` + whitespace normalization 后 exact 为 1；目标 `{"answer":42}`、输出 `{"answer": 42}` 时，literal/normalized exact 都为 0，而忽略标点/空白的当前 token F1 为 1。七例汇总因此分别是 `4/7`、`5/7`、`6/7`，不是三个可互换的“准确率”。标识符大小写敏感时不得 case-fold；JSON 应解析后做 schema 与字段语义检查，不能用 token F1 代替结构验证。
+## 指标要和问题配对
 
-通用 Evaluation Gate 保留兼容默认值：不传 `--metric` 时仍计算 normalized `exact_match` 与 `token_f1`；需要逐字契约时显式传 `--metric literal_exact_match`，需要并列审计时再重复传 `--metric exact_match`。三者分别写入独立 metric revision；literal 比较 decoded string，不等同于原始网络响应 bytes。
-
-结构化输出至少分四层：strict JSON syntax、JSON Schema、expected parsed value、业务语义/授权。仓库五条 fixture 中，object key order/whitespace 变化的 literal/normalized/F1/schema/value 为 `0/0/1/1/1`；错误值 `43` 仍 schema-valid，但 value exact 为 0；duplicate object key 与 `NaN/Infinity` 必须在 strict parser 层拒绝；array 逆序仍可 schema-valid 且 token F1=1，却 value exact=0。`about-llm.json-schema-metric.v2` 与 `about-llm.json-value-exact.v1` 因此是两个独立 opt-in 指标，不能用其中一个替代另一个，更不能替代 tenant、单位、时效和副作用规则。
-
-RAG 引用同样不能压成“有 `[S1]` 就忠实”。`citation_syntax` 只覆盖已知 ID 与段落引用；opt-in `about-llm.citation-evidence-span-metric.v1` 进一步验证 strict claim artifact 中 source ID、end-exclusive offset 与 exact quote 一致。固定五例为 `[1,0,0,0,1]`，最后一个明显无关 claim 仍因 exact span binding 得 1，明确说明 span identity 不推断 semantic entailment。ACL snapshot provenance、claim segmentation、support verdict、judge error、source quality 与 publication policy 都要另测。
-
-这七次确实加载固定 Qwen 权重并真实调用 `GenerationMixin.generate()`，只能建立固定执行路径和逐例输出事实；suite 是 authored、未外部预注册、未独立抽样/留出且没有统计功效。真实执行不自动建立 construct validity、sampling validity、总体模型质量或发布有效性。
-
-## Hosted Evals API 与本地发布门禁不是同一层
-
-截至 2026-08-19，OpenAI 官方 [Evals guide](https://developers.openai.com/api/docs/guides/evals) 用 `data_source_config` 描述测试数据 schema，用 `testing_criteria`/graders 描述评分条件；创建 eval 后，再用具体数据源和模型启动异步 run，读取逐条件结果与报告。
-
-这套产品流程可以编排 provider 调用与 grader，但不能替你证明 case 有代表性、gold/rubric 有效、切片完整、阈值符合业务效用或结果可发布。对应关系应这样理解：
-
-| 层 | Hosted Evals API 可承担 | 本仓库仍需承担 |
+| 想回答的问题 | 常用方法 | 使用时要确认 |
 |---|---|---|
-| 数据接口 | item schema、上传/引用数据源 | 来源、许可、case identity、split 与泄漏审计 |
-| 执行 | 对每个 item 调模型并排队运行 | 固定 Prompt/tool/environment identity 与失败重放 |
-| 评分 | 配置 string/model 等 grader | construct validity、人工校准、指标 revision 与切片 |
-| 结果 | run 状态、逐 criterion 结果、报告入口 | paired comparison、统计假设、发布 gate 与回滚证据 |
+| 固定答案是否完全一致？ | Literal exact match | 大小写、空白和 Unicode 是否有业务含义 |
+| 抽取内容覆盖得怎样？ | Precision / Recall / F1 | tokenization 与 normalization 规则 |
+| 结构化对象是否可用？ | Strict JSON + Schema + parsed value | 语法、字段与业务规则分层检查 |
+| 开放回答是否满足要求？ | Rubric + 人工或校准后的 judge | 必须项、致命错误和证据来源 |
+| 检索是否找到正确证据？ | Recall@k、MRR、nDCG | gold evidence 和无答案 case 的定义 |
+| 引用是否支持主张？ | Citation coverage / correctness | “ID 存在”和“内容支持”分开判断 |
+| 代码或数学候选能否通过验证？ | Pass@k | 采样协议、候选数和 verifier 可靠性 |
+| 系统是否可运营？ | 成功率、TTFT、TPOT、成本 | 失败请求也进入分母 |
 
-因此可以把 hosted run 接入 Evaluation Gate，但不能用“run completed”代替“候选通过发布门禁”。异步失败、缺失 case、grader 漂移和多次试验选择仍要进入 artifact 与决策记录。
+指标名称本身还不够。比如目标是 `LLM-2026`，输出是 `llm-2026`：逐字比较会失败，忽略大小写的比较会通过。
+两种结果都可能算对，关键在于任务是否允许大小写变化。Normalization policy 和实现 revision 应与结果一起保存。
+
+结构化输出尤其适合分层：先确认 JSON 能严格解析，再检查 Schema、期望字段值和业务约束。
+`{"amount": 300}` 即使 Schema 合法，也不能回答当前用户是否有权退款。RAG 引用同理：`[S1]` 存在只说明引用格式有效，
+还要判断 S1 是否真的支持相邻主张。
+
+仓库中的精确指标、Qwen 固定 case 和 citation-span 反例集中在
+[评测方法与发布决策](evaluation-methodology.md)和 [Evaluation Gate](../practice/projects/evaluation-gate.md)。
 
 ## LLM-as-judge
 
-适合大规模初筛和复杂 rubric，但会有位置偏差、冗长偏差、自我偏好、提示敏感和知识盲区。使用方式：
+LLM judge 可以帮助初筛大量开放回答，但最好把它看成一位速度很快、判断会漂移的标注员。
 
-1. 给明确 rubric 和证据，不让 judge 猜目标。
-2. 随机交换答案顺序，必要时匿名化模型身份。
-3. 要求输出结构化分项和引用。
-4. 与专家标注在代表性样本上校准，报告一致性。
-5. 关键结论用多 judge 或人工复核。
+给 judge 明确 rubric 和必要证据；隐藏候选模型身份，并随机交换 A/B 顺序。然后在一批代表性样本上让专家独立评分，
+比较 judge 在不同语言、长度和错误类型上的一致性。模型、Prompt、rubric 或流量变化后，这次校准需要重做。
 
-Judge 分数不是事实真值。
+Judge 给出的 `confidence=0.9` 或 1–5 分并不会自动成为正确概率。如果系统准备根据置信度自动放行请求，
+先定义可观测的正确/可接受事件，再用独立人工标签检查 Brier score、reliability 和 risk-coverage。
 
-Judge 自述 confidence 或输出的 1–5 分不是天然正确概率。若要做 selective automation，先把事件定义为 binary correctness/acceptability，在独立人工集上记录 predictor probability 与最终 label，再检查 Brier、reliability bins 和 risk-coverage；模型、rubric 或流量变化后重新校准。
+## Hosted Evals API 与本地发布门禁
 
-## 统计
+Hosted Evals 服务擅长编排：读取数据、调用模型、运行 grader、汇总 run。它解决“怎样把评测跑起来”。
+你的团队仍要决定“这些 case 是否代表真实问题、grader 是否可信、什么结果足以发布”。
 
-报告样本量、均值、置信区间和效应大小。成对样本用配对 bootstrap/置换检验比独立检验更合适。小提升可能小于随机波动。分层报告可发现总体提升掩盖某语言或用户群体退化。
+| Hosted 平台提供 | 项目仍需定义 |
+|---|---|
+| 数据 schema 和 run 生命周期 | 数据来源、许可、split 与泄漏检查 |
+| 模型调用与逐项结果 | Prompt、工具、环境和版本 identity |
+| String/model grader | rubric 有效性、人工校准与指标 revision |
+| 报告入口 | 切片、统计比较、发布阈值和回滚条件 |
 
-两者回答不同问题：paired bootstrap 估计 mean difference 的不确定区间；paired sign-flip/randomization test 在 sharp null 与 pair-label exchangeability 下计算 observed statistic 的尾部概率。P-value 不是 posterior probability，bootstrap 改善比例也不是候选更优的后验概率。用户/文档相关数据需按 cluster 整体重采样或联合翻转；case-weighted bootstrap 每个 resample 重算 cluster-sum/cluster-size ratio，equal-cluster 则平均 cluster means，二者必须预先选定。`compare --cluster-metadata-key ... --cluster-weighting case|equal` 会把该选择、cluster sizes、exact/Monte Carlo 方法和实际 resample 数写入 comparison v2；通过工件仍不证明 cluster 假设。同时扫描多个预定义 slice/metric 时，可用 Holm step-down 对明确 family 的有效 p-value 控制 FWER；同一 hypothesis 随数据累积反复查看则是 sequential design，不能用 Holm 替代。仓库 exact sign-test peeking oracle 在 `[10,20,30,40,50]` 五个 looks 上把逐次 0.05 的实际假阳性算为约 0.1010，并把预先均分为每次 0.01 的 Bonferroni 对照算为约 0.0152。case/cluster bootstrap、sign-flip、Holm 与 sequential CPU oracle 都只验证统计口径；它们不建立正确 cluster、抽样、交换性、独立性、coverage、因果、effect importance 或指标有效性。
+截至 2026-08-19，OpenAI 官方 [Evals guide](https://developers.openai.com/api/docs/guides/evals)使用
+`data_source_config` 描述数据，用 `testing_criteria`/graders 描述评分条件。接入这类平台时，把异步失败、缺失 case、
+grader 变化和多次试验选择一起写入本地决策记录。
 
-重复在测试集调 Prompt 会过拟合。维护滚动新鲜集和时间切片。公开基准可能被预训练污染；用 canary、改写、私有数据和过程证据增强可信度。
+## 统计回答“差异有多确定”
 
-## 错误分析
+有了逐 case 结果，才进入版本比较。相同 case 上的 A/B 结果应做配对分析；同一用户或文档产生多条 case 时，
+重采样单位通常应是用户或文档 cluster。报告样本量、差异、区间和实际影响，不把 p-value 翻译成“B 更好的概率”。
 
-每轮抽样失败，建立互斥尽量清晰的 taxonomy：意图理解、知识缺失、检索、推理、格式、工具、权限、安全或评价错误。统计严重度与频率，选最重要类别修复，再增加回归样本。
+样本很少时，区间往往会告诉你“目前还无法区分”。这也是有用结果：保持旧版本、补充目标 case，或选择风险更低的 canary。
+多指标、多切片和反复偷看会增加误报，需要在实验前写清 family、look schedule 和停止规则。
+
+Bootstrap、randomization test、Holm、sequential design 和 release artifact 的完整口径见
+[评测方法与发布决策](evaluation-methodology.md)。
+
+## 错误分析把分数变成改动
+
+每轮从失败中抽样，建立一套足够稳定的原因分类。例如：意图理解、知识缺失、检索、推理、格式、工具、权限、
+安全或评分错误。分类不必追求完美，但同一失败尽量只有一个首要原因，并记录严重度。
+
+接下来修复频率高且影响大的类别，再把这个失败加入回归集。如果分类结果只得到“模型幻觉”，粒度通常还不够：
+证据没有召回、证据进了 Prompt 但没被使用，以及答案正确却被指标判错，需要不同修复。
 
 ## 在线评测
 
-A/B 测试看任务完成、留存、人工升级、撤销/纠错等真实指标，同时设安全 guardrail。随机化单位要避免同一用户跨版本污染；考虑新奇效应、学习效应和延迟。最大样本、时长、look schedule、停止规则与异常中止条件要事前固定；每天用固定样本 p-value 偷看并“显著即停”会膨胀假阳性。高风险变更先 shadow/canary，不直接全量。
+离线集稳定、便于重放；线上指标才包含真实用户、真实流量和完整系统。A/B 或 canary 可以观察任务完成、人工升级、
+撤销、延迟和成本，同时保留安全 guardrail。随机化单位、最大样本、运行时长、查看频率和异常中止条件应在开始前确定。
+
+线上数字也要回到具体 case。某个切片退化时，保存足以重放的输入和版本 identity，并遵守隐私与保留策略。
 
 ## Eval-driven development
 
-1. 从失败案例定义可复现测试。
-2. 固定基线和版本。
-3. 修改一个主要变量。
-4. 运行质量、安全、成本回归。
-5. 检查分层结果与具体样本。
-6. 通过门禁再发布，线上继续监控。
+一轮完整迭代通常长这样：
+
+1. 从真实失败写出一个可重放 case，并给出期望或 rubric。
+2. 冻结当前版本作为基线。
+3. 只改变一个主要变量，例如 Prompt、retriever 或模型。
+4. 运行任务、风险、系统和成本指标。
+5. 查看逐 case 差异与关键切片，判断改善来自哪里。
+6. 达到预先定义的门禁后做 canary；保留回滚版本并继续监控。
+
+这条流程的价值不在于生成更多分数，而在于让每次改动都能回答：修复了哪个失败，有没有制造新的失败，
+证据是否足以承担当前发布风险。
 
 ## 自测
 
-1. 为什么开放问答用精确匹配会低估质量？
-2. LLM judge 偏爱更长答案时怎样发现和缓解？
-3. 总体胜率上升但中文用户下降，应如何报告和决策？
+1. 客服助手总体正确率上升，但越权 case 从 0 次失败变成 1 次，应该怎样决策？
+2. 为什么 `{"answer": 42}` 与 `{"answer": 43}` 都可能通过同一个 JSON Schema？
+3. Judge 偏爱更长的答案时，怎样用人工样本发现并量化这种偏差？
+4. 同一用户贡献十条 case 时，为什么逐 case bootstrap 可能低估不确定性？
+5. Hosted eval run 显示 completed 后，本地发布门禁还需要检查什么？

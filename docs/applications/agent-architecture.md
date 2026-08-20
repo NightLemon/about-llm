@@ -5,221 +5,293 @@
 
 **学习导航**
 
-- **适合读者**：Agent 架构、平台和状态管理工程师。
-- **先修**：[Agent 总览](agents.md)和基本状态机；无框架前置要求。
-- **首次阅读**：Agent/Workflow → 控制循环 → [不确定决策](agent-decision-theory.md) → 状态与记忆 → 停止 → verifier。
-- **完成信号**：能画 typed state machine，并写可测试的完成判定。
-- **卡住时**：先用[Safe Agent 最小路径](../practice/projects/safe-agent.md#run)观察 trace。
+- **适合读者**：正在设计 Agent loop、任务状态或记忆系统的应用与平台工程师。
+- **先修**：[Agent 总览](agents.md)；最好先跟完[一次退款任务](agent-task-lifecycle.md)。
+- **首次阅读**：先看控制循环，再区分 task state、memory、context、stop 和 verifier。
+- **完成信号**：能把一个开放任务画成 typed state machine，并写出可测试的完成条件。
+- **卡住时**：把 Planner 当成固定 JSON 生成器，只追踪确定性代码怎样改变状态。
 
 </div>
 
-Agent 的核心不是更长的 prompt，而是一个把不确定决策放进确定性控制面的系统。语言模型可以建议下一步，runtime 决定是否允许、如何执行、何时停止以及如何恢复。先把工作流画成状态机，再决定哪些状态转换真的需要模型。
+在退款案例中，模型只提出了一次 `request_refund`，后面的 schema、ACL、审批、执行和恢复都由控制面完成。
+真实 Agent 往往还要反复做决定：先查订单，再读政策，发现信息不足后询问用户，最后才提出退款。
 
-## Agent、Workflow 与普通程序
+最容易写出的版本是：
 
-用三个维度判断是否需要 Agent：
+```python
+while True:
+    response = model.invoke(history)
+    if response.is_final:
+        return response.text
+    history.append(call_tool(response.tool, response.arguments))
+```
 
-- 路径是否开放：步骤能否预先枚举？
-- 输入是否非结构化：是否需要理解自然语言、页面或文件？
-- 错误是否可承受：错误动作能否检测、撤销或审批？
+这段代码隐藏了所有困难：谁保存可信状态，工具是否有权限，超时后能不能重试，什么时候算“没有进展”，
+进程重启后从哪一步恢复，以及模型说完成时谁来验收。
 
-固定报表 ETL 应用普通代码；有限分支的客服流用 workflow/router；开放研究、代码修改或跨工具调查才可能需要 agent loop。Agent 增加模型调用、不可重复性和攻击面，不是默认架构。
+Agent 架构的工作，就是把这些问题从 Prompt 中拿出来，变成有类型、有边界、可测试的状态转换。
 
-## 控制循环
+## 什么时候需要 Agent loop
 
-一个可恢复循环包含：
+先判断路径是否真的开放：
 
-1. Observe：读取已验证状态和最新工具结果。
-2. Decide：模型输出结构化 `action | finish | escalate`。
-3. Validate：schema、权限、预算、前置条件和政策。
-4. Execute：通过幂等执行层调用工具。
-5. Record：持久化输入、决策、结果和版本。
-6. Stop check：完成、失败、超时、无进展或需人工。
+| 情况 | 更合适的控制方式 | 例子 |
+|---|---|---|
+| 步骤固定、输入结构化 | 普通程序 | 定时 ETL、固定报表 |
+| 分支有限，可以枚举 | Workflow / router | 身份验证后的客服流程 |
+| 下一步依赖非结构化观察 | Agent loop | 调查未知代码故障、跨工具研究 |
 
-模型不应直接持有数据库/云 SDK。即使 provider 支持 function calling，它也只产生 ToolCall proposal。
+Agent 的价值来自“无法在运行前枚举所有合理下一步”，而不是因为任务名称听起来智能。
+它会增加模型调用、非确定性、状态和攻击面。高风险流程可以保留模型理解输入，
+但让业务路径停留在有限状态机中。
+
+用三个问题快速判断：
+
+1. 步骤能否预先枚举？
+2. 下一步是否必须理解自然语言、页面或文件？
+3. 错误动作能否在执行前挡住，或在执行后验证与恢复？
+
+第三个问题如果没有答案，开放 loop 通常不是合适的起点。
+
+## 一轮控制循环发生了什么
+
+退款助手当前知道“用户要求退货”，但还不知道订单是否可退。一次完整迭代是：
+
+1. **Observe**：读取可信任务状态和上一条工具结果；
+2. **Decide**：Planner 提出 `query_order`、`ask_user`、`finish` 或 `escalate`；
+3. **Validate**：检查结构、权限、预算、前置条件和 policy；
+4. **Execute**：执行允许的动作，副作用进入审批与幂等层；
+5. **Record**：持久化 proposal、结果、版本和新状态；
+6. **Stop check**：判断完成、失败、暂停、超时或无进展。
 
 ```mermaid
 stateDiagram-v2
   [*] --> Ready
   Ready --> Deciding
-  Deciding --> Validating: tool proposal
+  Deciding --> Validating: action proposal
   Validating --> AwaitingApproval: side effect
   Validating --> Executing: allowed
-  AwaitingApproval --> Executing: approved token
-  AwaitingApproval --> Cancelled: denied/expired
-  Executing --> Ready: observation
-  Executing --> Reconciling: uncertain side effect
+  Validating --> Ready: recoverable rejection
+  AwaitingApproval --> Executing: approved
+  AwaitingApproval --> Cancelled: denied / expired
+  Executing --> Ready: new observation
+  Executing --> Reconciling: outcome unknown
   Deciding --> Verifying: finish proposal
-  Verifying --> Completed: deterministic verifier passed
-  Verifying --> Ready: failed/indeterminate
-  Ready --> Failed: budget/no progress
-  Reconciling --> Completed: externally confirmed
-  Reconciling --> Failed: abandoned/compensated
+  Verifying --> Completed: verifier passed
+  Verifying --> Ready: failed / indeterminate
+  Ready --> Failed: budget / no progress
+  Reconciling --> Completed: external fact confirmed
+  Reconciling --> Failed: abandoned / compensated
 ```
 
-### 从控制循环到决策问题
+模型出现在 `Deciding`，不会直接拿到数据库或云 SDK。Provider function calling 也只是帮它生成 ToolCall proposal，
+`Validating` 和 `Executing` 仍属于可信 runtime。
 
-Observe 并不表示看见了真实 state：tool result、网页和 receipt 都只是可能带噪或不可信的 observation。Decide 也不只是让模型挑最高分 action；控制面先形成 allowed action set，再比较 expected utility，并判断是否值得先获取信息。存在 terminal path 也不保证所有路径会结束。
+Observe 读取的是 observation，不是完整世界状态。网页、tool result 和 provider receipt 都可能过期、带噪或不可信。
+控制面要区分哪些字段来自认证服务与业务 source of truth，哪些只是供模型参考的信号。
 
-这些形式化区别、Bayesian belief update、value of information、constrained decision，以及 safety/liveness 检查见[Agent 决策理论](agent-decision-theory.md)。本章后续继续讨论它们怎样落到 state machine、memory、budget 和 verifier。
+当多个动作都可行时，Planner 可以比较预期收益，也可以先获取信息。Allowed action set、hard constraint、
+belief update 和 value of information 的形式化讨论见[Agent 决策理论](agent-decision-theory.md)。
 
-## 规划模式
+## 规划模式是控制权的不同分配
+
+### Router / 有限状态机
+
+模型只选择预定义 intent 或 branch，业务代码决定后续顺序。它最容易测试和审计，适合退款、开户或审批等高风险流程。
+Router 必须有 `unknown` 或 `escalate`，否则陌生输入也会被强塞进一个错误分支。
 
 ### ReAct
 
-模型交替输出 reasoning/action，适合步骤未知、反馈频繁的任务。缺点是每步重新解释上下文，容易循环、受恶意 observation 影响。生产中只存必要的结构化 rationale，不依赖不可见 chain-of-thought 作为审计依据。
+Planner 在每一步观察结果后再选择动作，适合路径未知且反馈频繁的任务。每轮都重新解释 context，
+因此容易循环，也更容易受恶意 observation 影响。审计应保存 typed action、输入来源和结果，
+不能依赖不可见 chain-of-thought。
 
 ### Plan-and-execute
 
-先产出任务图或步骤列表，再由 executor 执行。优势是可预览、并行和估算成本；缺点是环境变化会使计划过时。每步后检查前置条件，允许局部 replan，不把原计划当授权。
+Planner 先产生步骤或任务图，executor 再执行。计划可以预览、并行和估算成本，
+但环境变化会让旧步骤失效。每一步仍要重查前置条件和权限，原计划本身不是授权凭证。
 
-### Router 与有限状态机
+### Tree / graph search
 
-模型只选择预定义 intent/branch，业务代码控制顺序。它通常比开放 loop 更可靠，是高风险流程的首选。路由输出要有 `unknown/escalate`，不能强迫每个输入进入某类。
-
-### Tree/Graph search
-
-生成多个候选思路、评分、展开或回溯，适合搜索空间可模拟且有 verifier 的数学、代码或规划任务。分支数乘深度会迅速增加成本；评分模型可能与生成器共享偏差。必须设置 node/token/time budget 和 transposition 去重。
+系统展开多个候选、评分并回溯，适合可以模拟并拥有 verifier 的数学、代码和规划任务。
+分支数乘深度会很快耗尽预算；node、token、time 和去重规则必须在搜索前固定。
 
 ### 多 Agent
 
-只有当工具/权限隔离、上下文隔离、真正并行或独立评审有价值时才拆分。多个使用同一模型和 prompt 的“角色”并不独立；它们可能相关地犯错。定义通信 schema、所有权、最大 handoff、冲突解决和最终责任者。
+拆分的理由应该是权限或 context 隔离、真实并行、不同工具所有权，或独立评审。
+给同一模型贴上多个角色名不会自然产生独立错误。系统还要定义通信 schema、handoff 上限、冲突处理和最终责任者。
 
-## 任务与状态模型
+选择规划模式时，先使用控制权最少的方案。只有有限状态机无法表达下一步时，再逐渐开放 loop 或 search。
 
-不要只把 chat history 当状态。持久状态可包括：
+## Chat history 不是任务状态
 
-~~~text
+退款任务可以用结构化状态表示：
+
+```text
 Task {
-  task_id, user_id, objective, constraints,
+  task_id, subject_id, objective, constraints,
   status, step, budgets, policy_version,
   observations[], artifacts[], pending_calls[],
   created_at, updated_at, version
 }
-~~~
+```
 
-用 optimistic concurrency 或单 writer 防止并发 agent 覆盖状态。大工具结果放对象存储，context 只保留摘要、schema 和 artifact reference；摘要必须回链原始结果。
+这里的 `status` 和 `pending_calls` 影响恢复与执行，必须由 runtime 维护。Chat history 只是模型看到过的消息，
+它可能被截断、总结或包含错误陈述，不能成为订单和权限的 source of truth。
 
-### Event sourcing
+并发更新使用 optimistic concurrency、lease 或 single writer，避免两个 worker 覆盖 task version。
+大工具结果放入对象存储，状态中保存 artifact identity 与必要摘要；摘要必须能回到原始结果。
 
-将 `TaskCreated / DecisionProposed / ToolApproved / ToolCompleted / StateUpdated` 作为追加事件，便于审计和重放。当前状态由事件折叠得到。敏感内容仍需加密和删除策略；“不可变日志”不能成为逃避隐私删除的理由。
+### Event sourcing 何时有帮助
 
-## 记忆系统
+追加记录 `TaskCreated`、`DecisionProposed`、`ToolApproved`、`ToolCompleted` 和 `StateUpdated`，
+可以从事件折叠当前状态，也便于重放和审计。事件格式与 reducer 都要版本化。
 
-### Working memory
+追加日志仍受加密、访问、保留和删除要求约束。“不可变”描述的是更新方式，
+不是无限保存敏感内容的许可。
 
-当前任务的短期状态。上下文超长时按 relevance、recency、authority 和任务阶段选择，不是简单保留最近 N 条。
+## Memory 与 state 解决不同问题
 
-### Episodic memory
+Task state 回答“这次退款进行到哪里”；memory 帮助未来决策使用过去信息。常见四类是：
 
-过去事件：“用户上次选择了方案 A”。保留时间、主体和来源。一次失败推断不能自动升级为长期事实。
+| 类型 | 例子 | 主要风险 |
+|---|---|---|
+| Working memory | 当前订单、步骤和最近观察 | 截断后丢掉关键约束 |
+| Episodic memory | 用户上次选择了原路退款 | 一次错误推断被长期保存 |
+| Semantic memory | 用户确认的稳定语言偏好 | scope、过期和跨用户泄漏 |
+| Procedural memory | 退款操作手册与成功轨迹 | 未评审输出自我修改系统策略 |
 
-### Semantic memory
+写入通常应比读取严格。长期事实保存 subject、source events、confidence、scope、TTL 与确认状态；
+程序性记忆则作为版本化知识库或策略发布，不能由单次模型回答直接改写。
 
-从多次交互抽取的稳定偏好/事实。写入前可要求用户确认；记录 confidence、source events、过期时间和适用 scope。
+Memory 的权限边界和业务数据一致：按 tenant / user 执行 ACL，并支持冲突、纠正与删除。
+评测除了 recall，还要测“不该记住时是否没有写入”以及跨用户隔离。
 
-### Procedural memory
+## Context 是任务状态给模型的一次投影
 
-技能、操作手册和成功轨迹。它本质上是版本化知识库/策略，不应由单次模型输出未经评审地自我修改。
+一次 Planner 调用通常包含 system policy、tool schema、任务状态、相关 memory、最近 observation 和 artifact 摘要。
+这些内容各自拥有 token budget 和可信度标签。
 
-记忆读取执行 tenant/user ACL；写入有 schema、去重、冲突和删除。评测既测 recall，也测“是否不该记住”和跨用户隔离。
+Context engineering 的目标不是把能找到的内容全塞进窗口，而是构造当前决策所需的最小视图：
 
-## Context engineering
+- 认证身份、capability 和 policy decision 由控制面持有，不让模型改写；
+- tool observation 带 tool name、call ID、status、provenance 和 payload；
+- 网页与文档中的指令作为不可信数据标记；
+- 大型 HTML、terminal log 和 database dump 先切片并保存 artifact reference；
+- tool 太多时由确定性规则或低风险 router 先筛选候选集合。
 
-Agent context 通常包括 system policy、工具 schema、任务状态、相关记忆、最近 observation 和 artifact 摘要。每一类有独立 token budget。工具描述过多会降低选择精度，可先确定性筛选或由低风险 router 选择 tool subset。
+同一个 task state 可以投影成不同 context。例如审批界面需要人类可读动作摘要，
+Planner 只需要当前允许的工具和最近观察，verifier 则需要目标状态与独立业务证据。
 
-工具输出作为不可信数据包裹，包含 tool name、call id、status、provenance 和 payload。对网页/文档中的指令做数据标记；不要将整个 HTML、终端日志或数据库 dump 无界塞回模型。
+## Stop 条件要识别“继续也不会更好”
 
-## 停止条件
+最大 step、模型 token、tool calls、wall time 和费用是最外层护栏。更有用的是无进展信号：
 
-至少包含最大步骤、模型 token、工具调用、wall time、费用和外部资源预算。更关键的是无进展：
+- 连续产生相同 action fingerprint；
+- 最近动作形成 `A/B/A/B` 短周期；
+- 同一 error key 反复出现；
+- 已解决子目标和 task state 没有变化；
+- verifier 多轮没有改善。
 
-- 连续产生同一 fingerprint 的动作；
-- 状态/已解决子目标没有变化；
-- 在两个状态间循环；
-- 连续工具错误属于同一原因；
-- verifier 分数多轮无提升。
+这些是不同停止原因，trace 应分别记录。字节级 fingerprint 能发现完全相同动作，
+却看不见换一种表述的语义重复；有限窗口也看不见任意长周期，所以仍需要 task progress 的领域定义。
 
-停止后返回已完成内容、未完成原因、待用户选择和可恢复 task id。不能用“继续尝试”无限消耗预算。
+预算的分母也要清楚。一个 step 通常计一次 Planner decision，不等于一次 handler attempt；
+cache hit、policy denial 和 approval pause 仍可能消耗 decision。Model token 和 provider cost 常在响应返回后才能取得，
+因此最后一轮可能越过预算：系统记录实际 usage，但不再执行这轮提出的新动作。
 
-预算的计数边界必须可审计。step 计 planner decision，不等于 handler attempt；cache、policy 拒绝和审批暂停仍消耗一次 decision。模型 token/费用通常只能在一次模型响应返回后取得，因此某次响应可能让累计值越过上限：控制面应记录这次 supplied/provider usage，但拒绝执行随响应产生的 action。wall-time 是本地 monotonic deadline；同步 provider/tool 已经开始后通常不能保证硬抢占，返回后仍要检查 deadline，远端副作用则按 pending/reconciliation 协议处理。
+Wall-time 使用本地 monotonic deadline。同步工具已经开始后未必能硬抢占；调用返回时要再次检查 deadline。
+远端副作用超时后进入 pending / reconciliation，不能把“停止 Agent loop”误写成“外部工作已经停止”。
 
-循环检测也不是一个布尔量：连续相同 action fingerprint、最近四步的 `A/B/A/B`、以及相同 error key 连续出现是不同终止原因。相同失败动作同时满足多个条件时，本仓库 reference 先报告 repeated action；它只检查有限窗口和字节级 fingerprint，不能发现任意长周期、状态无进展或语义等价但写法不同的动作。
+停止时返回已完成内容、未完成原因、需要用户决定的事项和可恢复 task ID，而不是只说“达到最大轮数”。
 
-## Verifier 与完成判定
+## Finish 也是 proposal
 
-模型说“完成”不是完成。根据任务使用确定性 verifier：测试通过、文件存在、JSON Schema、数据库状态、引用覆盖。开放任务可用 rubric judge，但要在人工集校准。完成条件在执行前定义，并与用户目标绑定。
+Planner 说“退款已完成”，只表达它希望结束。Completion verifier 根据任务目标读取独立证据：
 
-代码 Agent 的证据链例如：改动 diff → 静态检查 → 目标测试 → 全量相关测试 → 尚未验证项。测试下载成功不等于功能正确，生成文件存在不等于内容符合要求。
+- 代码任务检查 diff、静态分析和目标测试；
+- 文件任务检查内容与 schema，而不只检查路径存在；
+- RAG 检查 claim、citation 和 evidence；
+- 退款检查 provider receipt 与订单、金额和业务状态。
 
-本仓库 typed loop 把 `finish` 视为 proposal：只有 `CompletionVerifier` 返回 `PASSED` 才产生 `completed=true` 和 `final_answer`；`FAILED/INDETERMINATE` 回到 planner，verifier 异常或错误返回类型则 fail closed。`escalated`、预算耗尽、循环停止、runtime error 和 `needs_approval` 都不是任务成功。
+Verifier 返回 `passed`、`failed` 或 `indeterminate`。只有 `passed` 可以把 task 变成 completed；
+`failed` 将明确错误交回 Planner，`indeterminate` 则继续取证、等待或升级人工。
 
-审批暂停会生成严格 JSON checkpoint，绑定 task/subject/tenant、原 loop 预算、累计 model token/cost/active wall time、handler/runtime 计数与原 `max_tool_calls`、历史 action、pending decision 与 execution fingerprint。恢复先用当前 capability/policy 重新授权并执行原 pending decision，不再次请求 planner，也不重复累计该 decision 的 token/cost；旧 subject/task/tenant、未恢复/扩大的 runtime counter 或 cap、过期或漂移的 approval 都 fail closed。恢复后的状态把同一步 `needs_approval` 转为实际 outcome，而不是把一次 decision 伪计为两步。
+开放任务可以使用 rubric judge，但要在人工集上校准。可执行测试和业务 source of truth 可用时，
+优先使用这些更直接的 oracle。完成条件应该在执行前定义，并绑定用户目标。
 
-这仍不是持久化工作流服务：checkpoint 的 SHA-256 只检测 canonical 内容漂移，不提供签名/MAC；JSON 文件与 SQLite ledger 没有原子事务；CLI 将等待审批的 downtime 排除在 active monotonic wall time 之外；未来 planner/provider 会话状态、一次性审批消费、并发 lease、checkpoint 机密性和 retention 仍需外部控制面负责。生产系统还应有独立的绝对 task deadline，不能靠 active-time budget 限制用户等待时间。
+## 审批暂停后，恢复的是原动作
 
-### 副作用投递与 workflow 恢复不是同一层
+人工节点通常有四种含义：
 
-Checkpoint 回答“planner 恢复到哪一步”，transactional outbox 回答“已在本地批准的 effect 怎样可靠投递”。生产设计通常先在一个业务事务中写 task state 与 outbox row，再由独立 worker 用 lease 投递；worker restart 不应重新调用 planner。provider 成功但本地 ack 前崩溃会导致 at-least-once redelivery，因此稳定 `effect_id` 必须穿透为 provider idempotency key。lease 防并发领取，不提供远端 exactly-once；provider receipt 也是 supplied artifact，不自动等于 effect verifier。dead letter 必须进入 operator/runbook，而不是让模型决定无限重试。
+- **approval**：授权一个具体副作用；
+- **clarification**：目标或参数缺失；
+- **review**：质量或 policy 需要判断；
+- **takeover**：系统无法安全继续。
 
-仓库 SQLite reference 可验证单机事务、并发 claim、lease expiry、stale ack 拒绝和模拟幂等 provider 去重；不验证分布式 broker、跨数据库原子性、真实网络/provider 或跨区域恢复。
+Approval 卡片展示动作、资源、参数、影响、费用、可撤销性与过期时间。
+Grant 绑定 subject、task、call、execution fingerprint、resource/policy revision、scope 和 expiry；
+金额、订单、主体或 policy 漂移后，旧 grant 失效。
 
-可运行的 `ScriptedPlanner` 只读取冻结 JSONL decision，不调用模型；精确 verifier 只验证答案、evidence call id 与本地 completed/cached observation：
+等待期间可以保存 checkpoint。恢复时先验证 checkpoint identity、当前 subject/capability/policy 和旧预算，
+再执行原 pending decision；不能重新问 Planner 后把新 proposal 当成用户批准的动作。
+
+Checkpoint 回答“loop 从哪一步继续”，outbox 回答“已批准的 effect 怎样可靠投递”。
+业务事务可以同时写 task state 与 outbox row，再由 worker 用 lease 发送。Provider 成功而本地 ack 丢失时会发生 at-least-once redelivery，
+所以稳定 effect ID 要穿透 provider idempotency contract，并通过 receipt 与 verifier 对账。
+
+这些机制仍不能凭空获得 exactly-once。Lease 只防止当前并发领取，dead letter 也必须进入 operator runbook，
+不能交给模型无限重试。
+
+## 在仓库中动手观察
+
+推荐按三层阅读：
+
+1. [一次退款任务](agent-task-lifecycle.md)：先观察 proposal 到 recovery 的完整时间线；
+2. [实验 6](../practice/labs/lab-6-agent-lifecycle.md)：运行同一 fixture 并预测状态；
+3. [Safe Agent 项目](../practice/projects/safe-agent.md)：进入 loop、checkpoint、outbox 与 strict planner boundary。
+
+最小控制循环：
 
 ~~~powershell
 python -m about_llm.agents.cli loop `
   --cases projects/safe-agent/loop.example.jsonl
 ~~~
 
-fixture 覆盖 verified completion、重复 cached action、`A/B/A/B`、不同动作的重复 policy error 与 approval pause。decision 中的 token/cost 是 supplied fixture 数字，不是 provider usage 或账单；固定 monotonic clock 也不是线上延迟测量。本地 exact rule 证明控制流按该规则运行，不证明开放任务语义正确。
+这里的 `ScriptedPlanner` 读取冻结 JSONL，不调用真实模型。Fixture 覆盖 verifier completion、重复 action、
+短周期、重复错误和 approval pause，适合先观察 state transition。
 
-仓库另提供 `StrictJSONModelPlanner`，把 normalized model text 转成 `ToolProposal / FinishProposal / EscalationProposal`。Request identity 绑定 prompt revision、task/剩余预算、tool schema/schema revision/validator revision、最近完整 event 和预期 model revision；response 必须带精确 model revision、provider request id、usage/cost 与允许的 finish reason。Closed parser 拒绝 duplicate key、non-finite number、Markdown fence、未知字段/工具，响应声明的 output usage 也不能越过 request cap。接受后 decision id 同时绑定 request、完整 response metadata/raw text 与 typed action。
-
-`JSONSchemaToolContract` 可从同一冻结 Draft 2020-12 schema 派生 Planner contract 和 runtime Tool。当前 profile 要求 closed root object，只解析 local reference，限制 schema/instance bytes，并把 format enforcement mode 与 `jsonschema` 版本写进 validator identity；schema violation 不回显 rejected value。它不 coercion、不填 default，也不替代 resource resolver、policy、approval 或 handler semantic check。手写 Planner contract 与 callback 没有自动一致性保证。
+随后运行 strict recorded model boundary：
 
 ~~~powershell
 python projects/safe-agent/model_planner_control.py
 ~~~
 
-这个 control 真正执行上述 parser、标准 Draft validator、typed loop、runtime policy、只读 handler 和 completion verifier；另证明一个 parser 可接受但违反 `const` 的参数在 resolver/policy/handler 前停止。固定恶意 tool observation 仍只是下一轮 prompt 中的不可信数据。输入的两条“provider response”、request id、token 与 cost 全是 authored recorded fixture，没有网络或模型调用。因此它证明严格边界在固定字节上按设计运行，不证明目标模型遵循率、真实 provider usage/账单、生产 IAM、安全性或开放语义完成。
+这个 control 会检查 model revision、request/response metadata、closed JSON、tool schema、预算与 runtime policy。
+输入仍是作者构造的 recorded response，因此它验证协议和失败路径，不代表目标模型的真实遵循率或 provider 账单。
 
-审批恢复实验用同一 SQLite ledger 和新 runtime 分两条命令运行，checkpoint 文件拒绝覆盖：
-
-~~~powershell
-python -m about_llm.agents.cli pause-loop `
-  --cases projects/safe-agent/loop.example.jsonl `
-  --case-id approval-pause `
-  --ledger artifacts/agent/loop-001.db `
-  --checkpoint artifacts/agent/loop-001.checkpoint.json
-
-python -m about_llm.agents.cli resume-loop `
-  --cases projects/safe-agent/loop.example.jsonl `
-  --case-id approval-pause `
-  --ledger artifacts/agent/loop-001.db `
-  --checkpoint artifacts/agent/loop-001.checkpoint.json
-~~~
-
-第二条命令只构造标记为 unsigned 的离线 grant，并执行模拟发送；它不是审批服务或真实外部动作。
-
-## Human-in-the-loop
-
-人工节点分为：
-
-- approval：授权一个具体副作用；
-- clarification：目标/参数缺失；
-- review：质量或政策需要判断；
-- takeover：系统无法安全继续。
-
-确认卡片展示动作、资源、参数差异、影响、费用、可撤销性和过期时间。approval token 绑定用户、task、call id、tool/policy/resource revision、execution fingerprint、scope 和 expiry；参数、主体或版本变化后旧审批失效。Cache replay 也要先按当前身份和 policy 重新授权。
+暂停、恢复、SQLite ledger、checkpoint 限制和精确证据边界集中在 [Safe Agent 项目](../practice/projects/safe-agent.md)，
+避免在架构主线中把每个 artifact 字段重复展开。
 
 ## 设计练习
 
-为“分析仓库、修改代码、运行测试并发起 PR”设计状态图：读取操作可自动；修改只在工作区；发起 PR 是外部写入，需要用户初始请求或显式审批；测试失败进入 diagnosis 而非重复提交；同一 commit 的 PR 创建使用幂等 key；任务重启先查询远端是否已创建。
+为“读取仓库、修改代码、运行测试并发起 PR”画一张状态图：
+
+- 读取操作可以自动执行；
+- 修改只发生在工作区；
+- 测试失败进入 diagnosis，不重复提交；
+- 创建 PR 使用稳定 effect ID，并在重启后先查询远端状态；
+- Planner 提出 finish 后，由 diff 与测试 verifier 决定是否完成。
+
+然后回答三个问题：task state 中有哪些字段不能只留在 chat history？哪一步需要人工 approval？
+如果远端 PR 已创建但本地超时，系统怎样进入 reconciliation？
 
 ## 面试追问
 
-**什么时候多 Agent 优于单 Agent？** 当子任务可并行且共享状态少、需要不同权限/上下文，或独立 verifier 能减少相关错误。仅给同一模型不同角色名通常只增加成本。
+**什么时候多 Agent 优于单 Agent？** 当子任务真正可并行、共享状态少，或需要不同权限、context 和独立 verifier。
+给同一模型不同角色名通常只增加调用和协调成本。
 
-**如何防止无限循环？** 预算只是最后防线；还要动作 fingerprint、状态进展、错误分类、循环检测、verifier 改善和明确终止/升级状态。
+**如何防止无限循环？** 预算是最后护栏；更早的信号包括动作 fingerprint、状态进展、重复错误、短周期和 verifier 改善。
 
-**长期记忆最大的风险是什么？** 错误推断持久化、跨用户泄漏和无法删除。写入应比读取更严格，事实带 provenance/scope/TTL，并提供用户查看、纠正和删除。
+**长期记忆最大的风险是什么？** 错误推断持久化、跨用户泄漏和无法删除。写入要带 provenance、scope、TTL 与确认，
+并允许用户查看、纠正和删除。

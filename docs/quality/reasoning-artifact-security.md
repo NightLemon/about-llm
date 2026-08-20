@@ -13,12 +13,20 @@
 
 </div>
 
-**相关导航**：[安全总览](safety.md) · [治理](governance-impact.md) · [Cloud API 项目](../practice/projects/cloud-api-contracts.md) · [生产检查表](../practice/production-checklist.md)
+**相关导航**：[安全总览](safety.md) · [治理](governance-impact.md) ·
+[Cloud API 项目](../practice/projects/cloud-api-contracts.md) · [生产检查表](../practice/production-checklist.md)
 { .doc-nav }
 
-## 先看结论
+## 从一份“已经脱敏”的轨迹说起
 
-模型 API 中的 opaque reasoning block 不是“看不懂所以可以忽略”的普通字段。它可能同时是：
+假设团队为了复现 Agent bug，把一段会话导出到公开 issue。Visible text 里的姓名和邮箱都替换掉了，
+但序列化对象里还保留着一个客户端看不懂的 `encrypted_reasoning` block。维护者把它当成普通签名字段，
+认为既然没人能直接阅读，就不算敏感数据。
+
+这个判断漏掉了两个问题：Provider 可能在后续请求中再次处理这个 block；另一个兼容模型也可能接受它。
+因此，“客户端看不懂”只描述可见性，不说明谁有权保存、转发或重放。
+
+模型 API 中的 opaque reasoning block 可能同时是：
 
 - 客户端保存、随后原样回传的模型状态；
 - 含用户内容、系统信息或模型中间推理的数据工件；
@@ -40,19 +48,31 @@
 
 ## 2026 年的历史失效案例
 
-[Stealing Reasoning Traces from Proprietary LLM APIs](https://arxiv.org/abs/2608.09867) 于 2026-08-10 提交。论文针对 2026 年 7 月初可访问的 Anthropic、OpenAI 和 Google reasoning API，报告客户端收到并回传的 opaque reasoning block 可在供应商生态内出现跨会话、跨用户和跨模型兼容。攻击者把较强模型产生的 block 交给兼容但防护较弱的模型，再诱导后者输出恢复内容。
+[Stealing Reasoning Traces from Proprietary LLM APIs](https://arxiv.org/abs/2608.09867) 于 2026-08-10 提交。
+论文研究了 2026 年 7 月初可访问的 Anthropic、OpenAI 和 Google reasoning API。作者报告，客户端收到并回传的
+opaque reasoning block 在部分供应商生态中可以跨会话、跨用户或跨模型使用。实验把较强模型产生的 block
+交给兼容但防护较弱的模型，再诱导后者输出恢复内容。
 
 论文区分两类攻击者：
 
 1. **第一方攻击者**自己调用强模型取得 block，再用较弱 sibling model 尝试提取推理、绕过 anti-distillation 或获得最终回答没有显示的有害信息。
 2. **第三方攻击者**从公开 Agent/session trajectory 取得他人的 block，尝试恢复隐私数据，或让受害者继续执行植入 opaque block 的共享轨迹。
 
-作者收集 6,708 条公开 trajectory，处理 315,320 个重建 reasoning block。论文报告 1,028 个 block（0.3%）和 328 条 trajectory（4.9%）至少含一个经第二阶段分类为真实的隐私工件；排除 benchmark 后得到 704 个去重工件，其中 64 个只存在于 reasoning block，没有出现在解析后的可见轨迹中。这些数字来自两阶段 LLM labeling、去重和人工定义 taxonomy，是一次非穷尽公开数据扫描，不是所有 Agent 日志的总体泄露率。
+作者收集了 6,708 条公开 trajectory，并处理 315,320 个重建 reasoning block。论文报告 1,028 个 block（0.3%）
+和 328 条 trajectory（4.9%）至少包含一个经第二阶段分类为真实的隐私工件。排除 benchmark 后，作者得到
+704 个去重工件，其中 64 个只存在于 reasoning block，没有出现在解析后的可见轨迹中。
+
+这些数字来自两阶段 LLM labeling、去重和人工 taxonomy。它们描述一次非穷尽的公开数据扫描，不能解释为
+所有 Agent 日志的总体泄露率。
 
 !!! warning "时效与可复现性边界"
-    论文作者在发布前向受影响供应商、Microsoft 和 Hugging Face 披露问题。论文的 reproducibility statement 明确写道：截至 2026 年 8 月，供应商实施缓解后，文中原攻击方法已不能复现。供应商内部密码学实现没有公开；教材只能把论文报告作为特定历史版本的实证和架构案例，不能声称当前端点仍然脆弱，也不提供真实供应商提取脚本。
+    论文作者在发布前向受影响供应商、Microsoft 和 Hugging Face 披露问题。Reproducibility statement 写明：
+    截至 2026 年 8 月，供应商实施缓解后，文中原攻击方法已经不能复现。供应商内部密码学实现没有公开；
+    本章只把论文当作特定历史版本的架构案例，不能据此声称当前端点仍然脆弱，也不提供真实供应商提取脚本。
 
-论文用 extracted token count 与 API-reported thinking token count 的接近程度作为保真证据，并展示定性样例；由于研究者没有 ground-truth plaintext reasoning，不能证明每个恢复 token 都等于模型真实内部轨迹。论文对开放模型蒸馏迹象的附录也明确不能建立因果关系。
+论文用 extracted token count 与 API-reported thinking token count 的接近程度作为保真证据，并展示了定性样例。
+由于研究者没有 ground-truth plaintext reasoning，这些证据不能证明每个恢复 token 都等于模型真实内部轨迹。
+论文附录讨论的开放模型蒸馏迹象也没有建立因果关系。
 
 ## 根因：内容被认证，上下文没有被认证
 
@@ -108,13 +128,19 @@ AAD = canonical(
 )
 ```
 
-这些值不能从 Prompt、request body 中模型可编辑的字段或共享 trajectory 自报取得。`authenticated_subject`、tenant 和 policy context 应来自可信 gateway；允许模型集合、key status 和 replay state 应由 provider/control plane 决定。
+这些值不能来自 Prompt、request body 中模型可编辑的字段，也不能由共享 trajectory 自报。
+`authenticated_subject`、tenant 和 policy context 应来自可信 gateway；允许模型集合、key status 和 replay state
+应由 provider/control plane 决定。
 
 ### 为什么仍需要状态
 
-AEAD context binding 能拒绝元数据篡改和错误上下文，但同一合法 envelope 在完全相同上下文中仍可能被重复提交。需要服务端维护 consumed identity、sequence 或等价 replay ledger，才能提供 one-time consumption。Bloom filter、TTL cache 或单进程 set 都有各自的丢失、误判和多副本一致性问题；生产实现要明确 durable scope。
+AEAD context binding 能拒绝元数据篡改和错误上下文，但同一合法 envelope 在完全相同的上下文中仍可能被重复提交。
+要实现 one-time consumption，服务端还需维护 consumed identity、sequence 或等价 replay ledger。
+Bloom filter、TTL cache 和单进程 set 各自存在丢失、误判或多副本一致性问题；生产实现必须明确 durable scope。
 
-Nonce 唯一性是另一项独立要求。AES-GCM 等 AEAD 在同一 key 下复用 nonce 会破坏安全保证；nonce 应由 CSPRNG 产生，并在供应商规模上实施唯一性控制。artifact replay ledger 不能替代 nonce uniqueness，nonce uniqueness 也不能替代 authorization。
+Nonce 唯一性是另一项独立要求。AES-GCM 等 AEAD 在同一 key 下复用 nonce 会破坏安全保证；nonce 应由 CSPRNG
+产生，并在供应商规模上控制唯一性。Artifact replay ledger 不能替代 nonce uniqueness，后者也不能替代
+authorization。
 
 ### Fork、compaction 与模型切换
 
@@ -142,7 +168,7 @@ Nonce 唯一性是另一项独立要求。AES-GCM 等 AEAD 在同一 key 下复�
 
 跨模型完全隔离是清晰的默认值；若业务确实需要降级或路由，应把允许的 model audience 明确写入认证上下文，而不是让共享 key 的所有模型隐式兼容。
 
-## Adapter 与轨迹发布契约
+## 发布轨迹前逐类处理 block
 
 Provider adapter 不应把 response 粗暴压成一个字符串。至少区分：
 
@@ -153,7 +179,9 @@ Provider adapter 不应把 response 粗暴压成一个字符串。至少区分�
 - opaque reasoning/signature block；
 - unknown provider-specific block。
 
-只提供 text-only adapter 时，遇到其他 block 应明确失败。若业务需要多 block，则保留 typed metadata 和受控原始 bytes，但不要写入普通日志、异常、metrics label 或公开 fixture。未知 block 不应静默丢弃后假装响应完整，也不应自动回传给另一个 endpoint、模型或主体。
+Text-only adapter 遇到其他 block 时应明确失败。若业务需要多种 block，就保留 typed metadata 与受控原始 bytes，
+但不要把它们写入普通日志、异常、metrics label 或公开 fixture。未知 block 既不能被静默丢弃后假装响应完整，
+也不能自动回传给另一个 endpoint、模型或主体。
 
 公开 trajectory 前使用 allowlist projection，而不是“先保存所有字段，再用正则擦除可见文本”：
 
@@ -174,11 +202,18 @@ python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
   --output artifacts/cloud-api/trajectory-release-report.json
 ~~~
 
-输入必须是 strict JSON/JSONL，顶层固定为 `schema_version + trajectory_id + turns`；turn 只允许 `turn_id + role + blocks`；block 只允许 `text`、`tool_call`、`tool_result` 和 `citation`。reasoning/thinking/signature/encrypted 类型、同名嵌套工具参数、未知 block 和所有 schema drift 都会使退出码为 1。报告只输出数组位置、固定类别和规范化的已知禁用名，不回显 text、tool arguments、未知类型或任意字段名。
+输入使用 strict JSON/JSONL。顶层固定为 `schema_version + trajectory_id + turns`，turn 只允许
+`turn_id + role + blocks`，block 只允许 `text`、`tool_call`、`tool_result` 和 `citation`。
 
-安全 fixture 应得到 `opaque_reasoning_block_count: 0`、`unknown_block_count: 0` 与 `passed: true`。这仍不等于可公开发布：报告明确给出 `secret_pii_scan_performed: false`。门禁不读取 opaque 内容，也不检查 visible text、tool arguments/result、citation 中的 secret/PII、版权或 consent；这些必须由独立检测器和人工/治理流程完成。
+Reasoning/thinking/signature/encrypted 类型、同名嵌套工具参数、未知 block 和 Schema drift 都会使退出码为 1。
+报告只输出数组位置、固定类别和规范化的已知禁用名，不回显 text、tool arguments、未知类型或任意字段名。
 
-## 事故响应
+安全 fixture 应得到 `opaque_reasoning_block_count: 0`、`unknown_block_count: 0` 与 `passed: true`。
+这仍不等于可以公开发布，因为报告同时给出 `secret_pii_scan_performed: false`。当前门禁不读取 opaque 内容，
+也不检查 visible text、tool arguments/result 和 citation 中的 secret、PII、版权或 consent；这些需要独立检测器
+和人工治理流程。
+
+## 如果那份轨迹已经公开
 
 发现 reasoning artifact 泄露时，至少分开处理：
 
@@ -212,7 +247,10 @@ python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
   --output artifacts/cloud-api/reasoning-replay-matrix.json
 ~~~
 
-control 使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 plaintext 和内存 ledger。它先构造 content-only envelope，证明跨 subject、tenant、session 和 model 的错误上下文仍被接受，报告中的 `unsafe_acceptance_count` 应为 4；再构造 context-bound envelope，分别验证 exact context、scope drift、wrong predecessor、expiry、retired key、claims tamper 和第二次消费。
+Control 使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 plaintext 和内存 ledger。
+它先构造 content-only envelope，展示错误 subject、tenant、session 和 model 上下文仍会被接受，
+此时 `unsafe_acceptance_count` 应为 4。随后改用 context-bound envelope，分别验证 exact context、scope drift、
+wrong predecessor、expiry、retired key、claims tamper 和第二次消费。
 
 输出不含 plaintext reasoning 或 ciphertext，只给 case、预期/实际接受状态和稳定拒绝原因。完整步骤见[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
 

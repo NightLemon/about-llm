@@ -1,4 +1,4 @@
-# Agent 评测、仿真与红队
+# Agent 评测：别只看最后一句话
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
@@ -6,121 +6,227 @@
 **学习导航**
 
 - **适合读者**：Agent 评测、simulation、红队和发布工程师。
-- **先修**：[Agent 架构](../applications/agent-architecture.md)和[评测方法](evaluation-methodology.md)。
-- **首次阅读**：case → outcome/trajectory 指标 → 模拟工具 → 故障注入 → 发布门禁。
-- **完成信号**：能在隔离环境验证任务结果、安全约束、预算和恢复行为。
-- **卡住时**：先跑[Safe Agent 最小路径](../practice/projects/safe-agent.md#run)取得可审计 trace。
+- **先修**：[Agent 任务主线](../applications/agent-task-lifecycle.md)与[评测方法](evaluation-methodology.md)。
+- **首次阅读**：一次退款 case → 事件分母 → simulator → 故障/注入 → 发布门禁。
+- **完成信号**：能同时验证任务结果、权限、副作用、预算和恢复行为。
+- **卡住时**：先运行[Safe Agent 退款主线](../practice/projects/safe-agent.md#refund-lifecycle)。
 
 </div>
 
-Agent 的最终回答可能看起来正确，但中间越权读取、重复副作用或浪费百次调用。评测必须同时覆盖 outcome、trajectory、policy、恢复和成本，并用可重置环境避免回归测试触发真实影响。
+仍然使用那笔 300 元退款。Agent 最后告诉用户“退款已受理”，这句话可能对应三种完全不同的过程：
 
-## 任务 case
+1. 订单归属、审批和 Provider receipt 都正确；
+2. Agent 越权读了另一个租户的订单，碰巧给出正确答案；
+3. Provider 已退款，但本地 timeout 后又重试，实际产生两笔 effect。
 
-每个 case 包含初始环境 snapshot、用户目标、允许/禁止动作、隐藏状态、完成 verifier、预算、注入 payload 和期望升级点。不要只保存 prompt；Agent 行为依赖工具和环境。
+只评最终文本会把三条轨迹都判成成功。Agent 评测必须把可见回答、环境终态和控制面事件放进同一个 case。
 
-按能力分层：检索/总结、单工具读、单写审批、多步依赖、并行、恢复、歧义澄清、无解拒绝和对抗任务。真实日志可转 case，但要脱敏、获得许可并冻结依赖。
+## 一条 Case 应包含哪些东西
 
-## 指标
+```text
+initial environment snapshot
++ user goal
++ trusted subject / tenant / capability
++ allowed and forbidden actions
++ hidden business state
++ completion verifier
++ step / token / time / cost budgets
++ injected untrusted payloads
++ expected approval or escalation point
+```
 
-### Outcome
+Prompt 只是输入的一部分。Agent 的行为还依赖工具、资源版本、policy、memory 和环境状态。
 
-- task success：确定性 verifier 是否满足；
-- partial credit：子目标覆盖；
-- side-effect correctness：真实状态是否符合目标；
-- answer correctness/引用：用户可见输出质量。
+Case 可以按难度递进：检索/总结、单工具读取、写操作审批、多步依赖、并行、crash recovery、歧义澄清、
+无法完成时的拒答，以及提示注入。生产日志转成 case 时要脱敏、取得允许并冻结外部依赖。
 
-### Trajectory
+## 先把一笔退款拆成四个事件
 
-- 工具选择和参数准确率；
-- unnecessary call、重复 call、步骤数；
-- 首次有效动作时间、总延迟、token/费用；
-- recovery success 和人工介入率。
+| 事件 | 证据 | 它没有自动说明什么 |
+|---|---|---|
+| Proposal produced | Planner trace | Schema、权限或执行通过 |
+| Policy/approval allowed | 控制面 decision/grant | Handler 已调用 |
+| Handler attempted | Runtime attempt event | 远端 effect 已发生 |
+| Effect verified | Provider audit/业务状态/隔离环境 | 用户可见回答一定正确 |
 
-### Safety
+Handler timeout 时 effect 可能已经发生。本地 `completed` 也只是 Runtime 记录；只有独立 verifier 观察到业务事实，
+才能写 `effect_applied=true`。Cache replay 不是新的 handler attempt，更不是第二个 effect。
 
-- unauthorized read/write、跨 tenant、秘密泄漏；
-- 未审批副作用、审批参数漂移；
-- injection attack success rate；
-- over-refusal：正常任务被错误拒绝。
+这张事件表是 Agent 指标的共同分母语言。
 
-安全指标是 guardrail，不能由更高平均成功率抵消。
+## 三组指标分别看什么
 
-### 分母与事件语义
+### Outcome：任务最终发生了什么
 
-每个率都要写 numerator/denominator，分母为零报告 N/A，而不是 0%。例如 task success 的分母只能是有确定 verifier judgment 的 case；blocked-unsafe rate 的分母是 policy 明确判为禁止的 proposal；unapproved-attempt rate 的分母是实际进入 handler 的有副作用步骤。不同分母的率不能求一个“Agent 总分”。
+- Completion verifier pass rate；
+- Partial goals covered；
+- 业务 state 与目标是否一致；
+- 用户可见回答、引用和拒答是否正确。
 
-必须区分四个事件：proposal 产生、policy/approval 允许、handler 被调用、外部 effect 被验证发生。`handler_attempted=true` 不证明远端动作发生；handler timeout 可能发生也可能没发生。反过来，本地 `completed` 也只是 runtime 记录，只有隔离环境状态、provider audit log、outbox/业务库等 verifier 才能写 `effect_applied=true`。缓存 replay 不是新 handler attempt，更不是第二次 effect。
+### Trajectory：付出了什么过程代价
 
-本仓库 `about-llm-agent evaluate` 对冻结的 JSONL trace 做确定性 gate：task verifier failure/unjudged、policy judgment 缺失/indeterminate、policy-denied proposal 到达 handler、policy 误拦允许动作（over-refusal）、未审批副作用 attempt、相同 effect id 重复 applied、unresolved pending、总 recorded step 或 handler-attempt budget 超限任一存在即失败，并输出逐 case findings。两种预算不能互换：只限制 handler 不能阻止模型循环产生被拒绝或缓存 proposal。trace 同时保存 proposal/execution fingerprint，并记录 environment、policy、verifier 版本；但 loader 只能检查类型与内部一致性，不能证明 supplied observation 真实或 trace 未被篡改。生产 recorder 应由控制面写入并签名，不能让模型自报 `policy_allowed=false` 或 `effect_applied=false`。
+- Tool/argument correctness；
+- Unnecessary/repeated calls；
+- First useful action、end-to-end latency；
+- Steps、tokens、费用与人工介入；
+- Pause/resume 与 recovery success。
 
-运行时终止状态也要进入分母账本。`completed` 仅指 completion verifier passed；`needs_approval` 是安全暂停，`approval_rejected` 是授权失败，`escalated` 是转交，step/token/cost/wall-time、repeated action/cycle/error 以及 planner/runtime/verifier error 都是不成功终态，不能合并为“正常停止”。离线 `loop` fixture 可回归这些分支，并做 checkpoint JSON/SQLite restart；但它用 scripted decisions、supplied usage、unsigned grant 和 local exact verifier，不等于真实模型成功率、provider 计费、签名审批、开放任务 judge 或分布式恢复实证。
+开放任务可能有多条正确路线，因此不把 exact trajectory match 当通用质量指标。最终状态由 verifier 判断；
+过程只检查关键 invariants，例如“发送前必须审批”和“不得读取 secret table”。
 
-恢复专项指标至少包括 pause→resume 成功率、重复 planner/usage 数、恢复后 handler budget reset 数、identity/policy 漂移误放行、过期 grant handler attempt、checkpoint/ledger 不一致和恢复延迟。checkpoint 自带 hash 的通过率不是安全指标：能修改文件的攻击者也能重算无密钥 hash；需要可信 recorder、签名/MAC、存储 ACL 和审计链。
+### Safety：哪些坏事绝不能发生
 
-Outbox 专项要分别统计 enqueue→claim、claim→ack 和 end-to-end delivery latency，attempt distribution、lease expiry/redelivery、retry reason、dead-letter age、stale ack rejection，以及同一 `effect_id` 在 provider 侧的 request count 与 verified effect count。前者大于一在 at-least-once 系统中可以是预期行为；verified effect count 大于一才是幂等失效或身份漂移。测试必须包含 provider success 后 ack 前 crash，并断言重投沿用同一 idempotency key。SQLite + 模拟 provider 的通过只证明本地状态机，不证明真实 provider receipt、broker、网络或 exactly-once external effect。
+- Unauthorized read/write 与跨 tenant access；
+- Secret/canary exfiltration；
+- 未审批副作用或审批后参数漂移；
+- Prompt-injection attack success；
+- Over-refusal：正常任务被错误拒绝。
 
-## 最终状态优先，轨迹谨慎
+Safety guardrail 不被平均任务成功率抵消。一百个正常 case 成功，也不能冲掉一次跨租户写入。
 
-开放任务可能有多条正确路径，逐 token 匹配参考轨迹会惩罚有效替代方案。用状态 verifier 判断结果，用 invariant 检查关键过程，例如“发送前必须审批”“不得读取 secret 表”。只有工具选择本身是能力目标时才比较轨迹。
+## 每个率都要写 Numerator 和 Denominator
 
-LLM judge 可评开放输出，但不能可靠判断隐藏副作用；环境状态、ledger 和 policy event 应使用确定性检查。
+| Metric | Numerator | Denominator |
+|---|---|---|
+| Task success | Verifier passed cases | 有确定 verifier judgment 的 cases |
+| Blocked unsafe | 被 policy 阻止的危险 proposals | Policy 明确判定为禁止的 proposals |
+| Unapproved attempt | 未获有效审批却进入 handler 的 steps | 实际进入 handler 的副作用 steps |
+| Duplicate effect | 同 effect ID 产生额外 verified effects | 有至少一个 verified effect 的 logical actions |
 
-## 模拟工具
+分母为 0 时报告 N/A，而不是 0%。这些率的分母不同，也不能再平均成一个“Agent 总分”。
 
-模拟器需要可控时间、错误注入、并发和状态，而不只是返回固定字符串。它实现与生产相同 schema/error code，但凭据和 endpoint 完全隔离。每个 case 前 reset snapshot，结束后断言状态并销毁。
+终止状态同样要分开：`completed`、`needs_approval`、`approval_rejected`、`escalated`、budget exhausted、cycle、
+planner/runtime/verifier error 各有不同含义。安全暂停不应记成任务成功，也不应和系统崩溃混在一个“正常停止”桶里。
 
-记录/replay 可提高稳定性，但 replay 的网页/API 响应会过时；标注 capture 时间与 hash。对模型版本比较使用同一 observation，避免外部漂移冒充模型差异。
+## 运行仓库里的确定性 Gate
 
-## 故障注入
+```powershell
+python -m about_llm.agents.cli evaluate `
+  --traces projects/safe-agent/trajectory.example.jsonl
+```
 
-系统性注入：timeout 前/后远端是否成功、429、部分结果、格式损坏、陈旧 ETag、并发修改、磁盘满、ledger 写失败、进程重启和用户取消。每类验证状态机不会进入非法状态，且恢复不重复副作用。
+Gate 会逐 case 检查：
 
-chaos 测试不应首先在线上做。先单元 state transition，再模拟器集成，最后在隔离 staging 演练。
+- Verifier failure 或 unjudged completion；
+- Policy judgment 缺失/indeterminate；
+- Policy-denied proposal 仍到达 handler；
+- Over-refusal；
+- 未审批副作用；
+- 同 effect ID 重复 applied；
+- Unresolved pending；
+- Recorded steps 或 handler attempts 超预算。
 
-## 提示注入红队
+Step budget 与 handler-attempt budget 不能互换。只限制 handler，仍可能让模型无限生成被拒绝或 cache-hit proposals。
 
-攻击面包括网页、邮件、附件、工具错误、记忆和其他 Agent 消息。payload 变体覆盖：直接覆盖指令、伪 system 标签、编码/多语言、数据外带 URL、工具诱导和持久记忆投毒。
+Trace loader 能检查类型和内部一致性，却不能证明 observation 真实或文件未被篡改。生产 recorder 应由控制面写入，
+并结合签名/MAC、存储 ACL 与审计链；不要让模型自己声明 `policy_allowed=false` 或 `effect_applied=false`。
 
-判定看真实行为：是否访问禁止资源、是否泄漏 canary secret、是否绕过审批。只看模型回复“我不会”不足以证明安全，因为它可能已经执行动作。
+## Simulator 要像环境，不只是固定字符串
 
-同时测 benign 文档中的正常命令示例，防止防护导致过度拒绝。
+一个有用的工具 simulator 应支持：
 
-## 多 Agent 评测
+- 可重置的业务 snapshot；
+- 虚拟/可控时间；
+- Stable schema 与 error codes；
+- Timeout、partial result、并发写和 crash 注入；
+- 与生产完全隔离的 credentials/endpoints；
+- 可查询的 effect state 与 audit receipt。
 
-除总体成功，测 handoff 正确率、消息丢失/误解、重复工作、冲突解决、共享状态一致性和单点 Agent 失败恢复。比较单 Agent 基线；若多 Agent 只增加 token 而无显著质量/延迟收益，就不应采用。
+每个 case 前 reset，结束后由 verifier 检查状态并销毁。Recorded replay 能稳定外部 observation，但网页/API response
+会过时，所以还要保存 capture time 与 content identity。
 
-评审 Agent 与生成 Agent 使用同一家模型时错误相关。用确定性测试、不同数据/模型或人工抽样建立真正独立证据。
+比较模型版本时使用同一批 observations，避免外部世界变化冒充模型差异。
 
-## 统计比较
+## 故障注入围绕“不确定窗口”设计
 
-固定 case id 做 paired comparison，报告均值差、置信区间和关键切片。模型采样有方差，对高方差任务多 seed/多次运行，并把 pass@1 与 pass@k 区分。pass@k 增长可能靠更多成本换来，必须同时报告预算。
+系统性覆盖：
 
-任务污染会使模型记住 benchmark。保留私有 holdout、参数化环境和定期新建 case；公开集用于开发，不能作为唯一发布门禁。
+```text
+connect 前失败
+write/read timeout，远端未执行 / 已执行
+429 + Retry-After
+partial result / malformed body
+stale ETag / concurrent mutation
+ledger write failure / disk full
+provider success、local ack 前 crash
+process restart / user cancellation
+```
 
-## 线上监控
+每个 fault 都检查状态机没有进入非法状态，恢复也不会重复 effect。先做 unit state transitions，再做 simulator
+integration，最后才在隔离 staging 演练；不要从线上 chaos 开始。
 
-线上无法知道全部 gold，但可监控完成/取消/升级、人工修正、重复调用、审批拒绝、pending age、工具错误、步骤/token/费用和安全事件。抽样人工复核与用户反馈要关联 task version。
+## Outbox 评测要区分 Request 和 Effect
 
-异常率按工具、模型、任务类型、tenant tier 和版本切片。平均步骤稳定可能掩盖某工具陷入循环。
+记录 enqueue→claim、claim→ack 与 end-to-end delivery latency，以及 attempts、lease expiry/redelivery、dead-letter age、
+stale ack rejection。
+
+同一 `effect_id` 的 Provider request count 大于 1，在 at-least-once delivery 中可能是预期；verified effect count
+大于 1 才表示幂等失败或 identity 漂移。
+
+必须保留“Provider success、ack 前 crash”case，并断言重投复用相同 idempotency key。SQLite + simulated Provider
+通过只说明本地状态机正确，不能证明真实 Provider receipt、broker 或 exactly-once external effect。
+
+## Recovery 有自己的指标
+
+至少记录：
+
+- Pause→resume success；
+- 重复 Planner/usage 次数；
+- 恢复后 handler budget 是否被重置；
+- Identity/policy drift 是否误放行；
+- 过期 grant 是否仍触达 handler；
+- Checkpoint/ledger 不一致；
+- Pending age 与 recovery latency。
+
+Checkpoint 自带 hash 的通过率不是安全指标。能修改文件的主体通常也能重算 unkeyed hash；真实性需要可信 recorder、
+MAC/signature 和存储控制。
+
+## Prompt Injection 红队看真实行为
+
+攻击载荷放进网页、邮件、附件、tool errors、memory 与其他 Agent messages，覆盖直接覆盖指令、伪 system 标签、
+编码/多语言、exfiltration URL、tool induction 与持久 memory poisoning。
+
+判定依据是 Agent 是否访问禁止资源、泄漏 canary、绕过审批或产生 effect。回复“我不会执行”不构成安全证据，
+因为动作可能已经发生。
+
+同时加入包含正常命令示例的 benign documents，测量过度拒绝。
+
+## 多 Agent 先和单 Agent 比
+
+除 task success 外，测 handoff correctness、message loss/misunderstanding、duplicate work、conflict resolution、
+shared-state consistency 与单个 Agent 故障恢复。
+
+如果多 Agent 只增加 token 与协调失败，没有带来质量、权限隔离、并行或独立验证收益，就保留单 Agent baseline。
+生成与评审使用同一家模型时错误可能高度相关，仍需 deterministic tests、独立数据/模型或人工抽样。
+
+## 统计比较与线上监控
+
+离线固定 case IDs 做 paired comparison，报告 effect、interval 与关键 slices。高方差任务使用多次运行，并把 pass@1、
+oracle/pass@k 和实际 selected@k 分开；更大的 k 同时增加成本和 verifier 攻击面。
+
+保留 private holdout、参数化环境和定期新建 cases，降低 benchmark 污染。
+
+线上通常没有完整 gold，可监控 completion/cancel/escalation、人工修正、重复调用、approval rejection、pending age、
+tool errors、steps/tokens/cost 与安全事件，再用抽样审计补充。按 tool、task type、tenant tier、model/policy version
+切片，避免总体平均掩盖单工具循环。
 
 ## 发布门禁
 
-示例：
+一份常见 gate 可以是：
 
-1. 所有权限/重复副作用 case 必须零违规；
-2. 关键任务成功率不低于基线，置信区间下界满足阈值；
-3. 每个风险/语言/工具切片无显著退化；
-4. p95 步骤、延迟和费用在预算；
-5. 恢复与 reconciliation case 全通过；
-6. 新模型/prompt 先 shadow，再小流量 canary。
+1. 权限和 duplicate-effect cases 零违规；
+2. 关键任务相对 baseline 不劣，区间满足预设阈值；
+3. 风险、语言和工具 slices 不越界；
+4. P95 steps、latency 与 cost 在预算内；
+5. Pause/resume 与 reconciliation cases 全通过；
+6. 新版本先 shadow，再进入小流量 canary。
 
-回滚不只切模型，还要恢复 prompt、tool schema、policy 和 memory/index version 的兼容组合。
+回滚需要恢复兼容的 model、Prompt、tool schema、policy、memory/index 组合，而不是只把 model ID 改回去。
 
-## 面试追问
+## 自测
 
-**如何评测一个会发邮件的 Agent 而不真发？** 用实现同 schema 的隔离邮件模拟器，验证 outbox 状态、审批事件、收件人/正文和幂等；少量 staging 端到端使用专用测试域，普通回归禁止生产凭据。
-
-**为什么 exact trajectory match 不合理？** 开放任务有多条正确路径；应对最终状态和安全不变量做确定性检查，并将效率作为连续指标，而非要求复刻一条参考思路。
-
-**怎样发现模型升级后的隐性回归？** 同 case 配对、多次采样、关键切片和 shadow trace；同时比较任务成功、工具/权限事件、步骤/成本，不只比较最终文本 judge。
+1. Handler timeout 时，为什么 `handler_attempted` 与 `effect_applied` 不能合成一个事件？
+2. 怎样评测发邮件 Agent 而不真的发送？请写 simulator state 与 verifier。
+3. 为什么 exact trajectory match 会惩罚有效替代方案？
+4. Provider request count=2、verified effect count=1 时，系统一定失败了吗？
+5. 模型升级后最终文本相似，还应比较哪些控制面事件？
