@@ -223,6 +223,10 @@ subject + task + call_id + execution_fingerprint + expiry
 `execution_fingerprint` 不只包含模型参数，还绑定 tool/version、可信 subject/tenant、server-resolved resource
 及其版本、policy version 和 policy decision。金额、订单、主体或 policy 漂移后，旧审批不能继续使用。
 
+脚本把已批准的 300 元改成 299 元，再携带旧 grant 执行。结果是
+`approval_rejected / approval_execution_mismatch`，provider 调用次数仍为零。这个负例说明系统验证的不是
+“用户曾经点过确认”，而是“这份确认是否仍对应眼前这一个 execution identity”。
+
 本仓库的 `ApprovalGrant` 是 typed artifact，不是加密签名或 bearer token 格式。生产系统仍需真实性、一次性消费、
 访问控制、撤销与安全存储。
 
@@ -291,6 +295,10 @@ Handler 没有再次运行；provider request attempt 和 effect count 都保持
 Verifier 对照订单、金额、原因、identity 和目标状态后给出 `passed`。这里“独立”表示它走查询路径读取业务事实，
 而不是复述原 Handler 的返回值；fixture 仍然和 Handler 共享一个进程内模拟 provider。
 
+为了确认 verifier 真在比对内容，脚本还把 receipt 金额改成 299 元。查询虽然仍返回 `accepted`，结果却是
+`failed / provider_receipt_mismatch`。若 provider 没有返回任何可确认记录，状态才是 `indeterminate`；
+“看到了不匹配证据”和“暂时没看到证据”需要不同处置。
+
 ## 阶段 8：Recovery 把外部事实写回本地
 
 对账程序把 pending call 标记为 `externally_confirmed`，保存 receipt 与说明。再次重启后，同一 call：
@@ -299,6 +307,9 @@ Verifier 对照订单、金额、原因、identity 和目标状态后给出 `pas
 2. 命中相同 execution identity 的 completed ledger entry；
 3. 返回 `cached` receipt；
 4. 不再次调用退款服务。
+
+脚本还用一个已撤销 `refund:request` capability 的 context 读取同一 cache。Runtime 在查 ledger 前重新执行 ACL，
+所以结果为 `policy_denied / missing_capability`；旧 receipt 不会因为已经缓存就绕过当前权限。
 
 这时系统才可以回答：
 

@@ -177,6 +177,14 @@ approval.execution_fingerprint
 
 这些变化都不应继续使用旧 approval。用户确认的是一个规范化、已授权的具体动作，不是一张永久“允许退款”通行证。
 
+脚本已经内置第一个负例。检查：
+
+```text
+approval.drifted_amount_negative_control.status = approval_rejected
+approval.drifted_amount_negative_control.message = ... approval_execution_mismatch
+approval.provider_attempts_after_drift = 0
+```
+
 注意：fixture grant 没有数字签名。字段匹配只能检查绑定关系，不能认证工件是谁签发的。
 
 ## 第七步：区分 attempt、effect 与 completion
@@ -239,6 +247,15 @@ idempotency_key
 resolution = externally_confirmed
 note = provider audit query confirmed the accepted refund
 ```
+
+再查看两个负例：
+
+```text
+verifier.mismatched_receipt_negative_control.status = failed
+recovery.revoked_replay_negative_control.status = policy_denied
+```
+
+前者说明 `accepted` 字样不能覆盖金额不匹配；后者说明 reconciliation 后的 cache replay 仍会重新授权。
 
 恢复后的 replay 为 `cached`，provider effect count 仍为 1。现在才有依据组织最终用户答复。
 

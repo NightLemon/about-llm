@@ -230,14 +230,27 @@ def _verify_provider_effect(receipt: Mapping[str, Any] | None) -> dict[str, Any]
         "reason": "item_damaged",
         "provider_status": "accepted",
     }
-    passed = receipt is not None and all(
+    provider_refund_id = receipt.get("provider_refund_id") if receipt else None
+    fields_match = receipt is not None and all(
         receipt.get(key) == value for key, value in expected.items()
     )
+    receipt_has_identity = isinstance(provider_refund_id, str) and bool(provider_refund_id.strip())
+    passed = fields_match and receipt_has_identity
+    if passed:
+        status = "passed"
+        reason = "provider_receipt_matches"
+    elif receipt is None:
+        status = "indeterminate"
+        reason = "provider_state_not_observed"
+    else:
+        status = "failed"
+        reason = "provider_receipt_mismatch"
     return {
-        "status": "passed" if passed else "indeterminate",
+        "status": status,
         "verifier_version": "refund-provider-query@v1",
-        "reason": "provider_receipt_matches" if passed else "provider_state_not_proved",
+        "reason": reason,
         "expected": expected,
+        "provider_refund_id_required": True,
         "observed_receipt": dict(receipt) if receipt is not None else None,
     }
 
@@ -264,9 +277,7 @@ def build_walkthrough(database: Path) -> dict[str, Any]:
     REFUND_CONTRACT.validate(proposal_arguments)
     injected_identity_rejection: dict[str, Any]
     try:
-        REFUND_CONTRACT.validate(
-            {**proposal_arguments, "tenant_id": "tenant-shop-b"}
-        )
+        REFUND_CONTRACT.validate({**proposal_arguments, "tenant_id": "tenant-shop-b"})
     except ToolArgumentValidationError as error:
         injected_identity_rejection = {
             "rejected": True,
@@ -307,6 +318,21 @@ def build_walkthrough(database: Path) -> dict[str, Any]:
         expires_at_epoch_seconds=NOW + 300,
     )
 
+    drifted_call = ToolCall(
+        call.call_id,
+        REFUND_CONTRACT.name,
+        {**proposal_arguments, "amount_cents": 29_900},
+    )
+    drifted_approval = runtime.execute(
+        drifted_call,
+        context=context,
+        approval=approval,
+    )
+    if drifted_approval.status is not ExecutionStatus.APPROVAL_REJECTED:
+        raise AssertionError("changed refund amount reused the old approval")
+    if provider.request_attempts != 0:
+        raise AssertionError("approval drift reached the provider")
+
     execution = runtime.execute(call, context=context, approval=approval)
     if execution.status is not ExecutionStatus.FAILED:
         raise AssertionError("fixture did not expose the intended uncertain outcome")
@@ -327,6 +353,10 @@ def build_walkthrough(database: Path) -> dict[str, Any]:
     verification = _verify_provider_effect(observed_receipt)
     if verification["status"] != "passed" or observed_receipt is None:
         raise AssertionError("provider query did not prove the expected refund")
+    mismatched_receipt = {**observed_receipt, "amount_cents": 29_900}
+    mismatched_verification = _verify_provider_effect(mismatched_receipt)
+    if mismatched_verification["status"] != "failed":
+        raise AssertionError("verifier accepted a receipt for a different amount")
 
     ledger = SQLiteLedger(database)
     ledger.resolve_external_completion(
@@ -334,6 +364,18 @@ def build_walkthrough(database: Path) -> dict[str, Any]:
         observed_receipt,
         note="provider audit query confirmed the accepted refund",
     )
+    revoked_context = ExecutionContext(
+        task_id=context.task_id,
+        subject_id=context.subject_id,
+        tenant_id=context.tenant_id,
+        capabilities=frozenset(),
+    )
+    revoked_replay = _make_runtime(registry, database).execute(
+        call,
+        context=revoked_context,
+    )
+    if revoked_replay.status is not ExecutionStatus.POLICY_DENIED:
+        raise AssertionError("reconciled cache bypassed current authorization")
     recovered = _make_runtime(registry, database).execute(call, context=context)
     if recovered.status is not ExecutionStatus.CACHED:
         raise AssertionError("reconciled result was not reused after restart")
@@ -390,6 +432,8 @@ def build_walkthrough(database: Path) -> dict[str, Any]:
                 "execution_fingerprint": approval.execution_fingerprint,
                 "expires_at_epoch_seconds": approval.expires_at_epoch_seconds,
                 "arguments_copied_into_approval": False,
+                "drifted_amount_negative_control": _outcome_summary(drifted_approval),
+                "provider_attempts_after_drift": 0,
             },
             "execution": {
                 **_outcome_summary(execution),
@@ -404,10 +448,14 @@ def build_walkthrough(database: Path) -> dict[str, Any]:
                 "provider_request_attempts": attempts_after_pending_replay,
                 "provider_effect_count": effects_after_pending_replay,
             },
-            "verifier": verification,
+            "verifier": {
+                **verification,
+                "mismatched_receipt_negative_control": mismatched_verification,
+            },
             "recovery": {
                 "resolution": history[0].resolution,
                 "note": history[0].note,
+                "revoked_replay_negative_control": _outcome_summary(revoked_replay),
                 "replay_after_reconciliation": _outcome_summary(recovered),
                 "provider_request_attempts": attempts_after_recovery,
                 "provider_effect_count": effects_after_recovery,

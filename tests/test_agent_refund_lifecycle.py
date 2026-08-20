@@ -46,13 +46,25 @@ def test_refund_lifecycle_fences_replay_then_recovers_from_external_fact(
     assert denied["status"] == "policy_denied"
     assert denied["policy_reason"] == "tenant_mismatch"
 
+    drifted_approval = stages["approval"]["drifted_amount_negative_control"]
+    assert drifted_approval["status"] == "approval_rejected"
+    assert "approval_execution_mismatch" in drifted_approval["message"]
+    assert stages["approval"]["provider_attempts_after_drift"] == 0
+
     assert stages["execution"]["status"] == "failed"
     assert stages["execution"]["local_ledger_state"] == "pending"
     assert stages["idempotency"]["handler_attempted_on_replay"] is False
     assert stages["verifier"]["status"] == "passed"
+    assert stages["verifier"]["observed_receipt"]["provider_refund_id"]
+    mismatched = stages["verifier"]["mismatched_receipt_negative_control"]
+    assert mismatched["status"] == "failed"
+    assert mismatched["reason"] == "provider_receipt_mismatch"
 
     recovery = stages["recovery"]
     assert recovery["resolution"] == "externally_confirmed"
+    revoked = recovery["revoked_replay_negative_control"]
+    assert revoked["status"] == "policy_denied"
+    assert revoked["policy_reason"] == "missing_capability"
     assert recovery["replay_after_reconciliation"]["status"] == "cached"
     assert recovery["provider_request_attempts"] == 1
     assert recovery["provider_effect_count"] == 1
