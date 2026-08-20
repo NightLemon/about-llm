@@ -1,27 +1,30 @@
-# Synthetic Data Audit
+# Synthetic Data Audit：四条候选为什么只剩一条新内容
 
-**项目导航**：[返回项目索引](../project-index.md) · [合成数据](../../training/synthetic-data.md) · [SFT 数据流水线](../../training/sft-data-pipeline.md) · [生产检查表](../production-checklist.md)
+**项目导航**：[返回项目索引](../project-index.md) · [合成数据](../../training/synthetic-data.md) ·
+[SFT 数据流水线](../../training/sft-data-pipeline.md) · [生产检查表](../production-checklist.md)
 { .doc-nav }
 
-这个项目把 synthetic candidate 进入训练前的离线审计做成可执行 reference control。读者不仅要得到一份“通过/不通过”报告，还要能回答：报告针对哪一字节输入、用了什么 policy、能否从 caller-supplied 输入复算、哪些结论从未被执行证明。
+输入文件里有四条 synthetic candidate。两条通过 required verifier，但它们的正文完全相同；另外两条分别缺少
+验证和明确验证失败。所以这次审计的三个关键数字是：**4 条候选、2 条 eligible、1 条 eligible unique content**。
 
-当前固定交付是 `about-llm.synthetic-data-audit.v2`。它只运行 CPU/offline Python，不请求 teacher、student 或 LLM judge，也不启动训练。
+这个项目让你亲手得到这三个数字，并追查每条记录为何进入对应集合。随后再把输入 bytes、policy 和审计结果
+绑定成一份可复算 artifact。这样，“通过”不再是一个脱离来源、分母和规则的布尔值。
 
-## 1. 学习目标与证据层级
+当前固定交付是 `about-llm.synthetic-data-audit.v2`。它只运行 CPU/offline Python，不请求 teacher、student
+或 LLM judge，也不启动训练。
 
-完成项目后，应能独立解释并实现以下边界：
+## 1. 先读懂 4 → 2 → 1
 
-1. **Parse evidence**：输入满足 strict JSON/JSONL contract；
-2. **Lineage evidence**：parent 可解析，内部 parent round 单调，graph 是否有环；
-3. **Gate evidence**：每个 required verifier 都存在且 `passed=true`；
-4. **Identity evidence**：在声明的 fingerprint profile 下内容是否 exact duplicate；
-5. **Planning evidence**：mixture 权重对应什么期望消费量与重复暴露；
-6. **Artifact evidence**：报告绑定了哪些输入 bytes 与外部 policy；
-7. **Outcome evidence**：训练后质量、安全和收益——本项目没有执行这一层。
+这三个数字来自不同问题：
 
-因此，`eligible` 只属于第 3 层。它不是“事实正确”“高质量可用数据”或“可以直接发布”的同义词。
+1. **4 candidates**：strict loader 成功解析了几条记录；
+2. **2 eligible**：有几条记录包含全部 required verifier，且结果都是 `passed=true`；
+3. **1 eligible unique**：eligible 记录按声明的 fingerprint profile 去重后，还剩多少种正文。
 
-## 2. 供应链对象与信任边界
+Lineage、人工复核和 mixture exposure 会另外报告，不会偷偷揉进同一个分数。训练后的质量、安全和收益则根本
+没有在这个项目里执行。因此，`eligible` 不是“事实正确”“高质量可用数据”或“可以直接发布”的同义词。
+
+## 2. 这份报告信任什么
 
 ```mermaid
 flowchart LR
@@ -46,9 +49,11 @@ flowchart LR
   R -. "不是证明" .-> Q["来源认证、语义质量、训练收益"]
 ```
 
-审计器信任 caller 指定的 records、mixture 与 policy head。无密钥 SHA-256 能发现 accidental drift，却不能证明谁发布了这些输入。若攻击者同时替换输入、policy 与报告，必须由签名、MAC、受控 registry 或可信发布渠道补上认证。
+审计器把 caller 指定的 records、mixture 与 policy 当作复算起点。无密钥 SHA-256 可以发现 accidental drift，
+却不能证明谁发布了这些输入。若攻击者能同时替换输入、policy 和报告，还需要签名、MAC、受控 registry
+或可信发布渠道来认证来源。
 
-## 3. 交付物与最短运行 { #run }
+## 3. 先跑出第一份报告 { #run }
 
 核心文件：
 
@@ -75,7 +80,7 @@ python -m about_llm.synthetic_data_cli `
 
 安装项目后，也可运行 `about-llm-synthetic-audit --help`。
 
-## 4. 固定 fixture：先手算再信程序
+## 4. 先手算，再相信程序
 
 四条记录故意形成可辨认的反例：
 
@@ -110,7 +115,7 @@ python -m about_llm.synthetic_data_cli `
 
 这里的 size 和 digest 是 contract。只改换行、缩进或对象 key 顺序，也会改变输入 bytes identity；审计逻辑结果可能相同，但旧 artifact 仍应验证失败。
 
-## 5. Strict JSONL contract
+## 5. 为什么输入必须 strict
 
 一行 record 的最小结构是：
 
@@ -144,7 +149,7 @@ python -m about_llm.synthetic_data_cli `
 
 Strict parsing 只证明对象被无歧义地解释。它不证明 `generator_revision` 没伪造，也不认证 `human_reviewed=true` 背后真的有人审过。
 
-## 6. Lineage graph：external、internal、round 与 cycle
+## 6. Parent 指向哪里，代数有没有倒退
 
 Parent 分两类：
 
@@ -159,13 +164,17 @@ Parent 分两类：
 round(c)>round(p).
 \]
 
-若 child 与 parent 同 round，或 child round 更小，这一对进入 `nonmonotonic_parent_pairs`。DFS 还输出 `lineage_cycle_record_ids`；只标真正处于 cycle 的记录，不把“指向环但自身不在环内”的后代误报为 cycle member。
+若 child 与 parent 同 round，或 child round 更小，这一对进入 `nonmonotonic_parent_pairs`。DFS 还会输出
+`lineage_cycle_record_ids`；它只标记真正处于 cycle 的记录，不把“指向环但自身不在环内”的后代误报为成员。
 
-当前 policy 有意将 lineage finding 与 verifier eligibility 分账：unresolved、nonmonotonic 或 cycle 不会自动修改 `eligible_count`。这是为了保存诊断维度，不表示它们适合发布。生产 publication policy 通常应把严重 lineage failure 设为独立 deny 条件。
+当前 policy 有意将 lineage finding 与 verifier eligibility 分账。Unresolved、nonmonotonic 或 cycle 不会自动修改
+`eligible_count`，这样读者可以看到每类问题来自哪里；这不表示它们适合发布。生产 publication policy 通常会把
+严重 lineage failure 设为独立 deny 条件。
 
-还应补的真实治理问题包括：external parent registry 如何认证、多 parent 的许可如何合并、parent 删除如何传播到派生 shard/checkpoint，以及 round 是按 record、dataset version 还是 model generation 定义。
+真实流水线还要回答：external parent registry 如何认证，多 parent 的许可如何合并，parent 删除怎样传播到派生
+shard/checkpoint，以及 round 究竟按 record、dataset version 还是 model generation 定义。
 
-## 7. Required verifier gate 与 revision overlap
+## 7. Verifier 缺失、失败和共享盲点
 
 设 required verifier 集合为 \(V\)，则当前 eligibility 定义为：
 
@@ -185,7 +194,7 @@ Missing 与 present-but-failed 分别进入两个列表；额外 verifier 保留
 
 同理，`human_reviewed_count` 只是 authored boolean 的计数，不证明 reviewer 身份、rubric、盲评或 inter-rater agreement。
 
-## 8. Exact identity 与双分母
+## 8. 两条通过记录可能只有一份内容
 
 默认 profile 是 `byte_exact`：
 
@@ -204,7 +213,8 @@ python -m about_llm.synthetic_data_cli `
   --fingerprint-profile nfc_whitespace
 ~~~
 
-`nfc_whitespace` 先做 Unicode NFC，再用 Unicode whitespace split，最后以单个 ASCII space join。它不应静默用于 Python 缩进、代码格式、Markdown table、YAML 或格式遵循任务，因为 whitespace folding 可能改变语义。
+`nfc_whitespace` 先做 Unicode NFC，再按 Unicode whitespace 切分，最后以单个 ASCII space 连接。它不应静默用于
+Python 缩进、代码格式、Markdown table、YAML 或格式遵循任务，因为 whitespace folding 可能改变语义。
 
 报告保留三种分母：
 
@@ -212,11 +222,13 @@ python -m about_llm.synthetic_data_cli `
 - eligible count：多少条通过 required verifier gate；
 - eligible unique content count：eligible 集合中有多少 exact identity。
 
-所以 fixture 的两个 eligible 仍计入 `eligible_count=2`，但只贡献 `eligible_unique_content_count=1`。选择哪条作 canonical item 还依赖许可、parent、时间、review 与 split policy；本项目不擅自删除。
+所以 fixture 的两条 eligible 仍计入 `eligible_count=2`，却只贡献
+`eligible_unique_content_count=1`。选择哪条作为 canonical item，还要结合许可、parent、时间、review 与 split policy；
+本项目不会擅自删除其中一条。
 
 Exact identity 不是 semantic near-duplicate detector。它没有运行 embedding、MinHash 或 paraphrase detector，也没有证明 train/held-out 无语义泄漏。
 
-## 9. Mixture expectation 与 observed exposure
+## 9. 计划看五遍，不代表真的看了五遍
 
 设 component \(i\) 的正 relative weight 为 \(w_i\)，总 consumed-token budget 为 \(D\)，unique token 数为 \(n_i\)。先归一化：
 
@@ -239,11 +251,13 @@ E[C_i]=Dp_i,\qquad E[repeat_i]=\frac{Dp_i}{n_i}.
 
 因此 25% synthetic target 对应 unique synthetic tokens **预期消费 5 倍**。Weight 3:1 是相对权重，不可把 `3*D` 和 `1*D` 当实际 token 数。
 
-这仍是 sampler expectation。Packing、动态过滤、worker skew、读取失败、curriculum、replacement、checkpoint resume 与 early stop 都会改变实际 exposure。生产必须建立 **observed-token ledger**，按 component/round/source/split 记录 committed tokens，并与 target expectation 分账。
+这仍是 sampler expectation。Packing、动态过滤、worker skew、读取失败、checkpoint resume 与 early stop 都可能改变
+实际 exposure。生产系统需要 **observed-token ledger**，按 component、round、source 和 split 记录 committed tokens，
+再与 target expectation 对账。
 
 测试 `test_mixture_plan_uses_normalized_not_pre_normalized_weights` 专门防止把归一化前权重乘总预算。Target mixture expectation 不得写成实际 token exposure。
 
-## 10. V2 artifact 具体绑定什么
+## 10. V2 artifact 究竟绑定了什么
 
 `audit.example.json` 的顶层字段包括：
 
@@ -257,7 +271,7 @@ E[C_i]=Dp_i,\qquad E[repeat_i]=\frac{Dp_i}{n_i}.
 
 换句话说，v2 把 **输入 bytes 与外部 policy** 一同绑定。只复制一串 report hash 而不保存可信输入和 policy，无法复核这份证据代表什么。
 
-## 11. Audit → verify：完整本地复算
+## 11. 不信 self-hash，重新算一遍
 
 用仓库固定输入验证 recorded artifact：
 
@@ -282,9 +296,11 @@ python -m about_llm.synthetic_data_cli `
 }
 ~~~
 
-Verifier 的动作是：strict-load 现有报告；重新读取 caller-supplied inputs；按 caller-supplied policy 重跑全部审计；重算 inputs、audit、mixture、scope 与 fingerprint；最后比较 canonical JSON。它不是“从报告中取 hash，再用同一份被篡改报告验证自己”。
+Verifier 会 strict-load 现有报告，重新读取 caller-supplied inputs，再按 caller-supplied policy 重跑审计。
+最后，它重算 inputs、audit、mixture、scope 与 fingerprint，并比较 canonical JSON。它不是从报告里取出一个 hash，
+再让同一份可能被篡改的报告验证自己。
 
-## 12. 故意失败：artifact threat model
+## 12. 故意破坏它
 
 至少理解并演练以下失败路径：
 
@@ -295,9 +311,12 @@ Verifier 的动作是：strict-load 现有报告；重新读取 caller-supplied 
 5. **Publication collision**：重复写同一 `--output`，exclusive-create 拒绝覆盖；
 6. **Lineage failure**：unknown parent、cycle 或 round 非单调被独立报告。
 
-写文件时实现会 flush 并执行 file `fsync`。这不保证 **directory entry durable**，也没有 atomic rename、crash injection 或断电一致性证明；更没有解决 verify 后到 consumer 使用前的 TOCTOU。对象存储还需 generation precondition、lease 或 immutable object key。
+写文件时实现会 flush 并执行 file `fsync`。这不保证 **directory entry durable**，也没有提供 atomic rename、
+crash injection 或断电一致性证明；从 verify 到 consumer 使用之间的 TOCTOU 同样没有解决。对象存储还需要
+generation precondition、lease 或 immutable object key。
 
-Unkeyed hash 也不提供 publisher identity、可信 timestamp 或 provenance authentication。若威胁模型包含恶意发布者，应使用签名/MAC、可信 key distribution 与 append-only transparency log，而不是继续堆 SHA-256 字段。
+Unkeyed hash 也不提供 publisher identity、可信 timestamp 或 provenance authentication。若威胁模型包含恶意发布者，
+应使用签名或 MAC、可信 key distribution 与 append-only transparency log，而不是继续增加 SHA-256 字段。
 
 ## 13. 测试与可复现实验
 
@@ -324,7 +343,7 @@ python -m pytest `
 
 若修改 fixture，应先生成候选报告，再用 diff 审阅每个字段，最后更新 recorded artifact 和准确性 gate；不要只复制新的 fingerprint。
 
-## 14. 故障定位顺序
+## 14. 验证失败时从哪里查
 
 出现验证失败时，按以下顺序缩小范围：
 
@@ -338,7 +357,7 @@ python -m pytest `
 
 只看到 fingerprint mismatch 时不要猜“哈希算法坏了”。更常见原因是输入换行、policy drift、fixture 字段变化或使用了错误 mixture 文件。
 
-## 15. 接入真实生产流水线
+## 15. 从离线 control 走向真实流水线
 
 Reference control 之外至少还要补：
 
@@ -354,7 +373,7 @@ Reference control 之外至少还要补：
 
 Publication decision 应显式组合多个 gate，例如：`strict_parse AND lineage_policy AND verifier_policy AND contamination_policy AND legal_policy`。不要把这些维度压成无法追责的单一“quality score”。
 
-## 16. 求职验收与面试追问
+## 16. 怎样把它讲成一个工程项目
 
 简历不能只写“搭建合成数据流水线”。至少应展示：
 
@@ -379,7 +398,9 @@ Publication decision 应显式组合多个 gate，例如：`strict_parse AND lin
 
 当前项目只证明 strict parsing、lineage/verifier/identity/mixture 计算契约，以及 v2 artifact 能在可信 caller 输入和 policy 下做完整本地复算。
 
-它没有调用 teacher/student 或 verifier model，没有运行训练与 observed ledger，没有执行 verifier calibration、语义质量/多样性评测、license/consent/PII/secret review、semantic near-duplicate 检测、无泄漏证明或多代 collapse 实验，也不证明 downstream training benefit。
+它没有调用 teacher/student 或 verifier model，也没有运行训练与 observed ledger。Verifier calibration、语义质量与
+多样性评测、license/consent/PII/secret review、semantic near-duplicate 检测、多代 collapse 实验和 downstream
+training benefit 都不在当前证据范围内。
 
 因此，eligibility 不得写成“高质量可用数据”；exact unique 不得写成语义多样；revision 不重叠不得写成 judge 独立；Target mixture expectation 不得写成实际 token exposure；CPU/offline 结果不得外推到目标模型质量或生产系统可靠性。
 

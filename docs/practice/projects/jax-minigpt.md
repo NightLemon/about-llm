@@ -1,9 +1,13 @@
 # JAX MiniGPT：纯函数训练、跨框架对账与精确恢复
 
-**项目导航**：[返回项目索引](../project-index.md) · [JAX 与 Optax](../../training/jax-optax.md) · [Transformer](../../core/transformer.md) · [分布式训练](../../systems/distributed-training.md) · [环境矩阵](../../guide/environment.md)
+**项目导航**：[项目索引](../project-index.md) · [JAX 与 Optax](../../training/jax-optax.md) ·
+[Transformer](../../core/transformer.md) · [分布式训练](../../systems/distributed-training.md) ·
+[环境矩阵](../../guide/environment.md)
 { .doc-nav }
 
-本项目不用 Flax 封装，直接以 JAX arrays、PyTree、显式 PRNG key、`value_and_grad`、Optax transformation 和 `jax.jit` 实现一个最小 decoder-only Transformer。随后用三个相互独立的 controls 回答：PyTorch/JAX 是否真在算同一个函数、optimizer trajectory 是否对齐、跨进程 checkpoint 是否恢复了完整训练语义。
+本项目不用 Flax 封装，直接用 JAX arrays、PyTree、显式 PRNG key、`value_and_grad`、Optax 和 `jax.jit`
+实现一个最小 decoder-only Transformer。模型跑通后，再依次回答三个问题：PyTorch/JAX 是否真在计算同一个函数，
+optimizer trajectory 是否对齐，跨进程 checkpoint 是否恢复了完整训练状态。
 
 !!! warning "四层证据不能合并"
     tiny-batch overfit、plain-SGD parity、shared-mask AdamW parity 与 strict resume 是四个不同实验。前一层不能替后一层作证；四层合起来也没有执行 CUDA/TPU、多设备 sharding、目标模型或生产训练。
@@ -107,18 +111,20 @@ python projects/jax-minigpt/train_tiny.py `
   --seed 11
 ~~~
 
-本次实跑环境为 JAX/JAXlib `0.11.0`、Optax `0.2.8`、CPU `cpu:0`。固定两条相同 `[0,1,2,3]→[1,2,3,4]` 样本，632 个参数的 loss 从 `2.108591318130493` 降到 `0.0030041998252272606`，ratio 约 `0.00142474`；最终 pre-clip gradient norm 为 `0.011140906251966953`。
+录制运行使用 JAX/JAXlib `0.11.0`、Optax `0.2.8` 和 CPU `cpu:0`。固定两条
+`[0,1,2,3]→[1,2,3,4]` 样本，632 参数模型的 loss 从约 `2.1086` 降到 `0.0030`。
 
 该脚本**不生成文本**。它输出参数量、loss、梯度范数和计时；旧版页面所说的“检查生成结果”不是实际交付，已删除。Tiny overfit 可发现梯度断开、target shift 或 optimizer 未更新，但不能证明泛化或语言质量。
 
 ### 3. 正确测量 JAX 时间
 
-JAX dispatch 通常是异步的。脚本每步调用 `loss.block_until_ready()` 后再停止计时，因此首次 `compile + step` 与后续同步 step 分开。本次约为 `0.8622 s` 与 `0.000406 s`；这些是当前小 shape/CPU/热状态观测，不是 benchmark、吞吐或 GPU 性能证据。若不等待结果，只测到 Python enqueue latency。
+JAX dispatch 通常是异步的。脚本每步调用 `loss.block_until_ready()` 后再停止计时，因此把首次
+`compile + step` 与后续同步 steps 分开。不等待结果时，计时很可能只覆盖 Python enqueue；这里的 CPU tiny
+shape 数字也不能外推 GPU/TPU 吞吐。
 
 ## PyTorch↔JAX 同权重前向、反向与 SGD parity
 
 ~~~powershell
-python projects/jax-minigpt/cross_framework_parity.py
 python projects/jax-minigpt/cross_framework_parity.py
 ~~~
 
@@ -152,12 +158,13 @@ Report fingerprint 为 `sha256:63408e2e…40277e5`。通过只证明这个对齐
 
 ### RMSNorm 反事实
 
-原生 JAX MiniGPT 使用不减均值、无 bias、epsilon=`1e-6` 的 RMSNorm。把同一主干权重直接送入原生路径，RMSNorm 反事实 logits 最大差为 `0.37747739627957344`，远大于 parity 容差。它证明“同名 Transformer”不足以建立等价；normalization、epsilon、bias、GELU、mask、weight tying 和 loss reduction 都是模型身份的一部分。
+原生 JAX MiniGPT 使用不减均值、无 bias、epsilon=`1e-6` 的 RMSNorm。把同一主干权重直接送入原生路径，
+logits 差异会远大于 parity tolerance。它提醒我们：Normalization、epsilon、bias、GELU、mask、weight tying
+和 loss reduction 都是模型身份的一部分。
 
 ## 三步 AdamW trajectory parity
 
 ~~~powershell
-python projects/jax-minigpt/cross_framework_training_parity.py
 python projects/jax-minigpt/cross_framework_training_parity.py
 ~~~
 
@@ -176,9 +183,13 @@ python projects/jax-minigpt/cross_framework_training_parity.py
 g'_t=g_t\min\left(1,\frac{c}{\lVert g_t\rVert_2}\right),
 \]
 
-三个 pre-clip norm 约为 `1.9000/1.7592/1.3206`，都大于 \(c=0.08\)，所以 clipping 真实生效。Across-step maxima：raw/clipped gradient `3.129243850708008e-07/1.862645149230957e-08`，first/second moments `2.561137080192566e-09/8.003553375601768e-11`，参数 `2.5480985641479492e-06`，post-step logits `1.564621925354004e-07`，均通过 `5e-6` 门槛。Report fingerprint 为 `sha256:68ffa8093a1f2b98…e175c609`。
+三步 pre-clip norm 都高于阈值，所以 clipping 路径确实执行。Raw/clipped gradients、AdamW moments、parameters
+和 post-step logits 均通过录制的 Float32 tolerance。精确误差与 report fingerprint 留在脚本输出和
+[项目控制台账](../../evidence/project-controls.md)。
 
-把 JAX mask 最后一维循环移位的负例产生 `0.06900620367377996` 最终参数差。共享 mask 的作用是隔离随机输入变量；它不证明 **native RNG equivalence**，也不验证两框架 PRNG state advance、全部 dropout site、JIT 或 accelerator kernel。当前 control 还对所有参数 decay，不能借此宣称生产式 norm/bias decay mask 已对齐。
+故意循环移位 JAX mask 后，最终参数出现明显差异。共享 mask 只是在隔离随机输入变量，不证明 native RNG
+equivalence，也没有验证全部 dropout sites、JIT 或 accelerator kernel。当前 control 对所有参数 decay，
+因此也没有覆盖生产常见的 norm/bias decay mask。
 
 ## Strict checkpoint 与跨进程 bit-exact resume
 
@@ -199,7 +210,9 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 
 ### Artifact 格式
 
-`ALLMJAX1` 单文件由 canonical JSON manifest、连续 little-endian array payload 和 outer SHA-256 组成。Manifest 绑定每个 array 的 name、shape、dtype、offset、size 与 SHA-256。Loader 在构造 JAX arrays 前拒绝 duplicate/non-canonical JSON、未知/缺失字段、顺序/shape/dtype/digest 漂移、截断与 trailing bytes；writer 使用 exclusive create 与 file `fsync`。
+`ALLMJAX1` 单文件包含 canonical manifest、连续 little-endian arrays 与 outer digest。Manifest 逐叶绑定 name、
+shape、dtype、offset、size 和 digest。Loader 在创建 JAX arrays 前拒绝字段、顺序、shape/dtype、截断与 trailing
+bytes 漂移；writer 使用 exclusive create 与 file `fsync`。
 
 File `fsync` 不等于目录项已 durable，也不证明断电原子性。Outer/inner SHA-256 检测漂移但不认证发布者；有写权限的攻击者可以协同重算无密钥 hash。
 
@@ -207,7 +220,8 @@ File `fsync` 不等于目录项已 durable，也不证明断电原子性。Outer
 
 固定 7 examples、batch 2、dropout `0.2`、clip+AdamW 六步，在 step 3 由第一个 spawn process 写出 `13,476 bytes` artifact，SHA-256 为 `e9252e5dddfa4aa5…70568a35`；第二个独立进程加载并完成后三步。
 
-Uninterrupted/resumed sample IDs 都是 `[[0,4],[3,2],[5,1],[6,3],[2,1],[6,4]]`，六步 loss/gradient trace 与最终 full-state fingerprint `sha256:720817cca4c067cf…71d058f33` bit-exact。报告只发布 distinct worker count=2，不发布 raw PID。
+Uninterrupted 与 resumed 的 sample IDs、六步 loss/gradient trace、params、Optax、PRNG 和 data state bit-exact。
+报告只发布 distinct worker count，不暴露 raw PID。
 
 仅把 dropout key 重置为初始 seed 的 wrong PRNG 负例，最终参数差为 `0.037261832505464554`；仅把 cursor 从 6 重置为 0 的 wrong cursor 负例，差为 `0.03700308472616598`。这证明“权重和 Optax state 能加载”仍不足以保证训练连续。
 
@@ -231,7 +245,8 @@ python -m pytest `
 
 ### 参数与 optimizer policy
 
-为 PyTree leaves 建立可审计的 path/type/shape identity；显式定义 weight-decay mask，通常把 norm scale 与 bias-like 参数分开。Schedule count、gradient accumulation position、loss-scaling state 和 EMA 若影响未来更新，也必须进入 checkpoint 与 parity test。
+为 PyTree leaves 建立可审计的 path/type/shape identity，并显式定义 weight-decay mask。Schedule count、
+accumulation position、loss-scaling state 和 EMA 只要影响未来更新，也必须进入 checkpoint 与 parity test。
 
 ### 数据与随机性
 
@@ -239,11 +254,15 @@ python -m pytest `
 
 ### JIT、shape 与性能
 
-把 compile、warm steady state、host↔device transfer、collective 和 checkpoint I/O 分开测量；记录 shape/dtype/sharding/mesh identity与同步点。一次 CPU 的 `block_until_ready()` 计时不能证明 GPU/TPU 性能，也不能证明没有 shape-triggered recompilation。
+把 compile、warm steady state、host↔device transfer、collective 与 checkpoint I/O 分开测量，并记录
+shape/dtype/sharding/mesh identity 与同步点。一次 CPU `block_until_ready()` 计时不能证明 GPU/TPU 性能，
+也不能排除 shape-triggered recompilation。
 
 ### Sharding 与 checkpoint
 
-在目标多设备环境验证 mesh、replication/partition rules、global/local shapes、batch divisibility 与 collective semantics。若采用 Orbax/TensorStore，应另测 save/restore、异步完成、拓扑变化 reshard、partial write、preemption 与 object-store consistency；本项目的单文件 `ALLMJAX1` 不能替这些组件作证。
+在目标多设备环境验证 mesh、partition rules、global/local shapes、batch divisibility 与 collective semantics。
+若采用 Orbax/TensorStore，还要测试异步保存、拓扑变化 reshard、partial write、preemption 和 object-store
+consistency；单文件 `ALLMJAX1` 不能替这些组件作证。
 
 ## 项目验收与求职讲法
 

@@ -1,6 +1,8 @@
 # RAG Framework Adapters：Canonical-first 的 LangChain/LlamaIndex 集成
 
-**项目导航**：[返回项目索引](../project-index.md) · [RAG Foundations](rag-foundations.md) · [RAG 检索](../../applications/rag-retrieval.md) · [RAG 生产化](../../applications/rag-production.md) · [实验 5A](../labs.md#lab-5a)
+**项目导航**：[项目索引](../project-index.md) · [RAG Foundations](rag-foundations.md) ·
+[RAG 检索](../../applications/rag-retrieval.md) · [RAG 生产化](../../applications/rag-production.md) ·
+[实验 5A](../labs.md#lab-5a)
 { .doc-nav }
 
 本项目不把“换一个框架”误当作新的检索算法。它先固定一套框架无关的 canonical `Document`、`SearchResult`、ACL、BM25 排序、Prompt 和评测口径，再把同一次检索结果接入 LangChain 与 LlamaIndex，逐字段验证 adapter 没有改变安全与语义边界。
@@ -64,7 +66,11 @@ flowchart LR
 
 六个保护键是 `document_id`、`tenant_id`、`acl`、`retrieval_score`、`retrieval_rank`、`retriever`。若原始业务 metadata 已含这些键，adapter 直接失败，而不是让框架值覆盖 canonical 值。
 
-LlamaIndex 默认内容构造可能包含 metadata。本项目把上述保护键同时加入 `excluded_embed_metadata_keys` 与 `excluded_llm_metadata_keys`，避免默认 embed/LLM content 因控制面字段而变化。这只约束当前 node 配置；自定义 formatter、callback、serializer 或 Prompt 仍能主动读取 metadata，所以 exclusion 不能被写成“metadata 不会泄漏”或“已经完成授权”。
+LlamaIndex 默认内容构造可能包含 metadata。本项目把保护键同时加入 `excluded_embed_metadata_keys` 与
+`excluded_llm_metadata_keys`，避免默认 embed/LLM content 因控制面字段而变化。
+
+这只约束当前 node 配置。自定义 formatter、callback、serializer 或 Prompt 仍可能主动读取 metadata；
+exclusion 不是授权边界。
 
 ## 运行路径 { #run }
 
@@ -122,7 +128,9 @@ engineering 的 Recall@4 与 nDCG@4 都是 1.0，两例 extractive coverage 也�
 
 ### 5. 理解 round-trip gate 到底检查什么
 
-LangChain validator 对照结果数量、顺序位置上的 `id`、`page_content` 和完整 metadata。LlamaIndex validator还对照 `node_id`、正文、`NodeWithScore.score`、完整 metadata，以及两组 metadata exclusion keys。Supplied expected results 本身先经过 canonical gate：
+LangChain validator 对照结果数量，以及每个位置的 `id`、`page_content` 和完整 metadata。LlamaIndex validator
+再对照 `node_id`、正文、`NodeWithScore.score`、metadata 与两组 exclusion keys。Supplied expected results
+本身先经过 canonical gate：
 
 - rank 必须严格为 `1..N`；
 - document ID 不得重复；
@@ -164,17 +172,23 @@ python -m pytest tests/test_rag_framework_adapters.py -q
 5. qrels、answer cases、judge/rubric 与缺失样本规则；
 6. cold/warm 状态、并发、超时、重试、采样窗口和资源环境。
 
-本项目只让两个框架承担 adapter、Retriever/Prompt API 与 orchestration 边界，因此“结果相同”是预期不变量。如果要比较各自 native embedding/index/query engine，就不再是 adapter parity：必须分别记录 embedding/index identity、候选集合、score semantics、filters、rerank、Prompt、raw model output、usage、失败和延迟，并在同一 held-out qrels/cases 上比较。
+本项目只让两个框架承担 adapter、Retriever/Prompt API 与 orchestration，因此“结果相同”是预期不变量。
+若要比较各自 native embedding/index/query engine，就不再是 adapter parity；需要分别记录 index/embedding identity、
+candidates、score semantics、filters、rerank、Prompt、raw output、usage、失败和 latency，并在同一 held-out cases 上比较。
 
 ## 从教学 control 扩展到工程系统
 
 ### 接入 learned retrieval
 
-保持 canonical `SearchResult` 作为出口。每个 adapter 应把 query hash、index snapshot、embedding/reranker identity、candidate content hash、授权 decision、raw/normalized score 与 rank 写入 trace。不同模型的 score 不一定同尺度，不能只因字段名都叫 `score` 就直接比较或融合。
+保持 canonical `SearchResult` 作为出口。每个 adapter 把 query hash、index snapshot、embedding/reranker identity、
+candidate content hash、authorization decision、raw/normalized score 与 rank 写入 trace。不同模型的 score
+不一定同尺度，不能只因字段同名就直接比较或融合。
 
 ### 接入生成模型
 
-复用同一 context/source map，并固定 tokenizer、chat template、model/provider revision、sampling、stop、最大输出、重试与 usage。保存 raw output 和引用解析结果；当前 `answer_artifact_fingerprint` 来自确定性 extractive baseline，不是 provider/local LLM 调用证明。
+复用同一 context/source map，并固定 tokenizer、chat template、model/provider revision、sampling、stop、最大输出、
+retry 与 usage。保存 raw output 和 citation parsing；当前 `answer_artifact_fingerprint` 来自 deterministic
+extractive baseline，不是 Provider/local LLM 调用证明。
 
 ### 接入异步、callback 与 tracing
 
@@ -182,7 +196,9 @@ python -m pytest tests/test_rag_framework_adapters.py -q
 
 ### 接入生产权限
 
-tenant/principals 必须来自可信认证层，并与 policy/index revision 一起绑定到 retrieval call。不得让请求 body 自报安全身份，也不得把 framework metadata 当成授权事实。缓存 identity 还应包含 tenant/visibility domain、policy revision、query/index/model/template 等影响结果的字段。
+Tenant/principals 来自可信认证层，并与 policy/index revision 一起绑定到 retrieval call。请求 body 不能自报安全
+身份，framework metadata 也不是授权事实。Cache identity 还要包含 tenant/visibility domain、policy revision、
+query/index/model/template 等会改变结果的字段。
 
 ## 框架选择决策表
 
@@ -214,7 +230,9 @@ tenant/principals 必须来自可信认证层，并与 policy/index revision 一
 
 ## 证据边界
 
-该 control 在当前环境真实执行 `langchain-core` 与 `llama-index-core` 的 Retriever/Prompt API、canonical BM25/ACL、strict round trip、deterministic extractive answer、Recall@k/nDCG。它没有执行 learned embedding、向量 index、learned reranker、provider/local LLM、框架默认 query engine、网络、并发、持久化或性能负载。
+该 control 在当前环境真实执行 `langchain-core` 与 `llama-index-core` 的 Retriever/Prompt API、canonical BM25/ACL、
+strict round trip、deterministic extractive answer 与 Recall@k/nDCG。Learned embedding/vector index/reranker、
+Provider/local LLM、network、concurrency、persistence 与 load performance 尚未进入这条实验。
 
 因此它不证明框架默认 ACL、metadata 不泄漏、native retrieval 等价、模型生成质量、生产延迟/吞吐、规模扩展或生产安全。CPU 本地 authored fixture 也不得外推到目标向量库、模型、GPU 或线上流量。
 

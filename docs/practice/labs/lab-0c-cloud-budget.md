@@ -47,11 +47,24 @@ python projects/cloud-api-contracts/budgeted_http_demo.py --database artifacts/c
 python projects/cloud-api-contracts/budgeted_retry_demo.py --database artifacts/cloud-api/budgeted-retry.sqlite
 ~~~
 
-核对 `logical-call:attempt:1` 与 `logical-call:attempt:2` 是两个独立 tombstone，event 顺序为 `reserved → uncertain → reserved → settled`；手算 HTTP 500 的 80 与最终成功的 66 为什么合计 146，而不是只记 66。最终成功 usage 只属于 attempt 2，不能替 attempt 1 证明零计费。
+核对 `logical-call:attempt:1` 与 `logical-call:attempt:2` 是两个独立 tombstones，event 顺序为：
 
-把 hard cost limit 从 200 改为 140：第一次 500 已 uncertain 提交 80，第二次再 reserve 80 会使 projected total 成为 160，因此必须在 transport 前失败，MockTransport call count 仍为 1。再把 500 改为 ConnectError，确认第一条变成 cancelled 0、第二条 settled 66；把响应改为 `429 + Retry-After: 2`，用注入的 sleep recorder 验证等待值仍为 2。
+```text
+reserved → uncertain → reserved → settled
+```
 
-**最低通过**：能画出 `before_attempt reserve → send → after_attempt terminalize → retry sleep` 顺序，并解释 task cancellation 若发生在 reserve 后、trace 前为什么仍按 uncertain；同时指出当前 orchestrator 只覆盖 JSON，不支持 streaming partial-output replay，也不解析 provider-specific error usage。
+手算 HTTP 500 的 80 与最终成功的 66 为什么合计 146。成功 usage 只属于 attempt 2，不能替 attempt 1
+证明零计费。
+
+把 hard cost limit 从 200 改为 140。第一次 500 已按 uncertain 提交 80；第二次再 reserve 80 会让 projected total
+变成 160，所以必须在 transport 前失败，MockTransport call count 仍为 1。
+
+再做两个反例：把 500 改为 ConnectError，确认首个 attempt cancelled、第二个 settled；把响应改为
+`429 + Retry-After: 2`，用注入的 sleep recorder 检查等待值。
+
+**最低通过**：能画出 `reserve → send → terminalize → retry sleep`，并解释 cancellation 若发生在 reserve 后、
+trace 前为什么仍按 uncertain。还要指出当前 orchestrator 只覆盖 JSON，不支持 streaming partial-output replay，
+也不解析 Provider-specific error usage。
 
 ## 常见失败
 
@@ -62,6 +75,8 @@ python projects/cloud-api-contracts/budgeted_retry_demo.py --database artifacts/
 
 ## 交付与结论边界
 
-最低交付物：四份机器输出、一份 attempt ledger、一次 uncertain reconciliation 方案和一个被 hard gate 挡在 transport 前的故意失败案例。对账输入至少包括 stable call id、request fingerprint、attempt/request-id trace、provider usage 或 billing export，以及人工处置结果。
+最低交付物包括四份机器输出、一份 attempt ledger、一份 uncertain reconciliation 方案，以及一个被 hard gate
+挡在 transport 前的故意失败案例。对账输入至少保存 stable call ID、request fingerprint、attempt/request-ID trace、
+Provider usage/billing export 与人工处置结果。
 
 离线 HTTP/SQLite control 不执行真实 DNS、TLS、provider 请求或计费；authored usage 和价格只验证本地协议，不能证明供应商 usage、取消、账单或 exactly-once billing。
