@@ -13,13 +13,24 @@
 
 </div>
 
-本页是完整参考章节。第一次学习只需阅读[生成与解码入门](generation-basics.md)并完成实验 0A；需要 beam、约束、流式协议或生产验收时再按学习导航进入对应小节。
+本页是完整参考章节。第一次学习先读[生成与解码入门](generation-basics.md)并完成实验 0A；需要 beam、约束、
+流式协议或生产验收时，再回来查对应小节。
 
-模型给出的是下一 token 的分数，产品需要的是一段在质量、延迟、成本、格式与安全约束下完成任务的输出。**解码（decoding）是把条件分布变成决策的过程**，并不是给模型加一个“创造力旋钮”那么简单。
+先看一次具体请求。客服系统要求模型返回：
+
+```json
+{"action":"refund","order_id":"1001"}
+```
+
+模型不会一次吐出整段 JSON。它在每一步只给出整个词表的 logits。Runtime 需要决定哪些 token 目前合法、怎样
+改变分布、选中哪一个、何时停止，以及流式文本何时可以安全交给客户端。
+
+因此，**decoding（解码）是把条件分布变成一连串受协议约束的决策**。Temperature 只是这条链中的一个环节。
 
 ## 1. 生成循环的最小契约
 
-给定前缀 \(x_{1:t}\)，模型最后一层输出词表 logits \(z\in\mathbb R^V\)。一次生成步包括：
+给定前缀 \(x_{1:t}\)，模型最后一层输出词表 logits \(z\in\mathbb R^V\)。以上面的退款 JSON 为例，
+生成一个 token 的完整步骤是：
 
 1. 对 logits 应用允许/禁止 token 的硬约束；
 2. 应用 repetition、presence、frequency 等分数变换；
@@ -28,7 +39,8 @@
 5. 更新序列、KV Cache、停止状态和流式输出；
 6. 直到 EOS、stop 条件、token 预算、上下文预算、取消或错误终止。
 
-不同框架会交换第 1—3 步的部分顺序，公式名称相同也可能得到不同分布。要复现实验，必须记录**实现、版本和完整 processor 顺序**。
+不同框架会交换第 1—3 步的部分顺序。即使配置里都写着 `temperature=0.8, top_p=0.9`，最终分布也可能不同。
+要复现实验，必须记录实现、版本和完整 processor 顺序。
 
 ### 1.1 Temperature
 
@@ -105,15 +117,20 @@ Greedy 快、无需随机数，适合作为可复现基线。但“每一步概�
 
 若同时设置 top-k 与 top-p，常见做法是先 top-k 再在剩余分布上 top-p，但服务实现可能不同。temperature 放在 top-p 前后也会改变 nucleus 集合。实验报告不能只写“使用 top-p”，应记录所有非默认参数及顺序。
 
-仓库 `sample_next_token` 固定一份可手算的单步策略：sign-aware repetition penalty → temperature → exact top-k（同分 token id 小者优先）→ 在 top-k 重新归一化后的概率上取 top-p → 再归一化 → 按 token id 升序执行 categorical inverse CDF。运行：
+仓库 `sample_next_token` 固定了一份可手算的单步策略：sign-aware repetition penalty → temperature →
+exact top-k → top-p → renormalize → categorical inverse CDF。同分时按 token id 打破 tie。运行：
 
 ~~~powershell
 python projects/inference-serving/sampling_toy.py
 ~~~
 
-固定 logits 对应原始概率 `[0.4,0.3,0.2,0.1]`。Top-k=3 后分布是 `[4/9,3/9,2/9,0]`；top-p=0.7 的最小 crossing prefix 是 token 0、1，最终概率为 `[4/7,3/7,0,0]`，固定 uniform=0.6 选 token 1。注意 top-p 用的是 **top-k 后重新归一化**的概率，不是原始 `[0.4,0.3,...]`；更换 processor 顺序会得到另一份合法但不同的契约。
+Toy 的原始概率是 `[0.4,0.3,0.2,0.1]`。Top-k=3 后重新归一化为 `[4/9,3/9,2/9,0]`；
+再做 top-p=0.7，只保留 token 0 和 1，最终得到 `[4/7,3/7,0,0]`。固定 uniform=0.6 时选中 token 1。
 
-固定 uniform 比只给 seed 更容易逐项验算，但不同 runtime 的 RNG、CDF traversal、浮点归约或 tie-break 即使面对同一最终分布，也未必把“同一个 seed/uniform”映射为同一 token。该 CPU oracle 不执行模型/tokenizer，也不含多 token 循环、EOS/stop、KV、batch、质量或性能证据。
+这里 top-p 看到的是 top-k **之后**的概率。交换 processor 顺序会得到另一份合法但不同的生成契约。
+
+固定 uniform 比只给 seed 更容易逐项验算。真实 runtime 还会受到 RNG、CDF traversal、浮点归约和 tie-break
+影响，所以相同 seed 不是跨实现逐 token 重放的充分条件。
 
 仓库 `MiniGPT.generate` 明确定义：temperature → top-k → top-p → softmax → multinomial，并测试了极小 top-p 只保留 argmax 的边界：
 
@@ -128,15 +145,22 @@ sample = model.generate(
 )
 ```
 
-这是教学实现，不包含 EOS、批内独立停止、KV Cache 或流式 UTF-8 解码，不能据此宣称生产吞吐。
+这是教学实现，不包含 EOS、批内独立停止、KV Cache 或流式 UTF-8 解码。
 
-仓库另有 `generation_runtime_control.py`，在随机 tiny GPT-2 上真实调用 Transformers `generate()`，再用 authored logits processor 覆盖全部 next-token scores。固定三条 trace 分别得到 `[4,3]`（config EOS set 在 3 停止）、`[3,5]`（call-level EOS=5 覆盖 config 的 `{2,3}`）和 `[4,6]`（call-level `max_new_tokens=2` 截断）。这比只检查输出 shape 更强，因为实际执行了模型 forward、processor 与 stopping loop；但 token 由测试 processor 强制，不证明随机权重或任何 checkpoint 的分布、质量、正常 processor 组合、vLLM/provider 语义或性能。Transformers 返回中没有 provider 风格 finish reason，报告只能由受控路径推断。
+`generation_runtime_control.py` 进一步真实调用 Transformers `generate()`，验证 config-level 与 call-level EOS、
+`max_new_tokens` 和 stopping loop 的覆盖顺序。它使用 authored logits processor 固定 token trace，因此证明协议路径，
+不代表任意 checkpoint 的生成质量或 vLLM/云 Provider 语义。精确 trace 见
+[Transformers 控制台账](../evidence/transformers-controls.md)。
 
 ## 4. Logits processor 与惩罚
 
 ### 4.1 Repetition penalty
 
-“重复惩罚”不是单一公式。仓库 oracle 采用一种常见 sign-aware 约定：对每个曾出现的唯一 token，若 \(z_i<0\) 则令 \(z_i'=r z_i\)，否则令 \(z_i'=z_i/r\)，其中 \(r>0\)；同一 token 重复出现多次仍只处理一次。于是 \(r>1\) 会把正 logit 拉低、负 logit 变得更负，但这不是 frequency penalty。其他实现可能直接减分、按出现次数处理，或只统计 generated tokens。它通常不区分“无意义复读”和“任务必须重复”：代码变量、JSON key、引用、数字、诗歌副歌都可能被误伤。
+“重复惩罚”不是单一公式。仓库采用一种常见 sign-aware 约定：对每个出现过的唯一 token，若 \(z_i<0\)，
+令 \(z_i'=r z_i\)；否则令 \(z_i'=z_i/r\)，其中 \(r>0\)。同一 token 出现多次仍只处理一次。
+
+其他实现可能直接减分、按出现次数处理，或只统计 generated tokens。惩罚器也不知道重复是否合理：JSON key、
+代码变量、数字和引用都可能需要原样重复。
 
 ### 4.2 Presence 与 frequency penalty
 
@@ -171,11 +195,17 @@ Beam search 每一步保留累计分数最高的 \(B\) 个部分序列。序列�
 s(x_{1:T})=\frac{\log p(x_{1:T})}{T^\alpha},\qquad \alpha\ge 0.
 \]
 
-这里必须定义 \(T\) 是否包含 prompt、EOS 和特殊 token。仓库 oracle 规定 \(T\) **只计生成 token，包含已发出的 EOS，不计 prompt**。因为 log probability 为负，增大正的 \(\alpha\) 会让较长序列的分数向 0 靠近；这不是“简单惩罚长序列”，也不能把该公式套到所有框架。Transformers、vLLM 或云服务可能使用不同 normalization、finished-candidate cap、EOS/early-stopping 语义。
+这里必须定义 \(T\) 是否包含 prompt、EOS 和特殊 token。仓库 oracle 只计生成 token，包含已发出的 EOS，
+不计 prompt。由于 log probability 为负，增大正的 \(\alpha\) 会让长序列分数更靠近 0；它并非简单的“惩罚长文本”。
+不同 runtime 还可能采用不同 normalization、finished-candidate cap 和 early-stopping 语义。
 
-Beam search 不是对所有可能序列的精确全局搜索；有限 beam 仍会剪掉以后可能变好的前缀。考虑 root 上 `A=0.6,B=0.4`，随后 `A→EOS=0.51`、`B→EOS=1`：beam width 1 会先剪掉 B，返回概率 (0.6\times0.51=0.306) 的 `A,EOS`；width 2 才能返回概率 0.4 的 `B,EOS`。这说明更宽 beam 能修复某个反例，却不保证有限宽度在任意树上全局最优。
+Beam search 不是全局穷举。考虑第一步 `A=0.6, B=0.4`，随后 `A→EOS=0.51`、`B→EOS=1`。
+Beam width 1 会先剪掉 B，得到概率 \(0.6\times0.51=0.306\) 的 `A,EOS`；width 2 才能保留概率 0.4
+的 `B,EOS`。加宽 beam 修复了这个反例，却不能让任意有限 beam 都变成全局最优搜索。
 
-EOS 候选一旦完成就不应再次送入模型；未完成 prefix 到 `max_new_tokens` 时应明确标记 length。是否在“最好完成候选已经胜过 active candidates”时提前停止，取决于分数上界、length normalization 与实现契约，不能凭当前 raw score 随意停止。它常用于翻译、语音识别和有明确输出空间的任务。开放式对话中，大 beam 可能产生更通用、重复或缺少多样性的文本。
+EOS 候选完成后不再送入模型；未完成 prefix 到达 `max_new_tokens` 时标记为 length。能否提前停止取决于
+分数上界、length normalization 和实现契约，不能只看当前 raw score。Beam 常用于翻译、语音识别等输出空间
+较明确的任务；开放对话中，大 beam 可能产生更通用、更重复的文本。
 
 运行可手算的 deterministic oracle：
 
@@ -183,7 +213,8 @@ EOS 候选一旦完成就不应再次送入模型；未完成 prefix 到 `max_ne
 python projects/inference-serving/beam_search_toy.py
 ~~~
 
-它逐 step 保存 active beam、全部正概率 expansion、立即完成的 EOS 与最终排序。除上面的 pruning 反例外，第二个 fixture 固定短序列概率 0.6、长度 2，长序列概率 0.4、长度 3：\(\alpha=0\) 选短序列，\(\alpha=2\) 选长序列。Oracle 会保存所有从 active prefix 产生的 EOS，不模拟某个 runtime 可能采用的 top-\(2B\) candidate cap；也没有模型/tokenizer/KV/GPU、生成质量或性能证据。
+Toy 会保存每一步 active beam、扩展、已完成 EOS 与最终排序，还演示 length penalty 如何改变短/长序列排名。
+它用于检查搜索契约，不执行模型、tokenizer、KV Cache 或 GPU kernel。精确 fixture 留在实验输出中。
 
 需要记录：beam width、raw cumulative log probability、length penalty 公式与长度口径、EOS 语义、early stopping、finished-candidate cap、tie-break、每个输入返回几个序列，以及完成序列与未完成序列如何比较。
 
@@ -204,13 +235,17 @@ Stop string 可能跨 token 边界和流式事件边界；更底层的网络字�
 
 若边匹配边把文本交给用户，不能立刻释放所有已解码字符：末尾的 `<EN` 可能在下一 chunk 变成 `<END>`。一个 bounded 做法是只保留“当前文本后缀中、同时也是任一 stop 的前缀”的最长部分，其余才安全 emit。UTF-8 decoder 也必须跨 byte chunk 保留未完成 code point，并在 EOF 严格拒绝截断序列。
 
-仓库 `IncrementalStopMatcher` 固定以下语义：输入是同一 UTF-8 text stream 的任意 byte chunks；逐 decoded character 处理，所以 byte chunking 不改变结果；某个 character 使一个或多个 stop 完成时立即终止，同一 character 同时完成多个 stop 则按配置顺序选择；默认不返回 stop，自选 `include_stop` 可返回；匹配区分大小写且不做 Unicode normalization。运行：
+仓库 `IncrementalStopMatcher` 把输入视为同一条 UTF-8 text stream，并逐 decoded character 匹配。因此网络怎样切
+byte chunk 不会改变结果。若同一字符同时完成多个 stop，按配置顺序选择；默认不返回 stop，匹配区分大小写，
+也不做 Unicode normalization。运行：
 
 ~~~powershell
 python projects/inference-serving/stop_matching_toy.py
 ~~~
 
-Fixture 把 `甲🙂乙<END>尾` 同时切开 emoji 的 UTF-8 bytes 和 `<END>`，最终只返回 `甲🙂乙`；另用 `("BC","ABC")` 处理 `ABCZ`，两者在字符 `C` 同时完成，配置顺序选 `BC`，因此返回前缀 `A` 并丢弃 stop 后的 `Z`。这种“first completion”还意味着 stops `("END","E")` 面对 `END` 会在 `E` 完成时停止，不等待更长候选。其他服务可能采用不同 overlap/priority 规则，必须写入契约。
+Fixture 把 `甲🙂乙<END>尾` 同时切开 emoji bytes 和 `<END>`，最终仍只返回 `甲🙂乙`。它还覆盖重叠 stop：
+若 `BC` 与 `ABC` 在同一字符完成，按配置优先级选择。其他服务可能采用 longest-match 或不同 priority，
+所以 overlap 规则必须写入契约。
 
 该 matcher 处理的是已经形成的 UTF-8 文本，不把 token id 解码成文本，也不知道 provider 是否把 stop token 计入 usage。若它只在客户端截断已收到文本，不能节省远端 decode、改变可信 finish reason 或证明取消已释放 GPU/停止计费；这些仍需服务端协议和 trace 验证。
 
@@ -246,9 +281,11 @@ Fixture 把 `甲🙂乙<END>尾` 同时切开 emoji 的 UTF-8 bytes 和 `<END>`�
 python projects/inference-serving/constrained_decoding_toy.py
 ~~~
 
-Fixture 只接受 `{"x":1}` 或 `{"x":2}`。在关键步，token `1]` 的首字符 `1` 可以转移、第二个字符 `]` 不可以，因此其原始概率 0.65 被完整屏蔽；合法 `1}`/`2}` 的原始质量是 0.25/0.10，总 allowed mass 0.35，重归一化后为 `5/7`/`2/7`。EOS 在输出进入 accepting state 前始终被禁用，最终 token 序列为 `(0,1,2,EOS)`。
+Fixture 只接受 `{"x":1}` 或 `{"x":2}`。Token `1]` 的第一个字符虽然合法，完整片段却无法到达有效状态，
+所以必须整 token 屏蔽；`1}` 与 `2}` 在 allowed mass 内重新归一化。EOS 只在 accepting state 开放。
 
-这份 oracle 的单位是 supplied token text 中的 Python Unicode code point，并假设各 fragment 直接拼接就是 decoded text。它不执行真实 tokenizer 的 byte/incremental decode 或 normalization，只接受 authored finite literal set，不是 JSON Schema、CFG、正则引擎、模型或 provider runtime。对真实 tokenizer，必须按实际 token bytes/decoder state 验证完整转移；字符串级 toy 不能证明所有 schema 都可表达或高效解码。
+Toy 直接拼接 supplied token text，没有执行真实 tokenizer 的 byte decoder 或 normalization。生产约束器必须按实际
+token bytes 与 decoder state 验证完整转移；有限字符串集合也不代表完整 JSON Schema 或 CFG 引擎。
 
 约束解码可以保证某种**语法性质**，但不能保证：
 
@@ -263,7 +300,9 @@ Fixture 只接受 `{"x":1}` 或 `{"x":2}`。在关键步，token `1]` 的首字�
 
 ### 7.1 无合法 token 的失败状态
 
-约束状态机可能仍有语法出边，但模型在所有合法 token 上给出零概率，或 tokenizer 根本没有能完成该转移的 token。生产实现应显式返回 constraint error、回退到经过验证的安全模板或重新构造请求，不能悄悄解除约束继续生成。若采用浮点阈值、top-k/top-p 或其他 processor，还要固定“先约束还是先截断”：先截断可能把所有合法 token 删除，交换顺序会改变条件分布。
+约束状态机可能仍有语法出边，但模型给所有合法 token 零概率，或者 tokenizer 根本没有可完成转移的 token。
+此时应返回 constraint error、使用已验证的安全模板或重构请求，不能静默解除约束。还要固定约束与 top-k/top-p
+的先后顺序：先截断可能删掉全部合法 token。
 
 ## 8. KV Cache、上下文与生成成本
 
@@ -290,9 +329,10 @@ Server-Sent Events 或其他流协议发送的是**传输 chunk**，不是 token
 
 不能用 chunk 数估算 output token。仓库的 serving benchmark 对缺失 token usage 选择显式失败，而不是用 chunk 数伪造 TPOT。
 
-本仓库 `SSEDecoder` 的 CPU fixture 会把 UTF-8 字节逐个或按不同边界送入 parser，验证 BOM、CR/LF/CRLF、多行 data、截断 EOF 与 line/event/total byte 上限。它只证明 framing 状态机，不证明真实网络 chunk 分布、provider event schema、backpressure、取消已传播到服务端或停止计费。Provider state machine 必须另外验证完成事件；看到 TCP EOF 不等于模型成功完成。
-
-Cloud streaming executor 进一步用 MockTransport 验证 response 在成功、超限、断流、timeout 与取消后关闭，并把 callback 时间计入 monotonic deadline。它在 2xx body 开始后禁止自动重试，因为已经交付的 partial text 与远端计费都可能发生。MockTransport 的 close 事件仍不能证明真实服务端观察到 RST/取消或及时释放 GPU 工作。
+仓库 `SSEDecoder` 用不同字节边界覆盖 BOM、换行、多行 data、截断 EOF 与大小上限；Cloud streaming executor
+再覆盖断流、timeout、取消和 response close。它们验证客户端 framing 与资源清理，不代表真实 Provider 已观察到
+取消、释放 GPU 或停止计费。看到 TCP EOF 也不能替代协议中的完成事件。精确控制见
+[推理服务证据页](../evidence/inference-serving-controls.md)。
 
 ## 10. 确定性与可复现边界
 

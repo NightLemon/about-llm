@@ -13,13 +13,18 @@
 
 </div>
 
-## 一句话结论
+## 先看一段文本的三种长度
 
-Tokenizer 不是可以随意替换的文本工具，而是模型参数语义的一部分：它确定原始输入怎样变成整数 id、角色和边界怎样序列化、哪些位置参与 loss，以及“上下文长度”和计费中的 token 到底是什么。模型只看到 id；同一段可见文本经过不同 normalization、pre-tokenizer、merge ranks、special tokens 或 chat template，可能成为完全不同的序列。
+字符串 `你好🙂` 看起来有三个字符，Python 的 `len()` 也返回 3；编码成 UTF-8 后却有 10 bytes。
+至于有多少 token，只能在指定 tokenizer 后回答。
+
+Tokenizer 决定原始文本怎样变成模型看到的整数 ID。它还参与角色和消息边界的序列化、训练 loss 的位置选择、
+上下文预算与 API 计费。因此 tokenizer 与模型参数一起构成 checkpoint 契约，不能当成随手可换的文本工具。
+同一段可见文本换了 normalization、pre-tokenizer、merge rank、special token 或 chat template，模型收到的序列可能完全不同。
 
 ## 先分清五层对象
 
-以一个包含中文、组合音标和 emoji 的字符串为例，至少要区分：
+回到包含中文、组合音标和 emoji 的文本，可以沿着五层对象往下看：
 
 1. **Unicode code point**：例如预组字符 `é` 与 `e` + combining acute 是不同码点序列；
 2. **grapheme cluster**：用户感知的“一个字符”，可能由多个码点组成；
@@ -27,7 +32,8 @@ Tokenizer 不是可以随意替换的文本工具，而是模型参数语义的�
 4. **token piece**：一个词、子词、空白连同单词、单个 byte 或它们的组合；
 5. **token id**：Embedding/LM head 的行号。
 
-Python 的 `len(text)` 近似数 code point，不等于 grapheme 数、UTF-8 byte 数或 token 数。UI 截断、模型预算和网络 payload 因此不能共用一个“长度”。
+Python 的 `len(text)` 近似数 code point；UI 显示更关心 grapheme，网络传输按 byte，模型窗口按 token。
+这些位置都出现“长度”一词，单位却不同，接口中应明确写出 `utf8_bytes`、`token_count` 等名称。
 
 典型流水线是：
 
@@ -40,13 +46,17 @@ raw text
   -> special tokens / chat template
 ```
 
-并非每个 tokenizer 都执行全部步骤，步骤顺序也属于版本化契约。若 normalization 改写了原文，`decode(encode(text))` 可能只等于规范化后的文本，而不等于原始 byte；若业务需要原文 span，必须另存原文并验证 offset mapping。
+不同 tokenizer 会省略其中某些步骤，执行顺序也不同。Normalization 若改写了原文，
+`decode(encode(text))` 可能还原的是规范化文本，而不是原始 bytes。需要高亮原文或引用 span 的应用，
+应保存原文并单独验证 offset mapping。
 
 ## 为什么需要子词
 
 词级词表会遇到开放词汇、拼写变化和巨大长尾；字符或 byte 词表能覆盖所有输入，却往往产生更长序列。子词方法在两者之间折中：把高频片段做成单个 token，让罕见输入退化为更细单位。
 
-若词表大小为 (V)、隐藏维度为 (d)，输入 Embedding 有 (Vd) 个参数；未与输入权重共享时，输出 head 还会有同量级参数。增大 (V) 通常缩短序列，却增加参数、softmax 工作和稀有行的数据稀疏性。减小 (V) 节省词表参数，但更长的序列会增加 prefill attention、激活和 KV Cache 成本。这里只是方向关系，实际速度还取决于 kernel、batch、序列分布与硬件。
+若词表大小为 \(V\)、隐藏维度为 \(d\)，输入 Embedding 有 \(Vd\) 个参数；没有 weight tying 时，输出 head
+还有同量级参数。增大词表通常会缩短序列，也会增加参数、softmax 工作和稀有行的数据稀疏性；减小词表则可能
+增加 prefill attention、activation 与 KV Cache 成本。实际速度仍由 kernel、batch、长度分布和硬件共同决定。
 
 ## BPE：训练和编码不是同一件事
 
@@ -90,9 +100,13 @@ python projects/transformers-basics/train_byte_bpe.py `
   --text "banana bandana" --text "banana" --sample "bandana"
 ~~~
 
-`ByteBPETokenizer` 的基础 id 0～255 就是 raw byte，新 token id 为 `256 + merge_rank`；同频 pair 用 id pair 的字典序确定选择，训练不会跨传入的 document 边界。若没有 pair 达到 `min_pair_frequency`，实际词表会小于请求上限。朴素训练每轮重数 pair，适合小语料观察机制，不是大规模 tokenizer trainer。
+`ByteBPETokenizer` 的基础 IDs 0～255 直接表示 raw bytes，新 token ID 为 `256 + merge_rank`。
+同频 pair 按 ID pair 字典序选择，训练不会跨传入的 document boundary。若没有 pair 达到
+`min_pair_frequency`，实际词表会小于请求上限。朴素实现每轮重新计数，只适合小语料观察机制。
 
-这个 reference **不是 GPT-2 或任一 checkpoint tokenizer 的复刻**：它没有 regex pre-tokenizer、GPT-2 式 byte-to-Unicode 可见字符映射、normalizer、special token、offset map 或高性能索引。测试通过只能证明给定字符串上的确定性 merge 与 UTF-8 round-trip，不能证明目标语料压缩率、目标模型兼容性或生产吞吐。
+这个 reference 不是 GPT-2 或任一 checkpoint tokenizer 的复刻。它没有 regex pre-tokenizer、GPT-2 式
+byte-to-Unicode 映射、normalizer、special tokens、offset map 或高性能索引。测试通过只证明给定字符串上的
+deterministic merge 与 UTF-8 round-trip，不代表目标模型兼容性或生产吞吐。
 
 ## WordPiece 与 Unigram
 
@@ -106,7 +120,9 @@ Unigram 从较大的候选 piece 集开始，为 piece 建模概率，再迭代�
 
 ### byte fallback
 
-只有当 tokenizer 的可达基础词表确实覆盖全部 256 byte，并在未知片段时执行 fallback，才能说任意 UTF-8 输入无需 `[UNK]`。出现 byte token 不代表整个 tokenizer 是纯 byte-level；现代 tokenizer 常把常见子词和 byte fallback 组合使用。单个 byte 或 merge token 可能不是合法 UTF-8，只有完整 token 序列展开后才可解码。
+只有当可达基础词表覆盖全部 256 bytes，并在未知片段时真正执行 fallback，任意 UTF-8 输入才无需 `[UNK]`。
+出现 byte token 不代表整个 tokenizer 是纯 byte-level；现代实现经常组合常见子词与 byte fallback。单个 byte
+或 merge token 也可能不是合法 UTF-8，完整 token 序列展开后才可解码。
 
 ## normalization、offset 与原文证据
 

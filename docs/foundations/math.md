@@ -13,20 +13,19 @@
 
 </div>
 
-## 学习目标与证据边界
+## 怎样使用本章
 
-本章不追求完整数学课程，而是建立读懂和验证 LLM 公式所需的最小闭环。读完应能：
+读 Attention 公式时，你可能同时卡在三个地方：`QKᵀ` 为什么能相乘，softmax 为什么放在这一轴，
+以及代码里的 tensor shape 怎样对应纸面符号。本章就是为这类问题准备的数学工具箱。
 
-- 手工追踪 Transformer 的 shape、广播和 contraction；
-- 解释 token 概率、最大似然、交叉熵、KL 与困惑度；
-- 用链式法则理解反向传播、梯度累积和裁剪；
-- 区分 SGD、AdamW、weight decay 与学习率调度；
-- 知道何时转到[评测统计](evaluation-statistics.md)定义 estimand、配对实验和区间；
-- 识别公式成立的假设，不把理想数学量冒充硬件实测。
+不必先学完再去读模型章节。遇到 shape 问题就看前两节，遇到 loss 与 PPL 就看概率和信息论，
+开始训练时再读梯度与优化。需要比较两个系统的区间和显著性时，转到[评测统计](evaluation-statistics.md)。
 
-本仓库的 NumPy attention、PyTorch/JAX tiny GPT、KV Cache 公式和 paired bootstrap 是本章的可执行证据。小数组测试证明实现不变量，不证明大模型精度、训练稳定性或生产质量。
+学完后，你应该能用小数字复算一次 Attention，追踪 loss 怎样传回参数，并说出公式依赖哪些假设。
+仓库里的 NumPy Attention、PyTorch/JAX tiny GPT 和 KV Cache 计算器提供了可运行例子；大模型训练稳定性和
+目标硬件性能仍要在相应环境里验证。
 
-## 1. Shape 是第一种证明
+## 1. 先用 Shape 排除不可能
 
 ### 标量、向量、矩阵、张量
 
@@ -46,9 +45,10 @@ X\in\mathbb R^{B\times T\times d}
 Y=XW\in\mathbb R^{B\times T\times h}
 \]
 
-矩阵乘只 contraction 最后一个 \(d\) 维，batch/time 被保留。参数量 \(dh\) 与 \(B,T\) 无关，activation 与计算量却随它们增长。
+这次矩阵乘法收缩的是最后一个 \(d\) 维，batch 和 time 两个轴原样保留。权重参数量是 \(dh\)，
+所以不会随 \(B,T\) 改变；中间 activation 和计算量会随着 batch 与序列变大。
 
-每看到公式，先写四列：
+遇到新的张量公式时，可以先写下面四列。它往往比盯着字母更快暴露问题：
 
 | 量 | shape | dtype/device | 是否训练 |
 |---|---|---|---|
@@ -57,7 +57,7 @@ Y=XW\in\mathbb R^{B\times T\times h}
 | projection weight | `[d,h]` | float | 是 |
 | output | `[B,T,h]` | float | 中间量 |
 
-Shape 一致是必要条件，不是充分条件：把 Q/K 轴弄反可能仍能乘，却改变 attention 语义。
+Shape 对得上只是第一关。把 Q/K 轴弄反后，矩阵乘法可能仍然合法，但每个分数所表示的 query-key 关系已经变了。
 
 ### Broadcasting
 

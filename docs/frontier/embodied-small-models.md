@@ -13,9 +13,15 @@
 
 </div>
 
-这些方向把语言模型放进闭环环境：机器人动作改变物理世界，GUI Agent 改变账户状态，小模型在资源受限设备上持续响应。评价重点从“回答像不像”转为任务成功、状态估计、权限、恢复、延迟和现实副作用。
+想象一个运行在笔记本上的本地助手：它观察浏览器页面，判断应该点击哪个按钮，遇到复杂页面时再把有限上下文
+交给云模型。一次坐标偏移可能点中“确认付款”，一次过期 screenshot 可能让它对已经变化的页面继续操作，
+一次错误路由则可能把敏感画面发到云端。
 
-## 1. 闭环决策与部分可观测性
+机器人、computer-use Agent 和端侧小模型看似是三个方向，却共享同一个闭环：**观察环境、提出动作、受控执行、
+重新观察、验证状态，再决定下一步**。评价重点也从“回答像不像”转为任务成功、状态估计、权限、恢复、延迟
+和现实副作用。
+
+## 1. 模型看到的从来不是完整世界
 
 可用 POMDP 直觉描述：真实状态 \(s_t\) 不完全可见，系统获得 observation \(o_t\)，根据历史/估计选择 action \(a_t\)，环境转移到 \(s_{t+1}\)。
 
@@ -27,7 +33,7 @@ a_t\sim\pi(\cdot\mid o_{\le t},a_{<t}).
 
 文本 Agent 常假设工具返回准确状态；物理/GUI 环境却有遮挡、延迟、丢帧、弹窗、执行失败和外部变化。系统需要 action receipt 与重新观察，不能把“模型输出了动作”当“动作已成功”。
 
-## 2. 机器人系统分层
+## 2. 让语言模型负责语义，不负责电机急停
 
 ```mermaid
 flowchart TD
@@ -70,9 +76,11 @@ VLA 将图像/状态、语言目标和 action 联合建模。Action 表示可能
 
 记录 robot morphology、camera calibration、control frequency、action normalization、operator、场景和失败。把不同机器人 action 直接拼接而没有 embodiment token/映射会混淆语义。
 
-## 4. Imitation 与 offline data 问题
+## 4. 模仿学习为什么会在自己的错误上越走越远
 
-Behavior cloning 在 demonstration state distribution 上学习。执行时一个小错误会进入训练未覆盖状态并累积，即 covariate shift。可用 corrective demonstration、DAgger 类交互、recovery data、noise augmentation 和 closed-loop training 缓解。
+Behavior cloning 在 demonstration state distribution 上学习。执行时一个小错误会把系统带进训练未覆盖的状态，
+随后误差继续累积；这就是 covariate shift。Corrective demonstration、DAgger 类交互、recovery data、
+noise augmentation 和 closed-loop training 都在尝试补足这些偏离后的状态。
 
 Offline RL/VLA 还面临 support mismatch：模型不应对数据外 action 过度乐观。仿真器 reward/成功条件也可能被 exploit。
 
@@ -89,7 +97,7 @@ Offline RL/VLA 还面临 support mismatch：模型不应对数据外 action 过�
 
 Domain randomization、system identification、real-data fine-tuning 和 residual control 可缩小差异。仿真成功只能证明在该 simulator/config 下成功，不能写成真实机器人验证。
 
-## 6. 机器人安全测试
+## 6. 安全测试要观察动作有没有真的停下
 
 逐级扩大：
 
@@ -115,7 +123,7 @@ World model 预测 observation/state/reward/termination 或 latent dynamics，�
 
 像素预测清晰不等于物理正确，latent prediction loss 低也不保证规划所需变量被保留。规划器会利用 world model 偏差，应在 adversarial/planner-selected trajectories 上评估。
 
-## 8. GUI / Computer-use Agent
+## 8. 把同一个闭环搬到 GUI
 
 Observation 可以是 screenshot、DOM、accessibility tree、OCR、network/API state 的组合。Action 包括 click/type/scroll、semantic element action、browser/API call。
 
@@ -143,7 +151,7 @@ Element 可能在观察和点击之间移动（TOCTOU），弹窗或网络响应
 - 下载扫描、文件 quarantine 与 MIME/content validation；
 - 完整 action/receipt/reconciliation audit。
 
-## 9. GUI Agent 评测
+## 9. GUI 评测不能只看最终截图
 
 在可 reset environment 中运行。报告：
 
@@ -158,9 +166,11 @@ Element 可能在观察和点击之间移动（TOCTOU），弹窗或网络响应
 
 页面最终出现成功文案可能是模型读到文本后复述，verifier 应查询真实 state。真实个人账户不应作为可重复 benchmark。
 
-## 10. 什么是“小模型”
+## 10. “小”是相对设备预算而言
 
-没有固定参数阈值。Small Language Model（SLM）是相对部署约束定义：能否在目标单卡、CPU、移动端或延迟/成本预算内运行。报告：参数、active parameters、weight/KV bytes、context、dtype、target hardware 与 TTFT/TPOT。
+Small Language Model（SLM）没有统一参数阈值。它是否足够小，要看能否在目标单卡、CPU、移动端或延迟/成本
+预算内运行。报告时至少写明参数量、active parameters、weight/KV bytes、context、dtype、target hardware
+与 TTFT/TPOT；只说“0.8B 很小”无法回答在具体设备上是否可用。
 
 小模型优势：低延迟/成本、可本地、易隔离和专用；限制：长尾知识、复杂推理、instruction robustness、多语言与安全泛化可能更弱。
 
@@ -188,7 +198,7 @@ LoRA/adapter 可低成本学习领域格式。专用模型应保持 out-of-scope
 
 Quantization、pruning、low-rank、vocabulary/architecture 设计降低内存/计算。权重变小不保证速度等比例提高；目标硬件 kernel 决定收益。
 
-## 12. Model routing 与 cascade
+## 12. 本地先做，什么时候升级到云端
 
 令 router 给出是否由小模型处理，阈值 \(\tau\) 控制 coverage：
 
@@ -209,9 +219,14 @@ Quantization、pruning、low-rank、vocabulary/architecture 设计降低内存/�
 
 ## 13. Speculative decoding
 
-Draft model 提议多个 token，target model 并行验证。严格的 speculative sampling 使用接受/拒绝与 residual distribution，可保持 target distribution；“target 逐 token 验证并取一致前缀”的 greedy 变体保持 target greedy output。
+Draft model 提议多个 token，target model 并行验证。严格的 speculative sampling 使用接受/拒绝与 residual distribution，
+可以保持 target distribution；“target 逐 token 验证并取一致前缀”的 greedy 变体保持 target greedy output。
 
-概率级规则不可省略：proposal \(x\sim q\) 以 \(\min(1,p(x)/q(x))\) 接受，拒绝则从 normalized \((p-q)_+\) 采样；首次拒绝后丢弃剩余 draft，全接受才发 bonus target token。仓库已有解析一步边际与 block 控制流 oracle，但 authored probability vector 不是目标模型 logits，CPU 循环也不是 verification kernel。
+概率级规则不能省略。Proposal \(x\sim q\) 以 \(\min(1,p(x)/q(x))\) 接受；拒绝时，从 normalized
+\((p-q)_+\) 采样。首次拒绝后丢弃剩余 draft，只有全部接受才发出 bonus target token。
+
+仓库已有一步边际与 block 控制流 oracle，但 authored probability vector 不是目标模型 logits，CPU 循环也不是
+verification kernel。
 
 并非任何“让小模型先写、大模型挑”都无损。若只接受 draft 高分 token 或改变采样逻辑，输出分布会变。Speedup 取决于 draft latency、acceptance rate、proposal length、target verification kernel 和 batch。
 
@@ -249,7 +264,9 @@ Cryptographic proof、replication 或 spot-check 也有成本和适用边界。�
 
 ## 17. 模型合并与本地 adapter 生态
 
-多个 adapter/merge 可组合专用能力，但必须共享 base revision、target modules、shape/scaling 和 tokenizer/template。独立初始化模型不能直接逐权重平均。Merge 后重测每项能力、安全与量化；本地插件式 adapter 还需要签名、权限、来源和冲突管理。
+多个 adapter/merge 可以组合专用能力，但必须共享 base revision、target modules、shape/scaling 和
+tokenizer/template。独立初始化的模型不能直接逐权重平均。Merge 后要重新测试每项能力、安全与量化；
+本地插件式 adapter 还需要签名、权限、来源和冲突管理。
 
 ## 18. 生产架构示例
 
@@ -293,7 +310,11 @@ Router、verifier、tool policy 和 human approval 分别有独立版本与评�
 
 ## 20. 当前仓库证据边界
 
-仓库有 Safe Agent 的审批/幂等/reconciliation、Roofline/KV、LoRA、speculative sampling 概率 oracle 和评测门禁，可作为 GUI/小模型系统的组件证据；但没有机器人 simulator/硬件、真实 GUI benchmark、移动设备 SLM、federated round 或 speculative decoding kernel 实跑。因此本文是架构和验收协议，不是具身/端侧生产验证。
+仓库有 Safe Agent 的审批、幂等和 reconciliation，以及 Roofline/KV、LoRA、speculative sampling 概率 oracle
+和评测门禁。这些可以作为 GUI/小模型系统的组件证据。
+
+仓库没有机器人 simulator/硬件、真实 GUI benchmark、移动设备 SLM、federated round 或 speculative decoding
+kernel 实跑。因此，本章是架构与验收协议，不是具身或端侧生产验证。
 
 ## 21. 常见错误结论
 

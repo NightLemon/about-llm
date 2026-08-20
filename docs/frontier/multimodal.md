@@ -1,205 +1,205 @@
-# 多模态模型：表示、对齐、评测与系统边界
+# 多模态模型：一张票据怎样变成可验证答案
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：视觉、音频、文档和多模态评测工程师。
-- **先修**：[Transformer](../core/transformer.md)、数据治理和基础评测。
-- **首次阅读**：输入输出契约 → 编码器 → 融合架构 → 评测 → 发布门禁。
-- **完成信号**：能证明目标模态被使用，并按模态、语言和失败类型切片。
-- **卡住时**：回到[模型选型](../models/landscape.md)，先固定目标任务与输入契约。
+- **适合读者**：想理解视觉、文档、音频或视频模型怎样进入真实系统的工程师。
+- **先修**：[Transformer](../core/transformer.md)、基础数据治理与评测。
+- **首次阅读**：先跟手机票据走完预处理、编码、回答与验证，再扩展到音频和视频。
+- **完成信号**：能设计一项实验，证明模型使用了目标模态并指出失败发生在哪一层。
+- **卡住时**：先忽略训练目标，只追踪像素怎样变成 visual tokens，又怎样映射回原图坐标。
 
 </div>
 
-多模态系统把文本、图像、文档、音频、视频或传感器信号放入一个可交互任务。它不是“把像素转成几个 token 交给 LLM”这么简单：各模态的采样率、空间/时间结构、噪声、权限和正确性标准不同。
+用户上传一张手机拍摄的票据，问：“商户、日期和总金额是多少？请在原图上标出证据。”
+图片是 3024×4032 JPEG，略有倾斜，金额位于右下角，背景还拍到了桌面和另一张小票。
 
-## 1. 先写清输入输出契约
+模型最后回答“总金额 89.00 元”，只是这条任务的终点。系统在此前已经做了图片解码、方向修正、resize 或 tiling、
+视觉编码、图文融合和生成；之后还要验证金额字符串、坐标、权限和证据。任何一步都可能让一句流畅答案失去依据。
 
-对每种模态记录：
+这条票据任务会贯穿本章。音频与视频的信号形式不同，但仍要回答同一组问题：原始输入怎样采样，
+模型看到了什么，输出怎样对回现实坐标，以及我们如何证明它真的使用了目标模态。
 
-- raw format、codec、色彩/采样率与最大大小；
-- resize/crop/normalization、OCR/ASR 和 metadata；
-- encoder、projector/tokenizer revision；
-- 模态插入顺序、special tokens 与位置/坐标系统；
-- 输出是文本、框、mask、时间段、音频还是图像；
-- 权限、来源、同意、保留与删除；
-- 失败时是拒绝、降级到 OCR/ASR，还是请求更清晰输入。
+## 先固定任务契约
 
-“支持图片”没有说明数量、分辨率、动态范围、文字大小、动画、多页文档或计费 token，因此不是完整能力声明。
-
-## 2. 视觉编码
-
-### 2.1 Patch token
-
-对 \(H\times W\) 图像，以 \(P\times P\) non-overlapping patch 切分，最简单情况下 patch 数为
-
-\[
-N=\frac{H}{P}\frac{W}{P},
-\]
-
-要求尺寸可整除或先 pad/resize。每个 patch 展平并投影为 visual embedding，再加 position information。
-
-分辨率翻倍会让 patch 数约增至四倍；若 visual tokens 直接进入 full self-attention，相关计算/缓存会明显增加。实际模型可能用 pooling、resampler、token merging、局部 attention 或固定查询压缩，因此不能只按原始 patch 数推最终上下文成本。
-
-### 2.2 Resize、crop 与坐标
-
-Stretch 会改变形状，center crop 会丢边缘，letterbox 会加入 padding。若模型输出原图 bounding box，必须保存预处理变换并做 inverse mapping：
+“支持图片”没有说明图片数量、分辨率、页数、动态范围、文字大小、动画或计费方式。
+票据接口至少应固定：
 
 ```text
-original pixels -> resize/crop/pad -> model coordinates -> inverse transform
+input:
+  media_type = image/jpeg
+  max_bytes / max_pixels / max_images
+  orientation and color handling
+  preprocessing revision
+
+output:
+  merchant: string | null
+  date: ISO-8601 | null
+  total: decimal + currency | null
+  evidence: original-image bounding boxes
+  status: complete | insufficient | conflict
 ```
 
-Normalized `[0,1]`、像素坐标、inclusive integer box 与 continuous `(x_min,y_min,x_max,y_max)` 的 IoU 不同。评测前统一坐标约定。
+同时记录 media hash、来源、授权、保留与删除策略，以及实际使用的 encoder、projector、tokenizer 和 template revision。
+损坏图片、过小文字或不支持的 codec 要有明确终态；系统可以请求更清晰图片，也可以降级到 OCR 后转人工。
 
-### 2.3 Dynamic resolution 与 tiling
+## 像素怎样变成视觉表示
 
-高分辨率文档常用 thumbnail + tiles：缩略图保全局布局，局部块保细小文字。风险包括 tile 边界切断对象、重叠区域重复计数、tile 顺序混乱，以及 visual token 暴涨。需要报告 tile policy、最大块数和实际输入 token/成本。
+Vision Transformer（ViT）常把 \(H\times W\) 图像切成 \(P\times P\) 的 non-overlapping patches。
+在尺寸可整除的简单情形下，patch 数是：
 
-## 3. 视觉语言架构
+\[
+N=\frac{H}{P}\frac{W}{P}.
+\]
 
-### 3.1 Dual encoder
+每个 patch 展平后投影成 embedding，再加入位置表示。若 patch size 不变，把 224×224 输入提高到 448×448，
+两个空间方向各变为两倍，patch 数约变为四倍。它会增加视觉 encoder 计算，也可能增加 LLM 收到的 visual tokens。
 
-图像编码器 \(f_I\) 和文本编码器 \(f_T\) 分别输出向量，以相似度训练匹配：
+原始 patch 数并不总等于最终 token 数。实际模型可能使用 pooling、resampler、token merging、局部 attention，
+或用一组固定查询压缩视觉特征。要估算上下文与显存，应读取目标模型的 processor、架构和真实 token 统计。
+
+### Resize、crop 和 tiling 会改变证据坐标
+
+票据可能先经过方向修正，再 letterbox 到模型尺寸。若模型返回 model-space box，系统必须保存变换并逆映射：
+
+```text
+original pixels
+  -> orientation / resize / crop / pad
+  -> model coordinates
+  -> inverse transform
+  -> original-image evidence box
+```
+
+Stretch 会改变形状，center crop 会丢掉边缘，letterbox 会加入 padding。高分辨率文档常采用 thumbnail + tiles：
+缩略图保留全局布局，局部块保留小字，但 tile 边界可能切断对象，重叠区域也可能重复计数。
+
+坐标约定要进入接口：pixel 还是 normalized、continuous 还是 inclusive integer，box 顺序是
+`(x_min, y_min, x_max, y_max)` 还是别的形式。没有这些信息，同一个四元组会得到不同面积和 IoU。
+
+## 视觉特征怎样接入语言模型
+
+常见架构可以按“视觉信息在什么地方与文本相遇”理解。
+
+### Dual encoder：两边各压成一个向量
+
+图像编码器 \(f_I\) 和文本编码器 \(f_T\) 分别输出向量，并比较归一化相似度：
 
 \[
 s(I,T)=
 \frac{f_I(I)^\top f_T(T)}
-{\|f_I(I)\|\|f_T(T)\|}.
+{\lVert f_I(I)\rVert\lVert f_T(T)\rVert}.
 \]
 
-适合 image-text retrieval 和 zero-shot classification。单向量压缩会损失精细布局，不天然支持开放式长文本生成。
+这种结构适合 image-text retrieval 和 zero-shot classification。单向量把整张票据压得很紧，
+不擅长保留每个金额的精细布局，也不会自然地产生长文本答案。
 
-### 3.2 Vision encoder + projector + LLM
+### Vision encoder + projector + LLM：把视觉前缀交给 decoder
 
-视觉 encoder 输出 patch features，linear/MLP projector 映射到 LLM hidden dimension，作为“视觉前缀”与文本一起进入 decoder。Projector shape 对齐不意味着语义已对齐；需要图文训练。
+视觉 encoder 产生 patch features，linear 或 MLP projector 将它们映射到 LLM hidden dimension，
+再与文本 token 一起进入 decoder。Projector 的 shape 对上，只说明张量可以相加或拼接；
+图文语义还要通过配对数据和训练目标建立。
 
-### 3.3 Q-Former / resampler / cross-attention
+Q-Former 或 resampler 会用 learned queries 从大量视觉特征中提取较少 token，降低 LLM 成本。
+压缩过强时，小字、计数和密集对象会先丢失。Cross-attention 结构则让语言层读取独立视觉 memory，
+不必把全部 visual tokens 当作普通前缀。
 
-一组 learned queries 从大量视觉特征提取固定/受限数量 token，降低 LLM 成本。压缩率越高，细字、计数和密集对象越可能丢失。Cross-attention 架构可让语言层读取独立视觉 memory，而不是把所有 visual tokens 拼入同一序列。
+### Unified tokens：共享序列，不代表共享语义
 
-### 3.4 Unified/early-fusion token
+图像也可以先经离散 codec 变成 token，与文本一起做 autoregressive modeling；另一类模型共享 Transformer，
+但保留各模态的 encoder 或 decoder。即使都叫 token，图像与文本仍可能使用不同 quantizer、loss、采样率和输出 decoder，
+成本也不能按“一个 token”直接等价比较。
 
-图像可被离散 tokenizer/codec 编成 token，与文本一起 autoregressive modeling；也可让不同模态共享 Transformer 但保留 modality-specific encoder/decoder。所谓“统一 token”仍依赖不同 quantizer、loss 和输出 decoder，不等于所有 token 具有相同语义或成本。
+## 模型通过哪些目标学会图文关系
 
-## 4. 训练目标
+不同训练目标留下不同能力：
 
-### 4.1 Contrastive learning
+| 目标 | 学到的主要关系 | 票据任务中的局限 |
+|---|---|---|
+| Contrastive / InfoNCE | 图像和文本整体是否匹配 | 很难给出精确金额位置 |
+| Captioning / conditional generation | 根据图片生成文字 | 网页 alt text 噪声会教会模型猜模板 |
+| Image-text matching | 整体 pair 是否相符 | 仍缺 region-level 对齐 |
+| Grounding | 短语与 box / mask / region 对齐 | 依赖精确标注与坐标协议 |
+| Multimodal SFT | 按指令完成 OCR、VQA、图表或多轮任务 | 能力取决于 mixture 和 teacher 质量 |
 
-InfoNCE 类目标提高 batch 内匹配 pair 相似度，降低负 pair。Batch negative 可能是假负例：同一场景的另一个正确 caption 被当成负样本。大 batch 提供更多 negatives，也改变优化与计算。
+Batch contrastive learning 里的其他样本常被当作 negatives，其中可能存在同一场景的另一条正确描述。
+Caption loss 能改善描述，却不保证精确计数和坐标。大量通用图片问答也可能压过稀有的文档、图表和空间任务。
 
-### 4.2 Captioning / conditional generation
+冻结 vision encoder 与 LLM、只训练 projector，成本较低但新视觉域适应有限；端到端训练更灵活，
+也更可能破坏已有语言能力并需要更多数据。分阶段训练是一种工程选择，不是所有架构的唯一顺序。
 
-给图像条件，最大化 caption/answer token likelihood。Alt text、网页邻近文本和自动 caption 噪声很大；模型可能学到网站模板而非视觉 grounding。
+## 票据应该先 OCR，还是直接送入视觉模型
 
-### 4.3 Image-text matching 与 grounding
+三条路径各有不同错误链。
 
-Matching 判断整体是否匹配；grounding 把短语对齐到 box/mask/region。只有 caption loss 不保证模型学会精确坐标或计数。
+### OCR pipeline
 
-### 4.4 Multimodal instruction tuning
+```text
+text detection -> recognition -> reading order / layout
+-> table or form parser -> LLM
+```
 
-对 OCR、VQA、定位、图表、文档和多轮对话做 SFT。Data mixture 决定能力：大量通用 caption 可能压过罕见图表/空间任务。合成 question/answer 会继承 teacher 的视觉错误。
+优点是文字可检索、可逐字引用，OCR 和业务规则也能单独测试。缺点是上游识别和阅读顺序错误会逐层传播，
+颜色、图形与空间关系可能在纯文本中丢失。
 
-### 4.5 冻结与端到端训练
+### Native vision
 
-冻结 vision encoder/LLM 只训练 projector 成本低，但对新视觉域适应有限；端到端训练更灵活，也更易破坏语言能力并需要更多数据。常见分阶段方案不能被理解为唯一正确流程。
+直接输入页面可以利用布局、颜色、logo 和手写标记。细小字符、相似数字、小数点和密集表格仍是高风险区域。
+模型说“我看到了 89.00”不构成证据；至少还要检查原图 region、字符和业务范围。
 
-## 5. 文档、OCR 与图表
+### Hybrid
 
-### 5.1 OCR pipeline
+生产文档系统常把 image、OCR text、boxes、layout tree 与 source page 一起提供。
+LLM 负责结合上下文，金额、日期或药物剂量等字段再由 deterministic parser、checksum、range rule 和人工流程验证。
 
-典型：检测文本区域 → 识别 → 阅读顺序/布局 → table/form parser → LLM。优点是文字可检索、可引用、可单独校验；缺点是错误级联和视觉关系丢失。
+图表任务也适合这种分层方法。Title、legend、axis、scale、series 和 data points 应分别抽取，
+否则模型容易把对数轴当线性轴、把颜色映射错 series，或从趋势图报出并不存在的精确数字。
 
-### 5.2 Native vision
+## 怎样证明模型真的看了图片
 
-直接输入页面能利用布局、颜色、图形和手写信息，但细小字符、相似数字、小数点和复杂表格仍会出错。不能用“看起来懂页面”的回答替代逐字段 OCR/表格验证。
+票据问题有时只靠语言先验就能猜中：用户问“总金额”，模型可能从文件名、OCR、历史对话或常见模板得到答案。
+因此要加入 modality-use controls：
 
-### 5.3 Hybrid
+1. 遮蔽图片，保留同一文本问题；
+2. 把票据替换为金额不同、布局相似的图片；
+3. 只修改一个关键像素属性或数字，形成 counterfactual pair；
+4. 去掉 alt text、OCR、文件名和 metadata；
+5. 与 text-only baseline 比较；
+6. 检查金额 claim 是否指向正确 region。
 
-生产文档系统常把 image、OCR text、box、layout tree 和 source page 一起提供。对金额、日期、药物剂量等字段使用 deterministic parser/checksum/range validation，并把最终回答链接到 page/region。
+性能随图片变化而变化，说明该模态影响了输出。它还不能直接揭示内部神经机制，
+而极端遮蔽也可能制造训练分布之外的输入，所以最好使用自然 counterfactual 和多种 ablation。
 
-### 5.4 图表
+Object hallucination 常来自语言 prior、低分辨率、视觉压缩、caption 噪声和问题暗示。
+评测应分开测对象是否存在、relation、count、attribute、OCR、无答案和不确定性表达。
 
-需要区分 title/legend/axis/scale、series 与 data point。常见失败：对数轴当线性轴、颜色/legend 错配、截断坐标轴、把趋势描述成精确数字。评测既要测问答，也要测 data extraction 与 visual grounding。
+## 三个指标先把坐标口径固定
 
-## 6. Audio 与语音
-
-原始波形采样率很高，通常转 frame、spectrogram 或 learned feature，再下采样成 audio tokens。
-
-### 6.1 ASR
-
-- **CTC**：假设给定输入时 frame labels 条件独立，通过 blank 与 alignment 求和；解码可用 greedy/beam + LM。
-- **RNN-T/Transducer**：结合 acoustic encoder 与 label-history predictor，适合 streaming。
-- **Encoder-decoder**：audio encoder + autoregressive text decoder，能联合语言上下文。
-
-WER/CER 依 normalization、分词、标点和语言。中文按 Unicode code point 的 CER 不等于按 grapheme/词评测。
-
-### 6.2 TTS 与 speech-to-speech
-
-TTS 生成 acoustic representation，再由 vocoder 输出波形；系统还要控制 speaker、prosody、latency 和 interruption。Speech-to-speech 可保留语气和低延迟，但安全文本 classifier 可能看不到中间音频语义，因此需要 audio-native control 或可信 ASR audit path。
-
-### 6.3 Streaming
-
-指标包括 first partial latency、finalization latency、endpointing、real-time factor、revision rate 和 interruption。过早 endpoint 截断，过晚 endpoint 增加延迟。Echo、噪声、重叠说话、口音和 codec 都应切片。
-
-## 7. Video
-
-视频是空间 × 时间 × 音频，token 成本远高于单图。常用：
-
-- 均匀/随机 frame sampling；
-- scene cut、motion、事件驱动 keyframe；
-- spatial/temporal patch；
-- hierarchical clip encoder；
-- 长视频分段检索后精看。
-
-抽帧会产生 sampling aliasing：瞬时事件、动作顺序或快速文字可能完全漏掉。只有字幕的 benchmark 可被文本模型取巧。
-
-### 7.1 时间坐标
-
-区分 seconds、milliseconds、frame index、variable frame rate 和 inclusive/exclusive endpoint。Temporal IoU 对连续区间计算时不加 `+1`；离散 inclusive frames 常用不同约定。
-
-### 7.2 长视频任务
-
-- event localization；
-- temporal order/causality；
-- cross-clip entity tracking；
-- audio-visual synchronization；
-- global summary 与细节 retrieval。
-
-分别测短 clip 与长视频；把一小时视频只取八帧不能声称覆盖全局理解。
-
-## 8. Image/Audio generation
-
-图像生成可使用 autoregressive discrete tokens、diffusion、flow matching 或混合 decoder。语言模型负责 prompt/semantic plan，不代表像素 decoder 也是 autoregressive LLM。
-
-评价包括 prompt adherence、视觉质量、多样性、文字渲染、人物一致性和安全。FID/CLIP-like score 是代理，不能单独评价版权、事实、审美或用户意图。
-
-音频生成还需 speaker consent、voice similarity、intelligibility、prosody 和 watermark/provenance。Watermark 可能被变换破坏，不应作为唯一滥用防线。
-
-## 9. Multimodal evaluation
-
-### 9.1 OCR CER
+### OCR character error rate
 
 \[
 CER=\frac{S+D+I}{N_{reference}}.
 \]
 
-CER 可因大量 insertion 大于 1。必须固定 Unicode normalization、空白、大小写、标点和 reference unit。空 reference 的分母未定义，应单独处理而不是静默返回 0。
+Insertion 很多时 CER 可以大于 1。评测要固定 Unicode normalization、空白、大小写、标点与 reference unit；
+空 reference 的分母未定义，应作为独立 case 处理。
 
-### 9.2 Bounding-box IoU
+### Bounding-box IoU
 
 \[
 IoU=\frac{|A\cap B|}{|A\cup B|}.
 \]
 
-先声明 pixel/normalized、continuous/inclusive coordinates。`(0,0,2,2)` 的 continuous area 为 4；若按 inclusive integer pixels 则定义不同。
+Continuous coordinates 下，`(0,0,2,2)` 的面积是 4；inclusive integer pixels 使用另一套定义。
+评测前统一 coordinate system，并验证预处理的 inverse transform。
 
-### 9.3 Temporal IoU
+### Temporal IoU
 
-对连续时间区间用 intersection duration / union duration。离散 frame index、variable FPS 与 timestamp rounding 必须另定义。
+音频或视频的连续时间段同样使用 intersection duration / union duration。
+Frame index、variable frame rate、timestamp rounding 与 inclusive endpoint 要另行约定。
 
-仓库实现明确口径：
+仓库实现了这三种明确口径：
 
 ```python
 from about_llm.evaluation import box_iou, character_error_rate, temporal_iou
@@ -209,120 +209,103 @@ iou = box_iou((0, 0, 2, 2), (1, 1, 3, 3))  # 1/7
 tiou = temporal_iou((0, 10), (5, 15))  # 1/3
 ```
 
-这些函数只验证 metric convention，不运行任何多模态模型。
+这些函数验证 metric convention，不会运行视觉、语音或视频模型。开放式 VQA 还需要结构化字段、人工 rubric、
+证据 region 与 deterministic checks；exact match 对同义表达脆弱，LLM judge 也受自身视觉能力和长度偏好影响。
 
-### 9.4 VQA 与开放回答
+## 换成音频后，空间坐标变成时间
 
-Exact match 对同义表达脆弱；LLM judge 又可能受长度、图像不可见或自身视觉能力限制。组合结构化答案、人工 rubric、证据 region 与 deterministic checks。
+原始波形采样率很高，系统通常先转 frame、spectrogram 或 learned features，再下采样成 audio tokens。
+三类常见自动语音识别（ASR）结构是：
 
-### 9.5 Modality-use test
+- **CTC**：对含 blank 的 alignment 求和，解码可用 greedy 或 beam + LM；
+- **RNN-T / Transducer**：结合 acoustic encoder 与 label-history predictor，适合 streaming；
+- **Encoder-decoder**：audio encoder 加 autoregressive text decoder，能利用更强语言上下文。
 
-为确认模型真的使用目标模态：
+WER/CER 依赖 normalization、分词和标点。中文按 Unicode code point 的 CER 与按词或 grapheme 评测不是同一口径。
 
-- image/audio/video masking；
-- 替换成不匹配模态；
-- 保留文本提示但改变关键视觉属性；
-- 去掉字幕/alt text/metadata；
-- counterfactual pair 只改变一个对象、数字或顺序；
-- 比较 text-only baseline。
+Streaming 语音还要测 first partial、finalization、endpointing、real-time factor、revision rate 和 interruption。
+过早 endpoint 会截断，过晚则增加延迟；echo、噪声、重叠说话、口音和 codec 都应单独切片。
 
-性能下降说明模态影响输出，但仍不证明精确内部机制；注意避免遮蔽造成极端 OOD。
+TTS 先生成 acoustic representation，再由 vocoder 输出波形。系统除了 intelligibility，还要控制 speaker、prosody、latency 和打断。
+Speech-to-speech 可以减少中间文本依赖，却仍处理内容、声音身份和敏感属性；安全系统需要 audio-native control 或受控 ASR audit path。
 
-## 10. Grounding 与 hallucination
+## 换成视频后，采样可能直接漏掉事件
 
-Object hallucination 可能来自语言 prior、低分辨率、视觉压缩、训练 caption 噪声或问题暗示。评测：
+视频同时包含空间、时间和音频，完整 token 成本通常远高于单图。系统会使用均匀或随机抽帧、scene cut、motion keyframe、
+spatial/temporal patches、hierarchical clip encoder，或先检索长视频片段再精看。
 
-- 图中存在/不存在对象；
-- relation、count、attribute 和 OCR；
-- 模型能否表示不可见/不确定；
-- 输出 claim 是否链接 region/time span；
-- conflicting text overlay 与真实图像内容。
+抽帧会产生 sampling aliasing。一个瞬时动作、快速闪过的文字或动作先后顺序，可能恰好落在所有采样帧之间。
+只有字幕的 benchmark 还可能被文本模型取巧，因此 modality-use test 要去掉字幕并改变关键画面。
 
-模型说“根据图片”不是 grounding 证据；需要 region、OCR、可验证字段或反事实测试。
+长视频任务至少区分 event localization、temporal order、entity tracking、audio-visual synchronization、
+global summary 和细节 retrieval。将一小时视频均匀取八帧，只验证这八帧对应的信息，不构成完整视频理解证据。
 
-## 11. Serving 与成本
+## 生成图像和音频是另一条输出链
 
-请求成本包括 media decode、resize/frame sampling、vision/audio encoder、projector、LLM prefill/decode 和缓存。不同 provider 的“image token”计数是服务契约，不等于 patch 数或可跨模型比较的物理单位。
+图像生成可以使用 autoregressive discrete tokens、diffusion、flow matching 或混合 decoder。
+语言模型可能负责 Prompt 理解和 semantic plan，像素 decoder 并不因此成为 autoregressive LLM。
 
-优化：
+评价需要组合 Prompt adherence、视觉质量、多样性、文字渲染、人物一致性和安全。
+FID 或 CLIP-like score 是代理指标，无法单独判断版权、事实、审美和用户意图。
 
-- media hash + encoder feature cache（cache key 含 preprocessing/model revision/权限）；
-- 限制像素、帧、时长、页数和并发；
+音频生成还要处理 speaker consent、voice similarity、intelligibility、prosody 与 provenance。
+Watermark 可能被重编码、裁剪或变速破坏，应和授权、abuse monitoring、identity protection 及事件处置一起设计。
+
+## Serving 成本从媒体解码就开始了
+
+一次票据请求的成本包含 media decode、resize/tiling、vision encoder、projector、LLM prefill/decode、验证与缓存。
+Provider 定义的“image token”是服务计费和容量契约，不能直接当作原始 patch 数，也不能跨模型比较。
+
+常见优化包括：
+
+- media hash 与 encoder feature cache；
+- 像素、图片数、页数、帧数、音频时长和并发上限；
 - thumbnail + adaptive crop；
-- batch vision encoder，但控制 tail latency；
-- OCR/ASR 结果缓存与版本；
-- 长视频先检索再精看。
+- vision encoder batching，同时约束尾延迟；
+- 版本化 OCR / ASR cache；
+- 长视频先检索后精看。
 
-Cache 可能保存人脸、文档和声音等敏感数据，必须带 tenant/ACL/TTL。
+Cache key 至少绑定 tenant/ACL、preprocessing、encoder/model revision 和 media identity，并设置 TTL 与删除机制。
+图片、文档、人脸和声音本身可能是敏感数据，命中率优化不能越过访问与保留边界。
 
-## 12. 安全与隐私
+## 多模态输入扩大了攻击与隐私表面
 
-### 12.1 Cross-modal injection
+图像文字、二维码、PDF 隐藏层、音频指令、字幕和 metadata 都可能携带 Prompt injection。
+OCR/ASR 输出仍是外部数据，不能提升为 system instruction，也不能直接授予 tool 权限。
 
-图像文字、白字、二维码、PDF 隐藏层、音频指令、字幕和 metadata 都可能注入。OCR/ASR 结果仍是不可信数据，不能提升为 system instruction。
+人脸、声音、生物特征、位置 metadata、医疗图像和家庭环境需要 purpose limitation、consent、access、TTL 与地域审查。
+模型能识别某项属性，不代表产品有权收集、推断或保存。
 
-### 12.2 敏感属性
+压缩、裁剪、噪声、贴纸、frame insertion 和不可见扰动还可能改变输出。鲁棒性测试应尽量覆盖真实 capture pipeline，
+而不仅是在干净 benchmark 上叠加数学噪声。Deepfake detection 和 watermark 都有误报、漏报与鲁棒性限制，
+不能成为唯一控制。
 
-人脸、声音、生物特征、位置 metadata、医疗图像和家庭环境可能高度敏感。只因为模型能识别，不代表产品有权收集、推断或保存。做 purpose limitation、consent、access、TTL 和地域审查。
+训练数据同样保留 media hash、source/license、capture time、caption provenance、OCR/ASR revision、
+crop/frame selection 与 synthetic generator。同一视频的 clips、同一文档的页面和同一人物的多张图片，
+应按相关 group 切分，避免 identity 或 content leakage。
 
-### 12.3 Deepfake 与 impersonation
+## 发布前跟票据再走一遍
 
-声音/人像生成需要授权、identity protection、abuse monitoring 与 provenance。Detection/watermark 都有误报、漏报和鲁棒性限制，不能作为单一控制。
+| 环节 | 最低检查 |
+|---|---|
+| 输入 | codec、大小、页数、decompression bomb、metadata policy 与损坏终态 |
+| 预处理 | resize/crop/tile 版本，coordinate inverse 和原图 region |
+| 模态使用 | text-only baseline、自然 counterfactual、OCR/alt-text ablation |
+| 质量 | CER、field accuracy、IoU、无答案、小字、计数、语言与噪声切片 |
+| 安全 | injection 无工具权限，cache 隔离，人脸/声音/位置有授权 |
+| 系统 | 实际像素/帧/时长/token、尾延迟、成本与失败终态 |
 
-### 12.4 Adversarial media
+仓库现有 CPU 测试覆盖 CER、continuous box IoU 和 temporal IoU 的实现口径，
+文本 RAG 与安全协议也可复用。仓库没有下载或运行目标视觉、音频和视频模型，
+也没有真实 OCR 数据集、GPU media encoder 或 provider 多模态 API 实测。
 
-压缩、裁剪、噪声、贴纸、不可见扰动或 frame insertion 可能改变输出。对现实 capture pipeline 做鲁棒性测试，而不只在干净 benchmark 上加数学噪声。
-
-## 13. Data lineage
-
-图文网页 pair、视频字幕和音频转写常存在弱对齐。保留 media hash、source/license、capture time、caption provenance、OCR/ASR revision、crop/frame selection 与 synthetic generator。
-
-同一视频切出的多个 clip、同一文档多页和同一人物多图不能随机跨 train/test，否则 identity/content leakage。去重需要 media perceptual hash + text/metadata，阈值按变换校准。
-
-## 14. 发布门禁
-
-### 输入与预处理
-
-- codec、尺寸、页数、时长和 decompression bomb 限制；
-- EXIF/location 与敏感 metadata policy；
-- resize/crop/tile/coordinate inverse 有测试；
-- unsupported/blank/corrupt media 安全失败。
-
-### 质量
-
-- text-only 与 modality ablation baseline；
-- OCR/CER、box/time localization 的口径固定；
-- 小字、计数、图表、时间顺序和无答案切片；
-- 多语言、设备、压缩、噪声和 accessibility；
-- 输出 claim/region/source 可核查。
-
-### 系统与安全
-
-- media/feature cache 带 tenant、revision 和 TTL；
-- cross-modal injection 不获得工具权限；
-- 人脸/声音/位置有目的和授权；
-- 真实 tool/action 仍由外部 policy 审批；
-- 成本按实际像素/帧/时长/token 监控。
-
-## 15. 当前仓库证据边界
-
-仓库已有 CER、连续 box IoU 和 temporal IoU 的 12 个 CPU 单测，并有文本 RAG/安全协议可复用。但没有下载或运行目标视觉、音频、视频模型，也没有 GPU media encoder、真实 OCR 数据集或 provider 多模态 API 实测。因此本章证明 metric 与实验设计，不证明任何具体多模态模型能力或成本。
-
-## 16. 常见错误结论
-
-- **“图片被编码成 token，所以和文本 token 成本相同”**：encoder、压缩和服务计费各不相同。
-- **“分辨率提高两倍，视觉 token 只提高两倍”**：固定 patch 下二维 token 数约提高四倍。
-- **“模型回答正确，所以使用了图像”**：可能从题目、字幕或先验猜出。
-- **“OCR CER 为 0 就理解了文档”**：阅读顺序、表格关系和任务推理仍可能错。
-- **“IoU 实现都一样”**：continuous 与 inclusive integer 坐标不同。
-- **“Speech-to-speech 不输出文本，所以更私密”**：音频仍含内容、身份和安全风险。
-- **“加 watermark 就解决 deepfake”**：移除、漏标、误判和未采用系统仍存在。
+因此当前证据能帮助你设计输入契约、指标和实验，不能代替目标模型在目标媒体分布上的能力与成本测试。
 
 ## 自测与实践
 
-1. 对 224→448、patch size 不变的 ViT 计算 patch 数变化。
-2. 为 letterbox 图像写出 box inverse transform 并构造测试。
-3. 为什么 CER 可以大于 1？空 reference 应怎样报告？
-4. 设计验证视频模型不是只读字幕的 counterfactual set。
-5. 比较 OCR+LLM、native vision 与 hybrid 在发票抽取上的错误链。
-6. 列出 image/audio/video cache key 必须包含的权限和版本字段。
+1. Patch size 不变时，224×224 提高到 448×448，patch 数为什么约变为四倍？
+2. 为 letterbox 后的票据 box 写出 inverse transform，并构造一个边缘位置测试。
+3. 模型正确回答金额时，哪些 counterfactual 能排除它只读文件名或语言先验？
+4. 为什么 CER 可以大于 1？空 reference 应怎样进入结果表？
+5. OCR + LLM、native vision 与 hybrid 的第一个可观察失败分别在哪里？
+6. 设计一项视频实验，区分模型看到了关键动作还是只读取字幕。

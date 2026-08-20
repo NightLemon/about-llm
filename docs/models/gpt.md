@@ -1,4 +1,4 @@
-# GPT 家族：从公开研究到 Responses typed events
+# GPT 家族：从论文读到一次完整 Response
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
@@ -13,7 +13,14 @@
 
 </div>
 
-## 学习目标与证据边界
+先把型号表放到一边，跟一次响应走完主线。用户问“上海天气怎样”，模型先输出一小段文本，随后提出
+`lookup_weather({"city":"上海"})`。在 Responses 里，这不是一条可以直接取出的字符串，而是多个 typed item
+和一串有生命周期的事件：message、function call、arguments delta、done 和 terminal response。
+
+如果 adapter 只取 `output[0].content[0].text`，工具调用会悄悄消失；如果看到 function call 就直接执行，
+模型生成的参数又会绕过 Schema、ACL 和审批。本章用这个例子连接 GPT 的自回归核心、产品 API 和工程 runtime。
+
+## 先把三种证据放进不同抽屉
 
 读完本章，你应能把下列三类陈述严格分开：
 
@@ -21,9 +28,11 @@
 2. **当前产品契约**：官方 model catalog 与 Responses API reference 在某个检查日期公开的型号、请求对象、输出对象和事件类型；
 3. **本地可执行证据**：本仓库对一份 authored JSONL 的解析、状态迁移和对账不变量。
 
-这三类证据不能互相借用。旧论文不能证明当前闭源产品的参数量、层数、训练数据、稀疏/稠密结构或完整后训练配方；接口文档也不披露模型内部机制；离线 replay 更不能证明真实服务执行、模型质量、账单或生产可靠性。当前产品信息属于**时间敏感**事实，本页最近核对日期为 **2026-08-19**。
+这三类证据不能互相借用。旧论文不能证明当前闭源产品的参数量、层数、训练数据或完整后训练配方；
+接口文档也不披露模型内部机制；离线 replay 更不能证明真实服务执行、模型质量、账单或生产可靠性。
+当前产品信息属于**时间敏感**事实，本页最近核对日期为 **2026-08-19**。
 
-## 一个 GPT 系统不只是一组权重
+## 自回归公式只描述了系统的一层
 
 GPT 的稳定数学核心是自回归条件分布：
 
@@ -53,7 +62,7 @@ flowchart LR
 
 工程事故常来自层级混淆。例如，“JSON Schema 通过”只是语法/结构层证据；它不说明金额合理、citation 存在、tool arguments 获得授权或远端副作用只发生一次。
 
-## 公开研究怎样读
+## 读论文时追踪任务接口怎样变化
 
 ### GPT-1 到 GPT-3：任务接口发生了什么变化
 
@@ -71,9 +80,11 @@ InstructGPT 路线把监督示范、偏好排序、奖励模型与强化学习�
 
 RLHF 不是一个跨时代固定的配方。当前产品是否使用某个 reward model、PPO 变体、数据比例或 rejection sampling 流程，只有官方明确披露时才能写成事实；其余应保持**未披露**，不能从模型名称或回答风格反推。
 
-## 当前产品目录：只把它当成带日期的快照
+## 型号目录是带日期的产品快照
 
-截至 **2026-08-19**，OpenAI 官方 model catalog 把 GPT-5.6 Sol、Terra、Luna 作为通用起点，分别面向高难专业任务、智能/成本平衡和高吞吐成本敏感场景；目录还可能包含面向特定任务的专用条目。目录同时把最新模型的使用入口指向 Responses API 与官方 SDK。本教材不维护完整型号榜。
+截至 **2026-08-19**，OpenAI 官方 model catalog 把 GPT-5.6 Sol、Terra、Luna 作为通用起点：Sol 面向复杂专业任务，
+Terra 平衡智能与成本，Luna 面向成本敏感的高吞吐 workload。目录还包含面向特定任务的专用条目，
+并把最新模型的使用入口指向 Responses API 与官方 SDK。本教材不维护完整型号榜。
 
 这是产品目录快照，不是架构披露，也不是永久选型结论。型号、alias、价格、上下文窗口、最大输出、模态与工具支持都可能变化。本教材因此不复制价格表；实际选型要保存具体 model page、检查日期、账号/区域可用性和一份目标 workload 评测。
 
@@ -95,9 +106,10 @@ RLHF 不是一个跨时代固定的配方。当前产品是否使用某个 rewar
 
 示意字段不是所有模型与端点的公共 schema。某个具体模型是否支持 `temperature`、某种 tool、某种模态或某个 reasoning 参数，必须回到该 model page 和对应 API reference 核对。
 
-## Chat Completions 与 Responses：不要只替换 URL
+## 从 messages/choices 迁移时，数据模型也要改
 
-Chat Completions 常以 `messages → choices` 为主要心智模型。Responses 则把一次响应建模为带状态的 `response`，其 `output` 可以有多个 typed item；一个 message item 又可能含多个 typed content part，tool call 也可以是独立 item。
+Chat Completions 常以 `messages → choices` 为主要心智模型。Responses 把一次调用建模为带状态的 `response`，
+其 `output` 可以包含多个 typed item；message item 还可以包含多个 typed content part，tool call 则是独立 item。
 
 ```text
 response
@@ -120,11 +132,15 @@ def parse_response(payload: dict) -> str:
     return payload["output"][0]["content"][0]["text"]
 ```
 
-它暗中假设：只有一个 output item、该 item 一定是 message、第一段一定是 text、没有 refusal/tool/reasoning、响应一定完整。生产 adapter 至少应保留 response id、model、status、每个 item 的 type/id/index、content type、call id、原始 arguments、usage 和 terminal reason。
+这段代码暗中假设：只有一个 output item，它一定是 message，第一段一定是 text，没有 refusal、tool 或 reasoning，
+而且响应已经完整。生产 adapter 至少应保留 response id、model、status、每个 item 的 type/id/index、
+content type、call id、原始 arguments、usage 和 terminal reason。
 
 ### Structured Outputs 解决的是哪一层
 
-JSON mode 的目标是有效 JSON；Structured Outputs 在受支持的 JSON Schema 子集内约束结构。二者都不保证值为真、引用存在、金额合理或工具调用有权限。调用方还必须分别处理 refusal 与 `incomplete`：安全拒绝或输出上限终止时，不能假定已经得到完整业务对象。
+JSON mode 的目标是有效 JSON；Structured Outputs 在受支持的 JSON Schema 子集内约束结构。二者都不保证值为真、
+引用存在、金额合理或工具调用有权限。调用方还要分别处理 refusal 与 `incomplete`：遇到安全拒绝或输出上限终止，
+不能假定已经得到完整业务对象。
 
 推荐顺序是：
 
@@ -145,9 +161,13 @@ Responses 中的 function call arguments 仍是模型生成文本。即使它恰
 
 若 arguments 不是有效 JSON object，不应“尽力修复后假装原参数已校验”。本仓库 replay 保留原字符串，并把 `arguments_is_strict_object` 设为 `false`，让后续策略显式拒绝或进入隔离修复流程。
 
-截至 2026-08-19，官方 Function Calling guide 把这条链路明确写成多步交互：应用提供 tool definition，模型返回 tool call，**应用侧**执行代码，再用对应 `call_id` 回传 `function_call_output`，模型才继续生成最终响应或下一次调用。这里的“应用侧执行”描述 API 编排位置，不替应用完成 schema、ACL、审批、幂等或副作用验证。
+截至 2026-08-19，官方 Function Calling guide 把这条链路写成多步交互：应用提供 tool definition，
+模型返回 tool call，**应用侧**执行代码，再用对应 `call_id` 回传 `function_call_output`，模型才继续生成最终响应
+或下一次调用。
 
-## Responses streaming 是 typed lifecycle
+“应用侧执行”只描述 API 编排位置，不会替应用完成 Schema、ACL、审批、幂等或副作用验证。
+
+## Streaming 要重建状态，不是只拼字符串
 
 流式处理不是“从每个 chunk 取一点 text”。网络 byte chunk、SSE event 与 Responses typed event 是三层不同对象：
 
@@ -159,7 +179,8 @@ arbitrary network bytes
 → application update
 ```
 
-官方 streaming guide 与 streaming-events reference 展示了 response、output item、content part、text/refusal/function arguments 以及 terminal 相关事件。一个典型 text + function-call 路径可以写成：
+官方 streaming guide 与 streaming-events reference 展示了 response、output item、content part、
+text/refusal/function arguments 和 terminal 事件。一个典型的 text + function-call 路径可以写成：
 
 ```text
 response.created
@@ -199,9 +220,11 @@ EOF 本身不是成功终态。缺 terminal event、item 尚未 done、content �
 
 ### `sequence_number` 的本地严格规则
 
-官方事件对象含 `sequence_number`。本仓库为了让固定 evidence artifact 易于审计，额外要求从 0 开始且严格连续。这是**本地 replay 契约**，用于发现 authored fixture 的缺失、重复和重排；它不是对任意网络恢复、SDK 重连或未来 API 传输语义的普遍保证。
+官方事件对象包含 `sequence_number`。为了让固定 evidence artifact 容易审计，本仓库额外要求它从 0 开始且严格连续。
+这是**本地 replay 契约**，用于发现 authored fixture 的缺失、重复和重排；它不是对任意网络恢复、SDK 重连
+或未来 API 传输语义的普遍保证。
 
-## 可运行实验：SDK-shaped typed-event replay
+## 亲手重放开头那次天气响应
 
 本仓库新增独立 reference，而不是把 Responses 强塞进旧的 Chat-Completions text-only 状态机：
 
@@ -223,7 +246,10 @@ python projects/cloud-api-contracts/openai_responses_replay.py `
 | event projection | `sha256:9cc5964da2517f2076a1c624c2636bd8ca75077b89f024c7710b1b720cbd713e` |
 | receipt | `sha256:c4829c19895dcb4013141da3d11b5dc9befee8189210a0901f0cb14c19942579` |
 
-该 fixture 使用 `model: gpt-reviewed-snapshot` 这样的 authored label，不冒充真实 model id。收据中的 scope 明确记录：执行了 SDK-shaped event replay、sequence/item lifecycle 和 terminal output/usage reconciliation；没有执行 HTTP/SSE/WebSocket transport、OpenAI SDK 或远程 API。
+Fixture 使用 `model: gpt-reviewed-snapshot` 这样的 authored label，不冒充真实 model id。收据明确记录本次执行范围：
+重放 SDK-shaped events，检查 sequence/item lifecycle，并对账 terminal output 与 usage。
+
+它没有执行 HTTP/SSE/WebSocket transport、OpenAI SDK 或远程 API。
 
 ### 当前 reviewed subset 覆盖什么
 
@@ -260,11 +286,15 @@ python -m pytest tests/test_openai_responses_replay.py -q
 
 ### 这个实验没有证明什么
 
-这份 authored/offline 工件**不证明真实 OpenAI API**、真实模型执行、provider identity、账号认证、DNS/TLS/HTTP2、SSE framing、SDK 兼容、backpressure、取消传播、usage 真值、计费、模型质量、安全或生产可靠性。它也不是完整 Responses API：没有覆盖所有 input/output item、所有 tool、音频/图像、web/file/computer use、所有 error event、状态续接和未来新增事件。
+这份 authored/offline 工件**不证明真实 OpenAI API**或真实模型执行，也不覆盖 provider identity、账号认证、
+DNS/TLS/HTTP2、SSE framing、SDK 兼容、backpressure、取消传播、usage 真值、计费、模型质量或生产可靠性。
+
+它也不是完整 Responses API：没有覆盖所有 input/output item、所有 tool、音频/图像、web/file/computer use、
+所有 error event、状态续接和未来新增事件。
 
 ## 从 reference 走向生产 adapter
 
-### 推荐分层
+### 把 transport、协议状态和业务授权分层
 
 ```mermaid
 flowchart TD
@@ -288,13 +318,17 @@ flowchart TD
 
 ### 日志与工件
 
-建议保存 raw event artifact 的加密/访问控制版本，以及不含敏感值的审计投影：provider、API surface/version、model id、response/request id、event type/index、terminal status/reason、usage、latency、parser revision、prompt/tool schema fingerprint 和输入 artifact hash。
+建议保存 raw event artifact 的加密访问控制版本，以及不含敏感值的审计投影。投影可以包含 provider、
+API surface/version、model id、response/request id、event type/index、terminal status/reason、usage、latency、
+parser revision、Prompt/tool Schema fingerprint 和输入 artifact hash。
 
 不要把 API key、完整 prompt、敏感 output、reasoning plaintext、tool secret 或任意被拒绝字段直接写进普通日志。无密钥 SHA-256 只绑定 bytes，不认证 provider 或调用者，也不提供保密性。
 
 ### 重试、取消和费用
 
-2xx stream 已开始后出现截断时，远端 outcome 和 usage 可能未知。自动重放可能重复生成、重复工具候选或重复计费。生产策略要按具体 endpoint 核对 replay/idempotency 语义，并把每次 attempt 独立 reserve/reconcile；关闭本地 response 也不证明服务端已停算或停费。
+2xx stream 开始后出现截断，远端 outcome 和 usage 可能仍然未知。自动重放可能重复生成、重复工具候选或重复计费。
+生产策略要按具体 endpoint 核对 replay/idempotency 语义，并为每次 attempt 独立 reserve 和 reconcile；
+关闭本地 response 也不能证明服务端已经停止计算或计费。
 
 旧 text-only SSE reference 与新 typed replay 的关系是：
 
@@ -313,7 +347,10 @@ flowchart TD
 5. 治理：区域、保留策略、敏感信息、日志和人工审批；
 6. 成本：输入、缓存、输出、工具和重试后的 **cost per successful task**。
 
-模型升级采用 paired evaluation：同一 case、同一工具环境和预算运行旧/新快照，保存原始 response items/events，报告总体与切片差异、置信区间、格式/安全 gate、延迟和每成功任务成本。先 shadow，再小流量 canary；保留旧 model id、prompt、adapter、parser 和路由以便回滚。
+模型升级采用 paired evaluation：在同一 case、工具环境和预算下运行旧/新快照，保存原始 response items/events，
+并报告总体与切片差异、置信区间、格式/安全 gate、延迟和每成功任务成本。
+
+上线顺序是先 shadow，再做小流量 canary；旧 model id、Prompt、adapter、parser 和路由都要保留，以便回滚。
 
 temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格确定。回归工件要记录实际输出 identity，而不是假设相同配置必得相同文本。
 
@@ -346,7 +383,10 @@ temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格
 
 ### 可写进简历的诚实版本
 
-> 为 OpenAI Responses 设计 typed-event 离线 replay：对 15-event/2-item authored fixture 校验 response/item/content 生命周期，重建 text 与 function arguments，并对 delta/done/terminal output、12+9=21 usage 和输入/收据 fingerprint 做 fail-closed 对账；16 个测试覆盖错序、未知字段、refusal、incomplete/failed、截断与非有限 JSON。
+> 为 OpenAI Responses 设计 typed-event 离线 replay：在 15-event/2-item authored fixture 上校验
+> response/item/content 生命周期，重建 text 与 function arguments，并对 delta/done/terminal output、
+> 12+9=21 usage 和输入/收据 fingerprint 做 fail-closed 对账；16 个测试覆盖错序、未知字段、refusal、
+> incomplete/failed、截断与非有限 JSON。
 
 紧邻这句话必须写明：这是 SDK-shaped authored fixture，不是 OpenAI SDK/真实 API/network/billing/质量/安全证据，也不支持完整 Responses surface。若候选人能解释这条边界，项目价值通常高于只展示一次成功 API 调用。
 

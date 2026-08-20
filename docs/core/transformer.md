@@ -13,21 +13,25 @@
 
 </div>
 
-## 学习目标
+打开一个 decoder-only 模型的调试器，最容易迷路的地方不是公式，而是同一个序列不断改变形状：token ids
+先变成 hidden states，再拆成 Q/K/V，经过多头混合后回到 residual stream，最后投影成整个词表的 logits。
 
-读完本章，你应能：
+本章只追踪一次具体 forward。假设一条短 prompt 被 tokenizer 编成 4 个 token：
 
-- 沿 decoder-only Transformer 写出每一步张量形状；
-- 区分 causal、padding、packing/document 与 loss mask；
-- 解释 Pre-Norm、RMSNorm、RoPE、SwiGLU 和残差路径；
-- 从 `num_attention_heads` 与 `num_key_value_heads` 判断 MHA/GQA/MQA；
-- 证明增量 KV Cache attention 与完整 causal attention 的目标等价；
-- 推导 online softmax 的 running-max、normalizer 与加权 value recurrence；
-- 识别教学公式、优化 kernel、checkpoint 配置和生产服务之间的证据边界。
+```text
+input_ids: [t0, t1, t2, t3]
+batch B=1, sequence T=4
+```
+
+Prefill 会同时算完这 4 个位置，并用最后一个位置的 logits 选择第一个输出 token。随后进入 decode：每次只新增
+一个 token，并复用前面保存的 K/V。读到每一节时，都问同一个问题：**这一步读了哪些位置，张量是什么形状，
+它为训练还是生成服务？**
 
 ## 1. Decoder-only 数据流
 
-输入 token id \(I\in\mathbb{N}^{B\times T}\) 经 Embedding 得到隐藏状态 \(X\in\mathbb{R}^{B\times T\times d}\)。每个 Pre-Norm block 计算：
+输入 token id \(I\in\mathbb{N}^{B\times T}\) 经 Embedding 得到隐藏状态
+\(X\in\mathbb{R}^{B\times T\times d}\)。在上面的短 prompt 中，它从 `[1,4]` 变成 `[1,4,d]`。
+每个 Pre-Norm block 计算：
 
 \[
 X' = X + \operatorname{Attention}(\operatorname{Norm}(X)),
@@ -50,7 +54,9 @@ flowchart LR
   E --> F["Final Norm + LM Head [B,T,V]"]
 ```
 
-自回归训练常把位置 \(t\) 的 hidden state 用来预测下一个 token。不同库可能由数据 collator 显式 shift，也可能在模型 loss 内部 shift；必须检查实现，不能重复 shift。`input_ids`、attention visibility 和 labels/loss mask 是三个不同契约。
+自回归训练常让位置 \(t\) 的 hidden state 预测下一个 token。不同库可能由 data collator 显式 shift，
+也可能在模型 loss 内部 shift；两边都做会错移一位。`input_ids`、attention visibility 和 labels/loss mask
+是三个不同契约。
 
 ## 2. 缩放点积注意力
 
@@ -124,7 +130,8 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 
 决定哪些 label 对目标函数有贡献，常用 ignore index 表示。它不改变 attention visibility：把 prompt label 设为 `-100` 不会阻止 response token 读取 prompt；反过来 causal mask 也不会自动排除 padding/prompt loss。
 
-修改未来 token 不应改变过去位置 logits，是 causal 实现的重要不变量；但这个测试不证明 padding、packing 或 loss mask 正确。
+回到 4-token prompt：只修改 `t3`，位置 `t0..t2` 的 logits 应保持不变。这个测试能抓 causal 泄漏，
+却没有覆盖 padding、packing 或 loss mask；它们需要各自的不变量。
 
 ## 5. LayerNorm、RMSNorm 与残差
 
@@ -142,7 +149,9 @@ RMSNorm 不减均值：
 \gamma\odot\frac{x}{\sqrt{\operatorname{mean}(x^2)+\epsilon}}.
 \]
 
-RMSNorm 不是 LayerNorm 的“推理简化模式”；两者参数与函数不同，不能在加载 checkpoint 时互换。epsilon、统计累积 dtype、输出 cast 和 weight dtype 都可能影响数值结果。仓库 `rms_norm` 用 float64 累积后 cast 回 NumPy result dtype，只是小数组 correctness reference，不表示目标 kernel 的逐 bit 行为。
+RMSNorm 不是 LayerNorm 的“推理简化模式”；两者参数与函数不同，不能在加载 checkpoint 时互换。
+Epsilon、统计累积 dtype、输出 cast 和 weight dtype 都会影响数值。仓库 `rms_norm` 的 float64 累积只是
+小数组 correctness reference，不代表目标 kernel 的逐 bit 行为。
 
 Pre-Norm 在进入子层前归一化，残差支路保留较直接的 identity path；Post-Norm 在残差相加后归一化。它们会改变优化与 checkpoint 函数，不是可随意切换的代码风格。深层稳定性还受初始化、residual scaling、学习率和数值精度影响，不能归因于 norm 位置一个因素。
 
@@ -193,11 +202,13 @@ W_d\left(\operatorname{SiLU}(W_gx)\odot W_ux\right).
 
 ### Prefill
 
-对整个 prompt 并行计算 Q/K/V 和 causal attention，并为每层保存 prompt 的 K/V。虽然 attention 是 causal，GPU 仍可并行处理所有 query rows。
+对 `[t0,t1,t2,t3]` 并行计算 Q/K/V 和 causal attention，并为每层保存 4 个位置的 K/V。
+因果关系限制“能看谁”，不妨碍 GPU 同时计算多行 query。
 
 ### Decode
 
-每步只为新 token 计算 Q/K/V，把新 K/V 追加到 cache；新 query 读取全部可见历史 K/V，产生下一个 token logits。若没有 cache，每步重算整个前缀，数学目标可相同但计算大量重复。
+假设第一个输出是 `t4`。下一步只为 `t4` 计算 Q/K/V，把它的 K/V 追加到 cache；新 query 读取
+`t0..t4` 的可见 K/V，产生 `t5` 的 logits。没有 cache 时可以重算完整前缀，数学目标相同，但会重复大量工作。
 
 仓库 NumPy 测试比较：
 
@@ -226,15 +237,24 @@ python -m pytest tests/test_attention_numpy.py -q
 python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py -q
 ~~~
 
-NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 分别验证模型 forward/训练等路径。新增 cross-framework control 说明跨框架等价不是同名模块等价：只有显式统一 affine LayerNorm/epsilon、tanh-GELU、mask、tied embedding、loss 与 SGD 后，才对账 logits、20 个参数梯度和一步更新；原生 JAX RMSNorm 反事实 logits 最大差为 `0.37747739627957344`。
+NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 再验证完整 forward、梯度和一步更新。跨框架对账要求显式统一
+LayerNorm、activation、mask、weight tying、loss 与 optimizer，不能因为模块同名就假设数值等价。
 
-`blockwise_online_attention` 支持广播 leading dimensions、causal prefill、带 past keys 的单 token decode 与任意 boolean visibility mask；任一 query row 没有可见 key 时 fail closed。Parity 仍不覆盖 NumPy 完整模型、默认 PyTorch LayerNorm 与默认 JAX RMSNorm 的等价、AdamW/RNG/JIT、目标大模型或 GPU kernel 精度与性能。
+`blockwise_online_attention` 覆盖 causal prefill、带历史 K/V 的单 token decode 和任意 boolean visibility mask。
+任一 query 没有可见 key 时会 fail closed。精确 fixture、反事实差值和未覆盖项集中在
+[Transformers 控制台账](../evidence/transformers-controls.md)。
 
 ## 10. 复杂度和 kernel 边界
 
 标准 dense attention 的 score/probability 张量有 \(T_qT_k\) 项，每头 score 与 value aggregation 的主要算术随 \(T_qT_kD\) 增长。投影与 MLP 通常含 \(Td^2\) 量级项。短序列/大 hidden 时线性层可能主导；长序列时 attention 与 KV 读写更突出。Big-O 不能直接替代实测延迟。
 
-FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返及完整中间矩阵存储；它针对的是精确 attention 数学，而不是稀疏 attention 近似，但浮点归约顺序可能使结果不逐 bit 相同。[数学基础](../foundations/math.md#attention-storage-online-softmax)给出 recurrence，`projects/transformers-basics/online_softmax_demo.py` 逐块和 dense reference 对照。NumPy oracle 的 logical tile 元素数不是进程峰值内存或 HBM 流量测量，更不等于 FlashAttention kernel 已执行。使用优化 kernel 时要记录实际 backend，并验证 head dim、dtype、mask、dropout、GQA、RoPE/ALiBi 和硬件支持；配置声称启用不证明没有 fallback。
+FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返与完整中间矩阵存储。它仍计算精确 attention
+的数学目标，不是把一般复杂度改成线性；不同浮点归约顺序也可能产生细小差异。
+
+[数学基础](../foundations/math.md#attention-storage-online-softmax)给出 recurrence，
+`projects/transformers-basics/online_softmax_demo.py` 会逐块与 dense reference 对账。这个 NumPy 实验没有执行
+CUDA kernel，也没有测 HBM 流量。部署时要记录实际 backend，并检查 head dim、dtype、mask、GQA、RoPE
+与硬件是否走到了预期 kernel，而不是只看“开关已启用”。
 
 ## 11. 架构类型
 

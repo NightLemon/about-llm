@@ -1,4 +1,4 @@
-# 机器学习与深度学习
+# 机器学习与深度学习：从一批工单到一个可验收模型
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
@@ -7,149 +7,139 @@
 
 - **适合读者**：第一次系统理解训练、泛化和评测的工程师。
 - **先修**：基本代数、均值与概率直觉；不要求先学完整微积分。
-- **首次阅读**：问题定义 → 数据划分 → 损失与优化 → 评价与不确定性。
-- **完成信号**：能发现数据泄漏，并为一个任务设计 train/validation/test 切分。
-- **卡住时**：回到[数学基础](math.md)对应的概率、导数或统计小节。
+- **首次阅读**：任务定义 → 数据切分 → 损失 → 梯度更新 → 测试与漂移。
+- **完成信号**：能为一个真实任务设计 train/validation/test，并解释训练 loss 与业务结果的差别。
+- **卡住时**：回到[数学基础](math.md)查看概率、导数或矩阵形状。
 
 </div>
 
-这一章不试图把传统机器学习课程压缩成术语表，而是建立一套能迁移到 LLM 的判断框架：**模型在什么分布上、用什么代理目标、从什么数据中学习，最后又在什么约束下被验收**。训练损失只是这个闭环中的一个量。
+假设你要训练一个售后工单分类器，把新工单路由到 `refund`、`logistics` 或 `fraud_review`。
+第一版模型在随机切分的测试集上有 94% accuracy，上线后一周却频繁把欺诈投诉送进普通退款队列。
 
-## 1. 从问题定义到统计学习
+应该先换更大的模型吗？未必。你得先知道：一条样本是什么、标签从哪里来、测试集是否真的代表未来、
+训练目标怎样给不同错误定价。机器学习的主线就在这几个问题之间，不在模型名字的数量里。
 
-设样本来自未知分布 \(P(X,Y)\)，模型 \(f_\theta\) 的总体风险（population risk）是
+## 第一步：把问题写成一次可观察的预测
+
+对这套工单系统，可以先写：
+
+> 当一条新会话首次进入路由服务时，只使用当时可见的用户文本和账户公开状态，预测负责处理它的队列；
+> 系统按会话计错，并把漏掉 `fraud_review` 视为更高成本的错误。
+
+这句话固定了预测时点、输入、目标、样本单位和错误成本。少写其中任何一个，后面都可能出现“离线很准、
+线上不可用”：例如训练数据包含了客服最终处理备注，而线上预测时这段备注还没有产生，这就是 target leakage。
+
+设输入与目标来自部署分布 (P(X,Y))，模型 (f_\theta) 的总体风险是：
 
 \[
 R(\theta)=\mathbb{E}_{(X,Y)\sim P}
 \left[\ell(f_\theta(X),Y)\right].
 \]
 
-真实分布不可枚举，只能在训练样本 \(D=\{(x_i,y_i)\}_{i=1}^{n}\) 上最小化经验风险：
+我们无法枚举未来全部工单，只能在训练集 (D=\{(x_i,y_i)\}_{i=1}^{n}) 上最小化经验风险：
 
 \[
 \hat R_D(\theta)=\frac{1}{n}\sum_{i=1}^{n}
 \ell(f_\theta(x_i),y_i).
 \]
 
-这两个式子的差别就是泛化问题的核心。经验风险很低只说明模型适合**这批训练观测**；产品需要的是部署分布上的风险。经典分析常假设样本独立同分布（i.i.d.），但时间漂移、同一用户的重复记录、网页近重复、反馈回路和主动采样都会破坏该假设。
+训练做的是第二件事，产品需要的是第一件事。两者之间的差距就是 **generalization（泛化）** 问题。
 
-### 1.1 三类学习信号
+## 为什么随机逐行切分会给出虚假的 94%
 
-- **监督学习（supervised learning）**：人工或业务过程给出 \(y\)，例如意图分类、质量打分。
-- **自监督学习（self-supervised learning）**：从原始数据构造预测目标，例如 next-token prediction、masked token prediction、对比学习。
-- **强化学习（reinforcement learning）**：策略通过动作影响后续状态，并从延迟回报中学习；样本分布通常也随策略变化。
+回看数据后发现，同一会话被拆成了多行：用户追问、客服回复和最终处理结果。随机逐行切分把同一会话的相邻
+文本分到了训练集和测试集。模型不需要学会处理新会话，只要认出已经见过的措辞即可。
 
-LLM 预训练主要是自监督学习。SFT 是监督学习；偏好优化可能直接优化成对偏好，也可能训练奖励模型后再做强化学习。不能因为都叫“后训练”就把这些目标视为等价。
+修复方法是按真正近似独立的单位切分：
 
-### 1.2 问题定义的最小清单
+| 数据结构 | 切分单位 | 想阻断的泄漏 |
+|---|---|---|
+| 多轮工单 | 完整 `thread_id` | 同一上下文跨集合 |
+| 同一用户的重复咨询 | `user_id` | 记住个人习惯或账户特征 |
+| 一份文档的多个 chunk | `document_id` | 重叠段落跨集合 |
+| 模板改写或镜像网页 | 去重簇/来源簇 | 只换表述的近重复 |
+| 会随时间变化的业务 | 时间窗口 | 用未来规则预测过去 |
 
-在选择模型前写清：
+训练集用于拟合参数；validation 用于选模型、阈值和超参数；锁定 test 用于最后估计。每看一次 test 再修改系统，
+都在把它逐渐变成 validation。
 
-1. **样本单位**：一行、一次会话、一位用户还是一份文档？
-2. **预测时点**：在什么信息已经可见时做预测？
-3. **目标**：标签由谁产生，噪声和系统性偏差是什么？
-4. **行动与成本**：假阳性和假阴性的代价是否相同？
-5. **部署分布**：语言、时间、地区、设备和流量结构是什么？
-6. **反馈回路**：模型输出会不会改变以后看到的数据？
+LLM 评测还要检查 benchmark 是否出现在预训练、SFT、few-shot 示例或 RAG 语料中。Exact match 只能发现完全相同
+文本；近重复和语义改写需要额外检测，但检测器也会误报，所以结果应进入污染证据，而不是被当作绝对判决。
 
-如果预测时使用了现实中尚不可见的信息，后面再复杂的模型也只是在放大 target leakage。
+## 标签不是天然真相
 
-## 2. 数据划分不是随机调用一个函数
+工单的“负责队列”可能来自客服最终选择，也可能由事后审计员重标。前者便宜，却会继承历史团队的路由习惯；
+后者更接近目标，却可能有分歧和覆盖不足。
 
-训练集拟合参数，验证集选择超参数、阈值和版本，测试集只用于最终估计。反复根据测试集结果修改系统，会让测试集事实上变成验证集。
+在采集数据前至少问：
 
-### 2.1 按独立单位划分
+- 标签由谁、在什么时间产生？
+- 标注者当时看到了哪些模型不可见的信息？
+- 无法判断、多人协作和多标签工单怎样编码？
+- 模型输出会不会改变未来能收集到的标签？
 
-随机逐行划分只在“行近似独立”时合理。常见替代方案：
+例如上线后只有“模型判为欺诈”的工单被专家复核，那么可见标签已经被旧模型筛选。直接拿这些日志重训，
+会不断强化旧模型看得见的区域。
 
-| 结构 | 推荐切分 | 防止的泄漏 |
-| --- | --- | --- |
-| 同一文档的多个 chunk | 按文档 ID 分组 | 相邻或重叠段落跨集合 |
-| 同一用户的多次行为 | 按用户分组 | 个体特征被模型记住 |
-| 时间演化的数据 | 训练早期、验证/测试后期 | 从未来信息预测过去 |
-| 模板生成或近重复网页 | 先聚类/去重，再按簇切分 | 改写或镜像页面跨集合 |
-| 多轮会话 | 按完整会话切分 | 同一上下文被拆散 |
+## 三类学习信号在 LLM 中怎样出现
 
-LLM 还多一层污染：评测题或其等价改写可能出现在预训练、SFT、检索库或提示示例中。污染检测不能只搜索完全相同的字符串，还要考虑规范化、近重复和语义等价；但语义检测本身也有误报，结果应作为证据而非绝对判决。
+学习范式的区别在于监督信号从哪里来：
 
-### 2.2 分布外推与切片
+| 范式 | 信号来源 | LLM 中的例子 |
+|---|---|---|
+| Supervised learning | 外部提供输入—目标对 | 工单分类、SFT response |
+| Self-supervised learning | 从原始数据本身构造目标 | Next-token prediction |
+| Reinforcement learning | 动作改变状态，随后获得回报 | Policy 根据 reward/value 更新 |
 
-一个总平均可能掩盖关键失败。至少按语言、长度、时间、来源、罕见类别和业务风险切片。切片越多，偶然极值越容易出现；应预先声明关键切片，报告样本数与置信区间，不要只挑结果最好的切片讲故事。
+偏好 pair 可以直接进入 DPO 一类目标，也可以先训练 reward model 再用于强化学习。它们都属于“后训练”，
+但数据分布、损失和失败方式不同，不能只因为阶段名称相同就混为一种算法。
 
-## 3. 模型族、归纳偏置与容量
+## Loss 是训练的方向盘，不是产品成绩单
 
-从有限数据推断未见样本一定依赖归纳偏置（inductive bias）。线性模型偏好线性边界；卷积网络利用局部性与平移结构；Transformer 通过注意力建立 token 间的内容相关交互，并用位置机制表达次序。
-
-### 3.1 欠拟合、过拟合与现代大模型
-
-- **欠拟合**：训练误差仍高，可能是容量不足、优化失败、特征或目标有问题。
-- **过拟合**：训练误差继续下降，而验证/目标分布误差恶化。
-- **分布偏移**：训练和验证都好，但部署失败；这不一定是经典过拟合。
-
-“模型越大越容易过拟合”是有限场景下的直觉，不是普遍定律。深度模型可进入插值区域，并出现 double descent；大模型也常随规模获得更好的损失和迁移能力。但这些现象依赖数据、优化、正则化和计算预算，不能推出“参数越多必然更好”。
-
-### 3.2 参数量不等于有效容量
-
-有效容量还受训练步数、数据多样性、优化器、噪声、参数共享和结构约束影响。LoRA 只训练低秩增量，不代表底座模型的表示能力变成低秩；冻结参数仍参与前向计算。
-
-## 4. 损失函数：训练目标只是代理目标
-
-损失必须与可观测监督信号匹配，但业务价值通常不可直接微分，因此训练的是代理目标（surrogate objective）。
-
-### 4.1 常见损失
-
-**回归**常用均方误差：
-
-\[
-\operatorname{MSE}=\frac{1}{n}\sum_i(\hat y_i-y_i)^2.
-\]
-
-它对应特定噪声假设且对大残差敏感。MAE 更稳健，但在零点不可导，可使用次梯度或平滑替代。
-
-**分类**常用交叉熵。对类别 \(y\)：
+工单分类常用交叉熵。模型给真实类别 (y) 的概率为 (p_\theta(y\mid x)) 时：
 
 \[
 \ell=-\log p_\theta(y\mid x).
 \]
 
-它惩罚给真实类别的低概率，不直接优化准确率、F1 或业务成本。类别权重和重采样会改变有效训练分布，部署时还需重新检查阈值与校准。
+它鼓励提高真实类别概率，却没有直接优化客服等待时间、欺诈损失或用户满意度。若漏判欺诈比错送普通退款贵，
+可以调整类别权重、重采样或决策阈值；每种做法都会改变训练或部署时的有效问题，需要重新检查概率校准。
 
-**排序与检索**会使用 pairwise、listwise 或对比损失。例如 InfoNCE 让正样本相对批内负样本得分更高。性能强烈依赖负样本构造；随机负例太简单时，训练损失好看却学不到细粒度判别。
+不同任务使用的代理目标也不同：
 
-**自回归语言建模**对有效 token 求负对数似然。Padding、prompt 区域或跨文档边界是否计入损失，必须在实现中明确；详见[预训练](../training/pretraining.md)。
+| 任务 | 常见 Loss | 需要额外注意 |
+|---|---|---|
+| 回归 | MSE、MAE | 噪声与离群值 |
+| 分类 | Cross-entropy | 类别成本与阈值 |
+| 检索/排序 | Pairwise、listwise、InfoNCE | 负样本是否太简单或是假负例 |
+| 语言建模 | 有效 token 的 NLL | Shift、padding、prompt 与文档边界 |
+| 偏好学习 | Pairwise preference objective | 选择偏差与 reference policy |
 
-### 4.2 聚合方式会改变问题
+训练 loss 下降说明优化器更好地拟合了这份代理目标。它没有自动回答“新用户是否更满意”或“模型是否更安全”。
 
-“先对每个序列求平均，再对 batch 平均”和“对 batch 内所有有效 token 求总和后除以有效 token 数”是两个不同的 estimand：前者让每条序列同权，后者让每个监督 token 同权。设第 \(i\) 个 micro-batch 有 \(n_i\) 个有效 token、token loss 为 \(\ell_{ij}\)，全窗口共有 \(N=\sum_i n_i\) 个有效 token。若目标是 token mean：
+## 从线性模型走到神经网络
 
-\[
-L_{token}=\frac{1}{N}\sum_i\sum_{j=1}^{n_i}\ell_{ij}
-=\sum_i\frac{n_i}{N}\bar L_i.
-\]
+一个线性分类器直接计算 (z=Wx+b)，再把 logits 变成类别概率。它易于调试，也是一条重要 baseline：如果一个大型
+模型无法稳定超过它，应先检查数据和评测，而不是继续堆参数。
 
-把 \(M\) 个 micro-batch mean 直接平均得到 \(M^{-1}\sum_i\bar L_i\)，使第 \(i\) 批每个 token 的系数变成 \(1/(Mn_i)\)，通常已换了训练目标。Padding、prompt 或其他 `ignore_index` 位置既不进 numerator，也不进 denominator。正确实现可先累积每批 `loss_sum`，再以整个 accumulation window 的有效 token 数缩放；数据并行还必须显式适配 reducer 是 sum 还是 mean，不能把 rank-local mean 再等权平均。
-
-可运行反例：`python projects/single-gpu-finetuning/gradient_accumulation_toy.py`。固定有效 token 数 `[1,3]` 时，精确 token-mean class-aggregate logit gradient 为 `(23/40,-23/40)`，等权 micro-batch mean 却是 `(7/20,-7/20)`。该 CPU Float64 toy 只核对 reduction，不证明目标 LLM、随机层、optimizer、分布式 runtime、CUDA、性能或质量；工程条件详见[分布式训练](../systems/distributed-training.md#global-batch-loss-normalization)。
-
-仓库另有独立的双进程 DDP control：`python projects/single-gpu-finetuning/ddp_token_mean_control.py`。在 `D=2,N=4` 且两个 rank 的有效 token 数为 `[1,3]` 时，默认 DDP gradient mean 要求每个 rank 对 local loss sum 乘 `D/N=1/2`，同步后的共享参数梯度才是 full-batch 的 `(23/40,-23/40)`。若漏掉 world-size 只乘 `1/N=1/4`，梯度变为 `(23/80,-23/80)`，恰好多缩小 `1/D`；若每个 rank 先取 local mean，结果是 `(7/20,-7/20)`。这条 CPU/Gloo 证据真实执行了 count `all_reduce` 与 DDP backward，但仍没有 optimizer、accumulation + `no_sync`、AMP、FSDP/ZeRO、GPU、多节点或目标模型证据。
-
-`ddp_accumulation_no_sync_control.py` 再补两个 micro-batch/rank 的 update window：有效 token counts 为 `[[1,2],[3,1]]`，`D=2,N=7`，所以每次 local loss-sum backward 都乘 `D/N=2/7`。精确 pre-clip gradient 是 `(+19/35,-19/35)`；真实 built-in DDP 在首批 forward+backward 同置于 `no_sync`、末批同步后，与单进程 full batch 的 gradient、global-norm clip 和一次 plain SGD 参数更新完全一致。带 PyTorch reference all-reduce hook 的计数对照中，正确 scope 为 1 次 hook；只把 backward 放进 `no_sync` 已经太晚，仍有 2 次 hook。后者在这个线性 fixture 上数值仍正确，只是没有省通信。该证据仍只有一个两元素参数/单 bucket，不含 AMP、随机层、目标 Trainer、GPU 或性能测量。
-
-独立的 `amp_grad_scaler_control.py` 隔离验证混合精度顺序，而不是把单进程结果借给 DDP。CPU FP16 autocast 下，两批 scaled gradient 为 24；先 `scaler.unscale_(optimizer)` 再做 `max_norm=0.5` 的 global-norm clip，optimizer 看到约 0.5，与 full batch 相同。若先 clip scaled gradient 再 unscale，optimizer 只看到约 0.0625。三个含 `inf` 的 accumulation window 又使 scale `8→4→2→1`，同时 AdamW 参数、step=1 和 moments 均不动。进程内复制 model/optimizer/scaler 后，恢复 scale=1 的边界梯度 10000 会执行 step=2；遗漏 scaler、回到 scale=8 时 scaled gradient 溢出并跳步。这证明 scaler 是恢复状态的一部分，但没有把它写入 MiniGPT 文件格式，也未执行进程重启、DDP、CUDA 或目标模型。
-
-## 5. 神经网络是可微分的程序
-
-一层前馈网络可写成
+神经网络把多层可微函数串起来：
 
 \[
 h_{l+1}=\sigma(W_lh_l+b_l).
 \]
 
-如果没有非线性，多层线性变换仍等价于一层线性变换。Transformer 的 MLP 常使用 GELU、SiLU 或 SwiGLU；具体实现要核对门控分支和隐藏维度，不能只按名称猜参数量。
+非线性 (\sigma) 让多层网络能够表达一层线性映射做不到的关系。若拿掉所有非线性，多层矩阵乘法仍可合并成
+一个线性层。
 
-### 5.1 计算图与反向传播
+模型结构还带有 **inductive bias（归纳偏置）**：卷积利用局部和平移结构；Transformer 用 attention 建立 token
+间的内容相关交互，并通过位置机制表达顺序。归纳偏置决定模型更容易学到哪类规律，但不保证它只学到人希望的规律。
 
-自动微分记录基本算子的依赖，并用链式法则计算 vector-Jacobian product（VJP）。设标量损失 \(L\) 经过中间量 \(h\)：
+参数量也不是有效容量的唯一尺度。训练步数、数据多样性、参数共享、优化器和正则化都会改变可拟合的函数。
+LoRA 只训练低秩增量，并不把底座的前向表示能力缩成同样的低秩大小。
+
+## 反向传播到底在算什么
+
+前向计算得到 loss 后，自动微分沿计算图反向应用链式法则。若标量 (L) 经过中间量 (h)：
 
 \[
 \frac{\partial L}{\partial x}
@@ -158,31 +148,28 @@ h_{l+1}=\sigma(W_lh_l+b_l).
 \frac{\partial h}{\partial x}.
 \]
 
-框架自动求导不代表梯度一定正确。原地修改、意外 `detach`、错误 mask、错误 reduction、混合精度溢出以及分布式缩放都可能让程序可运行但更新方向错误。小模型应做 finite-difference 或解析梯度对照；大模型至少检查梯度范数、非有限值和关键参数是否真正收到梯度。
+框架能生成梯度代码，并不代表你的训练目标正确。意外 `detach`、原地修改、错误 mask、错误 reduction 和混合精度
+溢出，都可能让程序继续运行却更新了错误方向。
 
-### 5.2 残差与归一化
+一个可靠的第一步是让小模型过拟合一个极小 batch。如果做不到，先打印输入、labels、mask、有效监督数和梯度，
+再考虑扩大数据或模型。
 
-残差块计算 \(x+F(x)\)，提供较短的梯度路径，并让子层学习相对输入的更新。归一化控制激活尺度。LayerNorm 使用均值和方差，RMSNorm 只按均方根缩放；两者不是“训练时一个、推理时另一个”的关系。
+残差块 (x+F(x)) 为梯度提供较短路径，也让子层学习对输入的更新。LayerNorm 同时使用均值和方差，RMSNorm
+按均方根缩放；两者是不同函数，不能在 checkpoint 上任意互换。Pre-Norm 与 Post-Norm 的位置差异同样会改变
+训练动力学和模型函数。
 
-Pre-Norm Transformer 在进入注意力/MLP 前归一化，通常有利于深层优化；Post-Norm 的数学位置不同，训练行为也不同。不能在加载 checkpoint 时任意互换。
+## 优化器怎样把梯度变成更新
 
-### 5.3 初始化与信号传播
-
-初始化需要让前向激活和反向梯度在深度方向不过快爆炸或消失。Xavier/Glorot 与 He 初始化基于不同激活假设。现代 Transformer 还可能对残差分支做深度相关缩放。复制实现时应遵循对应模型配置和 checkpoint 约定，而不是机械地给所有矩阵同一个标准差。
-
-## 6. 优化：梯度、更新与训练动力学
-
-随机梯度下降用 mini-batch 梯度近似总体梯度：
+最基本的随机梯度更新是：
 
 \[
 \theta_{t+1}=\theta_t-\eta_t\hat g_t.
 \]
 
-batch 越大，梯度估计方差通常越小，但内存、并行效率、数据相关性和泛化行为也会变化。“学习率随 batch 线性缩放”是特定范围内的经验规则，不是无条件定理。
+Mini-batch 梯度是总体梯度的带噪估计。增大 batch 往往降低估计方差，也会改变显存、并行效率和优化行为；
+“学习率随 batch 线性放大”只是特定范围内的经验规则。
 
-### 6.1 AdamW 的关键区别
-
-Adam 使用梯度的一阶、二阶滑动统计自适应缩放更新。AdamW 把 weight decay 作为与梯度更新解耦的参数收缩：
+Adam 维护梯度的一阶和二阶滑动统计。AdamW 另行执行 decoupled weight decay：
 
 \[
 \theta_{t+1}
@@ -191,149 +178,133 @@ Adam 使用梯度的一阶、二阶滑动统计自适应缩放更新。AdamW 把
 -\eta_t\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}.
 \]
 
-在自适应优化器里，把 \(\lambda\theta\) 直接加进 loss gradient 的 L2 正则与 decoupled weight decay 一般不等价。偏置和归一化参数是否衰减是实现选择，必须记录参数分组。
+在自适应优化器中，这通常不等同于把 (\lambda\theta) 加进 loss gradient。Bias 和 norm 参数是否衰减，
+也要由参数分组明确记录。
 
-### 6.2 学习率、warmup 与裁剪
+训练循环中几个常见部件各有职责：
 
-- **Warmup** 在训练初期逐步增大学习率，缓解统计量尚不稳定时的大更新。
-- **Decay schedule** 控制后期更新幅度；cosine、linear 和 constant-with-warmup 各有适用场景。
-- **Global-norm clipping** 在整体梯度范数过大时等比缩放，不能修复持续的数据错误或非有限值。
-- **梯度累积** 用多个 micro-batch 近似更大 batch；要同时正确处理损失分母、学习率调度的 step 定义和分布式同步。
+- Warmup 缓解初期统计量尚不稳定时的大步更新；
+- Learning-rate schedule 控制后期更新幅度；
+- Global-norm clipping 在一次更新过大时整体缩放梯度；
+- Gradient accumulation 用多个 micro-batch 构成一个 optimizer step；
+- Mixed precision 减少部分计算/存储成本，同时引入 scale、overflow 与恢复状态。
 
-### 6.3 一个可审计的训练步
+Clipping 能限制一次异常更新，却修不好持续的脏数据或错标签。
 
-```python
-optimizer.zero_grad(set_to_none=True)
+## 为什么 Gradient Accumulation 容易悄悄换目标
 
-for micro_batch in micro_batches:
-    local_loss_sum, local_token_count = model_loss_sum(micro_batch)
-    scaled_loss = reduction_contract.loss_for_backward(
-        local_loss_sum=local_loss_sum,
-        local_token_count=local_token_count,
-    )
-    scaled_loss.backward()
+设第 (i) 个 micro-batch 有 (n_i) 个有效 token，token loss 为 (\ell_{ij})。若训练目标是整个 update window 的
+token mean：
 
-grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-if not torch.isfinite(grad_norm):
-    raise FloatingPointError("non-finite gradient norm")
-optimizer.step()
-scheduler.step()
+\[
+L_{token}=\frac{1}{N}\sum_i\sum_{j=1}^{n_i}\ell_{ij},
+\qquad N=\sum_i n_i.
+\]
+
+直接平均每个 micro-batch 的 mean，会让短 batch 中的单个 token 获得更大权重。正确实现要累计 loss sum 与有效
+token count，再按全窗口分母缩放；`ignore_index` 位置既不进分子，也不进分母。
+
+分布式训练还要确认框架对各 rank 梯度做 sum 还是 mean。DDP 默认取 rank mean 时，全局 token mean 的缩放需要
+显式包含 world size。AMP 则要求先 unscale 再做 global-norm clipping，checkpoint 也要保存 scaler。
+
+这些不是只靠文字记忆的细节。运行下面的独立 controls 可以看到错误 reduction、`no_sync` scope 和 AMP 顺序怎样
+改变梯度：
+
+```powershell
+python projects/single-gpu-finetuning/gradient_accumulation_toy.py
+python projects/single-gpu-finetuning/ddp_token_mean_control.py
+python projects/single-gpu-finetuning/ddp_accumulation_no_sync_control.py
+python projects/single-gpu-finetuning/amp_grad_scaler_control.py
 ```
 
-这里的 `reduction_contract` 是刻意写出的策略接口，不是 PyTorch 内置对象。它必须定义：本次 optimizer step 的全局有效 token 分母、data-parallel 框架是求和还是平均梯度，以及每个 micro-batch 应乘的因子。例如 DDP 默认对各 rank 梯度取平均；若目标是全局 token mean，不能只把每个 rank 的 `local_loss_sum` 除以全局 token 数，否则还会多除一个 world size。示例强调审计点，不是可直接复制到所有分布式框架的完整实现。
+完整推导与适用边界见[分布式训练](../systems/distributed-training.md#global-batch-loss-normalization)。
 
-仓库中的 `notebooks/02_minigpt_forward.ipynb` 和 `projects/jax-minigpt/` 提供了可运行的小规模模型与训练证据；运行方式见[实验导航](../practice/labs.md)和 [JAX/Optax 训练](../training/jax-optax.md)。
+## 正则化是在表达偏好
 
-## 7. 正则化与泛化手段
+过拟合表现为训练误差继续下降，而 validation 或目标分布误差恶化。欠拟合则连训练集都学不好，原因可能是
+容量不足，也可能是优化失败、标签错位或特征不够。
 
-正则化不是“越多越好”，而是在模型、数据和优化之间施加偏好：
+常见正则化手段并不是可以全部拉满的开关：
 
-- **weight decay** 偏好较小权重，但对不同参数组作用不同；
-- **dropout** 训练时随机屏蔽激活，推理时关闭并按框架约定缩放；
-- **数据增强** 应保持标签语义，文本替换很容易改变事实或立场；
-- **早停** 用验证信号选择 checkpoint，本身也会对验证集拟合；
-- **label smoothing** 防止目标分布完全尖锐，但可能改变校准与置信度；
-- **数据去重** 降低记忆近重复样本的机会，也会改变来源权重。
+| 手段 | 引入的偏好或变化 |
+|---|---|
+| Weight decay | 偏好较小的部分参数 |
+| Dropout | 训练时随机屏蔽激活 |
+| 数据增强 | 希望模型对保持标签语义的变换不敏感 |
+| Early stopping | 用 validation 选择 checkpoint |
+| Label smoothing | 让目标分布不再完全尖锐 |
+| 去重 | 降低依赖近重复记忆，也改变来源权重 |
 
-大规模预训练通常更依赖数据质量、混合比例、优化稳定性和规模匹配，而不只是传统 dropout。
+模型规模与过拟合不是简单单调关系。现代深度模型可能进入插值区域并出现 double descent；更大的模型也可能获得
+更好的迁移能力。最终仍要把结论绑定到数据量、训练预算、正则化和目标分布。
 
-## 8. 表示学习
+## 怎样判断模型真的变好
 
-Embedding 把离散 ID 映射成连续向量。分布相似的训练压力可形成语义和句法结构，但几何方向不保证对应单一、可解释概念。
+工单系统的总体 accuracy 可能掩盖 `fraud_review` 全部漏判。评测要从业务决策反推指标：
 
-### 8.1 静态与上下文化表示
+| 决策问题 | 常看什么 | 容易遗漏什么 |
+|---|---|---|
+| 普通多分类是否改善 | Accuracy、macro-F1、confusion | 稀有类和高成本错误 |
+| 稀有风险能否检出 | Precision、recall、PR-AUC | 阈值对应的人工处理量 |
+| 概率能否用于路由 | Log loss、Brier、calibration curve | 分桶依赖与分布漂移 |
+| 检索结果是否有用 | Recall@k、MRR、nDCG | 候选池与 relevance 标注 |
+| 生成系统是否完成任务 | Task outcome、事实/引用、人工偏好 | 长度偏差、失败分母和成本 |
 
-静态词向量为每个词项保存一个向量，“苹果”在所有句子中相同。上下文化模型根据周围 token 计算隐藏状态，同一 token 在不同语境可有不同表示。输入 embedding、某层 hidden state、输出 unembedding 和专门训练的检索 embedding 是不同对象，不能混用相似度阈值。
+阈值在 validation 上按错误成本选择，再到锁定 test 报告。对同一批 case 比较两个系统时，保留逐 case difference
+并使用 paired 分析；只比较两个独立均值会丢掉问题难度的配对信息。
 
-### 8.2 对比学习的边界
+概率校准也有边界。一组 80% 置信度的预测若约 80% 正确，可以称为校准；它仍可能没有区分能力。
+LLM 的 token probability 更不是“整段回答为真”的直接概率。
 
-对比学习通过正负样本定义“不变性”。若把两个实际上含冲突事实的文本当正例，模型会被训练成忽略关键差异；若负例只来自随机主题，模型可能依靠表面词汇取巧。检索模型需要 hard negatives，但挖掘出的“难负例”可能其实是未标注正例。
+## 上线后，分布还会继续变化
 
-## 9. 评价、校准与不确定性
+第二周 fraud 类别突然增加，可能是输入 (P(X)) 变了；业务规则调整后，同样文本对应的正确队列变了，
+则更接近 (P(Y\mid X)) 变化。真实系统经常同时出现多种 shift，监控一项 embedding 距离不能自动证明质量下降。
 
-### 9.1 指标必须匹配决策
+生产监控要把输入变化与延迟标签、人工审计或可验证业务结果连接起来。还要关注反馈回路：路由模型决定哪些工单
+进入专家队列，专家队列又决定下一轮训练能看到哪些高质量标签。
 
-| 问题 | 常用指标 | 主要陷阱 |
-| --- | --- | --- |
-| 平衡分类 | accuracy、macro-F1 | 平均值掩盖子群 |
-| 稀有阳性检出 | precision、recall、PR-AUC | ROC-AUC 在极不平衡时可能显得乐观 |
-| 概率预测 | log loss、Brier、ECE | ECE 依赖分桶方案 |
-| 排序/检索 | MRR、Recall@k、nDCG | relevance 标注和候选池决定上限 |
-| 生成 | task score、事实性、人工偏好 | 单一字符串相似度不能代表整体质量 |
+## 训练记录要支持“为什么坏了”的调查
 
-阈值应在验证集上根据成本选择，再在锁定测试集报告。不能在测试集反复调阈值后仍称其为无偏评估。
+一次可恢复、可比较的训练至少保存：
 
-### 9.2 校准不等于正确
+- 代码、依赖、模型配置、tokenizer 与模板 revision；
+- 数据快照、过滤/去重规则、切分单位与混合权重；
+- Seed 以及仍不能保证确定性的算子；
+- Optimizer、参数分组、scheduler、precision 与 global batch 口径；
+- Checkpoint 中的模型、optimizer、scheduler、RNG、scaler 和数据游标；
+- Loss、梯度范数、吞吐、validation slice 与非有限值。
 
-若一组预测声称 80% 置信度，其中约 80% 正确，称为统计上的校准。一个模型可以校准但分辨率很差，也可以准确率高但过度自信。LLM 的 token probability 是条件于当前前缀和 tokenizer 的局部概率，不是“整段回答为真”的直接概率。
+复现也有不同强度：bitwise replay、指标在随机波动内一致、以及最终工程结论一致。不同 GPU、kernel 和并行归约
+可能产生细小浮点差异，因此先说明需要哪一种复现。
 
-### 9.3 方差与置信区间
+Loss 异常时按下面顺序缩小问题：
 
-训练随机种子、样本抽样和评审者差异都会带来方差。对同一批样本比较两个系统时，应使用 paired 分析，保留每个样本上的差值；独立地比较两个总体均值会丢失配对信息。仓库的[评测方法论](../quality/evaluation-methodology.md)给出了 paired bootstrap 与受保护切片的工程流程。
+1. 在一个极小 batch 上过拟合。
+2. 检查 token/feature、shift 后 labels、mask 和有效分母。
+3. 确认关键参数收到有限梯度，并位于 optimizer 参数组。
+4. 关闭 AMP、compile 和 distributed，在最小环境复现。
+5. 固定数据顺序，对比单步更新与 checkpoint 恢复前后状态。
 
-## 10. 分布偏移与生产反馈
+## 把这条主线映射到 LLM
 
-常见的理想化分类包括：
+| 工单分类中的问题 | LLM 对应问题 |
+|---|---|
+| 一条样本是什么 | Token 序列、SFT conversation、preference pair、tool trajectory |
+| 标签从哪里来 | Next token、assistant response、chosen/rejected、reward 或 verifier |
+| 怎样防止泄漏 | 文档/用户/时间 split，benchmark contamination，RAG corpus 边界 |
+| 训练优化什么 | Token NLL、preference loss、reward proxy |
+| 怎样验收 | 新任务/语言/时间段、风险 slice、事实与工具结果 |
+| 上线怎样漂移 | Prompt、知识、tool/API、用户行为和路由变化 |
 
-- **covariate shift**：\(P(X)\) 变化，同时假设 \(P(Y\mid X)\) 保持不变；
-- **label/prior shift**：\(P(Y)\) 变化，同时通常假设 \(P(X\mid Y)\) 保持不变；
-- **concept shift/drift**：\(P(Y\mid X)\) 发生变化；
-- **selection bias**：被观测或获得标签的概率依赖样本，导致可见数据不代表目标总体。
-
-这些假设用于分析与校正，不意味着现实只发生一种变化；真实系统常同时违背多个稳定条件。监控输入统计量只能发现“数据看起来变了”，不能自动证明质量下降；还需要延迟标签、人工审计或可验证代理指标。
-
-模型进入产品后会形成反馈回路：推荐影响点击，风控影响哪些交易被审核，Agent 决定哪些工具结果进入日志。直接用这些日志继续训练可能强化旧策略的盲区。
-
-## 11. 可复现训练与故障定位
-
-最低限度记录：
-
-- 代码与依赖版本、模型配置和 tokenizer 文件；
-- 数据快照、过滤/去重规则和混合权重；
-- 随机种子及无法保证确定性的算子；
-- optimizer、参数分组、scheduler 和精度策略；
-- global batch 的样本数与有效 token 数；
-- checkpoint 中模型、optimizer、scheduler、随机数和数据游标；
-- 训练/验证 loss、梯度范数、吞吐、非有限值和硬件错误。
-
-复现不等于 bitwise 一致。不同 GPU、kernel、并行归约顺序和编译器可能产生微小浮点差异；应区分“逐位复现”“统计复现”和“结论复现”。
-
-### 11.1 Loss 异常的排查顺序
-
-1. 在一个极小 batch 上过拟合，确认模型和标签能对齐。
-2. 打印输入、shift 后 labels、mask 与有效 token 数。
-3. 检查初始 loss 是否与词表规模和数据分布大致相容；这只是 sanity check，不是定理。
-4. 检查梯度是否存在、是否有限、是否在 optimizer 参数组中。
-5. 关闭混合精度、编译和分布式，在最小环境复现。
-6. 固定数据顺序，对比单步参数更新和 checkpoint 恢复前后状态。
-
-## 12. 映射到 LLM 全流程
-
-| 机器学习概念 | LLM 中的对应问题 |
-| --- | --- |
-| 样本与标签 | token 序列、SFT response、偏好 pair、工具轨迹 |
-| 经验风险 | token NLL、偏好损失、奖励代理目标 |
-| 归纳偏置 | causal mask、位置编码、参数共享、MoE 路由 |
-| 泛化 | 新任务、新语言、新时间段和对抗输入上的表现 |
-| 数据泄漏 | benchmark 污染、同源文档跨集合、检索库泄漏 |
-| 分布偏移 | 用户提示变化、知识时效、工具/API 变更 |
-| 校准 | 拒答阈值、路由置信度、风险分层；不等于 token 概率 |
-| 反馈回路 | 用户偏好日志、自动生成数据、自训练和 Agent 行为日志 |
-
-## 13. 常见错误结论
-
-- **“训练 loss 下降，所以产品更好”**：loss 是代理目标，部署分布与业务成本可能不同。
-- **“验证集没参与梯度，所以不会被过拟合”**：反复选超参数和版本就是在适应验证集。
-- **“AdamW 就是 Adam 加 L2”**：自适应缩放下，解耦 weight decay 与把 L2 加进 loss 一般不同。
-- **“梯度累积等价于大 batch”**：只有 loss 权重、随机层、归一化、同步和 optimizer step 语义一致时才近似成立。
-- **“概率高就更真实”**：模型概率衡量训练分布下的序列偏好，不直接验证事实。
-- **“固定 seed 就完全可复现”**：硬件 kernel 和并行归约仍可能非确定。
+从小分类器到大语言模型，参数规模和系统复杂度变化很大，但判断顺序没有变：先固定任务与数据，再理解 loss 与
+更新，最后用未参与选择的证据检查泛化。
 
 ## 自测与实践
 
-1. 为什么把同一文档的重叠 chunk 随机分到训练集和测试集会高估泛化？
-2. 对长度分别为 10 和 100 的两个序列，比较 sequence mean 与 token mean 的样本权重。
-3. 解释 AdamW 的 decoupled weight decay 为什么不等同于在 Adam loss 中加入 L2。
-4. 构造一个 accuracy 为 99% 但召回率为 0 的类别不平衡分类器。
-5. 在 MiniGPT 上做一次“一小批数据过拟合”实验，保存每步 loss 和梯度范数；若失败，按 11.1 节定位。
-6. 为一个客服意图分类器设计 group split、time split 和三个受保护切片，并说明各自防什么风险。
+1. 为什么把同一工单 thread 的多轮消息随机分到训练集和测试集会高估泛化？
+2. 对有效 token 数为 10 和 100 的两个 micro-batch，比较 batch-mean 与 token-mean 下单个 token 的权重。
+3. 解释 AdamW 的 decoupled weight decay 为什么通常不等同于在 Adam loss 中加入 L2。
+4. 构造一个 accuracy 为 99%、风险类 recall 为 0 的分类器。
+5. 为客服路由任务设计 group split、time split 和三个关键 slice，并说明每项防什么风险。
+6. 在 MiniGPT 上尝试过拟合一个小 batch；若失败，按本章排查顺序记录第一个不变量破坏的位置。
