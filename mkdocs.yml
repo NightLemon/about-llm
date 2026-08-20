@@ -181,6 +181,7 @@ nav:
           - 5 一次 RAG 问答: practice/labs/lab-5-rag-request.md
           - 6 一次 Agent 退款: practice/labs/lab-6-agent-lifecycle.md
           - 7A Paged KV 与 COW: practice/labs/lab-7a-paged-kv.md
+          - 7B Qwen3 穿过 nano-vLLM: practice/labs/lab-7b-nano-vllm-qwen3.md
       - 工程项目:
           - 项目索引: practice/project-index.md
           - RAG Foundations: practice/projects/rag-foundations.md

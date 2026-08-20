@@ -161,8 +161,9 @@
 
 ## 实验 7：量化与服务基准 { #lab-7 }
 
-先完成[实验 7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md)，用一条父子序列追踪真实 CPU K/V tensor。
-再用小型 oracle 理解 batching、preemption 与量化，最后进入真实服务：
+先完成[实验 7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md)，用一条父子序列追踪真实 CPU K/V tensor；
+再完成[实验 7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md)，把相同概念放进固定模型、
+真实 scheduler 与 GPU runtime。然后用小型 oracle 理解 preemption 与量化，最后进入真实服务：
 
 1. 固定模型、runtime、硬件和 prompt/output 长度分布。
 2. 先验证单请求 token/usage/finish，再做 open-loop 多档负载。
@@ -170,7 +171,7 @@
 4. 断开流式客户端，分别观察请求终止、底层停算和 KV 释放。
 5. 比较 BF16/FP16、8-bit、4-bit 时联合检查质量与性能。
 
-交付物：Paged KV 预测表、workload contract、原始终态、容量曲线和故障记录。
+交付物：Paged KV 预测表、nano-vLLM 逐步 trace、workload contract、原始终态、容量曲线和故障记录。
 CPU toy 的离散 step、逻辑 bytes 或本地取消不能冒充 GPU 性能、显存或远端计费证据。
 详细入口见 [Inference Serving](projects/inference-serving.md)。
 

@@ -207,6 +207,25 @@ Scheduler 选择的是请求和工作量，Model Runner 要把它们变成模型
 在 decode 中，每条普通序列通常只新增一个输入位置，但会读取该序列已有的全部可见 K/V。
 GQA 允许多个 query heads 共享较少的 K/V heads，从而降低 KV 容量。
 
+### 在 nano-vLLM 中对照这条路径
+
+固定 nano-vLLM commit 的 `LLMEngine.step()` 恰好把本章三个引擎动作排在一起：
+
+```text
+Scheduler.schedule()
+-> ModelRunner.call("run", seqs, is_prefill)
+-> Scheduler.postprocess(seqs, token_ids, is_prefill)
+```
+
+`ModelRunner` 再根据 `is_prefill` 选择 `prepare_prefill()` 或 `prepare_decode()`，执行自带的
+`Qwen3ForCausalLM`，最后交给 `Sampler`。Transformers 在这条路径中提供 config 和 tokenizer，
+并没有用 `AutoModel.generate()` 完成 forward。
+
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md) 会在真实 Qwen3-0.6B/CUDA 运行中临时包装
+`Scheduler.schedule()`，但仍调用 upstream `LLMEngine.step()`。报告把本轮 phase、scheduled tokens、
+sequence status、cached tokens、block references 和执行路径放在同一条记录中。先用本章建立状态机，
+再用实验回答“这一次具体为什么走到这个分支”。
+
 ## 从 logits 到用户可见文本
 
 模型 forward 返回 logits 后，请求还没有完成。引擎通常继续执行：
@@ -280,6 +299,7 @@ HTTP response 关闭，也不足以证明 runtime 已经 abort 对应 sequence�
 | 离散 admission 与 batching | `src/about_llm/inference/continuous_batching.py` | 每轮 admitted、prefill、decode 和 emitted token |
 | KV block 与 COW | `src/about_llm/inference/kv_allocator.py` | block table、refcount 和容量失败前后状态 |
 | 真实 CPU K/V tensor | `src/about_llm/inference/paged_kv_torch.py` | logical order、COW 后两条序列的值 |
+| 固定 Qwen3 + nano-vLLM GPU trace | `projects/inference-serving/nano_vllm_study.py` | phase、status、prefix hit、KV ledger 与执行路径 |
 | 采样 | `src/about_llm/inference/sampling.py` | processor、mask、renormalization 和 RNG 映射 |
 | SSE | `src/about_llm/inference/sse.py` | byte chunk 如何还原为完整 event |
 | 指标 | `src/about_llm/inference/metrics.py` | 分母、失败终态和未定义值 |

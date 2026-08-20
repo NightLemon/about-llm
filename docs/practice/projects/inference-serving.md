@@ -3,6 +3,7 @@
 **项目导航**：[项目索引](../project-index.md) ·
 [请求生命周期](../../systems/inference-request-lifecycle.md) ·
 [Paged KV 实验](../labs/lab-7a-paged-kv.md) ·
+[Qwen3 + nano-vLLM 实验](../labs/lab-7b-nano-vllm-qwen3.md) ·
 [vLLM 部署](../../systems/vllm-serving.md) ·
 [证据账本](../../evidence/inference-serving-controls.md)
 { .doc-nav }
@@ -19,21 +20,23 @@
 
 ## 最终交付物
 
-不要把完整终端日志当作项目报告。最终交付以下五项：
+不要把完整终端日志当作项目报告。最终交付以下六项：
 
 1. 一张端到端请求图，以及一次成功请求的逐阶段 trace。
 2. 一份 Paged KV/COW 实验记录，包含预测、结果和容量失败负例。
-3. 一份固定 model/tokenizer/runtime/hardware 的 workload contract。
-4. 原始 attempts、服务端 trace 和质量/性能/失败汇总。
-5. 一页结论：当前容量点、主要瓶颈、回滚配置和证据边界。
+3. 一份 Qwen3 穿过 nano-vLLM 的 GPU trace，包含 prefix drift 与 chunked-prefill 对照。
+4. 一份固定 model/tokenizer/runtime/hardware 的 workload contract。
+5. 原始 attempts、服务端 trace 和质量/性能/失败汇总。
+6. 一页结论：当前容量点、主要瓶颈、回滚配置和证据边界。
 
 ## 项目怎样分层
 
 ```mermaid
 flowchart TD
   A["教材：请求生命周期"] --> B["引导实验：Paged KV / COW"]
-  B --> C["本地 control：协议、取消、指标"]
-  C --> D["目标运行：vLLM + 固定 workload"]
+  B --> N["目标机制：Qwen3 + nano-vLLM trace"]
+  N --> C["本地 control：协议、取消、指标"]
+  C --> D["目标服务：vLLM + 固定 workload"]
   D --> E["报告：质量、SLO、容量与失败"]
   C --> F["证据账本"]
   D --> F
@@ -86,6 +89,37 @@ python -m pytest `
 ~~~
 
 完成标准：异常发生后 allocator 与 K/V tensor 都没有留下半更新状态。
+
+## 阶段 1B：让 Qwen3 真正穿过 nano-vLLM
+
+完成[实验 7B](../labs/lab-7b-nano-vllm-qwen3.md)。这一步处在 CPU Paged KV oracle 与完整 HTTP 服务之间：
+它真实加载固定 Qwen3-0.6B 权重并执行 CUDA/FlashAttention/Triton，却只研究 engine 内部请求，不提供
+OpenAI-compatible endpoint。
+
+先写下四个预测，再运行长实验：
+
+```text
+exact prefix 应命中几个 256-token block？
+position 256 漂移后还剩几个命中？
+batch budget 256 时各需要几次 prefill？
+8-token 输出需要几次 decode？
+```
+
+~~~bash
+python projects/inference-serving/nano_vllm_study.py collect \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --source-root /path/to/nano-vllm \
+  --model-snapshot /path/to/Qwen3-0.6B/snapshot \
+  --output artifacts/inference/nano-vllm-study.json
+
+python projects/inference-serving/nano_vllm_study.py verify \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --report artifacts/inference/nano-vllm-study.json
+~~~
+
+完成标准：能从任一 measurement 的 trace 指出 first-token commit 边界、每次 KV 分配/释放、
+prefix hit 失效点和 eager/CUDA Graph 实际分支；报告通过离线 verifier。若某个并发档失败，保留
+typed terminal，不把它从容量曲线中删除。
 
 ## 阶段 2：把协议和终态跑通
 

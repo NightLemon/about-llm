@@ -13,7 +13,9 @@
 
 </div>
 
-**模型导航**：[模型全景](landscape.md) · [Transformers 项目](../practice/projects/transformers-basics.md) · [单卡微调](../practice/projects/single-gpu-finetuning.md) · [Qwen 证据台账](../evidence/qwen-controls.md)
+**模型导航**：[模型全景](landscape.md) · [Transformers 项目](../practice/projects/transformers-basics.md) ·
+[Qwen3 + nano-vLLM 实验](../practice/labs/lab-7b-nano-vllm-qwen3.md) ·
+[单卡微调](../practice/projects/single-gpu-finetuning.md) · [Qwen 证据台账](../evidence/qwen-controls.md)
 { .doc-nav }
 
 Qwen 是一个不断扩展的模型与产品家族，不是一个固定架构。文本、代码、视觉、音频、dense、MoE、Base、Instruct、本地权重和云 API 可能共享品牌名，却拥有不同的输入、模板、运行时和许可边界。
@@ -198,6 +200,12 @@ Qwen 不会让 RAG 自动正确。先用 extractive 或模板化 baseline，确�
 
 服务 trace 至少绑定 request ID、model/revision、template、sampling、queue/prefill/decode 时间、usage 和 outcome。发布时同时测 TTFT、TPOT、吞吐、峰值显存、拒绝和取消。
 
+如果你正在运行 text-only `Qwen3-0.6B` 与 nano-vLLM，可以进入
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)。这条固定路径会把 Qwen config/权重、
+Transformers tokenizer、nano-vLLM 的 Qwen3 model class、Scheduler、Paged KV、FlashAttention、
+Triton 写缓存 kernel 与 CUDA Graph 放进同一条 trace。它验证的是该 checkpoint 与 runtime commit 的
+架构/执行依赖，不是 Qwen 不同代际型号的横向介绍，也不包含 HTTP 服务 SLO。
+
 ## 怎样做模型评测
 
 使用同一组 case 比较 baseline 与 candidate，并保留逐 case 输出。至少覆盖：
@@ -242,6 +250,7 @@ Qwen 不会让 RAG 自动正确。先用 extractive 或模板化 baseline，确�
 | 完成单卡 SFT/LoRA/DPO 路线 | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
 | 建立中文权限感知 RAG | [RAG Foundations](../practice/projects/rag-foundations.md) |
 | 部署并测量服务 | [Inference Serving](../practice/projects/inference-serving.md) |
+| 追踪 Qwen3 在 nano-vLLM 中的真实执行 | [实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md) |
 | 核对仓库精确运行证据 | [Qwen 证据台账](../evidence/qwen-controls.md) |
 
 ## 自测

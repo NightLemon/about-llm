@@ -61,6 +61,33 @@ python projects/inference-serving/transformers_thread_cancellation_control.py
 
 无 `--verify` 的 live execution 会记录当次 UTC 日期与当前 Python/Torch/Transformers/HTTP runtime identity，并按这组显式身份验证行为投影；`--verify` 则只接受仓库中经审阅的固定日期、固定 runtime artifact。两类报告不可互换：依赖升级后的 live 通过只说明新环境观察到同一受限行为，不会自动把旧录制证据升级为已审阅；若要重录，必须同时复核 runtime、报告内容、fingerprint 与上述证据边界。
 
+## Qwen3-0.6B 穿过 nano-vLLM 的目标 GPU study
+
+完整学习顺序见[实验 7B](../../docs/practice/labs/lab-7b-nano-vllm-qwen3.md)。Manifest 固定
+`GeeeekExplorer/nano-vllm@bb823b3e06983d71485a8e1f23715ebd87d98ef8` 与
+`Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca`：
+
+~~~bash
+python projects/inference-serving/nano_vllm_study.py collect \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --source-root /path/to/nano-vllm \
+  --model-snapshot /path/to/Qwen3-0.6B/snapshot \
+  --output artifacts/inference/nano-vllm-study.json
+
+python projects/inference-serving/nano_vllm_study.py verify \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --report artifacts/inference/nano-vllm-study.json
+~~~
+
+`collect` 只接受 clean upstream checkout、固定 model artifacts 与 CUDA 环境。四个独立 worker 隔离
+eager/CUDA Graph 和 256/1024 prefill budget；每个 worker 再扫描 exact/one-token-drift prefix 与并发
+1/2/4/8。报告保存 warmup、五个 measurement、每步 sequence/KV trace、engine TTFT/TPOT/E2E、输出
+token throughput、峰值 allocated/reserved memory 和 typed failure terminal，不保存 raw prompt。
+
+`verify` 是 CPU-only：它检查 strict JSON、identity、时间顺序、指标算术、prefix hit、调度 token budget 和
+KV 账本。仓库当前不包含 3070 实测数字；只有用户回传的脱敏 JSON 通过 verifier 和人工边界审查后，
+才能新增 recorded evidence。上游 README 的 RTX 4070 Laptop 数字不能替代这项运行。
+
 ## vLLM 服务
 
 vLLM 的平台和版本兼容变化较快。先按官方说明在 Linux/WSL2 安装，再选择适合显存和许可证的模型。示例：

@@ -1,7 +1,8 @@
 # 推理服务证据与准确性账本
 
 第一次学习推理系统时，不要从本页开始。先读[一次请求如何穿过推理引擎](../systems/inference-request-lifecycle.md)，
-再完成[Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)。本页面向内容维护者和项目评审者，
+再完成[Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)与
+[Qwen3 + nano-vLLM 实验](../practice/labs/lab-7b-nano-vllm-qwen3.md)。本页面向内容维护者和项目评审者，
 集中回答“教材里的结论由什么独立证据支持，以及这些证据没有证明什么”。
 
 **读者入口**：[推理基础](../systems/inference.md) ·
@@ -35,6 +36,7 @@
 | Client queue 不能从 dispatch TTFT 中恢复 | `tests/test_inference_workload.py` | offered/started/terminal 四时钟 fixture | Gateway/runtime 内部 queue |
 | HTTP 完成不自动证明目标权重执行 | `tests/test_target_service_control.py` | 固定 Qwen manifest、子进程和 generate audit | vLLM/CUDA、质量或生产容量 |
 | 断连传播与模型停止、KV 释放是三份证据 | `tests/test_incremental_streaming_control.py` 与 tiny-Transformers recorded verifier | ASGI task 与显式 cooperative generation thread 分开观测 | 未修改 runtime、不可中断 kernel 或 GPU KV release |
+| 固定 nano-vLLM trace 可对账 phase、prefix hit 与 KV 释放 | `tests/test_nano_vllm_study.py` + 目标 GPU report | CPU verifier 独立复算 schema、时间、指标和 KV 不变量；GPU runner 观察真实 step | HTTP SLO、模型质量、跨引擎排名或其他硬件版本 |
 
 测试名称表达的是证据类型，不表达“整个系统正确”。例如 attention parity 测试证明当前 fixture 的数值等价，
 不能证明实现已经使用 PagedAttention GPU kernel。
@@ -54,6 +56,7 @@ python -m pytest `
   tests/test_kv_allocator.py `
   tests/test_paged_kv_torch.py `
   tests/test_kv_preemption_batching.py `
+  tests/test_nano_vllm_study.py `
   -q
 ~~~
 
@@ -86,6 +89,28 @@ python projects/inference-serving/transformers_thread_cancellation_control.py --
 - Tiny Transformers control 证明显式植入 event 与 `StoppingCriteria` 后，真实 `generate()` thread 能退出并 join。
 
 三者合起来仍没有执行 vLLM scheduler、CUDA kernel 或 GPU KV release，也没有测量目标服务质量与性能。
+
+## nano-vLLM 目标 GPU study { #nano-vllm-study }
+
+这条路径把“目标运行证据”再拆成 runner 与 recorded evidence 两步：
+
+1. 仓库固定 source/model manifest，提供 GPU collector 与 CPU verifier。
+2. 用户在真实 3070 Laptop WSL 环境运行，回传脱敏 `about-llm.nano-vllm-study.v1` JSON。
+3. 先离线验证 strict schema、identity、计时/指标算术和 KV 账本，再人工审查硬件、失败和证据边界。
+4. 只有前三步都通过，才把具体数字提升为仓库 recorded evidence。
+
+~~~bash
+python projects/inference-serving/nano_vllm_study.py verify \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --report artifacts/inference/nano-vllm-study.json
+~~~
+
+CPU 测试使用 synthetic report 检查 verifier 自己会拒绝 duplicate key、NaN、revision 漂移、时间倒流、
+指标篡改、prefill budget 超限和 KV 账本不守恒。它不声称 synthetic timing 是 GPU 性能。
+
+GPU collector 才会真实执行固定 Qwen3 权重、nano-vLLM Scheduler/BlockManager/ModelRunner、FlashAttention、
+Triton KV store、Sampler 和符合条件的 decode CUDA Graph。报告中的 TTFT/TPOT/E2E 是 engine 内部时钟，
+不含 HTTP、tokenization、网络和 client queue。当前仓库尚未录入 3070 report，因此不能引用具体性能数字。
 
 ## Workload 与 SLO 证据
 

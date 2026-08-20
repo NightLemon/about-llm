@@ -70,11 +70,13 @@ HTTP 和基本性能测量。
 1. [推理基础](../systems/inference.md)：区分 prefill、decode 和 KV Cache。
 2. [请求生命周期](../systems/inference-request-lifecycle.md)：沿一次请求串起调度、KV、采样、流式和终态。
 3. [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md)：先预测 block table，再验证 COW 与容量失败。
-4. [推理优化](../systems/inference-optimization.md)：从 TTFT、TPOT、吞吐和容量症状选择技术。
-5. [vLLM 服务](../systems/vllm-serving.md)：启动服务并固定模型、请求和采样配置。
-6. [服务与可观测性](../systems/serving.md)：测量排队、错误、资源和回滚。
-7. [硬件与端侧](../systems/hardware-edge.md)：用算力、带宽和容量账本解释瓶颈。
-8. 完成 [Inference Serving](../practice/projects/inference-serving.md) 项目的一次压测与故障实验。
+4. [Qwen3 + nano-vLLM 实验](../practice/labs/lab-7b-nano-vllm-qwen3.md)：在真实 GPU 上追踪
+   waiting/running/finished、chunked prefill、prefix hit、decode 与 KV 释放。
+5. [推理优化](../systems/inference-optimization.md)：从 TTFT、TPOT、吞吐和容量症状选择技术。
+6. [vLLM 服务](../systems/vllm-serving.md)：启动服务并固定模型、请求和采样配置。
+7. [服务与可观测性](../systems/serving.md)：测量排队、错误、资源和回滚。
+8. [硬件与端侧](../systems/hardware-edge.md)：用算力、带宽和容量账本解释瓶颈。
+9. 完成 [Inference Serving](../practice/projects/inference-serving.md) 项目的一次压测与故障实验。
 
 完成标准：能说明负载怎样到达、每只时钟从哪里开始、资源上限在哪里，以及失败后何时真正释放。
 容量结论应来自一段分布和一组终态，而不是某次请求的延迟截图。
