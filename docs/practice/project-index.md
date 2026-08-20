@@ -15,7 +15,7 @@
 | 理解函数式训练 | [JAX MiniGPT](projects/jax-minigpt.md) | 在 CPU 上让 tiny model 过拟合小数据 | 对账 PyTorch/JAX 梯度并验证恢复 |
 | 构建可诊断 RAG | [RAG Foundations](projects/rag-foundations.md) | 跑通一次 answer 与一次 abstain | 加入持久化、模型、服务与分层评测 |
 | 比较 RAG 框架 | [RAG Framework Adapters](projects/rag-framework-adapters.md) | 同一检索结果通过两个框架往返 | 检查 metadata、rank 与权限是否漂移 |
-| 构建安全工具 Agent | [Safe Agent](projects/safe-agent.md) | 完成一次只读工具调用 | 加入审批、幂等、恢复和失败 verifier |
+| 构建安全工具 Agent | [Safe Agent](projects/safe-agent.md) | 跑通一次退款的九阶段生命周期 | 再接真实 Planner、框架、协议与外部服务 |
 | 完成单卡微调闭环 | [Single-GPU Finetuning](projects/single-gpu-finetuning.md) | 审计一批最终 labels | 比较 Prompt、RAG、LoRA 与 held-out 结果 |
 | 理解云 API 契约 | [Cloud API Contracts](projects/cloud-api-contracts.md) | 解析一次 typed response | 加入流式、重试、预算和不确定结果 |
 | 部署和测量推理服务 | [Inference Serving](projects/inference-serving.md) | 跑通采样与最小 HTTP 服务 | 测量排队、TTFT、TPOT、显存和取消 |
@@ -72,11 +72,13 @@ python -m pytest tests/test_rag_service.py -q
 ### 路径 B：Agent 授权与恢复
 
 ~~~powershell
-python projects/safe-agent/model_planner_control.py
-python -m pytest tests/test_model_planner.py -q
+python projects/safe-agent/refund_lifecycle.py
+python -m pytest tests/test_agent_refund_lifecycle.py -q
 ~~~
 
-沿 trace 标记 model response、proposal、authorization、execution 和 verifier。模型生成合法 JSON 只表示结构通过，不表示资源获权或副作用可以执行。
+沿 trace 标记 observation、proposal、schema、ACL、approval、execution、idempotency、verifier 和 recovery。
+重点解释为什么远端已受理而本地超时时，不能报告失败或直接重试。完成后再运行
+`model_planner_control.py`，把固定 proposal 换成 strict recorded model boundary。
 
 故意破坏：用旧审批批准新参数，或把远端 `completed` 直接当成本地成功。两种情况都必须被控制面拒绝。
 

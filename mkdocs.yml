@@ -142,6 +142,7 @@ nav:
           - 生产架构与运维: applications/rag-production.md
       - Agent:
           - 总览: applications/agents.md
+          - 一次退款任务的生命周期: applications/agent-task-lifecycle.md
           - 架构、规划与记忆: applications/agent-architecture.md
           - 决策理论与安全终止: applications/agent-decision-theory.md
           - 工具协议与故障恢复: applications/agent-runtime.md
@@ -178,6 +179,7 @@ nav:
           - 0D Opaque Reasoning 工件安全: practice/labs/lab-0d-reasoning-artifact-security.md
           - 4A 追踪一个 SFT 样本: practice/labs/lab-4a-sft-sample.md
           - 5 一次 RAG 问答: practice/labs/lab-5-rag-request.md
+          - 6 一次 Agent 退款: practice/labs/lab-6-agent-lifecycle.md
           - 7A Paged KV 与 COW: practice/labs/lab-7a-paged-kv.md
       - 工程项目:
           - 项目索引: practice/project-index.md

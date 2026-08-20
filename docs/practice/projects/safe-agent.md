@@ -1,7 +1,9 @@
 # Safe Agent
 
-**项目导航**：[返回项目索引](../project-index.md) · [Agent 架构](../../applications/agent-architecture.md) · [决策理论](../../applications/agent-decision-theory.md) ·
-[Agent Runtime](../../applications/agent-runtime.md) · [互操作协议](../../applications/agent-interoperability.md) · [实验 6](../labs.md#lab-6)
+**项目导航**：[返回项目索引](../project-index.md) · [Agent 生命周期](../../applications/agent-task-lifecycle.md) ·
+[Agent 架构](../../applications/agent-architecture.md) · [决策理论](../../applications/agent-decision-theory.md) ·
+[Agent Runtime](../../applications/agent-runtime.md) · [互操作协议](../../applications/agent-interoperability.md) ·
+[实验 6](../labs/lab-6-agent-lifecycle.md)
 { .doc-nav }
 
 ## 目标
@@ -22,6 +24,23 @@ flowchart LR
 ```
 
 核心不变量：default deny；ACL/capability 不来自模型参数；approval 绑定 subject/resource/tool/arguments/policy version/expiry；handler 一旦 claim 就消耗预算；`completed` 必须由 verifier 建立；相同 call id 换身份或参数是冲突，不能覆盖。
+
+## 先跑一笔完整退款 { #refund-lifecycle }
+
+第一次进入本项目，不要先从 MCP、框架 adapter 或长测试矩阵开始。先运行：
+
+~~~powershell
+python projects/safe-agent/refund_lifecycle.py
+~~~
+
+固定案例让 `user-42` 为自己的 `order-1001` 申请 300 元退款。Planner proposal 先经过 closed schema、
+server-resolved order ACL 和绑定 execution identity 的审批。模拟 provider 已受理退款，但第一次响应丢失，
+因此本地只能保持 `pending`；同 call ID 重放被 fence。独立 provider query 找到匹配 receipt 后，reconciliation
+把结果写回 SQLite，重启后的 replay 为 `cached`，provider effect count 始终为 1。
+
+这条主线把 observation → proposal → schema → ACL → approval → execution → idempotency → verifier → recovery
+放进同一份输出。逐阶段讲解见[一次 Agent 退款任务](../../applications/agent-task-lifecycle.md)，预测与动手记录见
+[实验 6](../labs/lab-6-agent-lifecycle.md)。它不调用真实 LLM 或支付服务，也不证明 exactly-once 或生产安全。
 
 ## Agent 决策理论 exact control { #decision-theory-control }
 

@@ -7,15 +7,17 @@
 
 - **适合读者**：第一次判断是否需要 Agent 的应用工程师和产品人员。
 - **先修**：理解模型输出可能错误；不要求先懂 MCP 或复杂规划。
-- **首次阅读**：先判断是否需要 Agent，再跟完一次“提议—校验—执行—验证”循环。
+- **首次阅读**：先判断是否需要 Agent，再跟完[一次 Agent 退款任务](agent-task-lifecycle.md)。
 - **完成信号**：能区分普通程序、Workflow 和 Agent，并画出模型、执行层与业务系统的信任边界。
-- **卡住时**：先读[Prompt 输出契约](prompting.md)，再运行 [Safe Agent 最小项目](../practice/projects/safe-agent.md)。
+- **卡住时**：先把 Planner 当作固定 JSON 生成器，完成[实验 6](../practice/labs/lab-6-agent-lifecycle.md)。
 
 </div>
 
 Agent 不是“更聪明的聊天框”，而是一个允许模型反复选择动作的程序。真正困难的部分也不是让模型生成工具名，而是保证一次不可靠的选择不会变成越权、重复扣款或无法恢复的副作用。
 
-本章用一个售后助手贯穿讲解：它可以查询订单、读取退款规则，并在获得批准后申请退款。
+本章用一个售后助手建立地图：它可以查询订单、读取退款规则，并在获得批准后申请退款。
+[生命周期专题](agent-task-lifecycle.md)会让同一笔退款真实经历 schema、ACL、审批、远端超时、pending、
+幂等重放、业务验证和恢复，不把它们拆成互不相干的名词。
 
 深入实现分别见[架构、规划与记忆](agent-architecture.md)、[决策理论与安全终止](agent-decision-theory.md)、[工具协议与故障恢复](agent-runtime.md)、[MCP、A2A 与互操作](agent-interoperability.md)以及[Agent 评测与红队](../quality/agent-evaluation.md)。
 
@@ -61,6 +63,10 @@ flowchart LR
 6. Verifier 根据业务状态判断目标是否完成，最后才让模型组织答复。
 
 这里最重要的边界是：**模型负责提议，可信代码负责授权与执行**。JSON 合法只表示参数可解析，不表示用户有权操作该订单。
+
+上图的 happy path 还隐藏了最难的分支：远端已经受理退款，但响应在返回前丢失。
+请在[一次 Agent 退款任务如何安全结束](agent-task-lifecycle.md)中继续跟踪同一任务，观察为什么本地 `failed`、
+ledger `pending`、verifier `passed` 和恢复后 `cached` 可以依次成立。
 
 ## 工具设计
 
@@ -145,6 +151,19 @@ MCP 主要连接 AI 应用与 tools/resources/prompts；A2A 主要描述独立 A
 - 停止原因、步骤数、延迟和费用是否可解释。
 
 最终回答“看起来正确”只是一个观测项。核心断言应落在结构化 trace 和业务系统状态上。完整方法见[Agent 仿真与红队](../quality/agent-evaluation.md)。
+
+## 接下来怎样学习
+
+推荐顺序如下：
+
+1. [一次 Agent 退款任务](agent-task-lifecycle.md)：先把九个阶段连成一条可解释时间线。
+2. [实验 6：追踪一次 Agent 退款](../practice/labs/lab-6-agent-lifecycle.md)：预测、运行并检查故障恢复证据。
+3. [架构、规划与记忆](agent-architecture.md)：理解 loop、state、memory 与 verifier。
+4. [工具协议、幂等与故障恢复](agent-runtime.md)：深入 schema、approval、ledger、outbox 与恢复协议。
+5. [决策理论与安全终止](agent-decision-theory.md)：在不确定状态下理解 observation、belief 与 hard constraint。
+6. [MCP、A2A 与互操作](agent-interoperability.md)：最后再把可信内核接到框架和远端协议。
+
+可运行代码和更完整的失败矩阵位于 [Safe Agent 项目](../practice/projects/safe-agent.md)。
 
 ## 自测
 

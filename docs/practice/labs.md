@@ -12,7 +12,7 @@
 | 第一次观察生成模型 | [实验 0A](labs/lab-0a-sampling.md) | 30–60 分钟 |
 | 理解 tokenizer 与注意力 | [实验 1](#lab-1)、[实验 2](#lab-2) | 2–4 小时 |
 | 训练或微调模型 | [实验 3](#lab-3)、[实验 4A](labs/lab-4a-sft-sample.md) | 1–3 天 |
-| 构建 RAG 或 Agent | [RAG 实验 5](labs/lab-5-rag-request.md)、[实验 6](#lab-6) | 1–3 天 |
+| 构建 RAG 或 Agent | [RAG 实验 5](labs/lab-5-rag-request.md)、[Agent 实验 6](labs/lab-6-agent-lifecycle.md) | 1–3 天 |
 | 学习服务与评测 | [实验 7](#lab-7)、[实验 8](#lab-8) | 1–3 天 |
 
 每次实验至少提交四项：运行配置、原始观察、一个负例、自己的解释。模型下载、GPU 和网络实验都是选修；先用 CPU 基线建立正确性分母。
@@ -147,15 +147,11 @@
 
 ## 实验 6：安全的工具 Agent { #lab-6 }
 
-在模拟环境提供只读搜索、创建草稿和“发送”工具：
+先完成[独立实验页：追踪一次 Agent 退款](labs/lab-6-agent-lifecycle.md)。它用一笔“远端已受理、
+本地响应超时”的退款，串起 proposal、closed schema、资源 ACL、审批、pending fence、provider verifier
+和 reconciliation。完成后再把固定 Planner 换成模型或框架，不要先把控制状态藏进一个 `invoke()`。
 
-1. 模型输出只形成 proposal，不直接产生副作用。
-2. 参数通过 closed schema、授权和业务规则三层检查。
-3. 写操作使用稳定 effect id、幂等和结果 verifier。
-4. 测试超时、预算耗尽、恶意 observation、重复请求和重启恢复。
-5. 区分 model decision、handler attempt、external effect 与 final verification。
-
-交付物：状态图、工具 schema、授权矩阵、receipt 和至少三个失败路径。推荐从 [Safe Agent](projects/safe-agent.md) 的本地 scripted planner 开始。
+交付物：九阶段状态图、字段信任边界、授权负例、effect receipt、恢复时间线和证据边界。
 
 ### 实验 6A：MCP 与 A2A 互操作 { #lab-6a }
 

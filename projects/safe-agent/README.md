@@ -2,6 +2,20 @@
 
 目标：把“模型建议动作”和“系统获权执行”分开。任何模型或 Agent 框架都只能产生 ToolCall；执行内核负责 schema、权限、审批、预算和幂等。
 
+## 从一笔完整退款开始
+
+~~~powershell
+python projects/safe-agent/refund_lifecycle.py
+~~~
+
+`refund_lifecycle.py` 是本项目的第一入口。它让同一笔 300 元退款依次经过 observation、proposal、closed schema、
+资源 ACL、approval、execution、pending replay fence、provider verifier 和 reconciliation。模拟 provider 会先受理退款、
+再丢失第一次响应，因此读者可以观察“本地调用失败”和“外部 effect 已发生”如何同时成立。
+
+恢复后 replay 为 `cached`，provider request attempt 与 effect count 都保持为 1。这是固定 SQLite + 模拟 provider 的
+局部证据，不是 exactly-once、真实支付服务或生产安全证明。教材讲解见
+[`agent-task-lifecycle.md`](../../docs/applications/agent-task-lifecycle.md)。
+
 ## 已实现的不变量
 
 - 工具注册表拒绝重名和未知工具；

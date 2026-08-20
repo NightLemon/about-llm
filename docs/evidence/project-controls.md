@@ -9,7 +9,7 @@
 |---|---|---|---|
 | [RAG Foundations](../practice/projects/rag-foundations.md) | 版本化摄取/备份、ACL、检索/重排、packing/trace、ASGI、Qwen failure/replay/guard | L2+：CPU/SQLite/ASGI + 固定 Qwen 三层 controls；远端向量库/GPU 待实测 | [运行与验收](../practice/projects/rag-foundations.md#run) |
 | [RAG Framework Adapters](../practice/projects/rag-framework-adapters.md) | canonical ACL/rank→两框架 Retriever/Prompt→round-trip/artifact parity | L2：真实 LangChain/LlamaIndex core API + 16 个字段/安全/漂移测试；native index、LLM 与性能未执行 | [运行与验收](../practice/projects/rag-framework-adapters.md#run) |
-| [Safe Agent](../practice/projects/safe-agent.md) | proposal/policy/approval/verifier、LangChain/LlamaIndex tool/Agent-loop controls、pending/resume、outbox、MCP/A2A | L2：真实 framework tool API/控制流 + scripted model + 离线 planner/SQLite/outbox + official/authored loopback controls；真实模型、生产 IAM/副作用待实测 | [运行与验收](../practice/projects/safe-agent.md#run) |
+| [Safe Agent](../practice/projects/safe-agent.md) | 一笔退款的九阶段生命周期、LangChain/LlamaIndex tool/Agent-loop controls、pending/resume、outbox、MCP/A2A | L2：closed schema/ACL/approval + SQLite recovery + 真实 framework 控制流 + scripted model + official/authored loopback；真实模型、生产 IAM/副作用待实测 | [退款生命周期](../practice/projects/safe-agent.md#refund-lifecycle) |
 | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) | train-only readiness→mask/final labels→SFT/QLoRA/DPO→adapter→held-out gate | L2+：零下载 preflight、tiny/CPU/Gloo/跨 PID controls + 固定 Qwen SFT labels/forward、LoRA/DPO 单步；CUDA/QLoRA 峰值与业务质量待目标环境实测 | [运行与验收](../practice/projects/single-gpu-finetuning.md#run) |
 | [Transformers Basics](../practice/projects/transformers-basics.md) | BPE→attention/online softmax→generation/config→固定 Qwen forward/单矩阵 INT4→activation patching→六级 MoE routing/training | L2：NumPy/PyTorch CPU controls + immutable release evidence + 固定 Qwen 真实权重/activation；完整 low-bit checkpoint、CUDA/NCCL/生产性能未执行 | [运行与验收](../practice/projects/transformers-basics.md#run) |
 | [JAX MiniGPT](../practice/projects/jax-minigpt.md) | 纯函数 PyTree/Optax/JIT→SGD/AdamW parity→strict resume | L2：632 参数 CPU overfit + PyTorch/JAX 全梯度/三步 optimizer 对账 + 两进程 bit-exact control；accelerator/sharding 未执行 | [运行与验收](../practice/projects/jax-minigpt.md#run) |
@@ -107,16 +107,18 @@ python -m pytest tests/test_rag_service.py -q
 ### 路径 B：Agent 的 proposal、授权与恢复
 
 ~~~powershell
+python projects/safe-agent/refund_lifecycle.py
 python projects/safe-agent/model_planner_control.py
 python projects/safe-agent/mcp_sdk_memory_control.py
 python projects/safe-agent/mcp_sdk_stdio_control.py
 python projects/safe-agent/mcp_sdk_streamable_http_control.py
 python projects/safe-agent/mcp_stdio_control.py
 python projects/safe-agent/mcp_streamable_http_control.py
-python -m pytest tests/test_model_planner.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py -q
+python -m pytest tests/test_agent_refund_lifecycle.py tests/test_model_planner.py tests/test_mcp_sdk_memory.py tests/test_mcp_sdk_stdio.py tests/test_mcp_sdk_streamable_http.py tests/test_mcp_stdio.py tests/test_mcp_streamable_http.py -q
 ~~~
 
-沿 trace 分开标记 model response、decision、action proposal、approval、execution 与 verifier result。严格 JSON schema 只说明结构符合约束，不说明资源已授权、内容可信或副作用可以执行。模型看到的工具结果和网页文本都属于不可信 observation。
+先沿退款 trace 标记 observation、proposal、schema、ACL、approval、execution、idempotency、verifier 与 recovery，
+再进入 model planner 和协议 controls。严格 JSON schema 只说明结构符合约束，不说明资源已授权、内容可信或副作用可以执行。模型看到的工具结果和网页文本都属于不可信 observation。
 
 **通过门槛**：非法或漂移 schema 在 resolver 前拒绝；模型只能产生 proposal；不可逆动作需要绑定具体 subject/resource/action 的 approval；只有 verifier 通过才能完成；重复投递和进程恢复不会静默重复副作用。
 

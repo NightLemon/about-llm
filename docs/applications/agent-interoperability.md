@@ -9,7 +9,7 @@
 - **先修**：[Agent 总览](agents.md)和[Runtime](agent-runtime.md)的授权、幂等与 verifier。
 - **首次阅读**：三层契约 → MCP → A2A → adapter → 版本与兼容。
 - **完成信号**：能运行 MCP official-SDK memory、official-SDK stdio、official-SDK Streamable HTTP、自写 strict stdio、自写 Streamable HTTP 与 A2A loopback 六个 control，解释 SDK、transport、binding、错误分层、内部规范化类型和 conformance 边界。
-- **卡住时**：不要从协议 SDK 开始；先完成[实验 6](../practice/labs.md#lab-6)的本地状态机。
+- **卡住时**：不要从协议 SDK 开始；先完成[实验 6](../practice/labs/lab-6-agent-lifecycle.md)的本地状态机。
 
 </div>
 
