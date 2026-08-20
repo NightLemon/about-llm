@@ -13,9 +13,16 @@
 
 </div>
 
-模型发布后会遇到新事实、新术语、新工具、新用户分布和新政策。更新机制必须与变化类型匹配：**把可删除的时效事实写入参数，或用 RAG 修复基础推理能力，都会让系统更难维护。**
+先看本章的两任务实验。一个小模型先把 Task A 学到 100% accuracy，再训练规则相反的 Task B。没有 replay 时，
+Task A 最终只剩约 2.7%；把旧样本与新样本一起训练，两项任务都能保持 100%。
 
-## 1. 先分类要更新什么
+这组数字不是为了证明 replay 总有效，而是让“更新后旧能力消失”变成可观察的状态变化。真实模型发布后还会遇到
+新事实、新术语、新工具、新用户分布和新政策。第一步不是立刻继续训练，而是判断变化究竟应该进入参数、
+外部知识库、Prompt，还是确定性业务代码。
+
+把可删除的时效事实写入参数，或用 RAG 修复基础推理能力，都会让系统更难维护。
+
+## 1. 先判断这件事该不该改权重
 
 | 变化 | 首选候选 | 为什么 |
 | --- | --- | --- |
@@ -29,9 +36,12 @@
 
 这些不是互斥选项。例如先用 RAG 提供最新法规，再用 SFT 教模型怎样引用和拒答；事实仍由外部系统提供。
 
-## 2. 持续学习的评测矩阵
+## 2. 只看新任务，会把遗忘藏起来
 
-假设模型依次学习 \(T\) 个任务/时间段。采用从 0 开始的索引，\(R_{i,j}\) 表示完成任务 \(i\) 的训练后，在任务 \(j\) 上的 accuracy；\(b_j\) 是任何顺序训练前的同一模型基线。要计算 forward transfer，每个阶段必须连尚未训练的未来任务也评测，而不只是“所有已学任务”。
+假设模型依次学习 \(T\) 个任务或时间段。采用从 0 开始的索引，\(R_{i,j}\) 表示完成任务 \(i\) 的训练后，
+模型在任务 \(j\) 上的 accuracy；\(b_j\) 是任何顺序训练前的同一模型基线。
+
+要计算 forward transfer，每个阶段还要评测尚未训练的未来任务，而不只是“所有已学任务”。
 
 不能只比较更新前后目标域。至少报告：
 
@@ -76,7 +86,7 @@ Forward transfer（FWT）比较学习任务 \(j\) 之前的表现与独立的 pr
 
 对角线 \(R_{j,j}\) 只是“刚学完任务后的 accuracy”，不能单独证明 plasticity；学习增益还需要训练前或只训练到 \(j-1\) 的同任务对照。平均值会掩盖关键任务，应同时报告完整矩阵、逐任务 forgetting、seed 分布与置信区间。
 
-## 3. 为什么会遗忘
+## 3. 旧能力是怎样被覆盖的
 
 新数据梯度更新共享参数，可能覆盖旧任务依赖的表示；优化器状态、学习率、数据顺序与 normalization 也会影响更新路径。遗忘不只表现为准确率下降：
 
@@ -89,7 +99,7 @@ Forward transfer（FWT）比较学习任务 \(j\) 之前的表现与独立的 pr
 
 目标域性能提高与旧域下降是 trade-off，不应只通过降低训练 loss 判断。
 
-## 4. Replay
+## 4. Replay：训练新任务时别完全丢掉旧分布
 
 训练新数据时混入旧分布样本，是最直接的 retention 方法。
 
@@ -103,7 +113,11 @@ Forward transfer（FWT）比较学习任务 \(j\) 之前的表现与独立的 pr
 
 Replay ratio 越高通常越有利于保留，但会减少新域预算。应画 new-quality–retention Pareto，而不是固定一个经验比例。
 
-容量为 \(m\) 的 uniform reservoir 可单遍处理未知长度的 stream：先放入前 \(m\) 项；看到从 0 开始编号的第 \(t\) 项时，从 \([0,t]\) 均匀抽一个整数 \(r\)，仅当 \(r<m\) 时替换槽位 \(r\)。归纳可得处理 \(N\) 项后每项进入最终 reservoir 的边际概率都是 \(m/N\)。这只保证对“stream 中的记录”均匀，不保证类别、语言、用户、风险或时间覆盖均衡，也不自动处理重复记录。
+容量为 \(m\) 的 uniform reservoir 可以单遍处理未知长度的 stream。先放入前 \(m\) 项；看到从 0 开始编号的
+第 \(t\) 项时，从 \([0,t]\) 均匀抽一个整数 \(r\)，仅当 \(r<m\) 时替换槽位 \(r\)。
+
+归纳可得，处理 \(N\) 项后，每项进入最终 reservoir 的边际概率都是 \(m/N\)。这只保证对 stream 中的记录均匀，
+不保证类别、语言、用户、风险或时间覆盖均衡，也不会自动处理重复记录。
 
 ### 4.2 合规边界
 
@@ -117,11 +131,18 @@ Replay buffer 复制用户数据会延长保留周期。删除请求必须覆盖
 python projects/single-gpu-finetuning/continual_replay_toy.py
 ~~~
 
-脚本实际执行两阶段 PyTorch SGD，并输出完整 \(R\) 矩阵、ACC、BWT、FWT 与逐任务 forgetting。Task A 与 Task B 的标签规则相反，但输入包含显式 task-id feature，因此同一个 2→16→2 MLP 可以同时解出两项任务；这避免把模型容量上不可同时满足的目标误称为“遗忘”。固定 seed 的当前 CPU fixture 中，无 replay 在学完 B 后把 A accuracy 从 1.0 降到约 0.027，旧任务 forgetting 约 0.973；把**全部**旧样本与新样本按 1:1 联合 replay 后，两项 accuracy 都是 1.0，旧任务 forgetting 为 0。
+脚本实际执行两阶段 PyTorch SGD，并输出完整 \(R\) 矩阵、ACC、BWT、FWT 与逐任务 forgetting。Task A 与
+Task B 的标签规则相反，但输入包含显式 task-id feature，因此同一个 2→16→2 MLP 可以同时解出两项任务。
+这样可以避免把“模型容量上不可能同时满足”误称为遗忘。
+
+在固定 seed 的 CPU fixture 中，无 replay 在学完 B 后把 A accuracy 从 1.0 降到约 0.027，旧任务 forgetting
+约为 0.973；把**全部**旧样本与新样本按 1:1 联合 replay 后，两项 accuracy 都是 1.0，旧任务 forgetting 为 0。
 
 两条路径的 FWT 都约为 -0.418，因为它由训练 B 之前的状态决定；B 阶段是否 replay 不可能追溯改变它。这个负值只说明本 fixture 中学 A 后、尚未学 B 时的 B accuracy 低于随机初始化基线，不是“replay 产生负迁移”的证据。
 
-这是 task-incremental、单 seed、full-batch、全量旧数据、CPU synthetic toy。它不覆盖有限 buffer、class/domain-incremental 路由未知场景、真实 LLM/语料、安全 retention、隐私删除、计算开销或置信区间，也不支持“replay 总能消除遗忘”的结论。
+这是 task-incremental、单 seed、full-batch、全量旧数据的 CPU synthetic toy。它没有覆盖有限 buffer、
+class/domain-incremental 的未知路由、真实 LLM/语料、安全 retention、隐私删除、计算开销或置信区间，
+也不支持“replay 总能消除遗忘”的结论。
 
 ### 4.4 有限 Reservoir 与 20-seed 配对比较
 
@@ -131,7 +152,12 @@ python projects/single-gpu-finetuning/continual_replay_toy.py
 python projects/single-gpu-finetuning/continual_replay_toy.py --benchmark
 ~~~
 
-默认使用训练 seed 0–19；每个 seed 的 task A checkpoint 被复制给 no replay、64/256 uniform reservoir 和 256/256 full replay 三条路径，因此 strategy difference 以 seed 为配对单位。Task B 都更新 100 步，但每步分别呈现 256、320、512 个样本；所以它是 **optimizer-step matched，不是 example/compute matched**。新样本呈现量都为 25,600，旧样本呈现量分别为 0、6,400、25,600。
+Benchmark 默认使用训练 seed 0–19。每个 seed 的 Task A checkpoint 都复制给 no replay、64/256 uniform reservoir
+和 256/256 full replay 三条路径，因此 strategy difference 以 seed 为配对单位。
+
+三条路径在 Task B 都更新 100 步，但每步分别呈现 256、320 和 512 个样本。所以它是
+**optimizer-step matched，而不是 example/compute matched**。新样本呈现量都是 25,600，旧样本呈现量分别为
+0、6,400 和 25,600。
 
 当前 CPU/PyTorch fixture 的聚合结果如下。区间是 5,000 次 percentile bootstrap 得到的 95% paired seed-level difference interval：
 
@@ -141,9 +167,18 @@ python projects/single-gpu-finetuning/continual_replay_toy.py --benchmark
 | 64-example reservoir | 0.5893 | 0.9922 | 0.7907 | +0.4758 [0.3389, 0.6104] |
 | full replay | 0.9824 | 0.9854 | 0.9839 | +0.8689 [0.8340, 0.9025] |
 
-有限 reservoir 的 new-task accuracy difference 为 -0.0072，区间 [-0.0102, -0.0045]；full replay 为 -0.0141，区间 [-0.0223, -0.0074]。这里确实出现 retention 提升伴随轻微 plasticity trade-off，但 effect 只对固定 task/data 和本优化配置成立。任务数据在 seed 间完全相同，变化来源只有初始化与 reservoir 选择；因此这个区间**不覆盖**新任务、数据采样、超参数、硬件或真实部署不确定性。20 个连续 seed 也不是任意目标总体的概率样本。
+有限 reservoir 的 new-task accuracy difference 为 -0.0072，区间为 [-0.0102, -0.0045]；full replay 为
+-0.0141，区间为 [-0.0223, -0.0074]。这里确实出现 retention 提升与轻微 plasticity trade-off，
+但 effect 只对固定 task、data 和优化配置成立。
 
-每个 run 内部的 `confidence_intervals_computed=false` 指单个 \(R\) 矩阵没有区间；顶层 `paired_vs_no_replay` 才是跨 seed 比较。Artifact 还逐 seed 保存有限 reservoir 的实际索引和完整矩阵，但没有测 wall time、energy、隐私/删除成本。不能据此断言 64 是最佳容量，或把额外样本呈现量忽略后宣称“同成本获益”。
+任务数据在 seed 间完全相同，变化只来自初始化与 reservoir 选择。因此这个区间**不覆盖**新任务、数据采样、
+超参数、硬件或真实部署不确定性。20 个连续 seed 也不是任意目标总体的概率样本。
+
+每个 run 内部的 `confidence_intervals_computed=false` 表示单个 \(R\) 矩阵没有区间；顶层
+`paired_vs_no_replay` 才是跨 seed 比较。Artifact 还逐 seed 保存有限 reservoir 的实际索引和完整矩阵，
+但没有测 wall time、energy 或隐私/删除成本。
+
+因此，不能据此断言 64 是最佳容量，也不能忽略额外样本呈现量后宣称“同成本获益”。
 
 ## 5. 正则化与蒸馏
 
@@ -230,7 +265,7 @@ D_{KL}(p_{old}(\cdot\mid x)\|p_{new}(\cdot\mid x)).
 
 政策发生实质变化时，应明确版本边界，不能把前后冲突标签混成“更多数据”而不记录时间。
 
-## 9. 模型编辑
+## 9. 模型编辑：改一个事实，别顺手改坏邻居
 
 模型编辑试图对少量事实/行为做局部更新。无论使用梯度、closed-form、low-rank update 或 learned editor，都应测：
 
@@ -244,7 +279,7 @@ D_{KL}(p_{old}(\cdot\mid x)\|p_{new}(\cdot\mid x)).
 
 单个 prompt 改对不代表知识全局一致。若事实经常变化或必须引用来源，外部知识存储通常更可控。
 
-## 10. 权重合并
+## 10. 权重合并不是把能力做加法
 
 ### 10.1 线性插值
 
@@ -278,7 +313,7 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 
 但要求相同 base revision、target modules、shape、fan-in/out 和 scaling 约定。若要把和重新压成固定 rank，需要 SVD/近似，会产生误差。多个 adapter 顺序激活、并行加和和先 merge 再量化也可能不同。
 
-## 11. 合并验收
+## 11. 合并后要重新加载再验收
 
 对每个候选至少比较：
 
@@ -290,7 +325,7 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 
 测试每项能力、通用回归、安全、校准、生成长度和量化后表现。只展示合并后几个“成功样例”无法发现 destructive interference。
 
-## 12. Model lineage 与可回滚发布
+## 12. 每次更新都要能回答从哪里来
 
 每个模型 artifact 记录：
 
@@ -318,7 +353,7 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 
 模型更新与 embedding/RAG index 更新可能不同步。Schema、embedding dimension、tokenizer 与 citation contract 都需要兼容检查。
 
-## 14. Machine unlearning
+## 14. Machine unlearning 不是删除数据库行
 
 删除源数据与消除已训练模型中的影响是不同问题。
 
@@ -388,7 +423,11 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 
 ## 18. 当前仓库证据边界
 
-仓库已有 LoRA merge equivalence、QLoRA memory estimate、SFT 入口、模型 lineage 指引、评测门禁，以及真实执行梯度更新的两任务 task-incremental no/finite/full replay 对照和 20-seed 配对区间。它仍没有在目标 LLM、真实时间序列、多任务/数据采样、compute-matched 配置或安全集上执行完整 continual-learning benchmark，也没有目标模型 unlearning 攻击实验。因此这些证据不证明已解决灾难性遗忘或机器遗忘。
+仓库已有 LoRA merge equivalence、QLoRA memory estimate、SFT 入口、模型 lineage 指引和评测门禁，
+还实际运行了两任务 task-incremental 的 no/finite/full replay 对照与 20-seed 配对区间。
+
+仓库没有在目标 LLM、真实时间序列、多任务/数据采样、compute-matched 配置或安全集上执行完整 benchmark，
+也没有目标模型 unlearning 攻击实验。因此，现有证据不能证明灾难性遗忘或机器遗忘已经解决。
 
 ## 19. 常见错误结论
 

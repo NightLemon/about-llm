@@ -5,238 +5,312 @@
 
 **学习导航**
 
-- **适合读者**：LLM API、SRE、平台和质量运营工程师。
+- **适合读者**：负责 LLM API、平台、SRE 或质量运营的工程师。
 - **先修**：[请求生命周期](inference-request-lifecycle.md)、HTTP、队列和基本 SLO 概念。
-- **首次阅读**：SLO → API 契约 → 路由/降级 → 背压 → 质量监控。
-- **完成信号**：能写含失败分母、容量、取消和降级的服务 SLO。
+- **首次阅读**：跟完高峰期的一次聊天请求，再看过载、发布和事故处理。
+- **完成信号**：能写出包含流量分母、排队、取消、容量和降级条件的服务 SLO。
 - **卡住时**：先区分[推理指标](inference.md)中的 queue、TTFT、TPOT 与端到端延迟。
 
 </div>
 
-系统工程路线建议先完成[vLLM 单卡验收](vllm-serving.md)，再用本章把单实例扩展到网关、路由、SLO、发布和事故响应。
-最终交付落在 [Inference Serving 项目](../practice/projects/inference-serving.md)。
+周一上午十点，一条聊天请求带着 1,200 个输入 token 和 200 个输出 token 上限到达服务。
+低峰时，用户约 300 ms 就能看到第一个字；现在他等了 8 秒，最后收到 `504`。
 
-## 先画清服务边界
+值班工程师打开看板，却看见两个似乎矛盾的数字：成功请求的 p95 只有 1.4 秒，GPU 利用率也只有 62%。
+真正的问题藏在统计口径里：大量请求在客户端并发槽和服务队列中超时，既没进入“成功请求延迟”，也没让 GPU 开始计算。
 
-LLM serving 不是“给 `generate()` 套一层 HTTP”。一个可运营系统至少有三条平面：
+这正是 LLM serving 比“给 `generate()` 套一层 HTTP”难的地方。一次请求会依次争用连接、队列、
+prefill、KV cache、decode 和流式传输；任何一层都可能先结束，而下游工作仍在继续。
 
-- **数据面（data plane）**：认证后的请求经过路由、排队、调度、prefill/decode、stream、后处理和返回；
-- **控制面（control plane）**：管理 model/tokenizer/template/adapter、配额、路由、发布、回滚和租户策略；
-- **证据面（evidence plane）**：保存 attempt、trace、指标、版本 identity、质量评测与变更决策，回答“实际运行了什么、为什么发布”。
+系统工程路线可以先完成 [vLLM 单卡验收](vllm-serving.md)，再用本章把一个实例扩展成可运营服务。
+最终实践落在 [Inference Serving 项目](../practice/projects/inference-serving.md)。
+
+## 先跟请求走一遍
+
+把上面的请求拆成可观察状态：
+
+| 时刻 | 状态 | 系统需要回答的问题 |
+|---|---|---|
+| 客户端计划发送 | `offered` | 流量何时真正到达？客户端自己排了多久？ |
+| 网关验证身份和输入 | `eligible` | 它是否属于服务承诺范围？ |
+| 等待容量 | `queued` | 前面有多少 token work，deadline 还剩多久？ |
+| 预留 sequence 与 KV | `admitted` | 预留是否足以覆盖这次请求？ |
+| prefill / decode | `running` | 首 token、后续 token 与取消分别发生在何时？ |
+| 返回或终止 | `terminal` | 成功、拒绝、超时、断连还是结果未知？资源真的释放了吗？ |
 
 ```mermaid
 flowchart LR
-  C["Client / workload generator"] --> G["Gateway: identity, policy, request limits"]
-  G --> A["Admission: queue, token/KV reservation"]
-  A --> S["Scheduler: prefill, decode, preemption"]
-  S --> R["Runtime: weights, KV, kernels"]
-  R --> O["Stream / response verifier"]
+  C["Client: offered_at"] --> G["Gateway: identity, schema, quota"]
+  G --> Q["Admission queue"]
+  Q --> S["Scheduler: prefill / decode"]
+  S --> R["Runtime: weights / KV / kernels"]
+  R --> O["Stream and terminal outcome"]
   O --> C
-  P["Control plane: revisions, quota, rollout"] -.-> G
-  P -.-> A
-  P -.-> S
+  P["Control plane: revisions, routes, limits"] -.-> G
+  P -.-> Q
   P -.-> R
-  E["Evidence: attempts, traces, evals, release decision"] -.-> G
+  E["Evidence: attempts, traces, evals"] -.-> G
   E -.-> S
   E -.-> O
 ```
 
-模型运行时不应自行决定 authenticated tenant、权限、价格、发布 revision 或是否越过 hard limit。反过来，网关返回 200 也不能证明目标 checkpoint、正确 tokenizer 或目标 kernel 真被执行；需要把控制面 identity、数据面 request id 与服务端执行证据关联。
+图里有三条平面。数据面搬运请求和 token；控制面决定版本、配额、路由与发布；证据面保存实际执行记录。
+模型运行时只负责生成，不能替网关决定认证主体、租户权限、价格或 hard limit。
 
-## 先定义 SLO
+反过来，网关返回 `200` 也只说明 HTTP 路径成功。要确认目标 checkpoint、tokenizer 和 template 确实执行，
+还需要用 request ID 把网关记录与服务端 generation trace 连起来。
 
-服务目标应按流量类型分层，例如聊天重视流式 TPOT，批量抽取重视吞吐，Agent 重视工具链总成功率。常见 SLI：
+## 第一个问题：哪些请求算成功
 
-- 可用性、请求成功率、超时率；
-- p50/p95/p99 TTFT、TPOT 和端到端延迟；
-- 输入/输出 tokens、并发、队列长度、batch 大小；
-- tokens/s/GPU、GPU 显存和利用率；
-- 每成功任务成本，而非只看每 token 价格；
-- 格式合法率、引用正确率、安全拦截与业务质量。
+延迟分位数通常只统计成功请求，因此必须和完整终态计数一起看：
 
-成功请求的 latency percentile 是条件统计，不能替代 availability。每轮同时记录 attempted、success、timeout、429、5xx、cancelled；无成功请求时 p95 不应伪报为 0。Offered QPS、attempted RPS 与 successful RPS 口径不同，容量报告必须标明分子、分母与时间窗口。
+```text
+attempted
+├── invalid / unauthorized / over_quota
+└── eligible
+    ├── success
+    ├── rate_limited / queue_timeout
+    ├── execution_timeout / cancelled
+    └── server_error / outcome_unknown
+```
 
-先固定“谁进入分母”。一种常见写法是：
+服务应在看到结果前定义 `eligible`。一种常用口径是：请求已经认证、符合 schema，并处于租户合同配额内。
+在这个定义下：
 
 \[
-\text{success rate}=\frac{N_{\text{success}}}{N_{\text{eligible offered}}}
+\text{success rate}
+=
+\frac{N_{\text{success}}}{N_{\text{eligible offered}}}.
 \]
 
-`eligible` 必须在看结果前由合同定义，例如已认证、schema-valid、在租户配额内的请求。认证攻击、格式错误和超合同流量可分开运营，但不能为了让数字好看，在事后把慢请求、429 或模型拒答移出分母。业务成功、协议成功和安全拒绝又是不同终态：HTTP 成功不等于任务成功，安全策略正确拒绝也不应被粗暴改写为模型故障。
+慢请求、`429` 和模型拒答不能在事后为了改善数字而移出分母。恶意请求、无效格式和超合同流量可以单独运营，
+但资格规则要先写进服务契约。协议成功、任务成功和安全策略正确拒绝也是三种不同结果，不能只看 HTTP 状态码。
 
-若目标成功率是 \(S\)，窗口内允许的失败份额是 \(1-S\)。Error budget 是变更速度与可靠性的治理工具，不是“可以故意失败”的配额；窗口、流量资格、维护期、低样本处理和多窗口告警都要预先固定。低流量服务用一个请求计算 p99 很不稳定，应同时展示样本量、原始终态计数和更长窗口，不能用 percentile 隐藏分母。
+聊天、批量抽取和 Agent 对 SLO 的侧重点不同：
 
-负载生成器的 concurrency semaphore 也是队列。只从取得槽位后开始 TTFT/E2E 计时，会隐藏 client queue；同时记录 workload `offered_at`、HTTP dispatch、首 token 与 terminal。Client queue 不等于服务端 queue，快速 429 的 terminal latency 很低也不等于体验达标，因此 queue/latency 必须与 success rate 联合门禁。
+- 聊天首先关心可用性、TTFT、TPOT 和流中断率；
+- 批量任务通常更关心截止时间内完成率和 tokens/s/GPU；
+- Agent 还要计算工具链终态、重复副作用和每个成功任务的总成本。
 
-Closed-loop worker 通常在上一请求完成后才发下一条，服务变慢会自动降低 offered load；constant/Poisson open-loop 则按外生 schedule 继续到达，更适合找饱和 knee。open-loop 也必须报告 generator lag：把 scheduled timestamp 写成 `offered_at` 可让迟到进入 client queue，却不证明发生器实际按时执行。有限预生成任务、无限流量服务和生产 arrival distribution 是三种不同证据。
+每轮至少报告 attempted、eligible、success、timeout、`429`、`5xx` 与 cancelled 的原始数量。
+低流量服务的 p99 很容易被单个样本支配，此时样本量和较长窗口比一个漂亮的小数更有解释力。
 
-## 把 workload 写成版本化契约
+目标成功率为 \(S\) 时，窗口内的失败预算是 \(1-S\)。Error budget 用来约束变更速度和可靠性，
+不是可以故意制造失败的配额；窗口、维护期和低样本处理方式应在上线前固定。
 
-容量不是模型名的常数。一次实验至少固定：
+## 第二个问题：服务承诺的是哪种流量
 
-| 维度 | 为什么会改变结论 |
+容量不是模型名附带的常数。同一个模型处理 32 条短分类和 32 条 32k prompt，内存、队列与首 token 延迟会完全不同。
+一次可比较的 workload 至少固定：
+
+| 维度 | 它会怎样改变结果 |
 |---|---|
-| arrival process 与 offered rate | 决定是否形成队列；closed-loop 会在变慢时自降载 |
-| prompt/output 长度联合分布 | 长 prompt 压 prefill，长 output 长时间占用 sequence/KV |
-| 并发会话与租户分布 | 决定公平性、noisy-neighbor 和 prefix/cache 可复用范围 |
-| 模型、dtype、量化、adapter | 改变权重容量、kernel、切换与 batch 兼容性 |
-| sampling、beam、tool/RAG | 改变 decode 分支、外部等待、结果质量与终态 |
-| cache hit、prefix 长度 | 改变实际 prefill work，但不能用期望命中替代最坏容量 |
-| deadline、取消与重试 | 改变在途工作、重复费用和失败分母 |
-| 硬件、runtime、driver/kernel revision | 决定实际吞吐、显存和支持的执行路径 |
+| arrival process 与 offered rate | 决定队列怎样形成，以及是否真正压到饱和点 |
+| prompt / output 长度联合分布 | 长 prompt 压 prefill，长输出长期占用 sequence 与 KV |
+| 会话和租户分布 | 改变公平性、热点与 cache 可复用范围 |
+| model、dtype、量化和 adapter | 改变显存、kernel 路径和 batch compatibility |
+| sampling、RAG 和 tool | 改变 decode 分支、外部等待与最终质量 |
+| deadline、取消和重试 | 改变在途工作、重复费用与失败分母 |
+| cache hit 与 prefix 长度 | 改变实际 prefill work，不能代替冷缓存容量 |
+| 硬件、runtime、driver 和 kernel | 决定实际执行路径和吞吐 |
 
-只给“并发 32”没有可比较性：32 条 32-token 分类与 32 条 32k prompt/长生成不是同一负载。输入、输出 cap 也只是上界；报告要同时保存实际分布和截断/拒绝数量。真实流量含敏感数据时，可保存受控样本或结构化 histogram/quantile artifact，但聚合结果仍需绑定生成它的 query、过滤和时间窗口。
+Closed-loop worker 完成上一条请求后才发送下一条。服务一变慢，它就自动降载，适合测用户式并发，
+却可能错过真正的饱和过程。Constant 或 Poisson open-loop 按外生时间表继续发请求，更适合寻找容量 knee。
 
-## API 设计
+两者都要记录 `offered_at`。若客户端还没取得并发槽，等待时间属于 client queue；若负载生成器自己晚于计划时间，
+还要报告 generator lag。客户端队列、服务队列和网络等待不能混成一个“TTFT”。
 
-采用稳定请求 id、幂等键、超时、取消、速率限制和明确错误码。流式连接中断应停止后端生成，避免“用户已走、GPU 仍算”。记录模型版本、tokenizer/chat template、采样参数、adapter、检索和工具版本。
+输入与输出 cap 只是上界。报告还应保存实际长度分布、截断数、拒绝数、模型与运行时 revision。
+敏感生产流量可以只保存受控样本和结构化 histogram，但这些统计仍要绑定生成时间、查询和过滤规则。
 
-先把终态做成类型而不是从文案猜测：`success`、`invalid`、`unauthorized`、`rate_limited`、`queue_timeout`、`execution_timeout`、`cancelled`、`server_error`、`outcome_unknown` 至少要能分开。Gateway timeout、engine deadline、client disconnect 和 provider timeout 发生在不同边界；返回 504 不证明底层 work 已停止，也不能立即释放仍被 thread/kernel 占用的 admission/KV capacity。
+## Admission：在昂贵工作开始前决定是否接单
 
-Request id 用于关联一次 attempt；logical call id 用于聚合可能的重试；idempotency key 用于某个明确 provider/业务契约下的去重。三个字段不能互相替代。纯文本生成即使没有业务副作用，replay 仍可能产生另一份 token/费用；带工具或写操作时，还要把“模型建议动作”与“执行外部 effect”分开，后者使用稳定 effect id、查询/reconciliation 和业务 verifier。
+无限队列不会增加容量，只会让一次快速拒绝变成长时间超时。Admission 应在昂贵 prefill 和外部副作用之前，
+同时限制 active sequences、预计 token/KV 占用，以及 queue 的条数或总工作量。
 
-版本协商必须 fail closed。若客户端请求的 model/adapter/API feature 不存在，不应静默换成另一个模型再返回普通成功；允许降级时，把实际 revision、降级原因和能力差异放入机器可读 receipt/trace，并让质量与合规策略先授权这条路径。
-
-三种常见误判需要分开验证：
-
-- **HTTP 200 不证明目标权重执行**：把 request id、model/tokenizer/template revision 与 server-side generation trace 关联。
-- **SSE 不证明增量生成**：后端可能先完成全部生成，再分块发送；检查首个 delta 到达时 generation 是否仍在运行。
-- **客户端断连不证明底层停算**：分别测 disconnect-to-work-stop 与 disconnect-to-resource-release；阻塞线程、GPU kernel 和远程 provider 需要各自的取消协议。
-
-最小集成测试应走真实 socket 和独立服务进程，覆盖认证、schema、非流式、流式与错误终态。它仍不能替代目标 runtime 上的 KV 释放、容量、故障注入和计费对账。
-
-Stop string 是独立的增量文本协议：它可能跨 token/event/UTF-8 byte chunk，客户端必须暂存仍可能成为 stop 的最长 suffix，不能先展示后撤回。明确是否返回 stop、overlap/priority、大小写/Unicode normalization、usage 与 finish reason。客户端本地截断只改变展示，不证明服务端停止 decode、释放 KV 或停止计费；需要 cancellation/terminal trace 关联验证。
-
-重试只用于瞬时失败，并使用指数退避与抖动。对非幂等工具调用（付款、发邮件、创建资源），不能盲目重试；需执行 id、去重和状态查询。
-
-## 路由与降级
-
-可按任务难度、语言、上下文长度、合规要求和负载选择模型。小模型处理分类/抽取，大模型处理开放推理。降级策略包括减少候选、缩短上下文、关闭非必要工具、切备用模型或转人工；不能悄悄降低安全检查。
-
-路由先做 hard gate，再做优化：数据地域、许可证、模态、上下文、tool/schema 能力、租户隔离和安全策略不满足的候选直接不可行；只在可行集合内比较质量、延迟与成本。模型路由器本身也要版本化和评测，特别保留“低置信度转大模型/人工”“备用模型也不可用”和“两个候选输出语义不兼容”的失败路径。
-
-## 部署拓扑与隔离边界
-
-常见拓扑可分成 gateway/router、model-serving replicas 和外部 RAG/tool dependencies。每一层的并发限制只对自己的范围成立：
-
-- 进程内 `Semaphore(8)` 不等于 4 worker 的服务总并发是 8；若每个 worker 独立，它可能是 32；
-- replica-local queue 不等于租户全局配额，跨副本路由可能让同一主体重复占用 capacity；
-- tensor/pipeline parallel 是一个模型实例跨设备执行，replica parallel 是多个实例承接不同请求，故障域与扩缩容单位不同；
-- sticky routing 可提高 session/prefix cache locality，但可能制造热点，且不能用未认证 session key 跨租户复用缓存；
-- adapter 动态装载会改变内存、batch compatibility 与冷启动，不能把“权重已在磁盘”当作 ready。
-
-Readiness 必须检查该副本接流量所需的 model/tokenizer/template/adapter、设备、scheduler 和关键依赖；liveness 只回答进程是否应被重启。进程能返回 `/healthz` 不代表目标权重加载完，也不代表剩余 capacity 足以接长请求。滚动发布时，先从路由摘除、停止 admission、等待或有界取消 in-flight，再释放模型/KV；直接杀进程会把未决 attempt 留给调用方 reconciliation。
-
-## Autoscaling 不是只看 GPU utilization
-
-单看 GPU utilization 会遗漏排队、KV 容量、长 prompt 和外部依赖：GPU 可因 admission 太严而低利用，也可在 queue 已爆炸时长期满载。可组合观察 offered/dispatch rate、eligible queue age、admitted sequences、reserved/used KV blocks、prefill/decode token work、preemption、错误与目标 latency。
-
-扩容有模型下载、完整性验证、权重加载、kernel/graph warmup 和 cache 冷启动延迟；scale-out 信号到新副本 ready 之间仍需 admission/load shedding。Scale-in 要保护 in-flight 和 leased cache，不以“HTTP 已断开”假设 GPU work 已停。容量计划至少给稳态、burst、单副本故障和发布期间少一部分 capacity 四个场景，而不是只报理想满配吞吐。
-
-## 缓存
-
-- 响应缓存：输入完全相同且结果允许复用。
-- 语义缓存：相似问题复用，风险更高，需租户/权限/时效隔离。
-- 前缀/KV 缓存：复用计算。
-- 检索缓存：需结合索引版本和 ACL。
-
-缓存键必须包含所有影响结果的版本与权限上下文；这些字段由认证/策略层从可信状态生成，不能接受模型或请求体自报。Prefix/KV cache 至少绑定 tenant、安全可见域、authorization/policy、model/tokenizer/template/adapter、position/RoPE、KV dtype 和 exact token prefix。Fingerprint 只做 bucket index，命中仍比较完整字段；否则 hash collision、过期 ACL 或同文本不同 tokenization 都可能错误复用。敏感数据设置 TTL、加密和删除机制，评估 hit/miss timing side channel。随机生成或个性化答案通常不适合直接响应缓存。
-
-## 背压与过载保护
-
-队列无限增长只会把失败变成超时。Admission 应在昂贵 tokenization/prefill 或远程副作用之前尽早执行，并同时约束至少三类资源：active sequence 数、预计 token/KV capacity、queue 的条数/总工作量。只限 request count 会让一个超长请求和一个短请求占同样配额；只限 token 又可能被大量微请求压垮连接、调度与日志。
-
-可用一阶工作量估计帮助排队：
+普通 causal generation 可先用一个粗估计排序请求：
 
 \[
-\widehat W_i = \widehat P_i + O_i^{cap} - 1
+\widehat W_i=\widehat P_i+O_i^{cap}-1.
 \]
 
-它只适用于普通 causal generation 的粗粒度 token-position reservation，不是 GPU 秒或账单；beam、speculative verification、prefix hit、preemption/recompute、padding 和外部工具都会改变实际工作。KV reservation 还要用层数、KV heads、head dim、dtype 与 block allocator 口径，不能直接拿 \(\widehat W_i\) 当显存。
+这里 \(\widehat P_i\) 是输入 token 估计，\(O_i^{cap}\) 是输出上限。它表达 token-position work，
+不是 GPU 秒或显存字节。Beam search、speculative decoding、prefix hit、preemption 和 padding 都会改变真实成本。
+KV 预留还要结合层数、KV heads、head dimension、dtype 和 block allocator。
 
-请求状态至少经历 `offered → queued → admitted → running → terminal`。Capacity 只在确定的 terminal/resource-release 事件后归还；queue timeout 可在未 dispatch 时释放，execution timeout 若底层 work 仍运行则不能释放。取消发生在 queued、prefill、decode、外部 tool 等阶段时，分别验证 queue removal、scheduler removal、backend stop、KV release 和副作用 outcome，而不是统一记一句 cancelled。
+Queue policy 是产品选择：FCFS 容易解释，但会被超长请求 head-of-line blocking；按长度分 lane 可保护短请求，
+却要防止长请求饥饿；优先队列需要 aging 和配额。优先级来自认证后的控制面策略，不能接受 Prompt 自报的
+`priority=critical`。
 
-Queue policy 是显式产品决定：FCFS 简单但会 head-of-line blocking；按长度分队可保护短请求，却可能让长请求饥饿；priority queue 需要 aging/配额，防止高优先级长期占满；per-tenant token bucket/deficit policy 可缓解 noisy neighbor，但权重、burst 与借用规则必须审计。不要用 Prompt 自报 `priority=critical`，优先级由认证与控制面策略派生。
+超载时，快速返回可解释的 `429` 或执行已授权降级，通常比让所有请求越过 deadline 更好。
+长上下文可以进入独立 lane；重试提示必须带 backoff，避免所有客户端同时制造 retry storm。
 
-超载时优先快速、可解释地拒绝或降级，而不是让所有请求跨过 deadline。长上下文/大 output cap 可进入独立 lane、要求更严格配额或转 batch；降级必须保留安全和数据地域 hard gate。若返回 retry hint，还要考虑调用方自动重试造成 retry storm；限流 receipt、backoff 和全局 load shedding 需要同一过载协议。
+容量只在明确的 resource-release 事件后归还。排队超时且从未 dispatch 的请求可以立即释放预留；
+execution timeout 或客户端断连后，底层线程、GPU kernel 或远程 provider 可能仍在运行，不能仅凭 `504` 提前腾出同一份容量。
 
-429 可以是正确的过载保护，但仍是调用方未成功完成的 attempt。是否满足 SLO 取决于流量是否在合同配额内；不能把 429 从 availability 分母删除，也不能把恶意/超配额流量无条件混入正常租户 SLO。
+## API 要把终态说清楚
 
-容量 knee 应用 open-loop sweep 找：逐档提高 eligible offered load，保持长度/租户/cache 分布，联合观察 success rate、client/server queue、TTFT/TPOT、preemption、KV 与 GPU。只找“吞吐最高点”不够；生产上限通常还受尾延迟、故障余量和质量约束。一次短 sweep 只能支持该硬件/runtime/workload snapshot，不能外推为长期 SLA。
+客户端不应从一段错误文案猜测发生了什么。稳定接口至少区分：
 
-## 追踪
+```text
+success / invalid / unauthorized / rate_limited
+queue_timeout / execution_timeout / cancelled
+server_error / outcome_unknown
+```
 
-一次请求的 trace 应串联：网关 → Prompt 构造 → 检索 → 重排 → 模型 → 工具 → 验证 → 响应。保存必要元数据和哈希，敏感原文按最小化原则处理。指标用于趋势，trace 用于单次诊断，日志用于事件细节，三者不能互相替代。
+Request ID 关联一次网络 attempt；logical call ID 聚合调用方重试；idempotency key 则服务于某个明确的业务去重契约。
+三者用途不同。纯文本重放会产生另一份 token 和费用；付款、发信或创建资源等副作用还需要稳定 effect ID、
+状态查询与 reconciliation，不能靠 HTTP 客户端盲目重试。
 
-同一进程内的 duration 用 monotonic clock；跨机器 wall-clock timestamp 只有在同步误差可接受且被记录时才能相减。不能把 client `perf_counter()` 与 server monotonic 数值直接相减。分布式 trace 更稳妥的做法是各 component 记录本地 span duration，用 trace/request id 建因果关系，再把端到端 client duration与各本地 span 对照；无法解释的空白标为 unknown/transport/queue，不用负数或强行归因填满。
+版本协商应 fail closed。客户端请求的 model、adapter 或 API feature 不存在时，服务不能静默换模型后返回普通成功。
+如果产品允许降级，receipt 中要写实际 revision、降级原因和能力差异，质量与合规策略也要先批准这条路径。
 
-高基数字段也要分层：request id 属于 trace/log，不宜作为长期 metrics label；model/adapter revision 可进入受控低基数维度，raw Prompt、tenant secret、完整 URL/query、tool 参数和异常 body 不进入普通 metrics。Sampling trace 对调试有用，但 logits/token 明细可能泄漏用户内容且体量巨大，需要采样、权限和保留期。
+### 流式输出与取消是两个协议
 
-一次服务 receipt 至少能关联 logical call/attempt、authenticated subject/tenant、实际 model/runtime revision、request cap、terminal outcome、usage 是否来自 provider/runtime 还是 estimate，以及发生降级/缓存/重试的证据。Receipt 自洽不等于来源认证；重要发布或计费场景还需受控日志、签名/访问控制与外部账单对账。
+Server-Sent Events（SSE）只能证明服务在分块发送字节。后端可能先生成完整结果，再分块发出；
+要验证增量生成，需要观察首个 delta 到达时 decode 是否仍在运行。
 
-## 质量监控
+Stop string 可能跨 token、event 甚至 UTF-8 byte chunk。客户端需要暂存仍可能构成 stop 的最长 suffix，
+并明确是否返回 stop、重叠优先级、Unicode 规则、usage 和 finish reason。
 
-线上缺少即时标签，可用代理指标和抽样人工审查，但要防止代理被优化歪。持续回放版本化评测集，监控输入分布漂移、语言/长度变化、拒答率、用户纠错与升级人工率。模型或 Prompt 更新采用 shadow/canary，保留快速回滚。
+客户端截断展示并不会让后端自然停止。取消测试应该分别测量：
 
-Shadow 只复制输入、不把结果给用户，适合比较兼容性与离线质量；它仍会消耗容量并扩大敏感数据处理范围。Canary 承接真实结果，必须先定义流量资格、样本量/观察窗口、质量/安全/可靠性 gate、停止条件和回滚 owner。请求不能随机跨越不兼容的数据地域、工具权限或 adapter schema；这些是 hard gate，不是实验变量。
+1. disconnect-to-work-stop；
+2. work-stop-to-KV-release；
+3. 远程 provider 是否收到取消；
+4. 已开始的外部副作用最终属于 completed、failed 还是 unknown。
 
-模型质量与服务质量要联合决策。更快版本若让 schema failure、引用错误或人工升级增加，不能只凭 TTFT 发布；质量更高但让 queue timeout 扩大，也未必提高成功任务率。保存每个版本的 run manifest、workload、attempt artifact、离线/在线比较和最终 decision，避免 dashboard 当前值成为唯一历史证据。
+最小集成测试应走真实 socket 与独立服务进程，覆盖认证、schema、非流式、流式和错误终态。
+目标 GPU runtime 上的 KV 释放、容量和故障注入仍需单独验证。
 
-## 发布、回滚与配置迁移
+## 路由、降级与缓存先守住边界
 
-发布单元不只有 weight：至少包括 model/tokenizer/chat template、adapter、runtime/kernel、sampling defaults、API/schema、Prompt、RAG index、tool contract、policy 与 routing config。每个组件都要有 immutable identity 与兼容性检查；只回滚权重可能仍保留导致事故的新模板或策略。
+模型路由先排除不可行候选，再优化质量、延迟与成本。数据地域、许可证、模态、上下文、tool/schema 能力、
+租户隔离和安全策略属于 hard gate。通过后，才可以让小模型处理分类、让大模型处理开放推理，
+或在低置信度时转人工。
 
-推荐控制顺序：
+降级可以减少候选、缩短上下文、关闭非必要工具、切换已验证的备用模型或转人工。
+安全检查、租户隔离和数据地域不能作为高峰期的性能开关。路由器本身也需要版本化评测，
+尤其要覆盖“备用模型也不可用”和“两个候选的输出 schema 不兼容”。
 
-1. 在不可变 artifact 上验证完整性、loader/shape/tokenizer/template 和最小生成；
-2. 在隔离环境跑版本化质量、安全、协议与目标 workload；
-3. 预热副本但不接用户流量，验证 readiness、显存/KV baseline 与关键 trace；
-4. shadow 或小比例 canary，按预定义 gate 观察；
-5. 扩大流量时保留上一版本 capacity 与一键路由回滚；
-6. 回滚演练同时覆盖 in-flight drain、cache/index/schema compatibility 和未决 effect/reconciliation。
+缓存可以出现在四个位置：
 
-数据库/trace schema 迁移要能前后兼容，至少在 rollout 窗口允许新旧副本共存；否则 model rollback 可能被不可逆 schema 变化阻断。Cache key/serialized state 应带 schema/revision，不能让旧值被新版本误读。回滚成功是用户请求恢复、错误/质量回到门槛并完成未决对账，不是控制台显示旧版本已部署。
+| 缓存 | 复用对象 | 关键边界 |
+|---|---|---|
+| 响应缓存 | 完整答案 | 输入、采样、个性化和结果时效 |
+| 语义缓存 | 相似问题的答案 | 租户、权限、相似阈值与内容更新 |
+| Prefix / KV cache | 已计算前缀 | 精确 token、模型、位置编码、KV dtype 与可见域 |
+| 检索缓存 | 候选或结果 | 索引 revision、ACL 与查询上下文 |
 
-## 成本
+缓存键中的身份与权限字段来自认证和策略层。Prefix/KV 命中至少绑定 tenant、policy、
+model/tokenizer/template/adapter、position/RoPE、KV dtype 和 exact token prefix。
+Fingerprint 可以帮助查 bucket，命中后仍要比较完整字段，并为敏感数据设计 TTL、删除、加密和 timing side-channel 控制。
 
-总成本包含模型推理、Embedding/重排、检索存储、工具、网络、可观测、人工审核和失败重试。优化“每成功任务成本”：更便宜但错误率高的模型可能因重试和人工处理更贵。
+## 一个副本健康，不代表整个服务有容量
 
-成本控制同样使用 reserve/reconcile，而不是等账单后才发现越界。自托管服务可预留 sequence/KV/token capacity并在 terminal 后结算实际 work；云 API 还需每个可能计费的 attempt 独立费用 reservation。Estimate、runtime usage 和 provider invoice 是三种证据：本地 token 数不自动等于计费 token，HTTP 500/取消也不能仅凭 client trace断言为零费用。
+常见拓扑由 gateway/router、model-serving replicas 以及外部 RAG/tool 依赖组成。每一层的并发限制只在自身范围内成立。
+例如 4 个 worker 各自持有 `Semaphore(8)` 时，进程组上限可能是 32，而不是 8；replica-local queue 也无法单独实现租户全局配额。
 
-## 事件响应
+Tensor/pipeline parallel 让一个模型实例跨设备执行，replica parallel 则让多个实例接不同请求。
+它们的故障域和扩缩容单位不同。Sticky routing 可以提高 prefix cache locality，也可能制造热点；未认证 session key 不能跨租户选缓存。
 
-预先定义安全泄露、错误工具操作、模型不可用和质量大幅回归的负责人、分级、止损、证据保留、通知和复盘。回滚不仅是模型权重，也包括 Prompt、索引、工具 schema 和策略配置。
+Readiness 要确认目标 model/tokenizer/template/adapter、设备、scheduler 和关键依赖都能接流量。
+Liveness 只回答进程是否值得重启。滚动发布时先停止 admission 并摘除路由，再等待或有界取消 in-flight，最后释放模型与 KV。
 
-Runbook 不应只有“重启服务”。按现象至少准备：
+Autoscaling 不能只看 GPU utilization。Admission 过严时 GPU 可能很闲，而 queue 已经超时；饱和时 GPU 也可能长期满载。
+扩缩容信号应组合 queue age、admitted sequences、KV blocks、prefill/decode work、preemption、错误与目标延迟。
 
-- **TTFT/queue 升高**：先冻结发布，核对 offered load/长度/cache 分布，再看 admission、prefill、KV/preemption 与副本健康；
-- **TPOT 变慢**：核对 batch、decode kernel、频率/功耗、通信和邻居 workload，不把 client 网络等待误归因给 GPU；
-- **OOM/allocator failure**：停止接收超长请求，保留 request/KV/block trace，区分权重、KV、workspace、碎片与泄漏；
-- **错误率/取消升高**：按 typed terminal 拆 gateway、queue、engine、stream、tool/provider，确认 timeout 后底层 work 是否仍在；
-- **质量/安全回归**：停止 canary/路由到已验证版本，保存输入资格、raw restricted evidence、模型/Prompt/index/policy identity；
-- **跨租户或秘密泄漏**：立即隔离缓存/日志/索引与 credential，保全访问审计并执行数据/密钥/工件撤销流程。
+新副本还要经历模型下载、完整性验证、权重加载、kernel/graph warmup 和 cache 冷启动。
+容量计划至少覆盖稳态、burst、单副本故障，以及发布期间少一部分 capacity 四种场景。
 
-复盘把 trigger、影响分母、检测延迟、止损、恢复、未决 reconciliation 和防复发证据分开。没有可靠 request/revision identity 时，应明确写“无法确定受影响范围”，而不是用当前配置猜历史请求。
+## Trace 要能解释时间去了哪里
 
-## 如何做一次可辩护的容量实验
+一次请求的 trace 应串起网关、Prompt 构造、检索、模型、工具、验证和响应。指标用于看趋势，
+trace 用于还原一条请求，日志保存事件细节。request ID 属于 trace 或日志，不适合作为长期 metrics label；
+raw Prompt、工具参数和异常 body 也不应进入普通 metrics。
 
-1. 冻结 model/runtime/hardware 与 workload manifest，先跑单请求 correctness/usage baseline。
-2. 用低负载验证负载生成器、时钟、SSE parser、终态分类和 server trace 能互相对账。
-3. 选择 burst 与 constant/Poisson open-loop，多档扫 eligible offered rate；每档预热、运行和冷却窗口一致。
-4. 保存全部 attempt，不因 timeout/429/5xx 删除；成功 latency 与 all-attempt outcome 联合计算。
-5. 同步采集 server queue、prefill/decode tokens、batch、KV/preemption、GPU/CPU/网络和外部依赖。
-6. 以质量、安全、success rate、尾延迟、资源和成本的联合 gate 选择 operating point，并给单副本故障/发布余量。
-7. 换长度、租户、cache、adapter 或硬件后重新测；不要把一个点拟合成通用容量公式。
+同一进程的 duration 使用 monotonic clock。不同机器的 monotonic 值没有共同原点，不能直接相减。
+各组件记录自己的 span duration，再用 trace ID 建立因果关系；端到端 client duration 与各 span 之间无法解释的空白，
+应保留为 transport、queue 或 unknown，而不是用负数或猜测填满。
+
+一份服务 receipt 至少关联：
+
+- logical call 与当前 attempt；
+- authenticated subject / tenant；
+- 实际 model、runtime、template 与 adapter revision；
+- 请求上限、最终终态和降级/缓存/重试信息；
+- usage 来自 provider/runtime，还是本地 estimate。
+
+这些字段让记录可对账，但普通 hash 或自洽 JSON 不认证执行者和来源。计费或高风险发布还需要受控日志、访问控制，
+必要时使用签名并与外部账单核对。
+
+## 质量和性能要在同一场发布中相遇
+
+线上通常没有即时正确答案。服务可以持续回放版本化评测集，并抽样做人工审查；同时观察输入语言、长度、
+拒答率、用户纠错与转人工率。更快的版本若增加 schema failure 或引用错误，不能只凭 TTFT 发布；
+质量更高却让 queue timeout 激增，也未必提高成功任务率。
+
+Shadow 复制输入但不把结果给用户，适合检查兼容性和离线质量；它会额外消耗容量，并扩大敏感数据处理范围。
+Canary 承接真实结果，因此要提前固定流量资格、观察窗口、质量/安全/可靠性 gate、停止条件和回滚 owner。
+
+发布单元不只有模型权重，还包括 tokenizer、chat template、adapter、runtime/kernel、sampling defaults、
+API/schema、Prompt、RAG index、tool contract、policy 和 routing config。推荐按下面顺序推进：
+
+1. 验证不可变 artifact 的完整性、shape、loader、tokenizer/template 和最小生成；
+2. 在隔离环境运行质量、安全、协议和目标 workload；
+3. 预热副本，检查 readiness、显存/KV baseline 与关键 trace；
+4. 执行 shadow 或小比例 canary；
+5. 扩大流量，同时保留上一版本 capacity 和路由回滚；
+6. 演练 in-flight drain、cache/schema compatibility 与未决 effect 对账。
+
+Trace schema、cache key 和序列化状态需要版本兼容，否则模型回滚可能被一次不可逆 schema 迁移阻断。
+回滚完成的判断是用户请求恢复、质量回到门槛且未决 attempt 已处理，而不是控制台显示旧权重已部署。
+
+## 成本和事故最终都按一次成功任务结算
+
+总成本还包括 Embedding、重排、检索存储、工具、网络、可观测、人工审核和失败重试。
+更便宜但经常返工的模型，可能拥有更高的每成功任务成本。
+
+自托管服务可以先预留 token/KV capacity，再在 terminal 后结算实际 work；云 API 的每个可能计费 attempt 也要单独预留费用。
+本地 estimate、runtime usage 与 provider invoice 是三种来源。取消或 `500` 是否收费，应由 provider 账单与契约确认。
+
+事故发生时先止损，再定位。几个常见入口是：
+
+| 现象 | 先做什么 | 接着观察什么 |
+|---|---|---|
+| TTFT / queue 上升 | 冻结发布，限制新流量 | offered load、长度、admission、prefill、KV 与副本健康 |
+| TPOT 变慢 | 保住目标版本和 workload | batch、decode kernel、功耗、通信与邻居任务 |
+| OOM | 停止接收超长请求 | 权重、KV、workspace、碎片和泄漏 |
+| 取消或错误升高 | 按 typed terminal 拆分 | gateway、queue、engine、stream 与远程 provider |
+| 质量或安全回归 | 停止 canary，路由回已验证版本 | model、Prompt、index、policy 与失败样本 |
+| 跨租户或秘密泄漏 | 隔离缓存、日志、索引和 credential | 访问审计、数据范围与撤销流程 |
+
+复盘应分开记录 trigger、影响分母、检测延迟、止损、恢复和仍待 reconciliation 的请求。
+如果历史请求没有可靠 revision identity，就明确写“受影响范围无法确定”，不能用当前配置反推过去。
+
+## 做一次可辩护的容量实验
+
+1. 冻结 model/runtime/hardware 和 workload manifest，先跑单请求 correctness baseline。
+2. 在低负载下确认时钟、SSE parser、终态分类与服务端 trace 可以对账。
+3. 用 burst 和 open-loop 多档提高 eligible offered rate，每档采用一致的预热、运行和冷却窗口。
+4. 保存全部 attempt；把 success rate、client/server queue、TTFT、TPOT 与资源指标放在一起看。
+5. 同步采集 batch、prefill/decode work、KV、preemption、GPU/CPU/网络和外部依赖。
+6. 用质量、安全、成功率、尾延迟、资源与成本的联合 gate 选择 operating point。
+7. 为单副本故障和发布保留余量；长度、租户、cache、adapter 或硬件变化后重新测量。
+
+这个实验能得到特定硬件、runtime 和 workload snapshot 下的容量 knee。
+它不能把一个点外推成长期 SLA，也不能用成功请求的最快分位数掩盖拒绝和超时。
 
 ## 实践入口
 
-[Inference Serving 项目](../practice/projects/inference-serving.md)把正确性 oracle、调度/KV、HTTP/流式取消和容量实验分开。先完成单请求协议和失败终态，再进入真实 GPU 压测；不同实验的局部成功不能拼成生产结论。
+[Inference Serving 项目](../practice/projects/inference-serving.md)把单请求正确性、调度/KV、HTTP 流式取消和容量实验分开。
+先确认一条请求的协议和终态，再进入真实 GPU 压测；局部实验各自成立，也不能拼接成未验证的生产结论。
 
 ## 自测
 
-1. 为什么 p50 延迟优秀仍可能意味着体验很差？
-2. 语义缓存为什么必须带权限与时效边界？
-3. 如何防止客户端断流后继续浪费 GPU？
-4. 为什么 replica-local semaphore 不能证明服务级并发上限？
-5. 如何证明 504 后 capacity 何时可以安全释放？
-6. Shadow、canary 与 rollback 分别需要哪些 identity 和 gate？
+1. 高峰期成功请求 p95 很好，为什么用户仍可能大量超时？
+2. 客户端收到 `504` 后，系统要看到什么证据才能归还 KV capacity？
+3. 为什么“并发 32”不足以描述一次容量实验？
+4. 语义缓存和 Prefix/KV cache 分别要绑定哪些权限与版本字段？
+5. Shadow、canary 和 rollback 各自改变了哪部分真实流量？
+6. 如果 GPU utilization 只有 60%，你会先查看请求时间线中的哪些状态？

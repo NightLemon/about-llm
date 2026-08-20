@@ -7,17 +7,32 @@
 
 - **适合读者**：合成数据、蒸馏和评测工程师。
 - **先修**：[训练数据工程](data.md)、基本采样和离线评测。
-- **首次阅读**：七类机制 → 供应链 → verifier → rejection sampling → 评测矩阵。
+- **首次阅读**：先跟四条候选走完审计，再理解 verifier、rejection sampling 和反馈环。
 - **完成信号**：能解释接受率如何改变分布，并保留来源和真实锚点。
 - **卡住时**：先运行[合成数据审计项目](../practice/projects/synthetic-data-audit.md#run)。
 
 </div>
 
-合成数据是由模型、规则、模拟器或程序生成的训练/评测候选。它能扩大任务覆盖、提供可验证轨迹和传递 teacher 行为，也会复制错误、风格、隐私风险与 verifier 漏洞。关键问题不是“是否使用合成数据”，而是：生成了什么分布、由谁验证、与真实数据怎样混合、经过几代反馈，以及结论如何被独立证据支持。
+假设 teacher 为一条 RAG 知识生成了四个改写。流水线显示两条通过、两条未通过，看起来接受率是 50%。
+但继续查看会发现：两条通过记录的正文完全相同，其中一条还由同一 teacher revision 负责 grounding 验证。
 
-本章不把“模型输出”自动视为数据。候选只有在 lineage、许可/隐私、质量 gate、去重、split 和 mixture 契约完成后，才能进入指定训练版本。
+这四条文本已经是模型输出，却还不是可以放心训练的数据。你仍要知道它们来自哪条真实记录、经过哪些检查、
+是否重复、落在哪个 split，以及会在训练中被重复看到多少次。
 
-## 1. 先区分七类机制
+合成数据可以扩大任务覆盖、生成可验证轨迹，也可以复制 teacher 的错误、风格和隐私风险。本章要解决的不是
+“要不要用”，而是“哪一条为什么能进来，进入以后怎样改变训练分布”。
+
+| 候选 | 审计结果 | 还不能推出什么 |
+|---|---|---|
+| `syn-001` | schema 与 grounding 通过，人工复核过 | 不能推出对所有 RAG 问题都正确 |
+| `syn-002` | verifier 通过，但与 `syn-001` 重复 | 不能把两条通过当成两份新信息 |
+| `syn-003` | 缺少 grounding 结果 | 不能把“没运行”记成失败或成功 |
+| `syn-004` | grounding 明确失败 | 不能进入当前 verifier-eligible 集合 |
+
+这组固定数据可以在[合成数据审计项目](../practice/projects/synthetic-data-audit.md#run)中直接运行。后面的概念都可以
+回到这四条记录上理解。
+
+## 1. 先认清你在做哪一种合成
 
 | 机制 | 生成什么 | 主要价值 | 主要风险 |
 |---|---|---|---|
@@ -29,9 +44,10 @@
 | Simulator/tool generation | 程序、环境、执行器产生状态与标签 | 可验证、可控难度 | simulator-to-real gap |
 | Synthetic replay | 为旧任务生成复习样本 | 减少保存原始数据 | 遗漏长尾、泄露 teacher 记忆 |
 
-这些术语不可互换。用 teacher 生成最终答案再做 SFT 是 sequence-level distillation；用同一模型生成候选并按规则选是 rejection sampling；没有伪标签迭代就不应称 self-training。
+这些术语不可互换。Teacher 生成最终答案再做 SFT，属于 sequence-level distillation；从多个候选中按规则筛选，
+属于 rejection sampling；没有伪标签迭代，就不应称为 self-training。
 
-## 2. 端到端供应链
+## 2. 一条候选怎样成为训练数据
 
 ```mermaid
 flowchart LR
@@ -48,7 +64,7 @@ flowchart LR
 
 每条边保存输入/输出 artifact，不只保存最终 accepted JSONL。否则无法估计生成失败率、过滤选择偏差或 verifier 漏报。
 
-## 3. Provenance 最小契约
+## 3. 给候选留下可追溯的身份
 
 一条 synthetic candidate 至少包含：
 
@@ -65,7 +81,7 @@ flowchart LR
 
 父节点可以是真实样本、知识条目、schema、测试、模拟器状态或人工任务规格。只写 `generated_by=gpt-x` 不能解释内容如何产生，也不能证明允许训练。
 
-## 4. 生成分布设计
+## 4. 先设计缺口，再让模型生成
 
 ### 4.1 从 coverage matrix 采样
 
@@ -81,7 +97,7 @@ flowchart LR
 
 不同 prompt、checkpoint、采样或程序可增加候选差异，但多个同族模型不保证错误独立。记录 generator 族、训练关联和输出相似度；关键数据用规则、执行器、领域专家或独立来源交叉验证。
 
-## 5. Verifier 阶梯
+## 5. Verifier 只回答被问到的问题
 
 按可证明性优先：
 
@@ -97,7 +113,7 @@ flowchart LR
 
 同一 revision 既生成又验证是需报告的相关性风险，不是自动失败：它们可能共享知识缺口、风格偏好和攻击面。即使不同模型，若由同一 teacher 蒸馏或同一公开 benchmark 调优，也不保证独立。
 
-## 6. Rejection sampling 改变分布
+## 6. 为什么过滤会改写分布
 
 若 generator 分布为 \(q(x)\)，接受函数 \(A(x)\in[0,1]\)，被接受分布为：
 
@@ -116,7 +132,7 @@ q_{accept}(x)=\frac{q(x)A(x)}{\mathbb E_{x\sim q}[A(x)]}.
 
 通过率提高可能意味着 generator 变好，也可能是任务变简单、重复更多或 verifier 变松。
 
-## 7. Self-training 与伪标签
+## 7. Self-training 如何放大自己的偏见
 
 典型循环：在无标签数据上预测 → 按 confidence/一致性/规则选择 → 与真实标签混合 → 更新模型。Confirmation bias 来自模型更愿意选择自己已会、且自信但可能系统性错误的样本。
 
@@ -131,7 +147,7 @@ q_{accept}(x)=\frac{q(x)A(x)}{\mathbb E_{x\sim q}[A(x)]}.
 
 一致性、低 entropy 或多数投票是选择信号，不等于标签正确。多个 sample 来自同一模型时也不独立。
 
-## 8. Distillation
+## 8. Distillation 传递的是行为信号
 
 ### 8.1 Hard target
 
@@ -150,7 +166,9 @@ p_T(\cdot\mid x,y_{<t};T)
 \right).
 \]
 
-\(T\) 是 distillation temperature，\(T^2\) 是常见梯度尺度补偿约定，不是所有实现必须相同。必须明确：teacher forcing 上下文、token mask、sum/mean、词表映射、top-k logits 截断和与 hard-label loss 的权重。Tokenizer 不同不能逐 token 直接 KL。
+\(T\) 是 distillation temperature，\(T^2\) 是常见的梯度尺度补偿约定，并非所有实现都必须相同。
+复现实验时还要明确 teacher-forcing 上下文、token mask、sum/mean、词表映射、top-k logits 截断，
+以及 hard-label loss 的混合权重。Tokenizer 不同，不能直接逐 token 计算 KL。
 
 ### 8.3 蒸馏不复制架构
 
@@ -162,7 +180,9 @@ Teacher 的事实错误、拒答边界、长度、风格和 benchmark 记忆都�
 
 ## 9. 推理轨迹与过程数据
 
-Process supervision 可以提供中间状态、tool call、程序 trace、proof step 或 verifier feedback。自然语言 rationale 未必是模型真实因果过程，也可能包含无法验证的细节。优先记录可执行/可检查状态：代码、方程、检索 source、工具 receipt 和环境 transition。
+Process supervision 可以提供中间状态、tool call、程序 trace、proof step 或 verifier feedback。自然语言 rationale
+未必是模型真实的因果过程，也可能包含无法验证的细节。更可靠的记录是可以重新执行或检查的状态，例如代码、
+方程、检索来源、工具 receipt 和环境 transition。
 
 不要默认保存或训练 provider 隐藏的 chain-of-thought。使用可公开的简要解释、结构化中间状态或 teacher 明确返回的训练 artifact，并遵守模型/API 条款和隐私策略。
 
@@ -257,7 +277,9 @@ D_{g+1}=\rho D_{real}+(1-\rho)S(M_g,D_g,V_g),
 - 数据重复增加但 unique 信息下降；
 - 少数语言、边界输入和拒答先退化。
 
-“用了合成数据必然 collapse”和“平均 benchmark 提高所以没有 collapse”都不成立。实验至少包含：real-only、real+single-generation synthetic、多代有/无 real anchor、不同 verifier 与 synthetic fraction；每代在不回灌的 real holdout 上测平均、tail、diversity、calibration、安全和 contamination。
+“使用合成数据必然 collapse”和“平均 benchmark 提高，所以没有 collapse”都过度概括。至少比较 real-only、
+real + 单代 synthetic，以及多代有/无 real anchor 的设置。每一代都在从未回灌的 real holdout 上检查平均表现、
+长尾、多样性、calibration、安全和 contamination。
 
 ## 14. 隐私、版权与删除
 
@@ -284,7 +306,7 @@ Generator 可能复述训练记忆、seed 中的 PII/secret 或受限内容。Sy
 
 所有比较固定 base model、训练 FLOPs/token budget、优化器、调参预算和评测集，或明确回答的是“同成本”还是“各自最优”。
 
-## 16. 可执行审计
+## 16. 亲手审计开头的四条候选
 
 仓库 reference core 只审计显式 artifact：
 
@@ -298,7 +320,12 @@ report = audit_synthetic_records(
 )
 ```
 
-它报告 verifier missing/fail、generator–verifier exact revision overlap、unresolved parent、内部 parent round 非单调、lineage cycle、human review 和 exact duplicate。`eligible_record_ids` 只表示所有 required verifier 存在且 pass；重复内容与 lineage finding 仍显式保留，不会被“通过率”隐藏。当前 `self_verified_record_ids` 只是 revision-string overlap，不证明同一模型真的执行生成和验证；没有 overlap 也不证明 judge 独立。
+报告会分别列出 verifier missing/fail、generator–verifier revision overlap、unresolved parent、round 非单调、
+lineage cycle、human review 和 exact duplicate。`eligible_record_ids` 只表示 required verifier 都存在并通过；
+重复和 lineage finding 仍然保留，不会被一个通过率隐藏。
+
+`self_verified_record_ids` 这个字段只检查 revision string 是否重叠。它不能证明同一个模型实例真的完成了生成和验证；
+反过来，没有重叠也不能证明 judge 独立。
 
 离线项目：
 
@@ -312,7 +339,11 @@ python -m about_llm.synthetic_data_cli `
   --output artifacts/synthetic-data/audit.json
 ~~~
 
-输出 schema 是 `about-llm.synthetic-data-audit.v2`。它绑定 records/mixture 的 exact byte size 与 SHA-256，也绑定 required verifiers、known parents、fingerprint profile、完整 audit/mixture、scope 与 canonical report fingerprint。`--output` 默认 exclusive-create；显式 `--overwrite` 才覆盖旧文件。File `fsync` 不等于 directory entry durable、断电原子发布或 verify-use TOCTOU 已解决。
+输出 schema 是 `about-llm.synthetic-data-audit.v2`。它绑定 records/mixture 的 exact byte size、SHA-256、
+required verifiers、known parents、fingerprint profile、完整 audit/mixture 和 scope。
+`--output` 默认 exclusive-create；只有显式传入 `--overwrite` 才会覆盖旧文件。
+
+这里执行 file `fsync`，但没有因此证明 directory entry 在断电后仍然持久，也没有解决 verify-use TOCTOU。
 
 不要只检查报告携带的 self-hash。用 caller-supplied 输入与 policy 完整复算固定 artifact：
 
@@ -326,9 +357,16 @@ python -m about_llm.synthetic_data_cli `
   --verify-report projects/synthetic-data-audit/audit.example.json
 ~~~
 
-固定 records 为 1,457 bytes，mixture 为 341 bytes，report fingerprint 是 `sha256:202d8db97b704c5542e8516c5bd0c945da1c1022100f6ecbfb828f2d2bb6f4cd`。验证成功的 scope 为 `full_local_recomputation`：重读输入、重跑审计并比较完整 canonical JSON。因此 input drift、policy drift，以及同时篡改结果与无密钥 hash 的 cooperative rehash 都会相对可信 caller 输入失败。若 caller 也接受攻击者替换的 inputs/policy，无密钥 SHA-256 仍不能认证来源。
+固定 records 为 1,457 bytes，mixture 为 341 bytes。验证成功时，工具会重读 caller 提供的输入、重跑审计，
+再比较完整 canonical JSON；这个范围称为 `full_local_recomputation`。Input drift、policy drift，以及同时篡改结果
+与无密钥 hash 的 cooperative rehash，都会相对这组可信输入失败。
 
-Loader 还会拒绝 duplicate JSON keys、non-finite number、invalid UTF-8、unknown/missing fields、boolean 冒充 integer、重复 ID 与超限输入。样例故意包含 exact duplicate、revision overlap、missing verifier 和 failed verifier，用来验证审计约定；它没有运行 teacher/student、verifier model、训练或 observed-token ledger，不代表真实模型数据质量。
+固定 report fingerprint 记录在项目页中。它适合精确回归，不适合拿来解释算法。若 caller 连输入和 policy 都接受
+攻击者替换，无密钥 SHA-256 仍不能认证来源。
+
+Loader 还会拒绝 duplicate JSON keys、non-finite number、invalid UTF-8、unknown/missing fields、
+boolean 冒充 integer、重复 ID 与超限输入。样例中的 duplicate、revision overlap、missing verifier 和 failed verifier
+用于验证审计约定；它没有运行真实 teacher、student、verifier model 或训练，因而不代表模型数据质量。
 
 ## 17. 发布门禁
 
@@ -356,7 +394,12 @@ Loader 还会拒绝 duplicate JSON keys、non-finite number、invalid UTF-8、un
 
 ## 18. 当前仓库证据边界
 
-仓库已有 strict JSON、lineage/verifier/duplicate audit、mixture exposure 数学、v2 input/policy-bound artifact、full-local-recomputation CLI fixture 和 40 个专项测试。它没有调用真实 teacher/verifier、训练 student、执行多代反馈、做近似去重 benchmark、人工标注或证明任何模型避免 collapse。因此现有证据只支持离线数据契约、计算约定与可信 caller 输入下的复算，不支持合成数据能提高目标模型、通过法律审查、保持长期分布或来自所声明发布者。
+仓库已经执行 strict JSON、lineage/verifier/duplicate audit、mixture exposure 计算和 v2 artifact 的本地复算，
+并用 40 个专项测试锁定这些契约。它没有调用真实 teacher/verifier、训练 student、执行多代反馈、
+做近似去重 benchmark 或人工标注。
+
+因此，现有证据只支持离线数据契约与可信 caller 输入下的复算，不能支持“合成数据提高了目标模型”、
+“已经通过法律审查”或“长期分布不会退化”这些结论。
 
 ## 19. 常见错误结论
 
