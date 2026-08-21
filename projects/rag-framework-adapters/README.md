@@ -183,7 +183,7 @@ python projects/rag-framework-adapters/demo.py
 
 它适合检查字段，但没有调用 Retriever API、Prompt、answer 或 metrics，不能写成端到端 parity。
 
-## 运行 2：双框架 parity control
+## 运行 2：比较两个框架的结果是否一致
 
 ~~~powershell
 python projects/rag-framework-adapters/parity_control.py
@@ -237,7 +237,7 @@ RAG 检索为什么要在排序前做权限过滤
 
 engineering 的 authored Recall@4 与 nDCG@4 都是 1.0，两例 extractive coverage 都是 1.0。
 
-这些满分来自四文档 fixture、确定性 BM25/extractive baseline 与 authored qrels。它们是协议回归，不是：
+这些满分来自四文档固定样例、确定性 BM25/extractive baseline 与本仓库准备的 qrels。它们是协议回归，不是：
 
 - “LangChain 检索准确率 100%”；
 - “LlamaIndex 优于原生实现”；
@@ -330,7 +330,7 @@ python -m pytest tests/test_rag_framework_adapters.py -q
 
 不能把 native retrieval 差异归因于“框架本身”。
 
-## 从 control 扩展到 learned retrieval
+## 扩展到 learned retrieval
 
 保持 `SearchResult` 为出口，并在每次 retrieval trace 绑定：
 
@@ -347,7 +347,7 @@ python -m pytest tests/test_rag_framework_adapters.py -q
 
 不同 retriever 的 score 不一定同尺度。字段都叫 `score` 不表示可以直接比较、平均或融合。
 
-## 从 control 扩展到 LLM generation
+## 扩展到 LLM generation
 
 复用同一 context/source map，并固定：
 
@@ -456,7 +456,7 @@ cache identity 至少应包含：
 
 ## 可以写进简历的结论
 
-> 以 canonical `Document/SearchResult` 和 authorization-first BM25 为权威核心，把同一检索结果接入 LangChain `BaseRetriever.invoke()` 与 LlamaIndex `BaseRetriever.retrieve()`；逐字段校验 ID、正文、保护 metadata、rank/finite score 与 metadata exclusion，并绑定两种 Prompt 和 deterministic extractive answer artifact。固定四文档 fixture 中 engineering/anonymous 分别得到 2/1 条授权证据，16 个测试覆盖保护字段、rank/ID/score、mutation 与 security context 漂移。
+> 以 canonical `Document/SearchResult` 和 authorization-first BM25 为权威核心，把同一检索结果接入 LangChain `BaseRetriever.invoke()` 与 LlamaIndex `BaseRetriever.retrieve()`；逐字段校验 ID、正文、保护 metadata、rank/finite score 与 metadata exclusion，并绑定两种 Prompt 和 deterministic extractive answer artifact。在固定四文档样例中，engineering/anonymous 分别得到 2/1 条授权证据，16 个测试覆盖保护字段、rank/ID/score、mutation 与 security context 漂移。
 
 紧接着说明：这是 CPU 本地固定样例，未执行 native embedding/index/query engine、learned reranker、
 provider/local LLM、网络或性能负载。
@@ -473,7 +473,7 @@ provider/local LLM、网络或性能负载。
 
 ## 证据边界
 
-当前 control 证明当前环境中的两个 core framework API 可以承载同一 canonical retrieval，而不改变本项目审计的字段、Prompt 与 extractive artifact。
+当前实验说明，当前环境中的两个 core framework API 可以承载同一 canonical retrieval，而不改变本项目审计的字段、Prompt 与 extractive artifact。
 
 它不证明：
 

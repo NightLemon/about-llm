@@ -259,7 +259,7 @@ python projects/cloud-api-contracts/budgeted_http_demo.py `
 
 - 明确 Pool/Connect 前失败为 `cancelled`，释放该 attempt 的 capacity；
 - 任意 HTTP status、outcome-uncertain transport、strict-response failure 为 `uncertain`，提交完整 attempt reservation；
-- 2xx strict JSON 先保持 active，只有 parser 给出完整 usage 才 `settled`；缺 usage 或 parser failure 改为 `uncertain`；
+- 2xx JSON 响应先保持 active；只有 parser 检查完字段并得到完整 usage 后才 `settled`，缺 usage 或解析失败时改为 `uncertain`；
 - reserve 后、trace 前发生 task cancellation，当前 active reservation 仍记 `uncertain`；
 - 下一 attempt reserve 若过 hard gate，网络不会再发送；此前 attempt 的 tombstone 保持不变。
 
@@ -268,7 +268,7 @@ python projects/cloud-api-contracts/budgeted_retry_demo.py `
   --database artifacts/cloud-api/budgeted-retry.sqlite
 ~~~
 
-离线 fixture 固定为 HTTP 500→200：attempt 1 的 60+10 cap 按 uncertain 提交 80 micro-USD，attempt 2 的 provider-reported 58+4 usage settled 66 micro-USD，逻辑调用合计 146。若 hard limit 设为 140，attempt 1 入账后，attempt 2 的 80 micro-USD reservation 会在 transport 前被 gate 拒绝，因此只发生一次 MockTransport call。429 fixture 另证明原 executor 的有效 `Retry-After` delay 没有被 wrapper 丢失。
+离线固定样例使用 HTTP 500→200：attempt 1 的 60+10 cap 按 uncertain 提交 80 micro-USD，attempt 2 的 provider-reported 58+4 usage settled 66 micro-USD，逻辑调用合计 146。若 hard limit 设为 140，attempt 1 入账后，attempt 2 的 80 micro-USD reservation 会在 transport 前被 gate 拒绝，因此只发生一次 MockTransport call。另一个 429 样例证明原 executor 的有效 `Retry-After` delay 没有被 wrapper 丢失。
 
 这是 JSON-only reference。它不为 streaming partial output 自动重放，不解析 provider-specific error usage，也不声称 HTTP 500 一定收费；`uncertain` 表示本地证据不足以证明零费用。`BudgetedCloudRetryError` 汇总已 terminalize 的 ordered attempts 与最终本地 snapshot，但仍不证明 provider usage、invoice、server cancellation、idempotency 或 exactly-once billing。
 
@@ -290,4 +290,4 @@ base URL、model id、API version 和密钥来自配置/秘密管理，不写死
 
 ## 离线测试
 
-`tests/test_cloud_api.py`、`tests/test_cloud_api_cli.py`、`tests/test_openai_responses_replay.py`、`tests/test_reasoning_artifact.py`、`tests/test_trajectory_release.py`、`tests/test_cloud_api_retry.py`、`tests/test_cloud_http.py`、`tests/test_sse.py`、`tests/test_cloud_stream.py`、`tests/test_usage_budget.py`、`tests/test_sqlite_usage_budget.py` 和 `tests/test_budgeted_cloud.py` 验证三类字段映射、Responses typed lifecycle、严格 JSON/数值类型、reasoning context binding、trajectory publication allowlist、retry/HTTP 控制、任意 byte framing、三种文本流状态，以及内存/SQLite 预算 reservation、单-attempt 接线和逐 attempt retry orchestration。SQLite 测试覆盖重开、子进程退出、多连接竞争、配置漂移、event 写失败回滚、tombstone 与 post-call overrun 持久化；budgeted HTTP 测试覆盖 500→200、Connect→200、hard gate、`Retry-After`、outcome-uncertain、replay-unsafe、malformed/missing usage、cancel 与 SQLite event 顺序。它们不模拟远程调用原子性、provider artifact 或计费。HTTP 测试使用 `httpx.MockTransport` 或内存 byte fixture；Responses 测试使用 authored JSONL，不执行 OpenAI SDK、真实 DNS/TLS、网络请求或计费。网络 smoke test 必须显式标记 network，并设置请求数、token/费用上限、timeout 与允许的 base URL。
+`tests/test_cloud_api.py`、`tests/test_cloud_api_cli.py`、`tests/test_openai_responses_replay.py`、`tests/test_reasoning_artifact.py`、`tests/test_trajectory_release.py`、`tests/test_cloud_api_retry.py`、`tests/test_cloud_http.py`、`tests/test_sse.py`、`tests/test_cloud_stream.py`、`tests/test_usage_budget.py`、`tests/test_sqlite_usage_budget.py` 和 `tests/test_budgeted_cloud.py` 验证三类字段映射、Responses typed lifecycle、拒绝重复字段和非法数值的 JSON 解析、reasoning context binding、trajectory publication allowlist、retry/HTTP 路径、任意 byte framing、三种文本流状态，以及内存/SQLite 预算 reservation、单-attempt 接线和逐 attempt retry orchestration。SQLite 测试覆盖重开、子进程退出、多连接竞争、配置漂移、event 写失败回滚、tombstone 与 post-call overrun 持久化；budgeted HTTP 测试覆盖 500→200、Connect→200、hard gate、`Retry-After`、outcome-uncertain、replay-unsafe、malformed/missing usage、cancel 与 SQLite event 顺序。它们不模拟远程调用原子性、provider artifact 或计费。HTTP 测试使用 `httpx.MockTransport` 或内存 byte 固定输入；Responses 测试使用本仓库准备的 JSONL，不执行 OpenAI SDK、真实 DNS/TLS、网络请求或计费。网络 smoke test 必须显式标记 network，并设置请求数、token/费用上限、timeout 与允许的 base URL。

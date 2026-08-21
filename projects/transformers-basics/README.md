@@ -50,7 +50,7 @@ python -m pytest tests/test_moe_routing.py -q
 
 NumPy reference 对 `[tokens, experts]` logits 做稳定 softmax 与 deterministic top-k，padding token 不计 capacity；per-expert capacity 为 `ceil(factor * active_tokens * top_k / experts)`。同分 expert id 小者优先，expert 内按 probability 降序、token/rank 升序保留。输出同时保存 pre/post capacity counts、dropped assignment、整 token drop、gate weights、router entropy、z-loss 和本仓库明确命名的 generalized balance diagnostic。
 
-固定 4-token/3-expert/top-2 fixture 的 capacity=2，count 从 `(3,4,1)` 变为 `(2,2,1)`，8 个 assignment 丢 3 个但没有整 token 全丢。脚本还真实执行 kept assignment 的 bias-free linear expert 与 weighted combine。它没有训练 router/MLP，不做 backward、all-to-all 或 GPU kernel，也不复现 DeepSeek/Qwen checkpoint；auxiliary loss、capacity group、drop/reroute 和归一化语义必须按目标实现重建。
+固定 4-token/3-expert/top-2 样例的 capacity=2，count 从 `(3,4,1)` 变为 `(2,2,1)`，8 个 assignment 丢 3 个但没有整 token 全丢。脚本还真实执行 kept assignment 的 bias-free linear expert 与 weighted combine。它没有训练 router/MLP，不做 backward、all-to-all 或 GPU kernel，也不复现 DeepSeek/Qwen checkpoint；auxiliary loss、capacity group、drop/reroute 和归一化语义必须按目标实现重建。
 
 ## 让 MoE router 与 MLP 真正产生梯度
 
@@ -59,19 +59,19 @@ python projects/transformers-basics/moe_training_control.py
 python -m pytest tests/test_moe_training.py -q
 ~~~
 
-第二条 CPU Float64 control 使用 5 tokens、3 个 bias-free `Linear(3,4)→Tanh→Linear(4,2)` experts 与稳定 top-2 router。Sparse path 只对被选 token 执行 expert，dense oracle 则计算所有 token×expert 后用同一 gate mask 合并；`task + 0.05 × balance + 0.001 × z` 的输出最大差为 0，所有参数梯度最大差约 `6.94e-18`。一次真实 SGD step 同时改变 router 与三个 experts，authored MSE 从约 `0.0886473` 降至 `0.0875580`；这只是单步 plumbing，不是收敛或质量证据。
+第二项 CPU Float64 实验使用 5 tokens、3 个 bias-free `Linear(3,4)→Tanh→Linear(4,2)` experts 与稳定 top-2 router。Sparse path 只对被选 token 执行 expert，dense 参考实现则计算所有 token×expert 后用同一 gate mask 合并；`task + 0.05 × balance + 0.001 × z` 的输出最大差为 0，所有参数梯度最大差约 `6.94e-18`。一次真实 SGD step 同时改变 router 与三个 experts，固定样例的 MSE 从约 `0.0886473` 降至 `0.0875580`；这只是单步 plumbing，不是收敛或质量证据。
 
-同一路径还能显式启用 `capacity_factor=0.5`。每 expert capacity 为 2，pre/post counts 从 `[4,3,3]` 变为 `[2,2,2]`，10 个 top-2 assignments 丢 4 个但没有整 token 全丢；score-priority 按 probability 降序、token/rank 升序保留。Capacity 开启后 sparse/dense 的输出与全参数梯度最大差均为 0。Post-drop 重归一化让五个 token 的 kept weight sum 都回到 1；保留丢失 mixture mass 时 sums 为 `[0.805338,0.668188,1,0.638763,0.549834]`，两种策略的输出最大差约 `0.125542`。另一个同分 fixture 的 capacity 为 1，后两个 token 的两个 assignments 全丢，routed expert 输出精确为零。
+同一路径还能显式启用 `capacity_factor=0.5`。每 expert capacity 为 2，pre/post counts 从 `[4,3,3]` 变为 `[2,2,2]`，10 个 top-2 assignments 丢 4 个但没有整 token 全丢；score-priority 按 probability 降序、token/rank 升序保留。Capacity 开启后 sparse/dense 的输出与全参数梯度最大差均为 0。Post-drop 重归一化让五个 token 的 kept weight sum 都回到 1；保留丢失 mixture mass 时 sums 为 `[0.805338,0.668188,1,0.638763,0.549834]`，两种策略的输出最大差约 `0.125542`。另一个同分样例的 capacity 为 1，后两个 token 的两个 assignments 全丢，routed expert 输出精确为零。
 
-第三个 control 把 padding 与 routing group 也放进该训练路径。Mask `[T,T,T,T,F]` 排除最后一个 token；active group labels 为 10/20，各含 2 tokens，所以各组 capacity 都是 1。两组 pre/post counts 分别为 `[2,1,1]→[1,1,1]` 与 `[1,1,2]→[1,1,1]`，全局为 `[3,2,3]→[2,2,2]`。逐组 balance/z diagnostics 按 active-token 数加权；grouped sparse/dense 的输出与全参数梯度最大差均为 0。若把四个 active tokens 改成单一 group，scalar capacity 变为 2，assignment competition 也改变，当前输出最大差约 `0.329387`。Padding routed output、padding hidden gradient 以及修改 padding value/group id 后的 active-output/aux 差均为 0。
+第三项实验把 padding 与 routing group 也放进该训练路径。Mask `[T,T,T,T,F]` 排除最后一个 token；active group labels 为 10/20，各含 2 tokens，所以各组 capacity 都是 1。两组 pre/post counts 分别为 `[2,1,1]→[1,1,1]` 与 `[1,1,2]→[1,1,1]`，全局为 `[3,2,3]→[2,2,2]`。逐组 balance/z diagnostics 按 active-token 数加权；grouped sparse/dense 的输出与全参数梯度最大差均为 0。若把四个 active tokens 改成单一 group，scalar capacity 变为 2，assignment competition 也改变，当前输出最大差约 `0.329387`。Padding routed output、padding hidden gradient 以及修改 padding value/group id 后的 active-output/aux 差均为 0。
 
-两个因果控制把梯度来源拆开。只 detach selected combine weights、仍执行相同 hard top-k 与 expert task loss 时，三个 experts 都得到非零 finite gradient，router 的主任务 gradient 却缺失；这说明离散 expert index 本身不能替代 selected probability 的可微路径。另一个 collapsed top-1 fixture 使用本仓库明确写出的 `E × Σ stop_gradient(f_e) × mean(p_e)`：一次只更新 router 的 balance step 在 assignments 仍全为 expert 0 时，把该诊断从约 `2.567724` 降至 `2.552751`。这只证明局部优化信号，不证明最终负载会均衡、expert 会专门化或 task loss 会改善。
+两个因果对照把梯度来源拆开。只 detach selected combine weights、仍执行相同 hard top-k 与 expert task loss 时，三个 experts 都得到非零 finite gradient，router 的主任务 gradient 却缺失；这说明离散 expert index 本身不能替代 selected probability 的可微路径。另一个 collapsed top-1 固定样例使用本仓库明确写出的 `E × Σ stop_gradient(f_e) × mean(p_e)`：一次只更新 router 的 balance step 在 assignments 仍全为 expert 0 时，把该诊断从约 `2.567724` 降至 `2.552751`。这只证明局部优化信号，不证明最终负载会均衡、expert 会专门化或 task loss 会改善。
 
-v3 再加入三个显式 overflow policy。固定 4-token/top-1 fixture 的完整稳定排名均为 `[0,2,1]`、nominal capacity=2：`drop` 将 counts `[4,0,0]→[2,0,0]` 并丢 2 个 assignments；deterministic full-ranking `reroute` 得到 dispatched experts `[[0],[0],[2],[2]]`、counts `[2,0,2]`、rerouted=2、dropped=0 且 post-policy excess 为 0；`dropless` 保留四个 expert-0 assignments，并如实报告 nominal-capacity excess `[[2,0,0]]`。Reroute 禁止同一 token 重复 expert，按原 selected score/token/rank 处理溢出，再扫描完整 ranking；按 routing group 独立计容。Rerouted gate 可选择重新归一化为 `[1,1,1,1]`，或以原 selected top-k probability sum 为分母保留 `[1,1,0.4493289641,0.4493289641]` 的 mass，两者输出最大差约 `0.06399997`。Reroute/dropless 的 sparse—dense 输出差和将缺失 sparse gradient 物化为零后的全参数梯度差均为 0。
+v3 再加入三个显式 overflow policy。固定 4-token/top-1 样例的完整稳定排名均为 `[0,2,1]`、nominal capacity=2：`drop` 将 counts `[4,0,0]→[2,0,0]` 并丢 2 个 assignments；deterministic full-ranking `reroute` 得到 dispatched experts `[[0],[0],[2],[2]]`、counts `[2,0,2]`、rerouted=2、dropped=0 且 post-policy excess 为 0；`dropless` 保留四个 expert-0 assignments，并如实报告 nominal-capacity excess `[[2,0,0]]`。Reroute 禁止同一 token 重复 expert，按原 selected score/token/rank 处理溢出，再扫描完整 ranking；按 routing group 独立计容。Rerouted gate 可选择重新归一化为 `[1,1,1,1]`，或以原 selected top-k probability sum 为分母保留 `[1,1,0.4493289641,0.4493289641]` 的 mass，两者输出最大差约 `0.06399997`。Reroute/dropless 的 sparse—dense 输出差和将缺失 sparse gradient 物化为零后的全参数梯度差均为 0。
 
-这些是本仓库 authored deterministic contracts，不是 PyTorch、DeepSeek、Qwen 或任意训练框架的默认 overflow 语义。该 control 仍无跨设备 capacity-group collective、shared/fine-grained experts、expert parallel、all-to-all、grouped GEMM、GPU、目标 checkpoint、收敛、质量或性能证据；整数 group label 不等于真实 device/process group，几条 fixtures 也不能拼成生产 MoE 已复现。
+这些是本仓库明确写出的 deterministic 规则，不是 PyTorch、DeepSeek、Qwen 或任意训练框架的默认 overflow 语义。上述实验仍无跨设备 capacity-group collective、shared/fine-grained experts、expert parallel、all-to-all、grouped GEMM、GPU、目标 checkpoint、收敛、质量或性能证据；整数 group label 不等于真实 device/process group，几组固定样例也不能拼成生产 MoE 已复现。
 
-## Two-process Gloo capacity-group control
+## 两进程 Gloo capacity-group 实验
 
 `moe_distributed_capacity_control.py` 用两个真实 spawn worker、CPU/Gloo 与 temporary FileStore 把“本地 label”和“collective group”分开。Rank 0 的 hidden states 为 `[[2],[1]]`，rank 1 为 `[[3],[0.5]]`；两边的 replicated router 都使用 weights `[[1],[0]]`、top-1、2 experts 与 `capacity_factor=0.5`。一次 `all_gather` 真正形成按 rank 排序的 4-token global routing batch，两个 `all_reduce(SUM)` 分别让两 rank 观察 active tokens=4 和 pre-capacity selected counts `[4,0]`。
 
@@ -82,7 +82,7 @@ v3 再加入三个显式 overflow policy。固定 4-token/top-1 fixture 的完�
 distributed autograd、DDP backward、shared/fine-grained experts、CUDA/NCCL、多节点、目标 checkpoint、性能、收敛或质量证据。
 Collective call count 是源码中当前三类调用的审计账本，不是网络抓包或框架级通信 profiler。
 
-## Two-process Gloo token-to-owner all-to-all control
+## 两进程 Gloo token-to-owner all-to-all 实验
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_control.py
@@ -90,33 +90,33 @@ python projects/transformers-basics/moe_all_to_all_control.py
 
 `moe_all_to_all_control.py` 隔离 expert dispatch/return 语义：rank 0 只驻留 expert 0（`2x+0.5`），rank 1 只驻留 expert 1（`-3x+1`），router 在两 rank 复制。Rank 0 的三个 tokens `[-1,2,-2]` 路由到 `[1,0,1]`，rank 1 的 `[1]` 路由到 `[0]`，所以 source→owner counts matrix 为 `[[1,2],[1,0]]`，owner←source 为 `[[1,1],[2,0]]`。每 rank 真实调用五次 `all_to_all_single`：交换 counts、dispatch float payload、dispatch metadata、return output/gate、return metadata；`[1,0]` 的 split 还覆盖零长度 destination chunk。
 
-Owner 计算后按 source rank 返回，但 rank 0 的 return arrival global token 顺序 `[1,0,2]` 与 source-local 顺序 `[0,1,2]` 不同。只有根据 `(source_rank, source_local_index, global_token_id, expert_id)` scatter，才能得到与单进程 oracle 完全相同的 `[3.5231883119115293,4.419062055170588,6.874096530265359,2.201992694944706]`；若把 arrival row 当原顺序，最大差为 `0.8958737432590591`。该 authored top-1 combine 明确保留 selected softmax probability，并非所有框架的默认 top-1 归一化策略。
+Owner 计算后按 source rank 返回，但 rank 0 的 return arrival global token 顺序 `[1,0,2]` 与 source-local 顺序 `[0,1,2]` 不同。只有根据 `(source_rank, source_local_index, global_token_id, expert_id)` scatter，才能得到与单进程参考实现完全相同的 `[3.5231883119115293,4.419062055170588,6.874096530265359,2.201992694944706]`；若把 arrival row 当原顺序，最大差为 `0.8958737432590591`。本仓库的 top-1 combine 明确保留 selected softmax probability，并非所有框架的默认 top-1 归一化策略。
 
-逻辑 tensor-payload 账本按源码张量的 dtype/numel 计 rank 0/1 各 256/160 bytes、合计 416 bytes；它不等于 wire bytes，不含 Gloo/TCP/FileStore 协议、分包、对齐或 allocator overhead。此 control 没有 capacity/drop/reroute/dropless、backward/optimizer、DDP/FSDP/ZeRO、shared/fine-grained expert、CUDA/NCCL、多节点、目标 checkpoint、吞吐、延迟、显存、收敛或质量证据；也不能与上一条 replicated-capacity fixture 拼接后宣称生产 EP 已复现。
+逻辑 tensor-payload 账本按源码张量的 dtype/numel 计 rank 0/1 各 256/160 bytes、合计 416 bytes；它不等于 wire bytes，不含 Gloo/TCP/FileStore 协议、分包、对齐或 allocator overhead。这个实验没有 capacity/drop/reroute/dropless、backward/optimizer、DDP/FSDP/ZeRO、shared/fine-grained expert、CUDA/NCCL、多节点、目标 checkpoint、吞吐、延迟、显存、收敛或质量证据；也不能与上一项 replicated-capacity 实验拼接后宣称生产 EP 已复现。
 
-## Two-process Gloo all-to-all forward/backward + SGD control
+## 两进程 Gloo all-to-all forward/backward + SGD 实验
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_training_control.py
 ~~~
 
-这条独立训练 fixture 复用同一组 routes、targets 和 owner-only experts，但把可微 float payload 的 variable-split 通信封装为 authored `torch.autograd.Function`。Forward 以原 splits dispatch/return；backward 把 `input_splits`/`output_splits` 互换，再执行 reverse `all_to_all_single`，把 raw-output/gate 梯度送回 owner、把 hidden/gate 梯度送回 source。Metadata 与 count 仍走不可微 collectives，不能期待 autograd 自动恢复 token identity。
+这个独立训练实验复用同一组 routes、targets 和 owner-only experts，但把可微 float payload 的 variable-split 通信封装为本仓库提供的 `torch.autograd.Function`。Forward 以原 splits dispatch/return；backward 把 `input_splits`/`output_splits` 互换，再执行 reverse `all_to_all_single`，把 raw-output/gate 梯度送回 owner、把 hidden/gate 梯度送回 source。Metadata 与 count 仍走不可微 collectives，不能期待 autograd 自动恢复 token identity。
 
-每个 source rank 先按 `local squared-error sum / global_token_count=4` backward。Owner expert 已经接收所有 source 发给该 expert 的 tokens，所以 owner expert gradients 直接是 global-mean 目标的完整局部参数梯度，不应再按 data-parallel 语义重复 all-reduce；replicated router 则只看到本 source 的 gate 路径，必须做 router gradient SUM all-reduce。两个 local router gradients 相加得到 `[[2.2904292655042227],[-2.290429265504225]]`，expert-0/1 weight gradients 为 `6.460938946431114/-7.209951147135929`。一步 `lr=0.01` 无 momentum SGD 后，两 rank router 与各 owner expert 参数都和单进程 global-batch oracle 精确一致。
+每个 source rank 先按 `local squared-error sum / global_token_count=4` backward。Owner expert 已经接收所有 source 发给该 expert 的 tokens，所以 owner expert gradients 直接是 global-mean 目标的完整局部参数梯度，不应再按 data-parallel 语义重复 all-reduce；replicated router 则只看到本 source 的 gate 路径，必须做 router gradient SUM all-reduce。两个 local router gradients 相加得到 `[[2.2904292655042227],[-2.290429265504225]]`，expert-0/1 weight gradients 为 `6.460938946431114/-7.209951147135929`。一步 `lr=0.01` 无 momentum SGD 后，两 rank router 与各 owner expert 参数都和单进程 global-batch 参考实现精确一致。
 
-训练前/后再各执行一次完整分布式 forward，global-mean MSE 从 `20.78017329703821` 降至 `19.41091750734501`。每 rank 的 authored call ledger 为：可微 payload forward 4 次、其 autograd backward 2 次、count/metadata 6 次、router gradient SUM all-reduce 1 次；这是源码包装器内计数，不是 backend profiler 或 wire trace。该控制不使用 `torch.distributed.nn.functional` wrapper、`torch.distributed.autograd` RPC context 或 DDP；没有 capacity/drop、momentum/weight decay/state resume、CUDA/NCCL、多节点、目标模型、收敛、质量或性能证据。
+训练前/后再各执行一次完整分布式 forward，global-mean MSE 从 `20.78017329703821` 降至 `19.41091750734501`。每 rank 的固定调用账本为：可微 payload forward 4 次、其 autograd backward 2 次、count/metadata 6 次、router gradient SUM all-reduce 1 次；这是源码包装器内计数，不是 backend profiler 或 wire trace。该实验不使用 `torch.distributed.nn.functional` wrapper、`torch.distributed.autograd` RPC context 或 DDP；没有 capacity/drop、momentum/weight decay/state resume、CUDA/NCCL、多节点、目标模型、收敛、质量或性能证据。
 
-## Two-process Gloo capacity + all-to-all backward + SGD control
+## 两进程 Gloo capacity + all-to-all backward + SGD 实验
 
 ~~~powershell
 python projects/transformers-basics/moe_all_to_all_capacity_training_control.py
 ~~~
 
-这条独立 control 才把 global capacity、owner-only dispatch、reverse-split backward 与一步 SGD 接入同一计算图。四个 active tokens 的初选 counts 为 `[2,2]`；`capacity_factor=0.5` 令每 expert capacity=1，按 selected probability、再按 global token id 稳定竞争后，global keep mask `[F,T,T,F]`、kept counts `[1,1]`、drop 2 个。只有幸存 assignments 进入 source→owner all-to-all：两 rank 的 splits 为 `[[1,1],[0,0]]`，owner←source 为 `[[1,0],[1,0]]`。
+这项独立实验把 global capacity、owner-only dispatch、reverse-split backward 与一步 SGD 接入同一计算图。四个 active tokens 的初选 counts 为 `[2,2]`；`capacity_factor=0.5` 令每 expert capacity=1，按 selected probability、再按 global token id 稳定竞争后，global keep mask `[F,T,T,F]`、kept counts `[1,1]`、drop 2 个。只有幸存 assignments 进入 source→owner all-to-all：两 rank 的 splits 为 `[[1,1],[0,0]]`，owner←source 为 `[[1,0],[1,0]]`。
 
-Rank 1 因本地 token 被丢而成为 zero-assignment source rank；它仍通过 zero-size collective graph edge 参加两次 reverse collective，避免其他 rank 在 backward 等待。Dropped tokens 0/3 的 routed output 与 task hidden gradient 都严格为 0；幸存 hidden gradients、router SUM gradient、owner expert gradients、一步参数和 post-step outputs 全部与单进程 capacity oracle 相同。Global-mean MSE 为 `15.253670387373656→14.530264380025987`，strict report fingerprint 为 `sha256:33f11f199b9668c…`。
+Rank 1 因本地 token 被丢而成为 zero-assignment source rank；它仍通过 zero-size collective graph edge 参加两次 reverse collective，避免其他 rank 在 backward 等待。Dropped tokens 0/3 的 routed output 与 task hidden gradient 都严格为 0；幸存 hidden gradients、router SUM gradient、owner expert gradients、一步参数和 post-step outputs 全部与单进程 capacity 参考实现相同。Global-mean MSE 为 `15.253670387373656→14.530264380025987`，字段要求明确的报告指纹为 `sha256:33f11f199b9668c…`。
 
-每 rank authored ledger 为 payload forward/backward `4/2`、count+metadata `6`、capacity-route `all_gather` `4`、router all-reduce `1`。它没有执行 reroute/dropless、shared/fine-grained experts、DDP/FSDP/ZeRO/TP/PP、mixed precision、optimizer state、CUDA/NCCL、多节点、目标 checkpoint 或 backend profiling；一步 toy loss 下降也不证明收敛、质量、扩展性或生产性能。
+每 rank 的固定账本记录 payload forward/backward `4/2`、count+metadata `6`、capacity-route `all_gather` `4`、router all-reduce `1`。它没有执行 reroute/dropless、shared/fine-grained experts、DDP/FSDP/ZeRO/TP/PP、mixed precision、optimizer state、CUDA/NCCL、多节点、目标 checkpoint 或 backend profiling；一步 toy loss 下降也不证明收敛、质量、扩展性或生产性能。
 
 ## Activation patching 因果控制实验
 
@@ -127,11 +127,11 @@ python projects/transformers-basics/activation_patching.py
 python -m pytest tests/test_activation_patching.py -q
 ~~~
 
-fixture 同时包含正干预、联合 causal-prefix patch 和未来位置负对照；测试还检查 hook 移除、detach/clone、shape/device/token 边界与小分母拒绝。联合 patch 的 recovery=1、未来位置 control=0，证明这个固定计算图中的干预管线和 causal visibility 按定义工作。
+固定样例同时包含正干预、联合 causal-prefix patch 和未来位置负对照；测试还检查 hook 移除、detach/clone、shape/device/token 边界与小分母拒绝。联合 patch 的 recovery=1、未来位置对照=0，证明这个固定计算图中的干预管线和 causal visibility 按定义工作。
 
-模型没有训练，token 27/19 是根据当前 fixture 的 clean-corrupt 差异事后选择，batch 也只有 1；因此结果不能解释成语言机制、目标 checkpoint circuit、跨 prompt 稳定性或安全解释。完整 prefix activation 被替换后恢复 clean metric 也不惊人：它一次带入该位置的全部纠缠特征。真正研究必须先固定行为和 metric，再扩展多样本、模板、seed、随机 source、无关 site、component/path patch 与 held-out replication。
+模型没有训练，token 27/19 是根据当前固定样例的 clean-corrupt 差异事后选择，batch 也只有 1；因此结果不能解释成语言机制、目标 checkpoint circuit、跨 prompt 稳定性或安全解释。完整 prefix activation 被替换后恢复 clean metric 也不惊人：它一次带入该位置的全部纠缠特征。真正研究必须先固定行为和 metric，再扩展多样本、模板、seed、随机 source、无关 site、component/path patch 与 held-out replication。
 
-### 固定 Qwen 权重的 activation-patching control
+### 在固定 Qwen 权重上做 activation patching
 
 在 toy hook 之上，下面的入口会复用本项目已审阅的 Qwen2.5-0.5B-Instruct revision 与 7-file snapshot，先重哈希约 999.6 MB selected bytes，再加载 494,032,768 个 FP32 参数。已有完整 cache 时不会联网：
 
@@ -142,7 +142,7 @@ python projects/transformers-basics/run_qwen_activation_patching_control.py `
 
 固定 chat-template pair 只有位置 19 的 ` France`/` Germany` 不同；metric 是 position 25 上无前导空格单 token `Paris−Berlin`。协议在 patch 前固定 first/lower-middle/final layer 0/11/23，而不是扫完热图再挑层。录制结果的 clean/corrupt metric 为 9.210311/-7.700302；source patch recovery 为 1.000024/0.992244/0。完整 layer-0 prefix 与 final-layer readout 两个构造性正对照均为 1，future-position 负对照为 0，全部 hooks 在结束后移除。机器报告位于 `target-checkpoints/qwen2.5-0.5b-instruct.activation-patching.recorded-report.json`，self-fingerprint 是 `sha256:3f8410f5c31666b1be4f83e343a5b849a0545b2f635f7d415da85a195eebb18c`。
 
-城市 token 是在核对 templated baseline 后、任何 patch condition 被接受前修正的 tokenizer 边界，因此这是可复查的 authored fixed protocol，不是外部可信时间戳 preregistration。高 recovery 只适用于这个 batch-1 pair 和“替换整个 896-d post-layer source residual”的干预；它不定位 attention head/MLP/feature，不证明事实存储层、唯一自然 circuit、总体事实性或安全性。final-layer source recovery=0 是因为该 hook 之后不再跨 position 混合；不能推成“最后层没作用”。CPU FP32 eager 也不证明 CUDA、量化、vLLM 或其他 hook layout。
+城市 token 是在核对 templated baseline 后、任何 patch condition 被接受前修正的 tokenizer 边界，因此这是一份可复查、由本仓库预先写明的协议，不是外部可信时间戳 preregistration。高 recovery 只适用于这个 batch-1 pair 和“替换整个 896-d post-layer source residual”的干预；它不定位 attention head/MLP/feature，不证明事实存储层、唯一自然 circuit、总体事实性或安全性。final-layer source recovery=0 是因为该 hook 之后不再跨 position 混合；不能推成“最后层没作用”。CPU FP32 eager 也不证明 CUDA、量化、vLLM 或其他 hook layout。
 
 ## 离线 smoke test
 
@@ -218,11 +218,11 @@ python projects/transformers-basics/verify_release_evidence.py --verify-upstream
 batch 1、2-byte element 的理想 K/V tensor payload。DeepSeek-V3 即使显式含 `num_key_value_heads`，
 程序也会因 MLA markers 而拒绝套用标准 GQA 公式。
 
-Control 不下载模型权重/tokenizer，不执行 remote code、forward、MLA kernel 或长上下文任务；不证明 config 与权重匹配、有效上下文、参数量、质量、许可、runtime 支持、显存峰值、性能或生产安全。Meta 记录来自 model card 而不是 gated config，因此不能与 Qwen/DeepSeek 的 config-level deduction 混为一类证据。
+这个验证不下载模型权重/tokenizer，不执行 remote code、forward、MLA kernel 或长上下文任务；不证明 config 与权重匹配、有效上下文、参数量、质量、许可、runtime 支持、显存峰值、性能或生产安全。Meta 记录来自 model card 而不是 gated config，因此不能与 Qwen/DeepSeek 的 config-level deduction 混为一类证据。
 
 ## 让固定 Qwen 权重真实执行一次
 
-发布证据 control 明确不加载权重；`run_target_checkpoint.py` 是下一层、范围更窄但确实执行目标 checkpoint 的控制。Manifest 固定 `Qwen/Qwen2.5-0.5B-Instruct` revision `7ae557604adf67be50417f59c2c2f167def9a775`、CPU/FP32/eager、固定 messages 和 7 个必需文件。7 个文件合计 999,586,347 bytes；其中 [immutable model.safetensors](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/model.safetensors) 为 988,097,824 bytes，SHA-256 是 `fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe`。
+发布证据验证明确不加载权重；`run_target_checkpoint.py` 是下一层、范围更窄但确实执行目标 checkpoint 的实验。Manifest 固定 `Qwen/Qwen2.5-0.5B-Instruct` revision `7ae557604adf67be50417f59c2c2f167def9a775`、CPU/FP32/eager、固定 messages 和 7 个必需文件。7 个文件合计 999,586,347 bytes；其中 [immutable model.safetensors](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/model.safetensors) 为 988,097,824 bytes，SHA-256 是 `fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe`。
 
 ~~~powershell
 # 首次运行允许匿名下载固定 revision 的选定文件，约 1 GB
@@ -238,9 +238,9 @@ python projects/transformers-basics/run_target_checkpoint.py --local-files-only
 
 这次运行只绑定选定文件，不证明仓库中所有文件或 config-weight 语义都匹配；HTTPS + 无密钥 SHA-256 不是发布者签名。Verifier 先从 open handle 哈希，Transformers 随后仍按路径重新打开文件，因此没有消除两者之间的并发替换 TOCTOU；生产消费需要不可变目录、ACL/lease、内容寻址句柄或等价控制。一个英文算术 prompt 的 CPU FP32 greedy 结果不证明训练复现、模型总体/中文质量、32k 有效上下文、许可适用性、CUDA/vLLM、峰值内存、吞吐、延迟或生产安全。参数存储也不是进程峰值 RSS。
 
-## 固定 Qwen 单矩阵 packed INT4 control
+## 在固定 Qwen 单矩阵上检查 packed INT4
 
-通用 quantization toy 与完整 tiny MiniGPT checkpoint 都没有碰到发布 Qwen 权重。下面的 control 复用已验证的同一 7-file snapshot，加载 CPU FP32 模型，并只选择第一层 attention 的 bias-free `model.layers.0.self_attn.o_proj.weight`：
+通用 quantization toy 与完整 tiny MiniGPT checkpoint 都没有碰到发布 Qwen 权重。下面的实验复用已验证的同一 7-file snapshot，加载 CPU FP32 模型，并只选择第一层 attention 的 bias-free `model.layers.0.self_attn.o_proj.weight`：
 
 ~~~powershell
 # 真实重哈希、加载约 1 GB snapshot、捕获激活并执行两次 forward
@@ -268,7 +268,7 @@ python projects/transformers-basics/run_qwen_weight_quantization_control.py `
 | last-position logits relative-L2 / max-abs | 0.08513807180570929 / 1.6255179643630981 |
 | baseline / partial-quantized argmax | 17 / 17 |
 
-Control 在真实 31-token forward 中捕获 `[1,31,896]` 的 `o_proj` 输入/输出，证明 hook output 与直接 FP32 linear 的 max error 为 0；随后把 packed artifact 严格重载，in-memory 与 reloaded dequantized layer output exact，并暂时替换这一矩阵执行新的完整模型 forward。结束时原始 source weight byte-exact 恢复。Artifact SHA-256 为 `sha256:006cc9a2…0bf7`，closed report 为 `sha256:df9ee045…f5cb`；翻转 artifact digest byte 会在 decode 前拒绝。
+实验在真实 31-token forward 中捕获 `[1,31,896]` 的 `o_proj` 输入/输出，证明 hook output 与直接 FP32 linear 的 max error 为 0；随后把 packed artifact 严格重载，in-memory 与 reloaded dequantized layer output exact，并暂时替换这一矩阵执行新的完整模型 forward。结束时原始 source weight byte-exact 恢复。Artifact SHA-256 为 `sha256:006cc9a2…0bf7`，closed report 为 `sha256:df9ee045…f5cb`；翻转 artifact digest byte 会在 decode 前拒绝。
 
 这些数字最重要的结论不是“INT4 无损”，而是相反：只量化 0.1625% 参数，末位 logits 仍出现 8.51% relative-L2 与 1.6255 max-abs 变化。当前 prompt 的 argmax 恰好没变，不能推断其他 token、序列、生成或任务质量不变。427,328 bytes 只是这一个 weight bundle；完整模型其余参数仍为 FP32，forward 使用反量化 FP32 weight，没有完整 low-bit checkpoint、量化 runtime、fused kernel、GPU/CUDA/vLLM、resident/peak memory、latency、throughput、GPTQ/AWQ calibration 或代表性质量证据。
 

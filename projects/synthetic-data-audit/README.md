@@ -228,7 +228,7 @@ E[C_i]=Dp_i,\qquad
 E[repeat_i]=\frac{Dp_i}{n_i}.
 \]
 
-固定 fixture 得到：
+固定样例得到：
 
 | Component | Fraction | Expected consumed | Unique | Expected repetition |
 |---|---:|---:|---:|---:|

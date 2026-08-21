@@ -19,7 +19,7 @@ projects/  怎样把模块组成一次可交付的工程任务？
 
 ### 教材层：`docs/`
 
-正文负责建立直觉、因果链、公式和工程取舍。关键章节会给出“完成信号”和下一步实验，但不会把所有 fixture、
+正文负责建立直觉、因果链、公式和工程取舍。关键章节会给出“完成信号”和下一步实验，但不会把所有固定输入、
 hash 与测试排列组合塞进主线。精确验证结果集中在 `docs/evidence/`。
 
 ### 实验层：`notebooks/` 与 `docs/practice/labs/`
@@ -29,7 +29,7 @@ Notebook 应能 Restart & Run All；核心逻辑放在 `src/` 或 `projects/`，
 
 ### 实现层：`src/about_llm/`
 
-`from_scratch/` 优先透明、可手算和 correctness oracle；其他模块提供明确接口、错误类型和可组合状态。
+`from_scratch/` 优先使用透明、可手算的参考实现；其他模块提供明确接口、错误类型和可组合状态。
 教学实现不会冒充生产 kernel，工程模块也不会在 import 时下载模型、访问网络或初始化 GPU。
 
 ### 项目层：`projects/`
@@ -58,14 +58,14 @@ Notebook 应能 Restart & Run All；核心逻辑放在 `src/` 或 `projects/`，
 
 仓库经常同时提供：
 
-1. **数学 oracle**：NumPy/精确分数实现，用于检查公式和边界；
-2. **框架 control**：真实调用 PyTorch、JAX、Transformers 或 SDK，但输入很小且固定；
+1. **公式参考实现**：用 NumPy 或精确分数检查公式和边界；
+2. **框架小实验**：真实调用 PyTorch、JAX、Transformers 或 SDK，但输入很小且固定；
 3. **目标环境实验**：在指定 checkpoint、GPU、runtime 与 workload 上测行为或性能。
 
 例如 NumPy GQA 可以证明 head mapping，不能证明 CUDA kernel 快；固定 Qwen CPU forward 说明真实权重路径执行过，
 不能证明总体质量；MockTransport 的 response close 说明客户端释放资源，不能证明云端停止计费。
 
-想查看每条 control 的精确版本、fixture 与未覆盖项，请用：
+想查看每项实验的精确版本、固定输入与未覆盖项，请用：
 
 - [项目控制台账](../evidence/project-controls.md)：项目级可执行证据；
 - [准确性台账](../evidence/accuracy-ledger.md)：重要结论与验证入口；
@@ -97,7 +97,7 @@ flowchart LR
 ```
 
 例如学习 Agent 时，不必先跑所有 MCP transport tests。先运行退款生命周期，看懂为什么 `pending` 不能直接重试；
-需要接框架时再运行 LangChain/LlamaIndex adapter；准备协议互操作时才进入 MCP/A2A controls。
+需要接框架时再运行 LangChain/LlamaIndex adapter；准备协议互操作时才进入 MCP/A2A 专项实验。
 
 ## 代码与数据约定
 
@@ -106,7 +106,7 @@ flowchart LR
 - 浮点测试使用有理由的 tolerance；随机实验固定 seed，也保留至少一个反例。
 - Import 不下载模型/数据、不访问网络、不初始化 GPU。
 - 执行模型 proposal 前，外部 Runtime 继续做 Schema、权限、审批和副作用校验。
-- 小型 authored 教学数据可以随仓库分发；大型或受限数据只保存获取说明、identity 与校验方式。
+- 本仓库准备的小型教学数据可以随仓库分发；大型或受限数据只保存获取说明、identity 与校验方式。
 - 训练与评测数据分权；生成 artifact 默认不提交到 Git。
 
 ## 下一步

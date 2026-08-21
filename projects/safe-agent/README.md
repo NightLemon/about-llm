@@ -70,7 +70,7 @@ python -m about_llm.agents.cli run `
   --max-tool-calls 5
 ~~~
 
-输出明确包含 `simulated_offline: true`、每一步的 context/resource、policy reason、proposal/execution fingerprint、unsigned fixture approval、`handler_attempted`、status、pending 状态和期望不匹配。`simulated_effect_applied` 只描述这个确定性的离线 handler，不能冒充真实 provider 状态。样例中 `uncertain-1` 会保持 pending；查询待调查调用：
+输出明确包含 `simulated_offline: true`、每一步的 context/resource、policy reason、proposal/execution fingerprint、未签名的样例 approval、`handler_attempted`、status、pending 状态和期望不匹配。`simulated_effect_applied` 只描述这个确定性的离线 handler，不能冒充真实 provider 状态。样例中 `uncertain-1` 会保持 pending；查询待调查调用：
 
 ~~~powershell
 python -m about_llm.agents.cli pending `
@@ -78,7 +78,7 @@ python -m about_llm.agents.cli pending `
   --older-than-seconds 0
 ~~~
 
-真实系统中，operator 必须先查 provider audit log、业务数据库或 outbox。只有确认结果后才能选择一种 resolution。下面命令仅适用于本离线 fixture，因为已知它没有真实外部副作用：
+真实系统中，operator 必须先查 provider audit log、业务数据库或 outbox。只有确认结果后才能选择一种 resolution。下面命令仅适用于这个离线固定样例，因为我们知道它没有真实外部副作用：
 
 ~~~powershell
 python -m about_llm.agents.cli resolve `
@@ -103,7 +103,7 @@ python -m about_llm.agents.cli loop `
   --cases projects/safe-agent/loop.example.jsonl
 ~~~
 
-loop 同时限制 decision step、模型 token、cost unit、monotonic wall time、重复 action 和重复 error；只有 verifier `PASSED` 才输出 `completed=true`。token/cost 是 JSONL 中 supplied fixture usage，clock 是固定本地值，exact verifier 只核对答案与已完成/cached evidence call id：三者都不冒充 provider usage、真实账单、线上延迟或开放任务语义判断。动作检测只覆盖连续相同 fingerprint 和最近四步 `A/B/A/B`，不能证明发现任意长周期或语义等价循环。
+loop 同时限制 decision step、模型 token、cost unit、monotonic wall time、重复 action 和重复 error；只有 verifier `PASSED` 才输出 `completed=true`。token/cost 是 JSONL 固定样例中预先给出的 usage，clock 是固定本地值，exact verifier 只核对答案与已完成/cached evidence call id：三者都不冒充 provider usage、真实账单、线上延迟或开放任务语义判断。动作检测只覆盖连续相同 fingerprint 和最近四步 `A/B/A/B`，不能证明发现任意长周期或语义等价循环。
 
 `needs_approval` 会给出 call id、execution fingerprint 和严格 JSON checkpoint，并保证 handler 尚未调用。checkpoint 保存原预算、累计 usage/handler counter、历史 event/action 和 pending decision；resume 先重新授权并执行原 decision，不重复 planner token/cost。
 
@@ -139,7 +139,7 @@ python -m pip install -c constraints/ci.txt -e ".[agents]"
 
 当前安全 profile 明确要求 Draft 2020-12、root `type: object`，并以 `additionalProperties: false` 或 `unevaluatedProperties: false` 闭合根参数；`$ref/$dynamicRef` 只允许 local fragment，拒绝 `$id` 与外部 retrieval。Schema 本身和 instance 都有 UTF-8 canonical byte cap。`format` 默认按标准作为 annotation；只有 `enforce_formats=True` 才用当前 `jsonschema` FormatChecker 执行，且未知 format 在构造 contract 时拒绝。Schema/validator revision、`jsonschema` 精确版本、format mode、schema bytes 和 instance cap 进入 contract identity。校验不做字符串转数字等 coercion、不插入 `default`、不执行资源授权；失败只暴露 keyword 和 JSON Pointer，不回显 rejected value。
 
-下面的 control 使用两条代码内冻结的 recorded provider response，不联网也不调用模型。第一条 JSON 提议只读 `fixture_tool`，标准 JSON Schema、tenant resource resolver 和 exact-capability policy 允许后，handler 返回一段恶意指令文本；第二次 request 把它按不可信 observation 纳入状态，模型 fixture 再提议 finish，最后由独立 exact verifier 核对本地 event 才完成：
+下面的验证使用两条代码内冻结的 recorded provider response，不联网也不调用模型。第一条 JSON 提议只读 `fixture_tool`，标准 JSON Schema、tenant resource resolver 和 exact-capability policy 允许后，handler 返回一段恶意指令文本；第二次 request 把它按不可信 observation 纳入状态，固定的模型响应再提议 finish，最后由独立 exact verifier 核对本地 event 才完成：
 
 ~~~powershell
 python projects/safe-agent/model_planner_control.py
@@ -154,9 +154,9 @@ Markdown-fenced JSON 被拒绝、模型参数虽通过 JSON parser 仍会被 run
 
 手写 `PlannerToolContract` 仍可能与任意 callback validator 漂移；需要强一致时应由 `JSONSchemaToolContract.planner_contract()` 与 `.build_tool()` 同源生成。JSON Schema 只验证声明的 JSON 结构和值约束，不知道 resource 是否存在/归属当前 tenant、调用是否获权、effect 是否安全或 handler 返回是否真实，这些边界不能挪进模型 schema。
 
-## LangChain / LlamaIndex framework tool adapter control
+## LangChain / LlamaIndex framework tool adapter 实验
 
-Agent framework 适合承载消息、tool selection、callback 和 orchestration，但不应成为资源归属、权限或副作用状态的事实源。本项目新增一条 **proposal-only adapter** control：框架工具函数只返回 closed proposal envelope，随后由 framework-independent `AgentRuntime` 重新执行 schema、可信资源解析、exact-capability policy、call-id 幂等和 handler gate。
+Agent framework 适合承载消息、tool selection、callback 和 orchestration，但不应成为资源归属、权限或副作用状态的事实源。本项目增加一项 **proposal-only adapter** 实验：框架工具函数只返回 closed proposal envelope，随后由 framework-independent `AgentRuntime` 重新执行 schema、可信资源解析、exact-capability policy、call-id 幂等和 handler gate。
 
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents,langchain,llamaindex]"
@@ -200,9 +200,9 @@ LangGraph 或 LlamaIndex Agent loop、模型/provider、callback/tracing backend
 网络、remote tool、审批或真实副作用；也没有验证框架默认 ACL、schema enforcement、幂等、生产安全、性能或跨版本兼容。
 两框架得到相同 value/fingerprint 是这组固定输入下 canonical core 的预期不变量，不是质量榜或框架等价证明。
 
-## LangChain / LlamaIndex framework Agent-loop control
+## LangChain / LlamaIndex framework Agent-loop 实验
 
-上面的 proposal-only control 故意停在 direct tool API。下面的独立 control 才把相同的 canonical `AgentRuntime` 放进真实 framework orchestration：LangChain 通过 `create_agent()` 执行 LangGraph 的 model→tool→model loop，LlamaIndex 通过 `FunctionAgent.run()` 执行 Workflow。两边的 chat model 都是进程内、确定性的 scripted fixture；“真实 loop”描述的是框架控制流，不是 provider 或目标模型。
+上面的 proposal-only 实验故意停在 direct tool API。下面的独立实验才把相同的 canonical `AgentRuntime` 放进真实 framework orchestration：LangChain 通过 `create_agent()` 执行 LangGraph 的 model→tool→model loop，LlamaIndex 通过 `FunctionAgent.run()` 执行 Workflow。两边的 chat model 都是进程内、确定性的 scripted model；“真实 loop”描述的是框架控制流，不是 provider 或目标模型。
 
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents,langchain,llamaindex]"
@@ -218,21 +218,21 @@ python projects/safe-agent/framework_agent_loop_control.py
 | cross-tenant | `policy_denied` | 0 次 | 拒绝模型声称的成功 |
 | unknown-tool | framework error，无 canonical receipt | 0 次 | 拒绝模型声称的成功 |
 
-Verifier 不相信最终 assistant 文本或 framework 的 finished 状态；它只接受本地 canonical receipt 中的 `completed/cached` 状态与预期 value。因此后两组即使 scripted model 最终都输出 `fixture:public`，任务仍不能通过。这个 verifier 只是固定 exact-value fixture，不是开放语义 judge，也没有验证外部 effect。
+Verifier 不相信最终 assistant 文本或 framework 的 finished 状态；它只接受本地 canonical receipt 中的 `completed/cached` 状态与预期 value。因此后两组即使 scripted model 最终都输出 `fixture:public`，任务仍不能通过。这个 verifier 只比较固定样例中的 exact value，不是开放语义 judge，也没有验证外部 effect。
 
 ### 两种 call identity 不能假装相同
 
-LangChain 路径使用 `InjectedToolCallId`，将 framework tool-call ID 直接作为 canonical call ID。模块启用了 postponed annotations；在当前固定版本中，局部工具若只留下字符串 annotation，ID injection 会丢失，所以 control 显式恢复运行时 `Annotated[str, InjectedToolCallId]` 对象并用回归测试锁定。
+LangChain 路径使用 `InjectedToolCallId`，将 framework tool-call ID 直接作为 canonical call ID。模块启用了 postponed annotations；在当前固定版本中，局部工具若只留下字符串 annotation，ID injection 会丢失，所以实验代码显式恢复运行时 `Annotated[str, InjectedToolCallId]` 对象并用回归测试锁定。
 
-当前 LlamaIndex `FunctionTool` handler 在这条 `FunctionAgent` 路径中只收到 tool kwargs，不收到 `ToolSelection.tool_id`。Control 因而从可信 fixture 的 case/action 内容派生 canonical ID，而不把幂等键塞进 model-visible 参数；same-id case 的两次相同 action 得到同一 ID。这个 hash 是局部控制实验的确定性 identity，不是通用生产方案：若业务允许“同参但有意执行两次”，必须由可信 orchestrator/ledger 分配不同 action identity，并把 task、subject、resource、tool/schema/policy revision 等纳入冲突检查。
+当前 LlamaIndex `FunctionTool` handler 在这条 `FunctionAgent` 路径中只收到 tool kwargs，不收到 `ToolSelection.tool_id`。因此，实验从可信固定样例的 case/action 内容派生 canonical ID，而不把幂等键塞进 model-visible 参数；same-id case 的两次相同 action 得到同一 ID。这个 hash 是局部实验使用的确定性 identity，不是通用生产方案：若业务允许“同参但有意执行两次”，必须由可信 orchestrator/ledger 分配不同 action identity，并把 task、subject、resource、tool/schema/policy revision 等纳入冲突检查。
 
-当前 LlamaIndex Workflow 每个 case 还会触发 73 次 Pydantic deprecated-field warnings。Control 将它们捕获到 `dependency_warnings`，并断言没有其他 warning；这是一条升级风险证据，不是“忽略后即可生产”的许可。升级任一框架后应重新执行 call-ID injection、catalog binding、unknown-tool、warning 和 verifier matrix。
+当前 LlamaIndex Workflow 每个 case 还会触发 73 次 Pydantic deprecated-field warnings。实验将它们捕获到 `dependency_warnings`，并断言没有其他 warning；这是一条升级风险证据，不是“忽略后即可生产”的许可。升级任一框架后应重新执行 call-ID injection、catalog binding、unknown-tool、warning 和 verifier matrix。
 
 ### 证据边界
 
-这条 control 确实执行 `create_agent()`/LangGraph 与 `FunctionAgent.run()` 的本地 model→tool→model control flow，以及 canonical schema、资源解析、policy、cache 和独立 verifier。它没有执行真实模型或 provider、网络、remote tool、外部副作用、持久化 checkpointer/resume、streaming、parallel tools、interrupt、cancel/deadline、callback/tracing backend、性能、费用或质量评测；也不证明 framework 默认 authorization、幂等、生产安全或跨版本兼容。CPU/offline scripted 结果只能写成框架控制流回归。
+这个实验确实执行 `create_agent()`/LangGraph 与 `FunctionAgent.run()` 的本地 model→tool→model control flow，以及 canonical schema、资源解析、policy、cache 和独立 verifier。它没有执行真实模型或 provider、网络、remote tool、外部副作用、持久化 checkpointer/resume、streaming、parallel tools、interrupt、cancel/deadline、callback/tracing backend、性能、费用或质量评测；也不证明 framework 默认 authorization、幂等、生产安全或跨版本兼容。CPU/offline scripted 结果只能写成框架控制流回归。
 
-## MCP 2025-11-25 official-SDK memory control
+## MCP 2025-11-25 official-SDK 内存传输实验
 
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents]"
@@ -240,13 +240,13 @@ python projects/safe-agent/mcp_sdk_memory_control.py
 python -m pytest tests/test_mcp_sdk_memory.py -q
 ~~~
 
-这个 control 固定官方 `mcp==1.29.0`，用 AnyIO in-memory object streams 连接官方 `ClientSession` 与 low-level `Server`，真实执行 generated types、initialize/ping、tools capability、`tools/list` 和三次 `tools/call`。`fixture.add` 发布显式 closed input/output schema；成功返回 `structuredContent={"sum":5}`。多余字段由 SDK JSON Schema validation 在应用 handler 前拒绝，handler delta 为 0。
+这个实验使用官方 `mcp==1.29.0`，用 AnyIO in-memory object streams 连接官方 `ClientSession` 与 low-level `Server`，真实执行 generated types、initialize/ping、tools capability、`tools/list` 和三次 `tools/call`。`fixture.add` 发布显式 closed input/output schema；成功返回 `structuredContent={"sum":5}`。多余字段由 SDK JSON Schema validation 在应用 handler 前拒绝，handler delta 为 0。
 
 对未列出的 `fixture.missing`，client 没有 cached input schema 可先校验，low-level server SDK 会进入应用 `call_tool` handler；应用 allowlist 再返回 error，handler delta 为 1。这说明官方 SDK 不替代应用的工具名、资源和授权 gate。SDK error content 可能含 validation detail，因此公开 closed report 不发布 raw error，只记录布尔结果、调用计数、scope 与无密钥 fingerprint。
 
-准确证据边界：它没有启动 subprocess，没有执行 OS stdio、TCP/HTTP、SSE、session resumption、TLS/OAuth、远程或跨厂商 server、官方 conformance suite、授权/审批、外部副作用或生产日志。下一节会把相同 SDK fixture 接到真实 stdio；memory control 仍只证明 in-process 路径。
+准确证据边界：它没有启动 subprocess，没有执行 OS stdio、TCP/HTTP、SSE、session resumption、TLS/OAuth、远程或跨厂商 server、官方 conformance suite、授权/审批、外部副作用或生产日志。下一节会把相同 SDK 固定输入接到真实 stdio；本节结果仍只适用于 in-process 路径。
 
-## MCP 2025-11-25 official-SDK stdio control
+## MCP 2025-11-25 official-SDK stdio 实验
 
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents]"
@@ -254,13 +254,13 @@ python projects/safe-agent/mcp_sdk_stdio_control.py
 python -m pytest tests/test_mcp_sdk_stdio.py -q
 ~~~
 
-官方 `mcp.client.stdio.stdio_client` 启动独立 Python subprocess；子进程以官方 `mcp.server.stdio.stdio_server` 把 low-level `Server` 接到真实 OS stdin/stdout pipe。control 固定 `mcp==1.29.0` 与协议 2025-11-25，执行 initialize/ping、tools discovery，以及成功、schema-invalid、unknown-tool 三次调用。client 配置 UTF-8 strict；当前官方 server 的 stdin 则使用 UTF-8 replacement error handling，不能合写成“两端 strict”。官方 client/session 与 server/generated types 都真实参与，不再只是 memory stream。
+官方 `mcp.client.stdio.stdio_client` 启动独立 Python subprocess；子进程以官方 `mcp.server.stdio.stdio_server` 把 low-level `Server` 接到真实 OS stdin/stdout pipe。实验使用 `mcp==1.29.0` 与协议 2025-11-25，执行 initialize/ping、tools discovery，以及成功、schema-invalid、unknown-tool 三次调用。client 配置 UTF-8 strict；当前官方 server 的 stdin 则使用 UTF-8 replacement error handling，不能合写成“两端 strict”。官方 client/session 与 server/generated types 都真实参与，不再只是 memory stream。
 
 server 在协议输入 EOF、`Server.run()` 返回后，以 exclusive create 写临时 canonical receipt。receipt 的 handler 序列精确为 `fixture.add, fixture.missing`，证明 schema-invalid 没进入应用 handler，而 unknown tool 进入应用 allowlist；内部 PID 只用于验证子进程不同于父进程。公开报告不含 PID、receipt path、raw transcript、raw 参数/result content 或 SDK error content，只保留 allowlisted `successful_sum=5`；临时目录退出即删除。
 
-准确证据边界：本 control 同时执行官方 SDK 与真实本地 stdio/subprocess，但没有独立注入 missing LF、duplicate key、invalid UTF-8、byte cap、stdout 污染，没有触发 forced terminate/kill、取消或 deadline；不能把 SDK 源码中存在的分支写成已测。它也没有 HTTP/SSE、TLS/OAuth、远程/跨厂商 server、官方 conformance suite、授权/审批、副作用或生产 supervisor。最小 receipt 与无密钥 fingerprint 不认证进程、来源或真实执行。
+准确证据边界：本实验同时执行官方 SDK 与真实本地 stdio/subprocess，但没有独立注入 missing LF、duplicate key、invalid UTF-8、byte cap、stdout 污染，没有触发 forced terminate/kill、取消或 deadline；不能把 SDK 源码中存在的分支写成已测。它也没有 HTTP/SSE、TLS/OAuth、远程/跨厂商 server、官方 conformance suite、授权/审批、副作用或生产 supervisor。最小 receipt 与无密钥 fingerprint 不认证进程、来源或真实执行。
 
-## MCP 2025-11-25 official-SDK Streamable HTTP control
+## MCP 2025-11-25 official-SDK Streamable HTTP 实验
 
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents]"
@@ -268,11 +268,11 @@ python projects/safe-agent/mcp_sdk_streamable_http_control.py
 python -m pytest tests/test_mcp_sdk_streamable_http.py -q
 ~~~
 
-官方 `streamable_http_client`/`ClientSession` 连接独立 server subprocess；子进程以官方 low-level `Server`、`StreamableHTTPSessionManager` 和 SDK ASGI adapter 运行真实 IPv4 loopback TCP/HTTP。stateful control 固定执行 7 次 POST、1 次 GET 与 1 次 DELETE，其中 initialized notification 是 202，其余 profile 精确为 8 个 200、7 个 SSE response 与 2 个 JSON response。client 观察到 opaque session id，但公开报告不保存它。
+官方 `streamable_http_client`/`ClientSession` 连接独立 server subprocess；子进程以官方 low-level `Server`、`StreamableHTTPSessionManager` 和 SDK ASGI adapter 运行真实 IPv4 loopback TCP/HTTP。这项 stateful 实验固定执行 7 次 POST、1 次 GET 与 1 次 DELETE，其中 initialized notification 是 202，其余 profile 精确为 8 个 200、7 个 SSE response 与 2 个 JSON response。client 观察到 opaque session id，但公开报告不保存它。
 
-临时 receipt 的 handler 序列仍为 `fixture.add, fixture.missing`，并要求 session manager 正常退出、私有 shutdown control 已收到、server exit code 为 0 且 stdout/stderr 为空。报告不发布 PID、session id、token、header、raw HTTP/protocol payload、参数、result 或 SDK error；只保存 method/status/media-type 计数、allowlisted `successful_sum=5` 和无密钥 fingerprints。
+临时 receipt 的 handler 序列仍为 `fixture.add, fixture.missing`，并要求 session manager 正常退出、私有 shutdown 信号已收到、server exit code 为 0 且 stdout/stderr 为空。报告不发布 PID、session id、token、header、raw HTTP/protocol payload、参数、result 或 SDK error；只保存 method/status/media-type 计数、allowlisted `successful_sum=5` 和无密钥 fingerprints。
 
-准确证据边界：随机 token 只保护测试编排使用的私有 control endpoint，缺失 token 的真实负例为 401；它不是 MCP auth、OAuth、subject/tenant/scope 或业务授权。这个 control 没有执行 MCP endpoint 的 malformed body、Host/Origin failure、resumption、TLS 或 OAuth，也没有网络故障、取消/deadline、远程/跨厂商 server、conformance、审批、副作用、多 worker 或生产 supervisor 证据。先选 loopback port 再由子进程 bind 仍有竞争窗口；receipt/hash 不认证进程、来源或真实执行。
+准确证据边界：随机 token 只保护测试编排使用的私有 shutdown endpoint，缺失 token 的真实负例为 401；它不是 MCP auth、OAuth、subject/tenant/scope 或业务授权。这个实验没有执行 MCP endpoint 的 malformed body、Host/Origin failure、resumption、TLS 或 OAuth，也没有网络故障、取消/deadline、远程/跨厂商 server、conformance、审批、副作用、多 worker 或生产 supervisor 证据。先选 loopback port 再由子进程 bind 仍有竞争窗口；receipt/hash 不认证进程、来源或真实执行。
 
 ## MCP 2025-11-25 手写 stdio parser
 
@@ -285,9 +285,9 @@ python -m pytest tests/test_mcp_stdio.py -q
 
 Framing/parser 拒绝 missing LF、embedded raw newline、duplicate key、非有限数、非法 UTF-8、非 object 和 byte cap 外输入。公开 report 不回显原始消息，只对 direction、JSON-RPC version、request id、method、response kind、tool-error flag 与 error code 的 allowlist projection 做 canonical fingerprint；参数与 result content 不在投影内。这不代表生产日志已自动安全，真实 request/result 仍要按 secret/PII 做访问控制、加密和 retention。投影 fingerprint 既不绑定被省略字段，也不认证进程或消息来源。
 
-准确证据边界：它真实执行本地 subprocess 与 stdio，但只实现仓库定义的严格 MCP 2025-11-25 子集；本节 control 没有使用官方 MCP SDK、官方完整 schema/conformance suite、Streamable HTTP、远程网络、认证、授权/人工审批、A2A client/server 或跨厂商互操作。前面的 official-SDK controls 证明的是其他实现/transport，不能把 SDK 身份借给本节自写 parser/server；反过来，本节的畸形 framing 负例也不能借给官方 SDK control。因此不能写成“通过 MCP conformance”“接通任意 MCP server”或“协议连接已安全”。
+准确证据边界：它真实执行本地 subprocess 与 stdio，但只实现仓库定义的 MCP 2025-11-25 严格子集；本节实验没有使用官方 MCP SDK、官方完整 schema/conformance suite、Streamable HTTP、远程网络、认证、授权/人工审批、A2A client/server 或跨厂商互操作。前面的 official-SDK 实验验证的是其他实现和 transport，不能把 SDK 身份借给本节自写 parser/server；反过来，本节的畸形 framing 负例也不能借给官方 SDK 实验。因此不能写成“通过 MCP conformance”“接通任意 MCP server”或“协议连接已安全”。
 
-## MCP 2025-11-25 Streamable HTTP control
+## MCP 2025-11-25 Streamable HTTP 实验
 
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents]"
@@ -295,13 +295,13 @@ python projects/safe-agent/mcp_streamable_http_control.py
 python -m pytest tests/test_mcp_streamable_http.py -q
 ~~~
 
-父进程启动一个只绑定 `127.0.0.1` 的 server subprocess，client 在真实 TCP/HTTP 上只使用 `/mcp` endpoint。control 验证 POST 的 `Accept: application/json, text/event-stream`、JSON initialize/tools-list、SSE tools-call、GET SSE、空 202 notification 与空 204 DELETE；每个 SSE 都先发带 id 的空-data priming event。初始化返回 opaque visible-ASCII session，后续请求必须同时携带 session 和 `MCP-Protocol-Version: 2025-11-25`，缺失/错版本为 400，DELETE 后重用为 404。
+父进程启动一个只绑定 `127.0.0.1` 的 server subprocess，client 在真实 TCP/HTTP 上只使用 `/mcp` endpoint。实验验证 POST 的 `Accept: application/json, text/event-stream`、JSON initialize/tools-list、SSE tools-call、GET SSE、空 202 notification 与空 204 DELETE；每个 SSE 都先发带 id 的空-data priming event。初始化返回 opaque visible-ASCII session，后续请求必须同时携带 session 和 `MCP-Protocol-Version: 2025-11-25`，缺失/错版本为 400，DELETE 后重用为 404。
 
-每次 endpoint 请求先检查 Origin allowlist，再检查随机 fixture Bearer header；负例固定拒绝错误 Origin、缺/错 token。另一个并发控制让 `fixture.wait` 保持 in-flight，client 收到 priming event 后显式 POST `notifications/cancelled`；notification 返回空 202，被取消 stream 随即关闭且不发送 JSON-RPC response。公开报告只包含无内容的 transport/status/verifier 投影，不发布 token、session、event id、raw HTTP、参数或 result。
+每次 endpoint 请求先检查 Origin allowlist，再检查随机生成的样例 Bearer header；负例固定拒绝错误 Origin、缺/错 token。另一个并发实验让 `fixture.wait` 保持 in-flight，client 收到 priming event 后显式 POST `notifications/cancelled`；notification 返回空 202，被取消 stream 随即关闭且不发送 JSON-RPC response。公开报告只包含无内容的 transport/status/verifier 投影，不发布 token、session、event id、raw HTTP、参数或 result。
 
-准确证据边界：随机 Bearer 只证明本机 shared-secret header gate，不是 MCP Authorization/OAuth、用户身份、tenant/scope 或业务授权。本节 control 没有官方 MCP SDK、完整 Schema/conformance suite、TLS、远程 server、event store/resumption/redelivery、server-to-client request、跨 stream non-broadcast、审批或跨厂商证据；独立 SDK memory/stdio/HTTP controls 不改变这份自写 HTTP 实现的边界。无密钥投影 fingerprint 既不覆盖省略字段，也不认证执行来源。
+准确证据边界：随机 Bearer 只证明本机 shared-secret header gate，不是 MCP Authorization/OAuth、用户身份、tenant/scope 或业务授权。本节实验没有官方 MCP SDK、完整 Schema/conformance suite、TLS、远程 server、event store/resumption/redelivery、server-to-client request、跨 stream non-broadcast、审批或跨厂商证据；独立 SDK memory/stdio/HTTP 实验不改变这份自写 HTTP 实现的边界。无密钥投影 fingerprint 既不覆盖省略字段，也不认证执行来源。
 
-## A2A 1.0 official-SDK loopback control
+## A2A 1.0 official-SDK loopback 实验
 
 ~~~powershell
 python -m pip install -c constraints/ci.txt -e ".[agents]"
@@ -314,7 +314,7 @@ python -m pytest tests/test_a2a_loopback.py -q
 
 默认路径完全本地，只执行 SDK 1.0 generated-proto 与 required-field gate。`--verify-official-schema` 另从冻结的 v1.0.0 URL 下载 `a2a.json`，要求 SHA-256 `6b6560c7…b8d62` 后以 Draft 2020-12 验证 Agent Card、Send Message Request 和 Task；不会隐式跟随 schema 内相对 `$ref` 发起更多请求。公开报告只 fingerprint 协议元数据投影，不发布 raw message、参数、task/context id 或 artifact value。
 
-准确证据边界：本 control 确实使用官方 `a2a-sdk==1.1.2` 的 client、server、Agent Card resolver 与生成类型，并执行真实 IPv4 loopback TCP/HTTP；它不是 A2A TCK 或完整 conformance suite，没有 SSE、HTTP+JSON/REST、gRPC、TLS、认证、签名 Agent Card、授权/人工审批、远程 Agent、跨语言或跨厂商互操作。远端 completed、schema-valid 和无密钥 fingerprint 都不能证明业务正确、身份真实、安全或生产可用。
+准确证据边界：本实验确实使用官方 `a2a-sdk==1.1.2` 的 client、server、Agent Card resolver 与生成类型，并执行真实 IPv4 loopback TCP/HTTP；它不是 A2A TCK 或完整 conformance suite，没有 SSE、HTTP+JSON/REST、gRPC、TLS、认证、签名 Agent Card、授权/人工审批、远程 Agent、跨语言或跨厂商互操作。远端 completed、schema-valid 和无密钥 fingerprint 都不能证明业务正确、身份真实、安全或生产可用。
 
 ## Recorded trajectory gate
 
@@ -327,7 +327,7 @@ python -m about_llm.agents.cli evaluate `
 
 输出为每个比例保留 numerator/denominator，并带逐 case findings；分母为零时 `value` 是 `null`，不会伪报 0%。`max_steps` 限全部 recorded tool proposal，`max_handler_attempts` 只限真正进入 handler 的次数。task success 与安全 guardrail 分开：即使 task verifier 全通过，只要出现 policy-denied handler、policy over-refusal、未审批副作用 attempt、重复 applied effect、未解决 pending、任一种预算超限或 unjudged case，gate 仍失败。
 
-这里的 `handler_attempted` 表示进入 handler，不表示远端动作成功；`effect_applied` 必须来自模拟环境状态、provider audit 或业务状态 verifier，不能从 `completed` 字符串猜测。`policy_allowed` 也必须由独立 policy engine/标注器给出。样例 trace 是手工冻结的离线契约 fixture，并不证明 demo runtime 已实现生产 policy engine、真实 effect observer 或防篡改 trace recorder。
+这里的 `handler_attempted` 表示进入 handler，不表示远端动作成功；`effect_applied` 必须来自模拟环境状态、provider audit 或业务状态 verifier，不能从 `completed` 字符串猜测。`policy_allowed` 也必须由独立 policy engine/标注器给出。样例 trace 是手工固定的离线契约记录，并不证明 demo runtime 已实现生产 policy engine、真实 effect observer 或防篡改 trace recorder。
 
 ## Transactional outbox crash demo
 

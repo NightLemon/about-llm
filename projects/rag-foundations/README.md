@@ -204,7 +204,7 @@ python -m about_llm.rag.cli store-restore `
   --database .\rag-restored.db
 ~~~
 
-自动测试验证快照完成后源库更新不改变 backup、恢复后 source/version/text、输出不覆盖、物理篡改、strict manifest、内容 hash 漂移和未版本化 trigger 注入。这个闭环仍不等于完整 disaster recovery：manifest fingerprint 没有签名或 MAC，攻击者若能同时改写 DB、manifest 和无密钥 hash，来源仍不可认证；文件没有由工具加密，`created_at_utc` 也是本机自报时间。`fsync` 单文件不证明断电后的目录项 durability；一次 tiny fixture 恢复不证明目标 RPO/RTO。它也不包含远端 vector index、object store、cache、trace 或删除传播，恢复后仍需授权抽样、真实 query、容量测试和显式流量切换。
+自动测试验证快照完成后源库更新不改变 backup、恢复后 source/version/text、输出不覆盖、物理篡改、manifest 字段与 hash、内容漂移和未版本化 trigger 注入。这个闭环仍不等于完整 disaster recovery：manifest fingerprint 没有签名或 MAC，攻击者若能同时改写 DB、manifest 和无密钥 hash，来源仍不可认证；文件没有由工具加密，`created_at_utc` 也是本机自报时间。`fsync` 单文件不证明断电后的目录项 durability；一次 tiny 固定样例的恢复不证明目标 RPO/RTO。它也不包含远端 vector index、object store、cache、trace 或删除传播，恢复后仍需授权抽样、真实 query、容量测试和显式流量切换。
 
 ### Persistent extractive ASGI service
 
@@ -249,13 +249,13 @@ Invoke-RestMethod `
 
 `StaticBearerAuthResolver` 只适合 localhost demo/test。它没有验证 JWT signature、issuer/audience/expiry/revocation，也没有 TLS、reverse-proxy trust、集中 IAM 或 key rotation。脚本默认拒绝 non-loopback bind，除非显式承认风险；即使显式允许，也不会把 demo token 升级为生产认证。Uvicorn 固定单 worker，因为 semaphore 是进程内的；多个 workers/replicas 各有自己的上限，必须使用全局 admission control 才能声明服务总并发。
 
-运行不打开 TCP socket 的可复现 ASGI control：
+运行一个不打开 TCP socket、可复现的 ASGI 实验：
 
 ~~~powershell
 python projects/rag-foundations/rag_service_control.py
 ~~~
 
-它真实执行 FastAPI、Starlette、HTTPX ASGI dispatch 与 SQLite reopen；engineering/anonymous 分别只看到 2/1 个授权 source，body tenant injection 为 422，缺 credential 为 401。它不执行 TCP/TLS/reverse proxy/remote identity、learned retrieval/reranking、LLM、multi-process admission 或生产 SLO，因此项目仍不能仅凭这个 control 宣称完整 L3/L4。
+它真实执行 FastAPI、Starlette、HTTPX ASGI dispatch 与 SQLite reopen；engineering/anonymous 分别只看到 2/1 个授权 source，body tenant injection 为 422，缺 credential 为 401。它不执行 TCP/TLS/reverse proxy/remote identity、learned retrieval/reranking、LLM、multi-process admission 或生产 SLO，因此项目仍不能仅凭这个实验宣称完整 L3/L4。
 
 在显式 UTF-8 byte 预算下演示 context packing：
 
@@ -322,7 +322,7 @@ python -m about_llm.rag.cli evaluate-answers `
 
 该命令对 case 与 output 做 exact join，把 `answer / abstain / error` 都保留在分母；从 corpus 重新检查每个 `context_source_id` 在 case tenant/principals 下是 `visible`、`acl_blocked` 还是 `missing_from_tenant_corpus`。答案 claim 的引用必须属于可见 context，且 supplied verdict 必须全部为 `supported`，answerable case 才通过 recorded gate；无答案 case 必须 abstain，并且其 context 也不能越权。输出分别报告 action accuracy、coverage、error count、citation coverage/validity、judgment coverage、supported-claim rate、grounded-answer pass rate 和 recorded-gate pass rate。
 
-`sample_answers.jsonl` 是**手写离线 fixture**，没有调用 LLM，也没有做独立人工双标。`supported / contradicted / insufficient` 是 artifact 提供的标签；评测器只聚合并检查 provenance、引用和权限，不会从文本推断 entailment。即使 recorded gate 为 1，也不证明回答完整、来源权威、标签可靠、真实模型表现或生产安全。
+`sample_answers.jsonl` 是**手写离线固定样例**，没有调用 LLM，也没有做独立人工双标。`supported / contradicted / insufficient` 是 artifact 提供的标签；评测器只聚合并检查 provenance、引用和权限，不会从文本推断 entailment。即使 recorded gate 为 1，也不证明回答完整、来源权威、标签可靠、真实模型表现或生产安全。
 
 审计 packing→output→evaluation 的不可变关联：
 
@@ -336,11 +336,11 @@ python -m about_llm.rag.cli audit-traces `
 
 `audit-traces` 对 case、answer、trace 做 exact join，重新计算 case query SHA-256，并核对 tenant/principals。它按 trace 顺序从当前 corpus 解析 chunk，检查 document/stable-source/version/content SHA-256 与 ACL，重建规范化 `<source>` context，再核对 recorded answer 的 canonical fingerprint。报告同时给出 context、prompt、raw-output、trace 和整体 manifest fingerprint；任一 finding 返回退出码 1。
 
-样例 trace 是 authored non-execution fixture：其中 regex-hash token IDs 只用于验证 artifact plumbing，**不是任何部署模型的 tokenization**。审计不会重新 tokenize prompt、不会把 tokenizer/model revision 与可信 registry 比对，也不会判断 raw output 是否在语义上蕴含 parsed claims。无密钥 SHA-256 只能发现相对某个已信任 manifest 的字节变化；单独拿到一组可共同重写的 unsigned 文件，不能证明它们来自真实调用、未被协同篡改或具有生产 provenance。
+样例 trace 是本仓库准备的 non-execution 固定输入：其中 regex-hash token IDs 只用于验证 artifact plumbing，**不是任何部署模型的 tokenization**。审计不会重新 tokenize prompt、不会把 tokenizer/model revision 与可信 registry 比对，也不会判断 raw output 是否在语义上蕴含 parsed claims。无密钥 SHA-256 只能发现相对某个已信任 manifest 的字节变化；单独拿到一组可共同重写的 unsigned 文件，不能证明它们来自真实调用、未被协同篡改或具有生产 provenance。
 
 ### 固定 Qwen 的真实生成失败控制
 
-下面的 control 复用 Transformers Basics 中固定 revision `7ae5576…9a775`、7 个文件和 999,586,347 bytes 的 Qwen2.5-0.5B-Instruct snapshot。它先逐文件重哈希，再在 CPU FP32 eager 下执行 authorization-first BM25、目标 tokenizer 完整 prompt packing、逐步 argmax/KV cache 和 `GenerationMixin.generate()`；没有 `LogitsProcessor` 强制 token，也不在生成后 repair：
+下面的实验复用 Transformers Basics 中固定 revision `7ae5576…9a775`、7 个文件和 999,586,347 bytes 的 Qwen2.5-0.5B-Instruct snapshot。它先逐文件重哈希，再在 CPU FP32 eager 下执行 authorization-first BM25、目标 tokenizer 完整 prompt packing、逐步 argmax/KV cache 和 `GenerationMixin.generate()`；没有 `LogitsProcessor` 强制 token，也不在生成后 repair：
 
 ~~~powershell
 python projects/rag-foundations/run_qwen_rag_control.py --local-files-only
@@ -373,7 +373,7 @@ python -m pytest tests/test_rag_generation_policy.py -q
 
 必须把这份报告称为 **counterfactual policy replay**：它说明这套确定性代码若包裹相同已录制输入/输出会作出什么决策，不是观察到 guard 当时真实包裹了 Qwen runtime，也不是实际测得 provider/GPU 调用被省掉。报告先依赖原 report 的独立严格验证，再绑定其 self-fingerprint、case fingerprint、packed IDs 和 raw-output hash；unsigned SHA-256 仍不认证来源，语法 gate 仍不证明语义忠实、总体质量或生产集成。
 
-### 真实运行时 guarded control
+### 在真实运行时执行 guarded generation
 
 反事实回放之后还有一条独立证据链：`guarded_transformers_control.py` 让同一发布规则**真实包裹**
 `GenerationMixin.generate()` callback。它复用相同的固定 checkpoint 与本仓库语料，但换成不同的 case ID 和 query，
@@ -471,7 +471,7 @@ Store 重载 heading/ACL/metadata 时拒绝 duplicate key、非有限 number 与
 
 `build_citation_context` 在渲染前再次检查 tenant，去重后分配短来源 id。`audit_citations` 只验证引用是否存在、id 是否已授权以及段落是否漏引；即使它返回成功，也不代表来源在语义上支持 claim。claim-evidence entailment 应使用人工标注集、NLI/LLM judge 和抽样审计，并报告误判率。
 
-仍需在目标语料上完成 embedding/reranker 消融、真实向量库事务、受认证的在线 generation trace 采集与语义忠实度评测。SQLite 回滚证据不能外推到远端向量库。仓库的 authored trace 只验证离线 identity binding；新增固定 Qwen control 确实执行了真实权重，却在两条 case 上同时暴露漏引与拒答失败。后续 publication-policy replay 证明当前代码能对已录制 attempt 确定性地产生 reject/abstain，但它是反事实重放，不是 guard 与真实生成同时执行的观测。两者都不能证明历史 corpus 可用、claim-evidence entailment、总体质量或生产安全；这些仍依赖部署环境和代表性评测。
+仍需在目标语料上完成 embedding/reranker 消融、真实向量库事务、受认证的在线 generation trace 采集与语义忠实度评测。SQLite 回滚证据不能外推到远端向量库。仓库准备的 trace 只验证离线 identity binding；固定 Qwen 实验确实执行了真实权重，却在两条 case 上同时暴露漏引与拒答失败。后续 publication-policy replay 证明当前代码能对已录制 attempt 确定性地产生 reject/abstain，但它是反事实重放，不是 guard 与真实生成同时执行的观测。两者都不能证明历史 corpus 可用、claim-evidence entailment、总体质量或生产安全；这些仍依赖部署环境和代表性评测。
 
 ## 安全不变量
 

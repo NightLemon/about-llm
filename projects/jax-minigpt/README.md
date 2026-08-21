@@ -54,9 +54,9 @@ PRNG state advance、norm/bias decay mask、JIT、checkpoint、CUDA/TPU、shardi
 
 `checkpoint_resume_control.py` 使用 `ALLMJAX1` 单文件格式：canonical JSON manifest 绑定模型/optimizer/dataset identity 与每个 array 的 name、shape、dtype、offset、size、SHA-256；连续 little-endian payload 保存全部参数叶子、Optax count/moments、dropout/data typed-key data 和 permutation。文件以 outer SHA-256 收尾，loader 在构造 JAX arrays 前拒绝 duplicate/non-canonical JSON、字段、顺序、shape/dtype、digest、截断和多余 bytes；writer 用 exclusive create 与 file `fsync`。
 
-固定 7-example/batch-2、embedding dropout=0.2、clip+AdamW 的六步 fixture 在 step 3 由第一个 spawn process 写出 13,476-byte artifact（SHA-256 `e9252e5dddfa4aa5…`），第二个独立 process 加载并完成后三步。Uninterrupted/resumed sample IDs 均为 `[[0,4],[3,2],[5,1],[6,3],[2,1],[6,4]]`，loss/gradient trace 与最终 full-state fingerprint `sha256:720817cca4c067cf…` bit-exact。
+固定 7-example/batch-2、embedding dropout=0.2、clip+AdamW 的六步样例在 step 3 由第一个 spawn process 写出 13,476-byte artifact（SHA-256 `e9252e5dddfa4aa5…`），第二个独立 process 加载并完成后三步。Uninterrupted/resumed sample IDs 均为 `[[0,4],[3,2],[5,1],[6,3],[2,1],[6,4]]`，loss/gradient trace 与最终 full-state fingerprint `sha256:720817cca4c067cf…` bit-exact。
 
-两个因果负例分别只把 checkpoint 中的 dropout PRNG 重置到初始 seed，或把 cursor 从 6 重置为 0：最终参数最大差为 `0.037261832505464554`/`0.03700308472616598`。这证明在当前 authored CPU fixture 中，params+Optax state 并不足以恢复训练语义。它不使用 Orbax/Flax/TensorStore，不保存 Python/NumPy/worker/accelerator RNG，不证明 directory `fsync`、断电原子性、来源认证、加密、CUDA/TPU、sharding、目标模型、收敛或性能。
+两个因果负例分别只把 checkpoint 中的 dropout PRNG 重置到初始 seed，或把 cursor 从 6 重置为 0：最终参数最大差为 `0.037261832505464554`/`0.03700308472616598`。这证明在当前仓库准备的 CPU 固定样例中，params+Optax state 并不足以恢复训练语义。它不使用 Orbax/Flax/TensorStore，不保存 Python/NumPy/worker/accelerator RNG，不证明 directory `fsync`、断电原子性、来源认证、加密、CUDA/TPU、sharding、目标模型、收敛或性能。
 
 ## 证据边界
 
@@ -233,7 +233,7 @@ CPU tiny 结果不能预测设备峰值、GPU/TPU throughput 或多设备 scalin
 
 ## 三步 AdamW trajectory parity 的解释
 
-这一 control 使用外部 materialized masks，而不是声称 PyTorch/JAX native RNG 相同。
+这一实验使用外部 materialized masks，并未声称 PyTorch/JAX native RNG 相同。
 
 固定变量：
 
@@ -353,7 +353,7 @@ python -m pytest tests/test_gpt_jax.py -q
 - all-ignored loss；
 - parameter update 与 overfit；
 - forward/backward/SGD parity；
-- architecture negative control；
+- architecture 负对照；
 - AdamW gradient/moment/count/schedule parity；
 - wrong-mask counterfactual；
 - canonical checkpoint serialization；
@@ -393,7 +393,7 @@ python -m pytest tests/test_gpt_jax.py -q
 - overflow consensus；
 - checkpoint cast/reload policy。
 
-CPU float32 control 不借给 BF16/FP16/FP8 作证。
+CPU float32 实验不能替 BF16/FP16/FP8 作证。
 
 ### Orbax/TensorStore
 
@@ -408,7 +408,7 @@ CPU float32 control 不借给 BF16/FP16/FP8 作证。
 - storage consistency；
 - rollback 与 no-overwrite。
 
-当前 strict file 可作为逻辑 oracle，但不能冒充生产分片 checkpoint。
+当前文件格式可以检查逻辑状态是否完整，但不能冒充生产分片 checkpoint。
 
 ### 多设备 sharding
 
@@ -441,7 +441,7 @@ CPU float32 control 不借给 BF16/FP16/FP8 作证。
 
 必须紧邻说明：
 
-- CPU tiny fixture；
+- CPU tiny 固定样例；
 - shared mask 不证明 native RNG equivalence；
 - `ALLMJAX1` 不是 Orbax/TensorStore；
 - 没有 GPU/TPU、多设备 sharding；
@@ -457,7 +457,7 @@ CPU float32 control 不借给 BF16/FP16/FP8 作证。
 
 ## 下一步
 
-1. 将 strict artifact 对接 Orbax/TensorStore，并验证拓扑变化后的 reshard；
+1. 将字段要求明确的 artifact 对接 Orbax/TensorStore，并验证拓扑变化后的 reshard；
 2. 将 shared-mask trajectory 扩展到 attention/residual/MLP 全部 dropout site，并对齐生产式 norm/bias weight-decay mask；
 3. 在实际多设备环境验证 `NamedSharding`/mesh、数据分片和参数分片；
 4. 分别在 PyTorch/JAX 内验证 native RNG state advance、checkpoint/resume 与多 seed 轨迹，不把 shared mask 当 RNG 等价；

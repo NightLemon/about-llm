@@ -120,7 +120,7 @@ scalar type 以及 parser 的 integer/float distinction。它不自动调用 sch
 
 ### Citation ID、exact span 与 entailment 分账
 
-`about-llm.citation-evidence-span-metric.v1` 接受 strict JSON claim 列表。每个 claim 必须有唯一非空 `claim_id`、非空 `text` 和至少一个 evidence；每个 evidence 必须只含 `source_id/start_char/end_char/quote`。Case 的 `citation_sources` 是 scorer 收到的授权来源快照；指标检查 source ID membership、零基/end-exclusive Python string offset、逐字 quote equality、duplicate JSON key、重复 claim/span 和未知字段。它不负责证明这个快照真的来自在线 ACL，也不判断 quote 是否支持 claim。
+`about-llm.citation-evidence-span-metric.v1` 接受字段要求明确的 JSON claim 列表。每个 claim 必须有唯一非空 `claim_id`、非空 `text` 和至少一个 evidence；每个 evidence 必须只含 `source_id/start_char/end_char/quote`。Case 的 `citation_sources` 是 scorer 收到的授权来源快照；指标检查 source ID membership、零基/end-exclusive Python string offset、逐字 quote equality、duplicate JSON key、重复 claim/span 和未知字段。它不负责证明这个快照真的来自在线 ACL，也不判断 quote 是否支持 claim。
 
 ~~~powershell
 python -m about_llm.evaluation.cli score `
@@ -156,7 +156,7 @@ python -m about_llm.evaluation.cli calibrate `
 
 每行包含 `case_id`、观测 `label`（0/1）和在看到结果前记录的 `probability`。输出 Brier、equal-width ECE、非空 bin 明细，以及对每个唯一 threshold 的 coverage/risk。相同 confidence 的样本一起接受，不按输入顺序拆 tie。
 
-`calibration.example.jsonl` 是为了验证公式和 CLI 的**合成 fixture**，不是某个模型的真实校准实验。`calibration.manifest.example.json` 记录事件定义、虚构 predictor、输入 SHA-256 与证据边界；测试会核对 manifest hash，防样例变化后仍引用旧证据。真实运行还应记录 predictor/model/revision、生成时间、label protocol、数据切片和 probability 确实先于 outcome 产生的系统证据。
+`calibration.example.jsonl` 是为了验证公式和 CLI 准备的**合成样例**，不是某个模型的真实校准实验。`calibration.manifest.example.json` 记录事件定义、虚构 predictor、输入 SHA-256 与证据边界；测试会核对 manifest hash，防样例变化后仍引用旧证据。真实运行还应记录 predictor/model/revision、生成时间、label protocol、数据切片和 probability 确实先于 outcome 产生的系统证据。
 
 ECE 强依赖 bin 数与分箱方法，不能跨不同配置直接比较；小样本/空 bin 会不稳定。Probability 必须来自可定义、可回放的 predictor/verifier，模型在回答中自述“我有 90% 信心”不自动成为校准概率。用于选择性回答时同时报告 coverage、risk、样本数和关键切片，不能只挑一个低 risk 阈值。
 
@@ -188,7 +188,7 @@ python -m about_llm.evaluation.cli verify-comparison `
   --input artifacts/evaluation/gate.json
 ~~~
 
-loader 拒绝 duplicate key、未知/缺失字段、`NaN/Infinity`、非法嵌套类型、内部均值差或 gate 决策不一致、固定 evidence boundary 漂移和 fingerprint 不一致。`verify-comparison` 输出 `verification_scope: artifact_only`、`referenced_manifests_revalidated: false` 与 `statistics_recomputed: false`：其中 `valid` 只表示当前 comparison 文件通过 schema、内部算术/判定和 canonical fingerprint 校验，不会重新打开所引用的 run manifest/results/cases，也不会重跑 bootstrap。`comparison.example.json` 是由仓库两份 scored fixture、run manifest 和固定 gate 配置生成的可复算样例。
+loader 拒绝 duplicate key、未知/缺失字段、`NaN/Infinity`、非法嵌套类型、内部均值差或 gate 决策不一致、固定 evidence boundary 漂移和 fingerprint 不一致。`verify-comparison` 输出 `verification_scope: artifact_only`、`referenced_manifests_revalidated: false` 与 `statistics_recomputed: false`：其中 `valid` 只表示当前 comparison 文件通过 schema、内部算术/判定和 canonical fingerprint 校验，不会重新打开所引用的 run manifest/results/cases，也不会重跑 bootstrap。`comparison.example.json` 是由仓库两份 scored 固定样例、run manifest 和 gate 配置生成的可复算结果。
 
 需要验证完整本地证据图时使用 `verify-evidence`：
 
@@ -226,7 +226,7 @@ python -m about_llm.evaluation.cli render-comparison-html `
 `run.baseline/candidate.manifest.example.json` 绑定。这些文件只用于回归 loader、fingerprint 和 gate 数学，
 不代表任何真实模型质量或延迟。
 
-### Measurement reliability、validity 与 power control
+### 用反例检查 measurement reliability、validity 与 power
 
 在统计比较之前运行：
 
@@ -236,7 +236,7 @@ python projects/evaluation-gate/measurement_toy.py
 
 四条 authored label 构造出“两个 rater 完全一致、却都与 supplied criterion 完全相反”的反例，精确报告 observed/chance agreement、Cohen's κ、criterion accuracy 和以 criterion 为行、observed label 为列的 confusion。它证明 reliability 与 criterion validity 不能互换；不证明 supplied criterion 本身正确、独立或代表目标 construct。
 
-同一脚本按 fixed-horizon i.i.d. binomial sign model 精确给出 one-sided rejection threshold、realized null rejection probability、conditional power、target-power minimum informative-pair count，以及声明 rational grid 上的 MDE。Ties 不进入 informative-pair count；真实总 case 需求还依赖未知 discordance rate。该 control 不支持 cluster dependence、repeated looks、多重选择或从 MDE 推出业务价值，完整解释见[评测测量学](../../docs/quality/evaluation-measurement.md)。
+同一脚本按 fixed-horizon i.i.d. binomial sign model 精确给出 one-sided rejection threshold、realized null rejection probability、conditional power、target-power minimum informative-pair count，以及声明 rational grid 上的 MDE。Ties 不进入 informative-pair count；真实总 case 需求还依赖未知 discordance rate。这个实验不支持 cluster dependence、repeated looks、多重选择，也不能从 MDE 推出业务价值；完整解释见[评测测量学](../../docs/quality/evaluation-measurement.md)。
 
 ### Cluster bootstrap 正式门禁
 
@@ -268,13 +268,13 @@ python -m about_llm.evaluation.cli compare `
 python projects/evaluation-gate/clustered_bootstrap_toy.py
 ~~~
 
-Fixture 的两个 cluster 分别为 5×`+1` 与 1×`-1`。Exact 路径枚举 `AA/AB/BA/BB` 四个 ordered resample。Case-weighted statistic `[1,2/3,2/3,-1]` 得到 linear percentile 95% interval `[-0.875,0.975]`、经验改善比例 3/4；equal-cluster statistic `[1,0,0,-1]` 得到 `[-0.925,0.925]` 和 1/4。Case-weighted 分母是每次抽中 cluster 的 size 总和，不能固定为原始 case 数。
+固定样例的两个 cluster 分别为 5×`+1` 与 1×`-1`。Exact 路径枚举 `AA/AB/BA/BB` 四个 ordered resample。Case-weighted statistic `[1,2/3,2/3,-1]` 得到 linear percentile 95% interval `[-0.875,0.975]`、经验改善比例 3/4；equal-cluster statistic `[1,0,0,-1]` 得到 `[-0.925,0.925]` 和 1/4。Case-weighted 分母是每次抽中 cluster 的 size 总和，不能固定为原始 case 数。
 
 最多可配置 7 个 cluster 的 exact 枚举；大输入用 seeded Monte Carlo，并限制临时 sampled-index matrix。Exact 不等于可信小样本 inference：两 cluster interval 只证明重采样和 quantile 口径。Comparison v2 的通过也不建立 metadata key 真的是正确 sampling unit、cluster 独立/代表性、无 interference、足够功效或 percentile coverage。它不是 BCa/studentized interval；真实分析还应报告最大 cluster sensitivity，并在设计需要时使用 cluster-robust model、randomization inference 或其他方法。
 
 ### Paired randomization / sign-flip 对照
 
-Bootstrap 区间之外，可运行一份透明的 hypothesis-test fixture：
+Bootstrap 区间之外，还可以运行一组计算过程透明的 hypothesis-test 固定输入：
 
 ~~~powershell
 python projects/evaluation-gate/paired_randomization_toy.py
@@ -282,7 +282,7 @@ python projects/evaluation-gate/paired_randomization_toy.py
 
 输入是同 case 的 baseline/candidate score；差值定义为 candidate − baseline。Exact 路径只对非零差值枚举符号，pair 总数与 observed mean 仍包含零差值。默认 two-sided 比较绝对统计量；`greater` 表示预先指定 candidate 更高，`less` 相反。超过 exact 上限后使用 seeded Monte Carlo 和 plus-one correction，并记录 assignments、extreme count、p-value resolution 与 seed。
 
-固定 5-pair fixture 有 4 个 +1 与 1 个 0：greater exact p=1/16，two-sided p=2/16。它只证明枚举、方向、零差值和 Monte Carlo 账本。Sign exchangeability、随机 assignment、独立 case、population sampling、metric construct validity、cluster dependence、multiple testing 和因果结论都没有由 fixture 建立；因此这个 p-value 不接入现有 release artifact 自动决策，也不能替代 effect size、bootstrap interval 与业务阈值。
+固定 5-pair 样例有 4 个 +1 与 1 个 0：greater exact p=1/16，two-sided p=2/16。它只检查枚举、方向、零差值和 Monte Carlo 账本。Sign exchangeability、随机 assignment、独立 case、population sampling、metric construct validity、cluster dependence、multiple testing 和因果结论都没有由这组输入建立；因此这个 p-value 不接入现有 release artifact 自动决策，也不能替代 effect size、bootstrap interval 与业务阈值。
 
 ### Cluster-joint sign-flip 对照
 
@@ -316,9 +316,9 @@ Holm 在 component p-value 有效时对任意依赖控制 FWER，但不证明 fa
 python projects/evaluation-gate/sequential_peeking_toy.py
 ~~~
 
-Fixture 预设 `[10,20,30,40,50]` 五个 informative-pair looks，以 i.i.d. fair sign 为 null，并固定双侧 p-value 为 doubled smaller inclusive binomial tail。每次都用 0.05 且首次显著即停，exact familywise error 为 `7109832616777/70368744177664 ≈ 0.1010367984`；事前把 familywise 0.05 均分为每次 0.01 时为 `2142139082367/140737488355328 ≈ 0.0152208136`。实现用 `(n, positive_count)` dynamic program 传播精确概率，没有枚举 `2^50` 条 sign sequences。
+固定样例预设 `[10,20,30,40,50]` 五个 informative-pair looks，以 i.i.d. fair sign 为 null，并固定双侧 p-value 为 doubled smaller inclusive binomial tail。每次都用 0.05 且首次显著即停，exact familywise error 为 `7109832616777/70368744177664 ≈ 0.1010367984`；事前把 familywise 0.05 均分为每次 0.01 时为 `2142139082367/140737488355328 ≈ 0.0152208136`。实现用 `(n, positive_count)` dynamic program 传播精确概率，没有枚举 `2^50` 条 sign sequences。
 
-Bonferroni 对照只在 look 数与阈值事前固定、每个 p-value 在其 null 下有效时由 union bound 控制总体错误；它通常保守，也不允许结果不好看时临时增加 look。本 oracle 没有 tie、effect magnitude、cluster、case sampling、power/sample-size、confidence sequence、模型/judge 或线上随机实验，因此不自动接入 comparison release gate，也不能证明候选模型改善。
+Bonferroni 对照只在 look 数与阈值事前固定、每个 p-value 在其 null 下有效时由 union bound 控制总体错误；它通常保守，也不允许结果不好看时临时增加 look。本仓库的参考计算没有 tie、effect magnitude、cluster、case sampling、power/sample-size、confidence sequence、模型/judge 或线上随机实验，因此不自动接入 comparison release gate，也不能证明候选模型改善。
 
 ### Artifact schema
 
