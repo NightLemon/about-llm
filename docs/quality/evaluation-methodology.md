@@ -19,7 +19,7 @@
 原先正确的 case 是否退化，高风险切片有没有失败，30 条是否来自 30 个独立用户，
 以及 candidate 的延迟和费用怎样变化。
 
-本章从这个决策向后展开评测方法。精确实现、固定 fixture、artifact schema 和 HMAC 证据链集中在
+本章从这个决策向后展开评测方法。具体实现、固定样例、artifact schema 和 HMAC 证据链集中在
 [评测门禁项目](../practice/projects/evaluation-gate.md)与[准确性台账](../evidence/accuracy-ledger.md)，
 避免教学主线变成字段说明书。
 
@@ -122,7 +122,7 @@ literal / normalized / token-F1 = 0 / 0 / 1
 
 结构化评测可以分四步：
 
-1. Strict parse：拒绝 duplicate key、`NaN` 和 `Infinity`；
+1. JSON 解析：检查 duplicate key、`NaN` 和 `Infinity`；
 2. Schema：检查类型、required、额外字段和本地 references；
 3. Value：比较 canonical parsed value，object key order 与 whitespace 可忽略；
 4. Domain policy：验证账户、库存、金额、权限和当前业务状态。
@@ -311,7 +311,7 @@ python projects/evaluation-gate/clustered_bootstrap_toy.py
 python projects/evaluation-gate/clustered_randomization_toy.py
 ~~~
 
-Fixture 中 user A 有 5 条 `+1`，user B 有 1 条 `-1`：
+固定样例中 user A 有 5 条 `+1`，user B 有 1 条 `-1`：
 
 | 分析问题 | Observed effect / p-value |
 |---|---|
@@ -360,12 +360,12 @@ Multiple testing 处理同一时点的多个 hypotheses；sequential testing 处
 python projects/evaluation-gate/sequential_peeking_toy.py
 ~~~
 
-固定 looks 为 `[10,20,30,40,50]`。在 fixture 的 i.i.d. fair-sign null 下，
+固定 looks 为 `[10,20,30,40,50]`。在这个样例的 i.i.d. fair-sign null 下，
 每次用 0.05 并在首次拒绝时停止，exact familywise rejection probability 约为 `0.1010`；
 只在最终 \(n=50\) 查看一次约为 `0.03284`。
 
 若事前确认最多五次 look，并用 Bonferroni 把 0.05 分成每次 0.01，
-同一离散 fixture 的 familywise error 约为 `0.01522`。正式实验也可按设计使用 group-sequential boundary、
+同一离散样例的 familywise error 约为 `0.01522`。正式实验也可按设计使用 group-sequential boundary、
 alpha spending、always-valid p-value / e-process 或 confidence sequence。
 
 这个 toy 只处理无 tie、i.i.d. fair signs。线上 A/B 还要固定随机化单位、最大样本/时长、
@@ -385,7 +385,7 @@ Pass@k 表示给 \(k\) 次机会至少一次成功，不能和单次生产成功
 ## Judge 是测量仪器，不是答案来源
 
 LLM-as-judge 适合帮助性、风格和复杂 rubric，但它看不到隐藏数据库状态，
-无法凭文本判断权限或副作用是否真的发生。可执行 oracle 存在时，优先使用确定性检查。
+无法凭文本判断权限或副作用是否真的发生。如果任务可以直接运行或查询权威业务状态，优先使用这些确定性检查。
 
 一套 judge protocol 至少包括：
 
@@ -394,7 +394,7 @@ LLM-as-judge 适合帮助性、风格和复杂 rubric，但它看不到隐藏数
 3. 固定 judge model、revision、Prompt、parser、temperature；
 4. 在双人独立标注和 adjudication 的 gold subset 上校准；
 5. 检查 precision/recall、confusion、position、verbosity 与关键切片；
-6. 允许 `insufficient_information`，并加入 Prompt injection controls。
+6. 允许 `insufficient_information`，并加入 Prompt injection 对照样例。
 
 Pairwise judgment 常比绝对分数稳定，但仍有 position、verbosity、self-preference 和 style bias。
 交换 A/B 顺序并加入 A=A case，可以发现一部分不一致。
@@ -411,8 +411,8 @@ Adjudicated winner 不能替代原始 disagreement。完整性 gate 先检查每
 重复 annotator-case、未知 case 和 rubric mismatch，再计算 agreement 或位置诊断。
 
 仓库 `evaluate-judgments` 提供 raw pairwise agreement、固定 rater 数前提下的 Fleiss' \(\kappa\)，
-以及按 case 重采样的 position-effect interval。Fixture 只校验计算口径，
-不会证明真实分配随机、盲化有效、annotator 胜任或 rubric 正确。
+以及按 case 重采样的 position-effect interval。固定样例只检查计算口径。真实分配是否随机、盲化是否有效、
+annotator 是否胜任和 rubric 是否正确，都要在标注流程中另行验证。
 
 高 agreement 说明标注者按当前 rubric 一致，不等于 rubric 测到了目标 construct。
 法律、医疗和其他复杂领域还需要合格专家，并为标注者设计隐私与安全流程。
@@ -468,7 +468,7 @@ Comparison artifact 再保存 paired unit、cluster key/weighting、bootstrap/ra
 
 这里有四层不同保证：
 
-1. **Strict load**：schema、duplicate key 和 non-finite number 合法；
+1. **输入检查**：schema、duplicate key 和 non-finite number 合法；
 2. **Identity check**：当前 bytes 与 manifest / comparison 中记录一致；
 3. **Recomputation**：重新评分并按固定配置重建统计结果；
 4. **Authentication / history**：HMAC 或其他认证链，加上外部 trusted head 检测回滚与截断。
@@ -478,7 +478,7 @@ HMAC chain 认证的是相对共享密钥的记录；artifact rehash 才检查�
 
 仓库提供 `verify-comparison` 的 artifact-only 检查和 `verify-evidence` 的本地复算，
 并让机器输出明确区分是否重开 cases、重算 scores/statistics、认证 artifact 或重放 model execution。
-精确 schema、固定 fixture、HMAC 字段和 HTML renderer 边界见[准确性台账](../evidence/accuracy-ledger.md)。
+具体 schema、固定样例、HMAC 字段和 HTML renderer 适用范围见[准确性台账](../evidence/accuracy-ledger.md)。
 
 校准数据还要保存 probability 产生时间、predictor version、最终 label、label protocol 和 slice。
 先看到结果再填写“置信度”，已经不再是前瞻概率评测。

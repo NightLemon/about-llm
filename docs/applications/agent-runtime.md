@@ -148,7 +148,7 @@ Checkpoint 与 approval 是两件工件。Checkpoint 说明任务暂停在哪里
 时间授权了哪一个 execution。恢复 checkpoint 不能顺便把审批变成永久布尔值。
 
 仓库的 `ApprovalGrant` 是进程内教学契约，不包含生产签名、approver 权限验证或跨服务 bearer token 设计。
-项目页会明确把离线 grant 标成 `simulated_unsigned_fixture`。
+项目页会把离线 grant 标成 `simulated_unsigned_fixture`，直白说明它只是未签名的模拟数据。
 
 ## Exactly-once 幻觉 { #exactly-once }
 
@@ -255,7 +255,8 @@ python -m pytest tests/test_agent_refund_lifecycle.py -q
 ```
 
 它真实执行 closed Schema、资源级 ACL、approval binding、SQLite claim、provider query verifier 与 reconciliation。
-Planner 和 provider 是进程内 fixture，因此它验证的是控制流与状态不变量，不是线上支付系统。
+Planner 和 provider 都是进程内模拟器。这个运行可以检查控制流和状态变化；线上支付系统还需要真实身份、
+网络、签名、账务和对账验证。
 
 再运行 outbox 的 ack-before-crash 场景：
 
@@ -265,7 +266,7 @@ python projects/safe-agent/outbox_demo.py `
 ```
 
 预期会看到两次 provider request 使用同一个 idempotency key，而模拟 provider 只产生一个 effect，最终状态为
-`delivered`。完整测试矩阵、SQLite crash fixture 与每个字段的证据边界见
+`delivered`。完整测试矩阵、SQLite 固定故障样例以及每个字段适用于哪些结论，见
 [Safe Agent 项目页](../practice/projects/safe-agent.md)和[项目控制台账](../evidence/project-controls.md)。
 
 ## 自测

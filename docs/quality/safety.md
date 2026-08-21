@@ -8,7 +8,7 @@
 - **适合读者**：LLM 安全、隐私、RAG/Agent 和平台工程师。
 - **先修**：理解系统组件、身份、数据流和外部副作用。
 - **首次阅读**：信任边界 → injection/jailbreak → RAG → Agent/tool → secrets → 响应。
-- **完成信号**：能画数据流/信任边界，并为高风险路径设计 fail-closed 负例。
+- **完成信号**：能画数据流/信任边界，并为高风险路径设计“发现异常就停止”的负例。
 - **卡住时**：先从当前系统的一条请求链开始，不必一次覆盖所有威胁类别。
 
 </div>
@@ -131,7 +131,8 @@ tool proposal 要进入模型外的 policy、approval 和 runtime，finish propo
 模型自报的 token、费用、证据或“已完成”都只是待核 observation。可信 usage 来自 provider/control plane，
 可信 effect 来自业务状态或独立审计。
 
-恢复 checkpoint 同样是不可信输入面。严格 JSON、Schema 和 canonical hash 可以拒绝损坏、未知字段与意外漂移，
+恢复 checkpoint 同样是不可信输入面。解析时拒绝重复字段和非法数值，再用 Schema 与 canonical hash 检查
+未知字段、文件损坏和意外漂移，
 但无密钥 hash 不是认证。Checkpoint 还可能包含工具结果和敏感参数，需要加密、ACL、签名或 MAC、
 版本/回滚保护与 retention。
 
@@ -159,12 +160,12 @@ flowchart LR
 - 对 timeout 后“结果未知”做 reconciliation；
 - 对返回内容继续按不可信数据处理。
 
-仓库的 reference runtime 已实现同 tenant、exact capability、default deny、indeterminate fail closed，
+仓库的参考 runtime 已实现同 tenant、exact capability 和 default deny；policy 无法判断时也会停止执行，
 并在 cache replay 前重新授权。Resource owner/version 由 tool resolver 提供，不能采用模型自报的 tenant；
 proposal fingerprint 与绑定 subject/resource/tool/policy revision 的 execution fingerprint 分离。
 
 这仍不是集中 IAM。Role inheritance、deny override、签名 policy bundle、分布式吊销传播和 resource lookup
-side-channel 都没有在当前 control 中证明。
+side-channel 都不在当前本地验证范围内。
 
 ### 5.2 TOCTOU
 
@@ -212,7 +213,8 @@ URL allowlist 要在解析、DNS resolution 和每次 redirect 后检查。只�
 - 输出/异常/repr 不包含 header、token 或 signed URL；
 - 第三方 provider 的数据保留与训练选项按契约配置。
 
-仓库 cloud API contract 的 fixture 只证明 request serialization 会 redaction，且明确 `network_performed: false`；它不证明真实供应商日志或网络路径安全。
+仓库 cloud API contract 的固定样例会检查 request serialization 是否完成 redaction，并明确记录
+`network_performed: false`。真实供应商日志和网络路径仍需在对应环境审计。
 
 ## 8. 泄露面不只在最终答案
 
@@ -313,7 +315,7 @@ Accuracy parity、equal opportunity、predictive parity、calibration 等指标�
 - evidence/citation 与 deterministic verification；
 - 不确定性和不可回答机制；
 - 人类复核与双重控制；
-- fail-closed/fail-safe 的明确选择；
+- 写清系统无法判断时是停止操作，还是进入预先设计的安全降级状态；
 - SLO、监控、rollback 和 business continuity。
 
 “Human in the loop”只有在人有信息、时间、权限和能力推翻系统时才是有效控制。
@@ -402,8 +404,8 @@ residual_risk_owner: security-lead
 - BM25/dense 在评分前执行 tenant + principal ACL；
 - citation context 再次拒绝跨租户/无 principal 结果；
 - Agent 默认拒绝、同 tenant exact capability、cache 重新授权、typed approval binding、execution identity、幂等与 pending reconciliation；
-- cloud request fixture 对 credential 做 redaction，且不执行网络；
-- prefix-cache metadata oracle 用强制 fingerprint collision 验证 full identity/token comparison、跨租户拒绝、lease-pinned LRU 和原子容量失败；
+- cloud request 固定样例对 credential 做 redaction，且不执行网络；
+- prefix-cache metadata 参考实现通过强制 fingerprint collision，检查 full identity/token comparison、跨租户拒绝、lease-pinned LRU 和原子容量失败；
 - 评测门禁支持 protected slices。
 
 这些测试不证明：集中生产 IAM、签名/一次性审批、resource resolver 无侧信道、真实网络 sandbox、安全浏览器、SSRF 防护、真实 provider 数据保留、模型越狱鲁棒性或法律合规。项目成熟度必须保持在其实际证据等级。

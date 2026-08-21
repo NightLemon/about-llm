@@ -218,7 +218,7 @@ Verifier 返回 `passed`、`failed` 或 `indeterminate`。只有 `passed` 可以
 `failed` 将明确错误交回 Planner，`indeterminate` 则继续取证、等待或升级人工。
 
 开放任务可以使用 rubric judge，但要在人工集上校准。可执行测试和业务 source of truth 可用时，
-优先使用这些更直接的 oracle。完成条件应该在执行前定义，并绑定用户目标。
+优先使用这些更直接的判定方式。完成条件应该在执行前定义，并绑定用户目标。
 
 ## 审批暂停后，恢复的是原动作
 
@@ -248,8 +248,8 @@ Checkpoint 回答“loop 从哪一步继续”，outbox 回答“已批准的 ef
 推荐按三层阅读：
 
 1. [一次退款任务](agent-task-lifecycle.md)：先观察 proposal 到 recovery 的完整时间线；
-2. [实验 6](../practice/labs/lab-6-agent-lifecycle.md)：运行同一 fixture 并预测状态；
-3. [Safe Agent 项目](../practice/projects/safe-agent.md)：进入 loop、checkpoint、outbox 与 strict planner boundary。
+2. [实验 6](../practice/labs/lab-6-agent-lifecycle.md)：运行同一个固定样例并预测状态；
+3. [Safe Agent 项目](../practice/projects/safe-agent.md)：进入 loop、checkpoint、outbox 与经过结构校验的 planner 边界。
 
 最小控制循环：
 
@@ -258,16 +258,17 @@ python -m about_llm.agents.cli loop `
   --cases projects/safe-agent/loop.example.jsonl
 ~~~
 
-这里的 `ScriptedPlanner` 读取冻结 JSONL，不调用真实模型。Fixture 覆盖 verifier completion、重复 action、
+这里的 `ScriptedPlanner` 读取冻结 JSONL，不调用真实模型。固定样例覆盖 verifier completion、重复 action、
 短周期、重复错误和 approval pause，适合先观察 state transition。
 
-随后运行 strict recorded model boundary：
+随后运行模型边界的完整记录示例：
 
 ~~~powershell
 python projects/safe-agent/model_planner_control.py
 ~~~
 
-这个 control 会检查 model revision、request/response metadata、closed JSON、tool schema、预算与 runtime policy。
+这个程序会检查 model revision、request/response metadata、closed JSON、tool schema、预算与 runtime policy，
+并把每一步结果写入报告。
 输入仍是作者构造的 recorded response，因此它验证协议和失败路径，不代表目标模型的真实遵循率或 provider 账单。
 
 暂停、恢复、SQLite ledger、checkpoint 限制和精确证据边界集中在 [Safe Agent 项目](../practice/projects/safe-agent.md)，

@@ -9,7 +9,7 @@
 - **先修**：[请求生命周期](rag-request-lifecycle.md)、[摄取](rag-ingestion.md)与[引用/拒答](rag-generation.md)。
 - **首次阅读**：边界 → 更新 → 服务 → 可观测性 → 评测发布 → 故障恢复。
 - **完成信号**：能为身份、索引版本、缓存、终态、删除和回滚画出一条完整证据链。
-- **卡住时**：先用单进程、单 tenant、SQLite/BM25 做正确性 control，再替换分布式组件。
+- **卡住时**：先用单进程、单 tenant、SQLite/BM25 检查正确性，再替换分布式组件。
 
 </div>
 
@@ -324,7 +324,7 @@ retry and failed attempts
 
 恢复演练应在新位置执行，验证 schema、row/chunk identity、索引可读性和固定 query。
 
-单个 SQLite backup 成功，只证明该 fixture 的本地快照路径。
+单个 SQLite backup 成功，只说明当前固定场景的本地快照路径可以工作。
 它不证明远端 vector store、object store、cache 和流量切换的 RPO/RTO。
 
 ## 常见事故与第一检查点
@@ -351,7 +351,7 @@ retry and failed attempts
 6. 在 staging 使用真实 IAM、目标 corpus 和 shadow traffic。
 7. 小流量发布，联合观察质量、安全、可靠性与成本。
 
-每一步都应保留上一层透明 control，而不是被更复杂框架覆盖。
+每一步都应保留上一层容易观察的对照实现，避免更复杂的框架把错误原因重新藏起来。
 
 ## 可运行入口
 
@@ -362,7 +362,7 @@ retry and failed attempts
 - Exact-span answer、citation 与拒答；
 - SQLite upsert/delete/backup/restore；
 - Persistent extractive ASGI service；
-- 固定 Qwen 原始失败、policy replay 与 guarded control。
+- 固定 Qwen 原始失败、policy replay 与 guarded runtime 验证。
 
 先运行：
 
@@ -371,7 +371,7 @@ python projects/rag-foundations/rag_request_walkthrough.py
 python projects/rag-foundations/rag_service_control.py
 ~~~
 
-它们是本地教学 control，不是生产部署模板。精确边界见
+它们是帮助理解流程的本地程序，不是生产部署模板。具体适用范围见
 [RAG 证据页](../evidence/rag-answer-controls.md)。
 
 ## 系统设计面试回答顺序

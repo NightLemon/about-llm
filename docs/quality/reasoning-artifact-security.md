@@ -71,7 +71,8 @@ opaque reasoning block 在部分供应商生态中可以跨会话、跨用户或
     本章只把论文当作特定历史版本的架构案例，不能据此声称当前端点仍然脆弱，也不提供真实供应商提取脚本。
 
 论文用 extracted token count 与 API-reported thinking token count 的接近程度作为保真证据，并展示了定性样例。
-由于研究者没有 ground-truth plaintext reasoning，这些证据不能证明每个恢复 token 都等于模型真实内部轨迹。
+研究者没有 ground-truth plaintext reasoning，所以只能比较恢复长度和定性样例，无法逐 token 确认它就是模型的
+真实内部轨迹。
 论文附录讨论的开放模型蒸馏迹象也没有建立因果关系。
 
 ## 根因：内容被认证，上下文没有被认证
@@ -180,7 +181,7 @@ Provider adapter 不应把 response 粗暴压成一个字符串。至少区分�
 - unknown provider-specific block。
 
 Text-only adapter 遇到其他 block 时应明确失败。若业务需要多种 block，就保留 typed metadata 与受控原始 bytes，
-但不要把它们写入普通日志、异常、metrics label 或公开 fixture。未知 block 既不能被静默丢弃后假装响应完整，
+但不应把它们写入普通日志、异常、metrics label 或公开样例。未知 block 不能被静默丢弃后假装响应完整，
 也不能自动回传给另一个 endpoint、模型或主体。
 
 公开 trajectory 前使用 allowlist projection，而不是“先保存所有字段，再用正则擦除可见文本”：
@@ -194,7 +195,7 @@ Text-only adapter 遇到其他 block 时应明确失败。若业务需要多种 
 
 有限 regex 或 LLM judge 没有命中，不证明轨迹不含秘密。数据最小化和字段 allowlist 比事后扫描更强。
 
-本仓库提供一个 fail-closed 发布投影 gate：
+本仓库提供一个发布投影 gate：只要发现未知或敏感 block，就停止发布并返回失败原因。
 
 ~~~powershell
 python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
@@ -202,14 +203,16 @@ python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
   --output artifacts/cloud-api/trajectory-release-report.json
 ~~~
 
-输入使用 strict JSON/JSONL。顶层固定为 `schema_version + trajectory_id + turns`，turn 只允许
+输入按预定 JSON/JSONL 结构解析，并检查重复字段与非法数值。顶层固定为
+`schema_version + trajectory_id + turns`，turn 只允许
 `turn_id + role + blocks`，block 只允许 `text`、`tool_call`、`tool_result` 和 `citation`。
 
 Reasoning/thinking/signature/encrypted 类型、同名嵌套工具参数、未知 block 和 Schema drift 都会使退出码为 1。
 报告只输出数组位置、固定类别和规范化的已知禁用名，不回显 text、tool arguments、未知类型或任意字段名。
 
-安全 fixture 应得到 `opaque_reasoning_block_count: 0`、`unknown_block_count: 0` 与 `passed: true`。
-这仍不等于可以公开发布，因为报告同时给出 `secret_pii_scan_performed: false`。当前门禁不读取 opaque 内容，
+安全样例应得到 `opaque_reasoning_block_count: 0`、`unknown_block_count: 0` 与 `passed: true`。
+这一步只检查 block 类型。报告同时给出 `secret_pii_scan_performed: false`，说明尚未扫描 secret 和 PII。
+当前门禁不读取 opaque 内容，
 也不检查 visible text、tool arguments/result 和 citation 中的 secret、PII、版权或 consent；这些需要独立检测器
 和人工治理流程。
 
@@ -223,7 +226,7 @@ Reasoning/thinking/signature/encrypted 类型、同名嵌套工具参数、未�
 4. **Deletion**：覆盖 raw/parsed logs、cache、backup policy、评测集、训练数据、replay buffer 和公开副本。
 5. **Notification**：按合同、法规和组织流程通知 provider、平台、数据主体和责任人。
 6. **Recovery**：只对验证所有权的 archive 做重新签发；迁移窗口有明确终止日期。
-7. **Regression**：把实际失效上下文转成不含真实秘密的测试 fixture。
+7. **Regression**：把实际失效上下文转成不含真实秘密的测试样例。
 
 删除本地文件不能撤销已经克隆、镜像或进入训练衍生物的内容；key rotation 也不能收回攻击者已经恢复的 plaintext。
 
@@ -238,7 +241,7 @@ Reasoning/thinking/signature/encrypted 类型、同名嵌套工具参数、未�
 
 评测 summary 时分开记录 final correctness、summary-answer consistency、summary-evidence entailment、敏感内容泄露和 verifier agreement。
 
-## 本仓库的离线 control
+## 运行本仓库的离线示例
 
 运行：
 
@@ -247,14 +250,14 @@ python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
   --output artifacts/cloud-api/reasoning-replay-matrix.json
 ~~~
 
-Control 使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 plaintext 和内存 ledger。
+这个示例使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 plaintext 和内存 ledger。
 它先构造 content-only envelope，展示错误 subject、tenant、session 和 model 上下文仍会被接受，
 此时 `unsafe_acceptance_count` 应为 4。随后改用 context-bound envelope，分别验证 exact context、scope drift、
 wrong predecessor、expiry、retired key、claims tamper 和第二次消费。
 
 输出不含 plaintext reasoning 或 ciphertext，只给 case、预期/实际接受状态和稳定拒绝原因。完整步骤见[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
 
-这个 control 只证明本仓库 authored 协议的局部不变量：
+这次运行只检查本仓库为教学设计的协议是否满足以下局部不变量：
 
 - 不解析或生成任何真实供应商 signature/thinking block；
 - 不访问网络，不调用模型，不尝试绕过当前 provider 缓解；

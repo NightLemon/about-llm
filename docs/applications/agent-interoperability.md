@@ -7,7 +7,7 @@
 
 - **适合读者**：需要把 Agent 接到工具、数据源或远端 Agent 的应用与平台工程师。
 - **先修**：[一次 Agent 退款任务](agent-task-lifecycle.md)中的 proposal、ACL、审批和 verifier。
-- **首次阅读**：先跟一次取件委派走完 MCP 与 A2A，再看 transport、版本和本地 controls。
+- **首次阅读**：先跟一次取件委派走完 MCP 与 A2A，再看 transport、版本和本地验证程序。
 - **完成信号**：能解释协议状态、业务授权和任务完成为什么必须分别验证。
 - **卡住时**：先把远端系统当成会超时、会返回错误内容的普通 API。
 
@@ -95,7 +95,7 @@ MCP resource、tool result 和 prompt 都可能携带间接 Prompt injection。�
 
 ## stdio 与 Streamable HTTP 改变的是传输边界
 
-本仓库 controls 固定 MCP `2025-11-25`。在这个版本下，两种常见 transport 是：
+本仓库的示例使用 MCP `2025-11-25`。在这个版本下，两种常见 transport 是：
 
 ### stdio
 
@@ -143,7 +143,8 @@ server 还要把取消传到 handler 或远程依赖。一次 HTTP `504` 也不�
 
 这些问题不属于 MCP input schema。Schema 可以拒绝未知字段或错误类型，无法凭自身证明资源归属和用户授权。
 
-官方 SDK 也不等于业务 allowlist。仓库固定 control 特意展示：一个未在 discovery 中出现的 tool name，
+官方 SDK 负责协议交互，不会替业务系统决定 allowlist。仓库的固定示例特意让模型请求一个未在 discovery 中
+出现的 tool name，
 可能仍到达 low-level application handler，再由应用 gate 拒绝。接入 SDK 时要测试实际调用路径，
 不能把“框架中存在 schema validation”外推成所有错误都在业务 handler 前停止。
 
@@ -169,12 +170,12 @@ Agent Card 是一份声明，不是对方能力或安全性的证明。远端 `c
 ### A2A 1.0 的版本边界
 
 截至本仓库核对日 2026-08-13，A2A 最新协议发布版是 1.0.0。当前 JSON 结构用成员名表达 union 分支，
-不再沿用 0.3 fixture 中的 `kind` discriminator。Agent Card 通过 `supportedInterfaces` 声明 URL、binding 与 protocol version。
+不再沿用 0.3 样例中的 `kind` discriminator。Agent Card 通过 `supportedInterfaces` 声明 URL、binding 与 protocol version。
 
 JSON-RPC binding 是 JSON-RPC 2.0 over HTTP(S)，使用 `application/json`、PascalCase 方法名和 `A2A-Version` header。
 它与 HTTP+JSON/REST、gRPC 是不同 binding。“都走 HTTP”不意味着 payload、方法和错误协议兼容。
 
-Adapter 应固定 major/minor、官方 schema 与具体 binding。0.3 与 1.0 fixture 分开保存，升级时让旧结构明确失败，
+Adapter 应固定 major/minor、官方 schema 与具体 binding。0.3 与 1.0 样例分开保存，升级时让旧结构明确失败，
 比静默接受后猜测字段含义更安全。
 
 ## MCP 与 A2A 可以组合，但信任域不会合并
@@ -202,7 +203,7 @@ Model provider、MCP server 和远端 Agent 是三个外部信任域。`V` 不�
 一个较稳妥的 adapter 顺序是：
 
 ```text
-strict protocol parse
+parse protocol and validate schema
 -> protocol version / capability check
 -> external identity and schema lookup
 -> normalize into internal typed proposal or artifact
@@ -211,7 +212,7 @@ strict protocol parse
 -> protocol-specific response projection
 ```
 
-未知字段、状态和 capability 采用 fail-closed 策略。原始协议 artifact 可以进入受控审计存储，
+遇到未知字段、状态或 capability 时，adapter 会停止处理，或把原始协议 artifact 放入受控审计存储，
 业务逻辑则只读取规范化对象。这样更换 SDK 或 transport 时，权限和 task state 不随外部 payload 漂移。
 
 升级 adapter 时至少回放：discovery/card、schema、stream、cancel、deadline、session/auth、错误、未知字段和版本不兼容。
@@ -236,17 +237,18 @@ python projects/safe-agent/mcp_streamable_http_control.py
 python projects/safe-agent/a2a_loopback_control.py --verify-official-schema
 ~~~
 
-| Control | 真正执行了什么 | 它特意没有声称什么 |
+| 示例 | 真正执行了什么 | 还需要在哪些环境验证 |
 |---|---|---|
 | MCP official SDK memory | `mcp==1.29.0` client/server/types 与 memory streams | OS transport、网络、认证和 conformance |
 | MCP official SDK stdio | 独立 subprocess 与真实 stdin/stdout pipe | 畸形 framing、取消、远端互操作 |
 | MCP official SDK HTTP | 独立 subprocess、loopback HTTP 与 stateful POST/GET/DELETE | MCP auth、TLS、resumption 与 conformance |
-| Authored strict stdio | 固定 framing、schema 和错误负例 | 官方 SDK 完整行为与远端兼容 |
-| Authored HTTP | Origin/Bearer/session/version、SSE、cancel 与 DELETE | OAuth、TLS、event store 与跨厂商互操作 |
+| 手写 stdio parser | 固定 framing、schema 和错误负例 | 官方 SDK 完整行为与远端兼容 |
+| 手写 HTTP server | Origin/Bearer/session/version、SSE、cancel 与 DELETE | OAuth、TLS、event store 与跨厂商互操作 |
 | A2A official SDK loopback | Agent Card、`SendMessage`、`GetTask` 与 v1.0 schema | TCK、其他 binding、签名 card 与远端 Agent |
 
-这些 control 不能互相借证据。自写 stdio 的 malformed framing 负例没有运行在官方 SDK transport 上；
-官方 SDK control 的身份也不能贴到 authored parser。测试中的本地 Bearer token 只用于 fixture gate，不是 OAuth、tenant 或业务授权。
+这些程序运行的代码路径不同。手写 stdio parser 的 malformed-framing 负例没有经过官方 SDK transport；
+官方 SDK 示例也不能说明手写 parser 与它完全一致。测试中的本地 Bearer token 只用于固定样例的入口检查，
+并不实现 OAuth、tenant 或业务授权。
 
 精确请求数、状态码、fingerprint projection 和每条负例集中在
 [Safe Agent 项目](../practice/projects/safe-agent.md#mcp-a2a)，避免主线被 transport 台账淹没。
@@ -268,9 +270,9 @@ python projects/safe-agent/a2a_loopback_control.py --verify-official-schema
 ## 当前证据边界
 
 仓库已经执行 MCP `2025-11-25` 的官方 SDK memory、stdio、Streamable HTTP，
-两套 authored strict transport controls，以及 A2A 1.0 official-SDK loopback。
+两套手写 transport 验证程序，以及 A2A 1.0 official-SDK loopback。
 
-它们都是固定版本、本机 fixture。仓库没有完成跨厂商或跨语言远端互操作、完整 conformance/TCK、
+它们都使用固定版本并在本机运行。仓库尚未完成跨厂商或跨语言远端互操作、完整 conformance/TCK、
 生产 TLS/OAuth/IAM、签名 Agent Card、多 worker、跨区域恢复或真实副作用。
 Loopback 成功、schema-valid、远端 completed 和无密钥 fingerprint 都不能代替业务正确性、身份认证和生产可用性证据。
 
@@ -279,9 +281,9 @@ Loopback 成功、schema-valid、远端 completed 和无密钥 fingerprint 都�
 1. MCP discovery 返回 `schedule_pickup` 后，本地 runtime 还要验证哪些业务条件？
 2. A2A task 显示 completed 时，为什么仍要查询或验证 booking artifact？
 3. stdio EOF、HTTP disconnect 和业务取消分别可能留下什么状态？
-4. 为什么 A2A 0.3 的 `kind` fixture 不能直接用来验证 1.0 adapter？
+4. 为什么 A2A 0.3 的 `kind` 样例不能直接用来验证 1.0 adapter？
 5. 同一个远端 Agent 同时使用 MCP 时，本地系统中形成了几个信任域？
-6. Official SDK control 与 authored strict control 为什么不能共享测试结论？
+6. Official SDK 示例与手写 parser 为什么不能共享测试结论？
 
 ## 官方资料
 
@@ -294,4 +296,4 @@ Loopback 成功、schema-valid、远端 completed 和无密钥 fingerprint 都�
   [v1.0.0 JSON Schema](https://a2a-protocol.org/v1.0.0/spec/a2a.json) 和
   [Python SDK](https://github.com/a2aproject/a2a-python)。
 
-协议细节核对日期为 2026-08-13；本仓库 control 固定 A2A protocol 1.0.0 与 Python SDK 1.1.2。
+协议细节核对日期为 2026-08-13；本仓库示例使用 A2A protocol 1.0.0 与 Python SDK 1.1.2。

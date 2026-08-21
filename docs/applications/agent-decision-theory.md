@@ -9,7 +9,7 @@
 - **先修**：[Agent 架构](agent-architecture.md)、[LLM 强化学习](../training/reinforcement-learning.md)。
 - **首次阅读**：POMDP → belief update → expected utility → information value → constraints → safety/liveness。
 - **完成信号**：能判断应执行、先观察、升级还是停止，并写出对应假设与反例。
-- **卡住时**：先运行本章二状态 exact control，再把数组名称替换成自己的任务对象。
+- **卡住时**：先运行本章的二状态小例子，再把数组名称替换成自己的任务对象。
 
 </div>
 
@@ -237,7 +237,8 @@ E_\pi\left[\sum_t\gamma^t C_{k,t}\right]\le d_k.
 3. 至少一个 terminal reachable，只说明 may terminate；
 4. reachable nonterminal subgraph 无 dead end 且无 cycle，才保证所有路径终止。
 
-真实 Agent 的状态空间通常不有限，工具和模型也不是完整 transition graph。本章检查只能验证 authored abstraction；生产仍需 deadline、loop detector、idempotency、reconciliation 和人工接管。
+真实 Agent 的状态空间通常不有限，工具和模型也不是完整 transition graph。本章用的是为了手算而简化的状态模型，
+帮助检查决策公式。生产系统仍需 deadline、loop detector、idempotency、reconciliation 和人工接管。
 
 ## 11. Belief 与 Agent Memory
 
@@ -272,7 +273,7 @@ Working/episodic/semantic memory 向下一轮提供 observation 和先验线索�
 
 Runtime 的顺序仍然是 schema → trusted resource resolution → policy → approval → handler → verifier。决策理论帮助选择 allowed actions 中的下一步，不会把 model proposal 变成授权。
 
-## 14. 可运行 finite exact control { #exact-control }
+## 14. 运行一个可穷举的有限状态例子 { #exact-control }
 
 运行：
 
@@ -281,7 +282,7 @@ python projects/safe-agent/decision_theory_toy.py
 python -m pytest tests/test_agent_decision_theory.py -q
 ~~~
 
-固定 CPU control 枚举两个 hidden states、四个 actions 和两个 observations，验证：
+这个 CPU 示例枚举两个 hidden states、四个 actions 和两个 observations，逐项检查：
 
 - belief update 得到 observation probability `0.57` 与 posterior `[0.8947, 0.1053]`；
 - 未授权 action 的 unconstrained utility 为 `100`，仍被 hard allow-mask 排除；
@@ -290,11 +291,14 @@ python -m pytest tests/test_agent_decision_theory.py -q
 - terminal reachable 的图仍可因 nonterminal cycle 而不保证 termination；
 - reachable forbidden state 与 termination 是两个独立结论。
 
-实现位于 `src/about_llm/agents/decision_theory.py`。Probability normalization、shape、finite value、hard action mask 和 transition graph schema 都会 fail closed。
+实现位于 `src/about_llm/agents/decision_theory.py`。输入概率没有归一化、shape 不匹配、数值非有限、
+hard action mask 或 transition graph schema 不合法时，程序会立即报错。
 
-### 这个实验没有证明什么
+### 这个例子说明什么，还不能说明什么
 
-Control 没有调用 LLM、真实工具、provider、网络或审批服务，也没有从数据学习 transition/observation model。Utility、prior 和 likelihood 都由作者指定；有限二状态/四状态图不代表开放环境。因此它只验证公式、分支和术语边界，不证明真实 Agent 的校准、任务成功、安全、终止、性能或最优策略。
+这个例子用作者指定的 utility、prior 和 likelihood 检查公式、分支与术语是否对应。它没有调用 LLM、
+真实工具、provider、网络或审批服务，也没有从数据学习 transition/observation model。要判断真实 Agent
+是否校准、能否安全完成任务或稳定终止，还需要在开放环境中单独评测。
 
 ## 15. 常见错误结论
 

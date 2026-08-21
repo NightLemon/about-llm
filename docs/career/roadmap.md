@@ -95,7 +95,7 @@ LangChain、Transformers 或 vLLM 都可能出现在多条路线中。真正区�
 | 级别 | 能回答什么 | 证据 |
 |---|---|---|
 | K — Know | 机制是什么、适用边界在哪里 | 能推导/解释并指出反例 |
-| I — Implement | 能否从输入到输出实现最小闭环 | 代码、单元测试、固定 fixture |
+| I — Implement | 能否从输入到输出实现最小闭环 | 代码、单元测试、固定样例 |
 | V — Validate | 怎样证明实现和改动有效 | baseline、逐 case 结果、消融、统计、失败测试 |
 | O — Own | 出现漂移、过载、越权或事故时怎样处置 | SLO、监控、runbook、回滚、权限与事件证据 |
 
@@ -128,7 +128,9 @@ LangChain、Transformers 或 vLLM 都可能出现在多条路线中。真正区�
 
 ### 后端/全栈工程师
 
-优先路线：LLM 应用、Agent 平台、评测平台。可复用 API、数据库、队列、可观测和运维；重点补 tokenizer/template、非确定生成、RAG 分层评测、模型外权限和 evidence-driven release。不要把成熟后端能力丢掉，只展示 Prompt demo。
+优先路线：LLM 应用、Agent 平台、评测平台。继续发挥 API、数据库、队列、可观测和运维能力，同时补上
+tokenizer/template、非确定生成、RAG 分层评测、模型外权限和 evidence-driven release。作品集应展示这些
+成熟后端能力怎样支撑模型，而不只是一个 Prompt demo。
 
 ### 搜索、推荐或数据工程师
 
@@ -144,7 +146,9 @@ LangChain、Transformers 或 vLLM 都可能出现在多条路线中。真正区�
 
 ### 安全、隐私或治理工程师
 
-优先路线：AI 安全平台、Agent/RAG 控制面、评测治理。可复用 threat modeling、IAM、审计和 incident response；重点补模型输出的不确定性、Prompt injection、tool candidate/action 分离、数据污染和可执行评测。不要把模型拒答当作安全边界。
+优先路线：AI 安全平台、Agent/RAG 控制面、评测治理。继续发挥 threat modeling、IAM、审计和 incident
+response 能力，同时补上模型输出的不确定性、Prompt injection、tool candidate/action 分离、数据污染和
+可执行评测。模型拒答只是行为信号，真正的安全边界仍由权限和控制面实现。
 
 ### 研究生或研究背景
 
@@ -206,9 +210,9 @@ JD 中的技术栈是约束，不是完整能力定义。会某个框架但无�
 
 | 当前证据 | 可以写 | 不应写 |
 |---|---|---|
-| CPU deterministic fixture | 实现并验证公式/状态机/错误路径 | GPU 加速、生产吞吐 |
-| authored/offline case | 在固定 N 条回放上得到某结果 | 真实用户整体提升 |
-| 目标 checkpoint 单点 control | 在固定 revision/环境/输入下执行 | 模型总体质量、跨硬件兼容 |
+| CPU 确定性样例 | 实现并验证公式/状态机/错误路径 | GPU 加速、生产吞吐 |
+| 自编离线样例 | 在固定 N 条回放上得到某结果 | 真实用户整体提升 |
+| 目标 checkpoint 单点运行 | 在固定 revision/环境/输入下执行 | 模型总体质量、跨硬件兼容 |
 | loopback HTTP integration | 真实本机进程/TCP/HTTP 路径 | 公网、TLS、IAM、多区域可用 |
 | 生产设计与故障演练 | 设计/演练某项回滚或控制 | 未实际承担的 SLA、事故或用户规模 |
 
@@ -315,7 +319,8 @@ resume bullet
 
 ### 夸大证据等级
 
-CPU fixture 不证明 GPU 吞吐，loopback 不证明公网服务，作者数据不证明真实用户，schema-valid 不证明业务正确，模型拒答不证明权限安全。
+CPU 样例、loopback、作者自编数据、schema 校验和模型拒答各自只覆盖一层。GPU 吞吐、公网可靠性、真实用户效果、
+业务正确性和权限安全都需要对应环境中的结果。
 
 ### 把框架熟练度当核心壁垒
 
@@ -365,7 +370,7 @@ CPU fixture 不证明 GPU 吞吐，loopback 不证明公网服务，作者数据
 - [ ] 能解释当前证据的 L0–L4 等级和不能外推的边界。
 - [ ] 简历每个数字都能反向追到 workload、配置、代码 revision 和失败样本。
 - [ ] 能完成机制、实验、系统设计、故障和项目深挖五类追问。
-- [ ] 没有把 authored fixture、CPU control 或生产设计写成真实线上结果。
+- [ ] 没有把自编样例、CPU 本地运行或生产设计写成真实线上结果。
 - [ ] 准备了对团队的数据、预算、ownership、发布和事件流程问题。
 
 完成这些检查不保证录用；它证明的是你的求职材料内部一致、可核验，并与目标岗位责任相匹配。

@@ -130,7 +130,7 @@ Blocked 文档不能进入查询期分数、reranker 输入、context、生成�
 
 ## 阶段 2：BM25 召回三个候选
 
-BM25 只在可见集合中计算本次查询的统计和分数。固定 fixture 的前三个 chunk 是：
+BM25 只在可见集合中计算本次查询的统计和分数。在当前固定语料和查询下，前三个 chunk 是：
 
 | 初排 | Stable source | 内容摘要 | BM25 score |
 |---:|---|---|---:|
@@ -159,7 +159,7 @@ BM25 只在可见集合中计算本次查询的统计和分数。固定 fixture 
 
 Reranker 收到前三名之前再次做授权检查。这样即使上游接错索引，越权正文也不会传给 scorer。
 
-固定 recorded-score fixture 给出：
+为了把重排过程讲清楚，本例预先给这三个候选设置如下分数：
 
 | 候选 | 初排 | Rerank score | 重排后 |
 |---|---:|---:|---:|
@@ -221,7 +221,7 @@ tokenizer 也可能让拼接前后的长度不是各部分长度之和。
 
 两者不能混报。
 
-## 阶段 5：先用逐字抽取建立答案 oracle
+## 阶段 5：先用逐字抽取建立答案基线
 
 在接 LLM 前，透明 baseline 从 packed context 中选择覆盖 query 的原文 span：
 
@@ -295,7 +295,7 @@ S3: 召回阶段使用 Recall@k、MRR 和 nDCG。
 \frac{2}{9}\approx0.2222,
 \]
 
-低于 fixture 的 `0.55` 阈值，所以终态是 `abstain`。
+低于本例设置的 `0.55` 阈值，所以终态是 `abstain`。
 
 这条负例说明：
 
@@ -365,9 +365,9 @@ final action + reason code
 | 离线回答评测 | `src/about_llm/rag/answer_eval.py` | action、claim verdict 和分母 |
 
 在[实验 5：追踪一次 RAG 问答](../practice/labs/lab-5-rag-request.md)中，
-你会对请求 A/B 先写预测，再运行相同 fixture 和授权负例。
+你会对请求 A/B 先写预测，再运行相同的固定场景和授权负例。
 
-精确 claim、测试与“仍未证明”集中在 [RAG 证据页](../evidence/rag-answer-controls.md)。
+具体 claim、对应测试和目前尚未验证的部分集中在 [RAG 证据页](../evidence/rag-answer-controls.md)。
 
 ## 自测
 

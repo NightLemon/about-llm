@@ -219,7 +219,7 @@ P_p(X\ge c)=\sum_{x=c}^{m}\binom{m}{x}p^x(1-p)^{m-x}.
 
 当 \(m=5,\alpha=0.05\)，只有 5 次全胜才拒绝，实际 null rejection probability 是 \(1/32=0.03125\)。若 \(p=0.8\)，power 只有 \(0.8^5=0.32768\)。Exact 不等于“样本够了”；离散检验的实际 alpha 还可能明显低于名义 alpha。
 
-仓库 exact control 给出两个可复算结果：
+仓库的精确计算示例给出两个可复算结果：
 
 - 若 alternative positive probability=0.75、target power=0.8、alpha=0.05，最少需要 **23 个 informative pairs**；rejection threshold 是至少 16 个 positive，power 约 0.8037。
 - 固定 25 个 informative pairs、target power=0.8，在千分之一概率网格上，最小 \(p\) 是 **0.770**，即相对 chance 的 conditional sign margin 是 0.270；这不是 accuracy 提升 27 个百分点。
@@ -264,7 +264,8 @@ python -m pytest tests/test_evaluation_measurement.py -q
 ```
 
 Toy 精确计算 observed/chance agreement、Cohen's κ、criterion confusion、单侧 sign-test rejection threshold、conditional power、minimum informative-pair count 和声明概率网格上的 MDE。
-它使用四条 authored labels 和二项模型，没有执行真实标注者、模型、judge、provider 或线上实验。
+它使用四条由本仓库准备的 labels 和二项模型，没有执行真实标注者、模型、judge、provider 或线上实验。
 
-因此它只证明公式、数据方向和边界处理：不建立 construct/content validity，不证明 criterion 正确或独立，不估计真实 discordance rate，不验证 sampling/cluster independence，也不证明任何模型改善。
+因此它用于检查公式、数据方向和边界处理。Construct/content validity、criterion 是否正确独立、真实
+discordance rate、sampling/cluster independence 和模型改善，都需要真实评测设计回答。
 真实项目还要把本页的 measurement plan 与[配对区间、多重比较和发布门禁](evaluation-methodology.md)连接起来。

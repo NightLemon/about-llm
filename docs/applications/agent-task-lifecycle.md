@@ -29,7 +29,7 @@ Agent 难学，不是因为工具调用的 JSON 很复杂，而是因为一次�
 > `user-42` 说：“商品坏了，帮我退 300 元。”
 
 订单服务显示 `order-1001` 属于该用户和 `tenant-shop-a`，已支付 300 元。退款服务会受理请求，
-但第一次响应在返回途中丢失。这个 fixture 的完成目标是“退款申请已被 provider 受理”，不是“款项已经到账”；
+但第一次响应在返回途中丢失。这个固定场景的完成目标是“退款申请已被 provider 受理”，而不是“款项已经到账”；
 到账和结算还需要另一条业务状态机。这个故障让当前控制链都变得可见。
 
 ## 先看最终发生了什么
@@ -104,7 +104,7 @@ recovery.replay_after_reconciliation.status    = cached
 recovery.provider_effect_count                 = 1
 ```
 
-这里的 Planner、订单库和退款服务都是进程内 fixture。真实执行的是 Draft 2020-12 schema、ACL policy、
+这里的 Planner、订单库和退款服务都是进程内模拟器。程序真实执行 Draft 2020-12 schema、ACL policy、
 approval binding、SQLite claim/reconciliation 和恢复后的 cache replay。
 
 ## 阶段 0：Observation 不是事实大杂烩
@@ -214,7 +214,7 @@ Policy 再检查三件事：
 收款路径：原路退回
 ```
 
-用户确认后，可信审批服务签发 grant。本地 fixture 的 grant 绑定：
+用户确认后，可信审批服务签发 grant。本地样例中的 grant 绑定：
 
 ```text
 subject + task + call_id + execution_fingerprint + expiry
@@ -230,7 +230,7 @@ subject + task + call_id + execution_fingerprint + expiry
 本仓库的 `ApprovalGrant` 是 typed artifact，不是加密签名或 bearer token 格式。生产系统仍需真实性、一次性消费、
 访问控制、撤销与安全存储。
 
-## 阶段 5：Execution 失败不等于 Effect 未发生
+## 阶段 5：本地超时，但退款可能已经受理
 
 Runtime 在调用退款服务前，先向 SQLite ledger 原子 claim：
 
@@ -293,7 +293,8 @@ Handler 没有再次运行；provider request attempt 和 effect count 都保持
 ```
 
 Verifier 对照订单、金额、原因、identity 和目标状态后给出 `passed`。这里“独立”表示它走查询路径读取业务事实，
-而不是复述原 Handler 的返回值；fixture 仍然和 Handler 共享一个进程内模拟 provider。
+而不是复述原 Handler 的返回值。当前示例仍然让 verifier 和 Handler 共享一个进程内模拟 provider；
+真实系统应查询独立的业务事实来源。
 
 为了确认 verifier 真在比对内容，脚本还把 receipt 金额改成 299 元。查询虽然仍返回 `accepted`，结果却是
 `failed / provider_receipt_mismatch`。若 provider 没有返回任何可确认记录，状态才是 `indeterminate`；
@@ -335,7 +336,7 @@ Verifier 对照订单、金额、原因、identity 和目标状态后给出 `pas
 | 第一个异常 | 归因与动作 |
 |---|---|
 | Planner 输出未知字段或错误类型 | Proposal/schema；返回可修正错误，不进入资源解析 |
-| 资源不存在或跨 tenant | Resolver/ACL；fail closed，不调用 handler |
+| 资源不存在或跨 tenant | Resolver/ACL 停止执行，不调用 handler |
 | 审批过期或参数漂移 | Approval；重新展示当前动作，不能复用旧 grant |
 | Handler 超时，ledger 为 pending | Execution uncertainty；停止自动重试，进入 reconciliation |
 | Provider 查询无记录 | Verifier indeterminate；等待、升级或按协议标记 abandoned |
@@ -343,7 +344,8 @@ Verifier 对照订单、金额、原因、identity 和目标状态后给出 `pas
 | Reconciled 后 cache replay 被撤权 | Reauthorization；不向已撤权主体返回旧 payload |
 | Planner 重复 proposal 或耗尽预算 | Loop control；停止并说明 reason code |
 
-不要把这些问题都归为“模型不稳定”。本例最危险的故障发生在模型已经给出正确 proposal 之后。
+这些问题分属模型决策、控制面和外部系统。本例最危险的故障发生在模型已经给出正确 proposal 之后，
+需要靠幂等和对账处理。
 
 ## 映射到仓库代码
 
@@ -359,11 +361,11 @@ Verifier 对照订单、金额、原因、identity 和目标状态后给出 `pas
 | 证据回归 | `tests/test_agent_refund_lifecycle.py` | 越权未执行、重放未重复 effect、恢复后 cached |
 
 动手实验见[实验 6：追踪一次 Agent 退款](../practice/labs/lab-6-agent-lifecycle.md)。更完整的 framework、
-MCP、A2A、outbox 和轨迹评测 controls 见 [Safe Agent 项目](../practice/projects/safe-agent.md)。
+MCP、A2A、outbox 和轨迹评测的验证程序见 [Safe Agent 项目](../practice/projects/safe-agent.md)。
 
 ## 这个实验证明了什么
 
-它证明固定 fixture 上确实执行了 closed schema、资源级 ACL、审批绑定、SQLite claim、pending replay fence、
+在这个固定样例中，程序确实执行了 closed schema、资源级 ACL、审批绑定、SQLite claim、pending replay fence、
 provider query verifier 和 reconciliation；恢复后 provider effect count 仍为 1。
 
 它没有调用真实 LLM、支付服务、IAM 或审批服务，也没有覆盖并发节点、消息 broker、签名 grant、真实网络分区、

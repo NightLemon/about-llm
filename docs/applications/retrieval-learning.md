@@ -9,7 +9,7 @@
 - **先修**：[机器学习基础](../foundations/ml-dl.md)、[RAG 检索](rag-retrieval.md)。
 - **首次阅读**：打分架构 → InfoNCE → negatives → DPR/ColBERT/SPLADE → 分层评测。
 - **完成信号**：能推导目标梯度，并分开诊断 model、ANN 与 reranker recall。
-- **卡住时**：先运行本章 exact control，观察候选 mask 如何改变梯度。
+- **卡住时**：先运行本章可手算的小例子，观察候选 mask 如何改变梯度。
 
 </div>
 
@@ -22,7 +22,7 @@ RAG 不只是在向量库里调用 `search()`。Dense retriever 的相似度来�
 - 判断 in-batch negative、hard negative 与 false negative 分别改变了什么；
 - 说明 DPR、ColBERT 与 SPLADE 复用了哪些机制、牺牲了什么；
 - 分开测量表示模型、exact search、ANN 和 reranker 的误差；
-- 运行一个 NumPy exact control，并明确它没有证明真实 retriever 质量。
+- 运行一个 NumPy 对照示例，并区分公式检查与真实 retriever 质量评测。
 
 ## 1. 先把检索拆成四层
 
@@ -270,7 +270,7 @@ corpus_version, chunker_version, qrels_version
 单张消费级 GPU 可从小 batch + gradient accumulation 开始，但 accumulation 不会自动增加同一次 forward 的 in-batch negative 数。
 若每个 micro-batch 独立算 loss，候选分母仍只是 micro-batch；要扩大负例域，需要显式 embedding cache、跨 batch memory 或其他算法，并处理 stale embeddings 与梯度语义。
 
-## 13. 可运行的 NumPy exact control { #exact-control }
+## 13. 运行一个可手算的 NumPy 例子 { #exact-control }
 
 运行：
 
@@ -279,22 +279,24 @@ python projects/rag-foundations/retriever_learning_toy.py
 python -m pytest tests/test_retriever_learning.py -q
 ~~~
 
-实验不下载模型，在 CPU 上直接把二维数组视为 encoder 输出。它验证：
+这个例子不下载模型，而是在 CPU 上把几组二维数组当作 encoder 输出。这样可以逐项手算并检查：
 
 - 多正例 InfoNCE 的 loss 及 query/document analytic gradients；
 - analytic gradients 与 finite difference 一致；
 - easy negative 的 loss 约为 `0.1269`，hard negative 增至 `0.6444`；
-- 同一个 hard negative 把 temperature 从 `1` 降到 `0.25` 时，本 fixture loss 为 `0.5130`；
+- 同一个 hard negative 把 temperature 从 `1` 降到 `0.25` 时，本例 loss 为 `0.5130`；
 - 漏标的第二个相关文档在单正例目标中收到“降低 logit”的正梯度；改成多正例后 loss 从 `0.8620` 降为 `0.1688`，其梯度方向反转；
 - ColBERT-style masked MaxSim 得到 `[2.0, 1.6]`；
 - SPLADE-style max pooling 忽略 masked token，并只产生非负词表权重。
 
-实现位于 `src/about_llm/rag/retriever_learning.py`，所有 mask、shape、finite value、temperature 和 positive-set 不变量都会 fail closed。
+实现位于 `src/about_llm/rag/retriever_learning.py`。Mask、shape、finite value、temperature 或 positive set
+不符合要求时，程序会报错并停止计算。
 
-### 这个实验没有证明什么
+### 这个例子说明什么，还不能说明什么
 
-它没有运行 Transformer、sentence-transformers、真实 DPR/ColBERT/SPLADE checkpoint、ANN index 或 GPU；没有训练 encoder 参数，也没有验证 authored embeddings/qrels 代表真实业务。
-因此它只证明当前公式实现和几个反事实方向，不能证明模型质量、训练收敛、真实 false-negative 比例、索引性能或生产安全。
+本仓库准备的 embeddings 和 qrels 足以检查当前公式实现，以及改变 negative、temperature 或正例集合时的
+梯度方向。它没有运行 Transformer、真实 DPR/ColBERT/SPLADE checkpoint、ANN index 或 GPU，也没有训练
+encoder 参数。模型质量、训练收敛、真实 false-negative 比例、索引性能和生产安全仍需在目标数据与系统上验证。
 
 ## 14. 常见错误结论
 

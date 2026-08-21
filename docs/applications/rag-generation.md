@@ -194,7 +194,7 @@ stateDiagram-v2
   Reject --> [*]
 ```
 
-最小 fail-closed policy 有三个终态：
+最小发布策略有三个终态。遇到证据不足或结构异常时，它会停止发布：
 
 | Stage | Action | 含义 |
 |---|---|---|
@@ -211,7 +211,7 @@ stateDiagram-v2
 - Audit projection 可以保留 raw output 与 findings，但受严格访问控制。
 - Public projection 只发布固定 response、action、stage 和安全 allowlist 字段。
 
-不要把一个内部 dataclass 的 `to_dict()` 直接返回给客户端。
+返回客户端以前，应把内部 dataclass 投影成专门设计的公开响应，避免顺手暴露内部字段。
 
 ## 拒答至少有三种原因
 
@@ -258,7 +258,7 @@ Tenant/ACL 过滤后 context 为空。系统可在生成前直接 abstain，减�
 如果没有 accepted answer，risk 未定义，不能静默写成 0。
 
 阈值要在 calibration split 上选择，再在独立 test split 报告。
-请求 B 中的 lexical `0.55` 只是 fixture，不是推荐生产阈值。
+请求 B 使用的 lexical `0.55` 只是为了让样例产生明确分支，不是推荐的生产阈值。
 
 ## 冲突证据怎样回答
 
@@ -290,7 +290,7 @@ API 可以返回：
 
 验证要分层：
 
-1. Strict JSON syntax：拒绝 duplicate key 与 `NaN/Infinity`。
+1. 先解析 JSON：遇到重复字段、`NaN` 或 `Infinity` 就停止，而不是猜测模型想表达什么。
 2. JSON Schema：字段、类型、枚举和额外属性。
 3. Domain semantics：source ID 授权、claim support 与 action 一致性。
 
@@ -330,7 +330,7 @@ Error、timeout 和 parse failure 必须留在 case 分母，不能只评价成�
 
 行为 gate 为 `0/2`。它说明正确检索、greedy decoding 和清晰 Prompt 不自动保证引用与拒答。
 
-仓库还分别保存 counterfactual policy replay 与真实 guarded runtime control。
+仓库还分别保存 counterfactual policy replay 与真实 guarded runtime 验证程序。
 三者的精确边界和命令见 [RAG 证据页](../evidence/rag-answer-controls.md)。
 
 ## 可运行实验

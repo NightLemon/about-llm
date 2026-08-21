@@ -95,7 +95,8 @@ resume bullet
   -> code、config 与模型版本
 ```
 
-作品集首页保持简洁。精确 hash、fixture 数字、完整测试矩阵和内部协议放在 evidence 页面；本仓库自身的精确项目表述保留在[作品集 claim 证据台账](../evidence/resume-claims.md)，不作为第一次阅读内容。
+作品集首页保持简洁。具体 hash、固定样例数字、完整测试矩阵和内部协议放在 evidence 页面；本仓库自身的
+项目表述保留在[作品集 claim 证据台账](../evidence/resume-claims.md)，不作为第一次阅读内容。
 
 ## README 推荐结构
 

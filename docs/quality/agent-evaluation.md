@@ -118,8 +118,8 @@ Gate 会逐 case 检查：
 
 Step budget 与 handler-attempt budget 不能互换。只限制 handler，仍可能让模型无限生成被拒绝或 cache-hit proposals。
 
-Trace loader 能检查类型和内部一致性，却不能证明 observation 真实或文件未被篡改。生产 recorder 应由控制面写入，
-并结合签名/MAC、存储 ACL 与审计链；不要让模型自己声明 `policy_allowed=false` 或 `effect_applied=false`。
+Trace loader 可以检查字段类型和内部状态是否自洽。Observation 是否真实、文件是否被替换，则需要控制面写入、
+签名/MAC、存储 ACL 与审计链来保证。`policy_allowed` 和 `effect_applied` 这类字段不能由模型自报。
 
 ## Simulator 要像环境，不只是固定字符串
 
@@ -164,7 +164,8 @@ stale ack rejection。
 大于 1 才表示幂等失败或 identity 漂移。
 
 必须保留“Provider success、ack 前 crash”case，并断言重投复用相同 idempotency key。SQLite + simulated Provider
-通过只说明本地状态机正确，不能证明真实 Provider receipt、broker 或 exactly-once external effect。
+通过这条测试说明本地状态机按预期处理了重投。真实 Provider receipt、broker 行为和 external effect 是否唯一，
+需要与外部系统对账。
 
 ## Recovery 有自己的指标
 

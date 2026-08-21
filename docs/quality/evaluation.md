@@ -71,7 +71,7 @@ slice: zh / refund / policy
 |---|---|---|
 | 固定答案是否完全一致？ | Literal exact match | 大小写、空白和 Unicode 是否有业务含义 |
 | 抽取内容覆盖得怎样？ | Precision / Recall / F1 | tokenization 与 normalization 规则 |
-| 结构化对象是否可用？ | Strict JSON + Schema + parsed value | 语法、字段与业务规则分层检查 |
+| 结构化对象是否可用？ | JSON 解析 + Schema + parsed value | 分别检查重复字段、非法数值、字段类型和业务规则 |
 | 开放回答是否满足要求？ | Rubric + 人工或校准后的 judge | 必须项、致命错误和证据来源 |
 | 检索是否找到正确证据？ | Recall@k、MRR、nDCG | gold evidence 和无答案 case 的定义 |
 | 引用是否支持主张？ | Citation coverage / correctness | “ID 存在”和“内容支持”分开判断 |

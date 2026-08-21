@@ -138,7 +138,9 @@ Agent 至少要有最大步数、时间、token、费用、重复动作和无进
 
 MCP 主要连接 AI 应用与 tools/resources/prompts；A2A 主要描述独立 Agent 的发现、任务和 artifact。它们统一通信方式，却不会自动建立业务信任。
 
-无论工具来自本地函数、LangChain、LlamaIndex、MCP 还是远端 Agent，收到的名称、schema、状态和 artifact 都仍是待验证声明。版本、transport 与可运行 controls 统一放在[互操作专题](agent-interoperability.md)，避免协议细节打断第一次学习。
+无论工具来自本地函数、LangChain、LlamaIndex、MCP 还是远端 Agent，收到的名称、schema、状态和 artifact
+都仍是待验证声明。版本、transport 与可运行验证程序统一放在[互操作专题](agent-interoperability.md)，
+避免协议细节打断第一次学习。
 
 ## 评测
 

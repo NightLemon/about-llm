@@ -13,7 +13,7 @@
 
 </div>
 
-**求职导航**：[岗位路线](roadmap.md) · [系统设计](system-design.md) · [简历项目](resume-projects.md) · [深挖题与 control 台账](../evidence/interview-controls.md)
+**求职导航**：[岗位路线](roadmap.md) · [系统设计](system-design.md) · [简历项目](resume-projects.md) · [深挖题与验证台账](../evidence/interview-controls.md)
 { .doc-nav }
 
 面试不是关键词召回测试。面试官通常在确认三件事：你是否真的理解机制，是否知道结论何时失效，以及是否能设计一个实验把争论变成证据。
@@ -165,7 +165,8 @@ Loss 只衡量训练目标在当前数据和 reduction 下的改善。数据泄�
 
 ### 15. 多租户 RAG 怎样防止数据泄漏？
 
-ACL 必须进入 retrieval query 或在候选进入共享排序、缓存和生成前 fail closed。只在最终答案层过滤太晚，因为未授权文本可能已影响 rerank、cache 或模型上下文。
+ACL 必须进入 retrieval query，或者在候选进入共享排序、缓存和生成前停止未授权数据继续流动。只在最终答案层
+过滤已经太晚，因为未授权文本可能已经影响 rerank、cache 或模型上下文。
 
 **负例**：让两个租户拥有相似文档，使用同一 query 和 cache key；验证未授权 source ID、正文和 embedding-derived result 都不会跨边界出现。
 
@@ -280,6 +281,7 @@ connect 前的明确失败与发送后 timeout 不同。后者可能已经生成
 
 ## 怎样使用深挖题库
 
-当核心题能脱稿回答后，再进入[深挖题与 control 台账](../evidence/interview-controls.md)。那一页保留分布式 AMP、MoE、PPO、MCP、统计检验和 serving controls 的完整追问，用于二面或专项岗位。
+当核心题能脱稿回答后，再进入[深挖题与验证台账](../evidence/interview-controls.md)。那一页保留分布式 AMP、
+MoE、PPO、MCP、统计检验和 serving 的完整追问，用于二面或专项岗位。
 
 不要背其中的固定数字。选择与你岗位和项目相关的十题，把每题改写成自己的“结论—机制—边界—验证”，并准备一个真实失败样例。

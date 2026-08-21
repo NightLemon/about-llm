@@ -161,7 +161,7 @@ Exact vector search 随文档量线性增长。ANN 用近似换吞吐：
 | PQ | 对向量子空间量化 | 压缩更强，距离误差更大 |
 | DiskANN 类 | 让大部分索引驻留 SSD | I/O、预取和尾延迟更复杂 |
 
-调 ANN 前，先用同一批 embedding 的 exact top-k 作为 oracle：
+调 ANN 前，先对同一批 embedding 计算 exact top-k，把它作为近似检索的参考结果：
 
 \[
 \operatorname{ANNRecall@k}=
@@ -219,11 +219,11 @@ Reranker 输入要保留标题和必要 parent context。若最大长度把答�
 生成式 reranker 可以处理复杂约束，但也会引入不稳定输出、文档 Prompt injection 与更高成本。
 它必须只读取授权候选，输出固定 ID/schema，并与 cross-encoder baseline 比较。
 
-### 请求 A 的教学 control
+### 在请求 A 上观察重排
 
 请求 A 的 recorded scores 把 ACL 顺序段排第一、引用边界段排第二、一般评测段排第三。
 
-这条 fixture 验证授权、query/chunk 绑定、score shape、有限数与稳定排序；
+这段程序会检查授权、query/chunk 绑定、score shape、有限数与稳定排序；
 它没有运行 learned model，也没有 gold qrels 质量对比。精确边界见
 [RAG 证据页](../evidence/rag-answer-controls.md)。
 
@@ -317,7 +317,7 @@ python -m about_llm.rag.cli evaluate `
   --top-k 3
 ~~~
 
-检索表示学习的 NumPy exact control 位于：
+检索表示学习的 NumPy 对照示例位于：
 
 ~~~powershell
 python projects/rag-foundations/retriever_learning_toy.py
