@@ -1,6 +1,7 @@
 # 前沿系统证据台账：Reasoning、Long Context 与 MoE
 
-本页保存 self-consistency、best-of-N、长上下文与 MoE routing/collective controls 的精确公式、录制结果和边界。第一次学习请从[前沿总览](../frontier/reasoning-long-context-moe.md)进入三条独立路线。
+本页保存 self-consistency、best-of-N、长上下文与 MoE routing/collective 实验的精确公式、录制结果和边界。
+第一次学习请从[前沿总览](../frontier/reasoning-long-context-moe.md)进入三条独立路线。
 
 **读者入口**：[前沿总览](../frontier/reasoning-long-context-moe.md) · [推理系统](../frontier/reasoning-systems.md) · [长上下文](../frontier/long-context-systems.md) · [MoE 系统](../frontier/moe-systems.md)
 { .doc-nav }

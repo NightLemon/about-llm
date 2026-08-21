@@ -4,7 +4,7 @@
 再跟随[一次 RAG 请求的生命周期](../applications/rag-request-lifecycle.md)完成
 [实验 5](../practice/labs/lab-5-rag-request.md)。
 
-本页面向内容维护者和项目评审者，集中回答：教材里的关键结论由什么 oracle 支持，
+本页面向内容维护者和项目评审者，集中回答：教材里的关键结论由什么手算结果、参考实现或测试支持，
 以及这些证据没有证明什么。
 
 **读者入口**：[召回与重排](../applications/rag-retrieval.md) ·
@@ -16,16 +16,16 @@
 
 | 层级 | 本仓库实例 | 可以支持的结论 |
 |---|---|---|
-| 公式与状态机 oracle | BM25、RRF、指标、packing、citation audit | 固定输入下的分数、排序、预算和语法行为 |
-| 本地组合 control | extractive walkthrough、SQLite、ASGI service | 指定组件在当前进程或本地服务路径中真实组合 |
-| 固定模型 control | Qwen CPU FP32 原始失败与 guarded run | 指定 checkpoint、Prompt 和少量 case 的观察行为 |
+| 公式与状态机参考 | BM25、RRF、指标、packing、citation audit | 固定输入下的分数、排序、预算和语法行为 |
+| 本地组合实验 | extractive walkthrough、SQLite、ASGI service | 指定组件在当前进程或本地服务路径中真实组合 |
+| 固定模型运行 | Qwen CPU FP32 原始失败与 guarded run | 指定 checkpoint、Prompt 和少量 case 的观察行为 |
 | 目标环境证据 | 真实 corpus、IAM、向量库、模型与流量 | 目标系统的质量、安全、延迟、成本和运维结论 |
 
-前三层可在仓库中复算。第四层必须由目标环境产生，不能由 authored fixture 或全绿测试代替。
+前三层可在仓库中复算。第四层必须由目标环境产生，不能由本仓库固定样例或全绿测试代替。
 
-## 教材结论与对应 oracle
+## 教材结论与对应判定依据
 
-| 教材结论 | 主要实现或测试 | Oracle 怎样独立 | 仍未证明 |
+| 教材结论 | 主要实现或测试 | 判定依据怎样独立于被测代码 | 仍未证明 |
 |---|---|---|---|
 | 隐藏文档不能改变可见 BM25 score | `tests/test_rag.py` | 加入跨 tenant/ACL 文档前后逐项比较 ID 与 score | 索引进程未读隐藏正文、无时间侧信道 |
 | Reranker 只能收到授权候选 | `tests/test_rag_reranking.py` | scorer spy 记录实际输入 | learned scorer 质量、模型来源或性能 |

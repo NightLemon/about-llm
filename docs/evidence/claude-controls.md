@@ -1,6 +1,7 @@
-# Claude 证据台账：Messages、流式与生产 controls
+# Claude 证据台账：Messages、流式与生产验证
 
-本页保存接口核对日期、对象投影、状态机、预算账本、fixture 与 control 的精确边界，供协议实现和 claim 审计使用。它不是第一次学习 Claude 的入口；请先读[Claude 教材](../models/claude.md)，再按需要回到这里核对细节。
+本页保存接口核对日期、对象投影、状态机、预算账本、固定输入和验证程序的精确边界，供协议实现和 claim 审计使用。
+它不是第一次学习 Claude 的入口；请先读[Claude 教材](../models/claude.md)，再按需要回到这里核对细节。
 
 **读者入口**：[Claude 教材](../models/claude.md) · [云 API 契约](../models/cloud-api-contracts.md) · [Agent 总览](../applications/agents.md)
 { .doc-nav }
@@ -727,7 +728,7 @@ AES fixture 与 allowlist gate 不模拟 Anthropic thinking/signature 协议；�
 - 把 tool proposal 或 SDK auto-loop 当授权层；
 - 对 write/read timeout 或 partial stream 自动 replay；
 - 一次 logical call 只 reserve 一次，却内部发送多次；
-- 把 80/66 micro-USD authored fixture 写成 Claude 定价；
+- 把固定样例中的 80/66 micro-USD 写成 Claude 定价；
 - 用长 context window 数字代替位置鲁棒性评测；
 - 认为 prompt caching 自动满足租户隔离和数据删除；
 - 把 tool use 当作授权，把 tool result 当作高信任指令；
@@ -759,7 +760,7 @@ AES fixture 与 allowlist gate 不模拟 Anthropic thinking/signature 协议；�
 
 > 为 Anthropic Messages 构建 canonical→provider adapter 与 text-block streaming state machine：显式拆分顶层 system、ordered content blocks、usage、stop_reason 与 `message_stop`，对 event/payload mismatch、inactive block、重复 terminal、截断 EOF 和非 text delta fail closed；另接入 provider-neutral retry/outcome 与逐 attempt budget contracts。
 
-必须紧邻披露：全部是 authored fixture/MockTransport/SQLite/offline controls，未执行 Anthropic SDK、真实网络/账号/model、tool/thinking blocks、prompt caching、usage/billing、server cancellation、质量或生产 SLO。
+必须紧邻说明：这些结果都来自本仓库准备的固定样例、MockTransport、SQLite 和离线验证；没有执行 Anthropic SDK、真实网络/账号/model、tool/thinking blocks、prompt caching、usage/billing、server cancellation，也没有测量质量或生产 SLO。
 
 ### 可以强调的工程判断
 

@@ -1,6 +1,7 @@
 # Gemini 接入与证据台账
 
-本页保存仓库当前 Gemini adapter、stream parser、预算 fixture 和可陈述 claim 的精确边界。第一次学习请从 [Gemini 总览](../models/gemini.md)开始；只有需要复核实现覆盖、测试证据或作品集表述时再查本页。
+本页保存仓库当前 Gemini adapter、stream parser、预算固定样例和可陈述 claim 的精确边界。第一次学习请从
+[Gemini 总览](../models/gemini.md)开始；只有需要复核实现覆盖、测试证据或作品集表述时再查本页。
 
 **证据导航**：[总览](../models/gemini.md) · [Interactions API](../models/gemini-interactions.md) · [generateContent 与多模态](../models/gemini-generate-content.md) · [生产接入](../models/gemini-production.md)
 { .doc-nav }
@@ -16,7 +17,7 @@
 | L1 | 论文、发布说明、产品页 | 研究/产品声明 | 当前 wire contract、你的账号可用性 |
 | L2 | 带日期的官方 API/reference 页面 | 当日文档声明的字段与 lifecycle | raw bytes 不变、endpoint 已接受请求 |
 | L3 | authored JSON/SSE/MockTransport/SQLite controls | 本地 adapter、parser、状态机与 policy 行为 | Google SDK、真实网络、provider usage |
-| L4 | 固定身份的受限真实调用与原始 receipt | 该时刻单个账号/区域/API/model/workload 的协议行为 | 代表性质量、容量或生产可靠性 |
+| L4 | 在记录好版本和环境后进行一次受限真实调用，并保存原始 receipt | 该时刻单个账号/区域/API/model/workload 的协议行为 | 代表性质量、容量或生产可靠性 |
 | L5 | 代表性评测、压测、故障注入、账单对账与 rollout | 明确 workload 下的发布/运维结论 | 其他平台、区域、模型或未来版本 |
 
 这里的 L2 也不是 immutable byte evidence。官方页面会重定向、更新字段、改变导航；`Last updated` 只描述网页，不证明你的请求经过相同服务版本。
@@ -179,7 +180,7 @@ SSE message
 
 ## 固定预算 control { #budget-control }
 
-仓库的 authored fixture 使用以下固定输入：
+仓库为这个实验准备了以下固定输入：
 
 - 60 input + 10 max output；
 - authored `$1/M input + $2/M output`；
@@ -223,7 +224,7 @@ capability negotiation 失败应阻止发布或走显式降级，不能静默删
 - 未使用账号、真实 DNS/TLS/HTTP/SSE；
 - 未运行 Gemini model、多模态、tool、thought/signature、file/cache；
 - 未验证 usage/billing、质量、性能、安全或生产 SLO；
-- 80/66/146 micro-USD 是 authored fixture，不是 Google 价格。
+- 80/66/146 micro-USD 是固定样例中的数字，不是 Google 价格。
 
 不能写：
 

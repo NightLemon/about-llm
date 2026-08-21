@@ -1,6 +1,7 @@
 # 项目实验与证据台账
 
-本页保存项目的精确版本、fixture、运行结果和证据边界，供复核与维护使用。第一次学习请从[工程项目索引](../practice/project-index.md)开始，不要把本页当作课程顺序。
+本页保存项目的精确版本、固定输入、运行结果和证据边界，供复核与维护使用。第一次学习请从
+[工程项目索引](../practice/project-index.md)开始，不要把本页当作课程顺序。
 
 **证据导航**：[工程项目索引](../practice/project-index.md) · [仓库实现契约](../guide/repo-map.md) · [生产检查表](../practice/production-checklist.md) · [内容准确性台账](../reference/accuracy.md)
 { .doc-nav }

@@ -1,6 +1,7 @@
-# Llama 证据台账：发布、Checkpoint 与 Runtime controls
+# Llama 证据台账：发布、Checkpoint 与 Runtime 验证
 
-本页保存固定 model-card revision、config/weight 检查方法、公式前提、命令与 control 边界，供供应链和 claim 审计使用。它不是第一次学习 Llama 的入口；请先读[Llama 教材](../models/llama.md)，再来核对精确证据。
+本页保存固定 model-card revision、config/weight 检查方法、公式前提、命令与验证边界，供供应链和 claim 审计使用。
+它不是第一次学习 Llama 的入口；请先读[Llama 教材](../models/llama.md)，再来核对精确证据。
 
 **读者入口**：[Llama 教材](../models/llama.md) · [Transformer](../core/transformer.md) · [单卡微调](../training/peft-qlora-engineering.md)
 { .doc-nav }
@@ -337,7 +338,7 @@ M_{KV,\text{ideal}}
 
 因此它只能作为 lower-level tensor payload estimate。
 
-### Authored fixture 的正确解释
+### 怎样解释仓库准备的固定样例
 
 ```powershell
 python projects/transformers-basics/inspect_config.py `

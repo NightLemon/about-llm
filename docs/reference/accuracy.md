@@ -22,7 +22,7 @@
 
 | 陈述类型 | 示例 | 首选验证 | 必须补充 |
 |---|---|---|---|
-| 数学与算法 | attention 复杂度、KV payload 公式 | 推导、数值 oracle、边界测试 | 变量、单位、假设和省略项 |
+| 数学与算法 | attention 复杂度、KV payload 公式 | 推导、可手算的数值结果、边界测试 | 变量、单位、假设和省略项 |
 | 代码与 API | request 字段、事件顺序、CLI 参数 | 固定版本文档、schema、契约测试 | provider、API/runtime 版本 |
 | 产品事实 | 型号、价格、配额、区域、保留政策 | 对应产品的官方页面 | 平台、账号层级、核对日期 |
 | 工程测量 | 显存、TTFT、吞吐、费用 | 目标环境 benchmark 与原始结果 | 硬件、workload、版本和分母 |
@@ -81,7 +81,7 @@ candidate 相对 baseline 将 p95 TTFT 降低 X%，
 
 如果无法写出什么结果会推翻它，这个 claim 还不能验证。
 
-### 2. 固定对象身份
+### 2. 记录实际验证的对象和版本
 
 至少记录与语义有关的身份：
 
@@ -99,12 +99,13 @@ candidate 相对 baseline 将 p95 TTFT 降低 X%，
 |---|---|---|
 | 公式是否成立 | 推导加数值边界测试 | 一次 benchmark |
 | API 字段是否存在 | 固定版本官方 reference | 博客截图 |
-| 本地 parser 是否正确 | 正反契约 fixture | 文档声称支持 |
+| 本地 parser 是否正确 | 固定的成功样例和失败样例 | 文档声称支持 |
 | 目标 GPU 是否可运行 | 目标环境 smoke 与日志 | CPU 单测 |
 | 性能是否改善 | 固定 workload 的重复测量 | 单次 latency |
 | 用户任务是否改善 | 代表性 paired eval 与切片 | 训练 loss |
 
-证据越真实不一定越适合。例如线上日志很真实，却可能缺少受控 baseline；小型 oracle 很理想，却不能说明生产性能。
+证据越接近真实环境，不一定越适合回答当前问题。例如线上日志来自真实流量，却可能没有可比较的 baseline；
+手算小例子很适合检查公式，却不能说明生产性能。
 
 ### 4. 主动构造反例
 
@@ -191,14 +192,16 @@ Syntax 和 schema 只约束结构。字段可能事实错误、单位错误、�
 
 看到“可运行”“通过”或“已验证”时，继续问四件事：
 
-- 运行的是 oracle、fixture、真实 framework、目标权重还是远端服务？
+- 结果来自手算或参考实现、仓库准备的固定样例、真实 framework、目标权重，还是远端服务？
 - 环境是 CPU、单卡 GPU、loopback 还是真实网络？
-- 输入是 authored 小样例还是代表性 held-out data？
+- 输入是本仓库准备的小样例，还是有代表性的 held-out data？
 - 结论是机制、集成、性能、质量还是生产责任？
 
-不同 controls 可以补足不同层面，但不能简单相加升级。例如 CPU parser、官方 SDK in-memory 和 HTTP MockTransport 都通过，仍不等于真实远端认证、兼容性或生产安全已经完成。
+不同验证可以补足不同层面，但不能简单相加后升级结论。例如 CPU parser、官方 SDK in-memory 和
+HTTP MockTransport 都通过，仍不等于真实远端认证、兼容性或生产安全已经完成。
 
-精确 fixture 数字、runtime、hash 和未覆盖项统一放在[证据台账](../evidence/accuracy-ledger.md)，避免它们淹没教材正文。
+固定样例的精确数字、runtime、hash 和未覆盖项统一放在[证据台账](../evidence/accuracy-ledger.md)，
+避免它们淹没教材正文。
 
 ## 作者与维护者流程
 

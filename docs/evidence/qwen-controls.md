@@ -1,6 +1,7 @@
 # Qwen Checkpoint、训练与服务证据台账
 
-本页保留固定 revision、文件 hash、运行报告、训练 controls 和作品集 claim 的精确边界，供复核与维护使用。第一次学习请从[Qwen 模型家族](../models/qwen.md)开始，不要把逐项 control 当作课程顺序。
+本页保留固定 revision、文件 hash、运行报告、训练验证和作品集 claim 的精确边界，供复核与维护使用。
+第一次学习请从[Qwen 模型家族](../models/qwen.md)开始，不要把逐项验证记录当作课程顺序。
 
 **证据导航**：[Qwen 教材](../models/qwen.md) · [模型选型](../models/landscape.md) · [Transformers 项目](../practice/projects/transformers-basics.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md)
 { .doc-nav }

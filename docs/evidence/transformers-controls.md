@@ -1,6 +1,7 @@
 # Transformers Basics 证据台账
 
-本页保存 byte BPE、attention、generation、固定 checkpoint、activation patching 与 MoE controls 的录制数字、命令和边界，供实验复核使用。第一次实践请从[Transformers Basics 主项目](../practice/projects/transformers-basics.md)开始。
+本页保存 byte BPE、attention、generation、固定 checkpoint、activation patching 与 MoE 实验的录制数字、命令和边界，
+供实验复核使用。第一次实践请从[Transformers Basics 主项目](../practice/projects/transformers-basics.md)开始。
 
 **读者入口**：[主项目](../practice/projects/transformers-basics.md) · [实验目录](../practice/labs.md) · [Transformer 原理](../core/transformer.md)
 { .doc-nav }
@@ -8,7 +9,9 @@
 **项目导航**：[返回项目索引](../practice/project-index.md) · [Transformer 原理](../core/transformer.md) · [生成机制](../core/generation.md) · [实验 1–3](../practice/labs.md#lab-1)
 { .doc-nav }
 
-这不是一页“运行几个脚本”的索引，而是一条从 tokenizer、attention 和生成协议走到真实 checkpoint、因果干预与 MoE distributed controls 的可执行学习路径。所有数字都来自仓库当前 fixture 或固定 recorded artifact；先判断证据层级，再解释结果。
+这不是一页“运行几个脚本”的索引，而是一条从 tokenizer、attention 和生成协议走到真实 checkpoint、因果干预与
+MoE distributed 实验的可执行学习路径。所有数字都来自仓库当前固定输入或 recorded artifact；
+先判断证据层级，再解释结果。
 
 ## 学习目标与先修
 
@@ -30,7 +33,7 @@
 
 ~~~mermaid
 flowchart LR
-    A["机制 oracle<br/>NumPy / authored math"] --> B["框架 control<br/>随机 tiny PyTorch"]
+    A["机制参考<br/>NumPy / 手算"] --> B["框架实验<br/>随机 tiny PyTorch"]
     B --> C["发布证据<br/>immutable config / model card"]
     C --> D["目标 checkpoint<br/>固定 Qwen 真实权重"]
 ~~~
@@ -39,12 +42,13 @@ flowchart LR
 
 | 层级 | 本项目实际执行 | 能证明 | 不能证明 |
 |---|---|---|---|
-| 机制 oracle | byte BPE、attention、routing | 给定输入与 authored 语义的数学/账本正确 | 真实模型或生产 kernel |
-| 框架 control | tiny GPT-2、hooks、Gloo | 当前框架 API、autograd 或 collective 路径被调用 | 公开 checkpoint 的质量、GPU 行为 |
+| 机制参考 | byte BPE、attention、routing | 给定输入与预设语义的数学/账本正确 | 真实模型或生产 kernel |
+| 框架实验 | tiny GPT-2、hooks、Gloo | 当前框架 API、autograd 或 collective 路径被调用 | 公开 checkpoint 的质量、GPU 行为 |
 | 发布证据 | 固定 URL/revision/bytes/config 投影 | 指定 artifact 与审阅字段相符 | 权重已加载、发布者签名、有效上下文 |
-| 目标权重 | 固定 Qwen CPU FP32 control | 审阅 snapshot 的特定 forward/cache/generate/hook 观察 | 总体质量、生产性能、其他 runtime 等价 |
+| 目标权重 | 固定 Qwen CPU FP32 运行 | 审阅 snapshot 的特定 forward/cache/generate/hook 观察 | 总体质量、生产性能、其他 runtime 等价 |
 
-报告里出现 `passed`、loss 下降或 hash 相同，只能在所在行的范围内解释。不同 control 不能拼接成 CUDA、完整 expert parallel、模型质量或生产安全已经成立。
+报告里出现 `passed`、loss 下降或 hash 相同，只能在所在行的范围内解释。不同实验的结果不能拼接成
+CUDA、完整 expert parallel、模型质量或生产安全已经成立。
 
 ## 1. 从零训练 byte-level BPE
 
@@ -439,7 +443,7 @@ flowchart TD
     A --> D
 ~~~
 
-图中的箭头表示学习依赖，不表示代码或证据可以自动组合。四条 distributed scripts 是各自独立、范围不同的 authored fixtures。
+图中的箭头表示学习依赖，不表示代码或证据可以自动组合。四条 distributed scripts 使用各自独立、范围不同的固定输入。
 
 | Control | 真正执行 | 明确没有 |
 |---|---|---|

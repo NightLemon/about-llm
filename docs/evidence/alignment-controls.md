@@ -1,6 +1,8 @@
 # 对齐与偏好优化证据台账
 
-本页保存偏好数据契约、judgment 统计、RM/PPO/DPO fixtures、目标 checkpoint controls 与精确证据边界，供实现复核和 claim 审计使用。第一次学习请先读[对齐入门](../training/alignment-basics.md)和[对齐进阶教材](../training/alignment.md)。
+本页保存偏好数据契约、judgment 统计、RM/PPO/DPO 固定输入、目标 checkpoint 运行记录与精确证据边界，
+供实现复核和 claim 审计使用。第一次学习请先读[对齐入门](../training/alignment-basics.md)和
+[对齐进阶教材](../training/alignment.md)。
 
 **读者入口**：[对齐入门](../training/alignment-basics.md) · [对齐进阶教材](../training/alignment.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md)
 { .doc-nav }
@@ -100,7 +102,7 @@ python -m about_llm.preference_cli evaluate-judgments --cases-jsonl projects/sin
 - Fleiss’ κ：在每个 case rater 数完全相同时，对 `a/b/tie/invalid` 做 chance correction；若 expected agreement 为 1，则分母为零并报告 `null`，不能伪造 1；
 - position effect：逐 case 计算 (P(A\mid A\text{ first})-P(A\mid A\text{ second}))，tie/invalid 不进入二元分母，再以 **case** 而不是单条 judgment 为 bootstrap 单位。
 
-`blind_model_identity=true` 只是 artifact 中的声明，不能证明界面真的隐藏身份；保存 presentation order 也不能证明 assignment 随机。因此 position effect 是描述性诊断，不自动是因果效应。示例的 8 条 judgment 全是 authored fixture，只验证 schema、分母、κ 和 case-cluster bootstrap，不是人类标注、annotator quality、rubric validity 或真实 position bias 证据。
+`blind_model_identity=true` 只是 artifact 中的声明，不能证明界面真的隐藏身份；保存 presentation order 也不能证明 assignment 随机。因此 position effect 是描述性诊断，不自动是因果效应。示例的 8 条 judgment 全由本仓库准备，只验证 schema、分母、κ 和 case-cluster bootstrap，不是人类标注、annotator quality、rubric validity 或真实 position bias 证据。
 
 ### 3.2 标注界面会改变标签
 
@@ -464,7 +466,7 @@ python projects/single-gpu-finetuning/run_qwen_target_dpo_control.py --verify pr
 
 初始 policy 与 adapter-disabled reference 相同，loss 为 `0.693147≈log(2)`；一步后同 batch loss 为 `0.333352`，两条 reference-relative margin 为 `8.566292/10.016453`。96 个 LoRA 梯度张量全部 finite，冻结的 494,032,768 个基座参数以及排除 LoRA 后的 `state_dict`、model config、generation config 指纹前后 exact。Transformers 会把 model/generation special-token config 对齐到 tokenizer，control 在 baseline 前显式完成并验证 Trainer 再执行时是 no-op。
 
-一个容易误判的结果是：两次 reference forward 内 adapter 状态都实测为 disabled，冻结 state/config 也完全相同，但 reference log-prob replay 仍有 `0.547077` max-abs drift。报告保留两个 tensor hash 与实际误差，不把它叫作“reference 权重改变”，也不声称 bitwise deterministic。这里的 `good/bad` 仍是 authored fixture；同 batch 一步下降只证明目标 checkpoint/TRL/PEFT 机制链路，不证明人类偏好、held-out 改善、对齐质量、安全、收敛、CUDA/QLoRA 或生产能力。
+一个容易误判的结果是：两次 reference forward 内 adapter 状态都实测为 disabled，冻结 state/config 也完全相同，但 reference log-prob replay 仍有 `0.547077` max-abs drift。报告保留两个 tensor hash 与实际误差，不把它叫作“reference 权重改变”，也不声称 bitwise deterministic。这里的 `good/bad` 只是固定样例；同 batch 一步下降只证明目标 checkpoint/TRL/PEFT 机制链路，不证明人类偏好、held-out 改善、对齐质量、安全、收敛、CUDA/QLoRA 或生产能力。
 
 ### 7.3 长度与 reduction
 
@@ -604,7 +606,7 @@ Agent 运行时的具体副作用协议见[运行时与副作用](../application
 
 ## 16. 当前仓库证据边界
 
-仓库已提供稳定的 Bradley–Terry/DPO per-pair 数学、mask-aware GAE/PPO clipped-surrogate CPU reference、两状态 PyTorch categorical rollout/optimizer control、随机 tiny GPT-2 integer-token PPO control、带本地 tokenizer/chat template 与精确有限时域 oracle 的文本 PPO control，以及 sparse tiny learned RM 驱动 PPO 后 proxy 上升、独立目标恶化的完整 support 反例；另有 synthetic linear RM optimizer control、随机 tiny GPT-2 上 held-out-free readiness/train binding、真实文本 tokenization/scalar reward head/backbone optimizer control、严格 pairwise preference JSONL/split audit、有序 binary-train/combined binding、prompt↔prompt 与四种跨记录 candidate surface 的字符 n-gram gate、prompt/两侧 candidate 的 source/sensitive governance、不含 held-out 原文的严格 readiness、目标 tokenizer prefix/空 completion/截断 preflight、随机 tiny GPT-2 的真实 TRL DPO 闭环，以及固定 Qwen checkpoint 上一次 CPU FP32 TRL/PEFT DPO optimizer step。新增 raw judgment binding、agreement/Fleiss’ κ 和 case-cluster position-effect bootstrap，但输入是 authored fixture，不能冒充人类实验。Lexical 阈值和 detector 未经真实域校准，registry 不是法律意见，readiness 也没有验证人类标签质量；无密钥 hash 不认证审计签发者。仓库仍没有真实人类 preference dataset、真实 annotator agreement/position-bias 实证、可靠目标 reward model、learned RM 驱动的目标 checkpoint PPO、目标 CUDA/QLoRA 或 held-out 对齐质量证据。因此当前 Qwen DPO 结果只证明固定 authored pair 上的目标权重机制链路；不证明任一目标模型已经完成偏好对齐。
+仓库已提供稳定的 Bradley–Terry/DPO per-pair 数学、mask-aware GAE/PPO clipped-surrogate CPU reference、两状态 PyTorch categorical rollout/optimizer control、随机 tiny GPT-2 integer-token PPO control、带本地 tokenizer/chat template 与精确有限时域 oracle 的文本 PPO control，以及 sparse tiny learned RM 驱动 PPO 后 proxy 上升、独立目标恶化的完整 support 反例；另有 synthetic linear RM optimizer control、随机 tiny GPT-2 上 held-out-free readiness/train binding、真实文本 tokenization/scalar reward head/backbone optimizer control、严格 pairwise preference JSONL/split audit、有序 binary-train/combined binding、prompt↔prompt 与四种跨记录 candidate surface 的字符 n-gram gate、prompt/两侧 candidate 的 source/sensitive governance、不含 held-out 原文的严格 readiness、目标 tokenizer prefix/空 completion/截断 preflight、随机 tiny GPT-2 的真实 TRL DPO 闭环，以及固定 Qwen checkpoint 上一次 CPU FP32 TRL/PEFT DPO optimizer step。新增 raw judgment binding、agreement/Fleiss’ κ 和 case-cluster position-effect bootstrap，但输入由本仓库准备，不能冒充人类实验。Lexical 阈值和 detector 未经真实域校准，registry 不是法律意见，readiness 也没有验证人类标签质量；无密钥 hash 不认证审计签发者。仓库仍没有真实人类 preference dataset、真实 annotator agreement/position-bias 实证、可靠目标 reward model、learned RM 驱动的目标 checkpoint PPO、目标 CUDA/QLoRA 或 held-out 对齐质量证据。因此当前 Qwen DPO 结果只证明固定样例上的目标权重机制链路；不证明任一目标模型已经完成偏好对齐。
 
 ## 17. 常见错误结论
 

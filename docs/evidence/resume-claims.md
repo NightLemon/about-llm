@@ -1,6 +1,7 @@
 # 作品集 claim 证据台账
 
-本页保留仓库项目可以如何精确表述、必须同时披露什么，以及哪些说法会越过现有证据。第一次准备作品集请先读[简历项目与作品集](../career/resume-projects.md)；只有需要核对具体 control、版本和数字时再查本页。
+本页保留仓库项目可以如何准确表述、必须同时说明什么，以及哪些说法会越过现有证据。第一次准备作品集请先读
+[简历项目与作品集](../career/resume-projects.md)；只有需要核对具体验证、版本和数字时再查本页。
 
 ## 项目不是技术名词清单
 
@@ -54,7 +55,7 @@
 
 所有字母必须替换为可复现数字。不要只写“提升检索准确率”。
 
-若项目使用 LangChain/LlamaIndex，不要只写“基于某框架搭建 RAG”。更有区分度的表述是：“保留框架无关的 canonical Document/SearchResult 与 authorization-first retriever，把同一次结果接入 LangChain/LlamaIndex Retriever API，并以 strict round trip 对账 ID、正文、保护 metadata、rank/score、Prompt bytes 与 answer artifact；框架路径不得改写 ACL 或评测口径。”本仓库当前可补充 exact evidence：`langchain-core==1.5.3`、`llama-index-core==0.14.23`，engineering/anonymous 分别返回 2/1 条授权证据，16 个测试覆盖保护键、rank/duplicate ID、NaN/±Inf/bool score、mutation、metadata exclusion 与 security context。若证据只来自这组四文档 authored fixture，还必须注明未执行 native vector index、learned embedding/reranker、LLM generation、目标数据库或性能负载；满分 Recall@4/nDCG@4 只能写成协议回归，不能写成框架质量榜。
+若项目使用 LangChain/LlamaIndex，不要只写“基于某框架搭建 RAG”。更有区分度的表述是：“保留框架无关的 canonical Document/SearchResult 与 authorization-first retriever，把同一次结果接入 LangChain/LlamaIndex Retriever API，并以 strict round trip 对账 ID、正文、保护 metadata、rank/score、Prompt bytes 与 answer artifact；框架路径不得改写 ACL 或评测口径。”本仓库当前可补充 exact evidence：`langchain-core==1.5.3`、`llama-index-core==0.14.23`，engineering/anonymous 分别返回 2/1 条授权证据，16 个测试覆盖保护键、rank/duplicate ID、NaN/±Inf/bool score、mutation、metadata exclusion 与 security context。若证据只来自仓库准备的这组四文档样例，还必须注明未执行 native vector index、learned embedding/reranker、LLM generation、目标数据库或性能负载；满分 Recall@4/nDCG@4 只能写成协议回归，不能写成框架质量榜。
 
 **最低证据包**：版本化 corpus/query/qrels、BM25 baseline、候选检索结果、指标脚本、ACL 负例、引用 claim-source 对、长度分布和原始 latency 样本。若声称支持增量更新与恢复，还要展示 expected-version 冲突、显式 delete、事务中途失败回滚、一致 backup、strict manifest、物理/逻辑篡改拒绝和恢复后授权 query；单机 SQLite fixture 不能写成远端向量索引原子切换、完整灾备或已达到 RPO/RTO。先用 exact-span answer/abstain 基线贯通检索、packing 与离线 gate，保存 span offset/content hash 并证明 qrels 不进入生成；简历只能写“授权原文逐字支持”，不能写成语义正确率或 LLM 忠实度。Context packing 要绑定 tokenizer/revision、chat/system/user-template hash、完整 prompt token IDs、输出预留和每个 selected/dropped reason；generation trace 还要 exact join query/security context、逐 chunk version/content hash、canonical context、raw output 与 parsed answer fingerprint，并展示篡改失败 case。至少保留一个真实模型的失败样本：例如固定 Qwen control 的漏引与空 context 幻觉；简历可写“定位并建立门禁”，不能把 0/2 gate 改写成质量提升。若展示 publication-policy replay，可写“固定 attempt 上重建出 1 次 post-generation reject 与 1 次零调用 pre-generation abstain”，但必须标注它是 counterfactual replay，不得写成真实线上调用下降、忠实度提升或 guard 已与模型同跑。若展示后续的**真实 guarded runtime**，可写“固定 Qwen CPU control 中，有证据时 `GenerationMixin.generate` API 进入 1 次并在漏引后 reject；空授权证据时 callback/framework method 为 0 次并 pre-generation abstain”；不能省略“API method 计数不等于内部 forward/kernel/provider 请求或计费”，也不能把两个共享 authored corpus/checkpoint 的 query 写成质量提升。还要展示 audit/public allowlist projection 的泄露负例；仅写“拦截答案”却把含 raw output 的 decision JSON 返回前端，不算发布门禁。仅有 UTF-8 bytes 不能写成模型 token 窗口，自定义 fixture token IDs 也不能写成目标模型 token；unsigned hash 不能写成真实调用/生产 provenance，成功 tokenize 也不证明 tokenizer/权重匹配、生成忠实或 context 上限有效。若只在本机 CPU 跑过，延迟只注明该环境，不能外推生产 p95。
 
@@ -90,11 +91,11 @@ Anthropic 子集可如实写成：“为 Messages 构建 canonical→wire text a
 
 Gemini 子集可如实写成：“为 legacy-but-supported `generateContent` 构建 text-only canonical→wire adapter 与单 candidate stream state machine，映射 `user/model`、`systemInstruction`、`usageMetadata` 和 `finishReason + EOF`，对 non-text part、多 candidate、非法 index/usage、重复或缺失 terminal fail closed；另按 2026-08-15 官方契约设计 Interactions resource/status/step/state/tool/retention 的迁移 gate。”“设计 Interactions gate”不能缩写成“实现 Interactions API”：仓库没有其 event fixture/parser，也没有执行 background、resume、function/thought steps。
 
-同一句或紧邻位置必须披露：所有 `generateContent` 证据来自 authored fixture/offline state machine，未执行 Google GenAI SDK、账号、DNS/TLS、真实 HTTP/SSE、Gemini model、多模态、tool、thought/signature、file/cache 或 billing；text parser 只读 `candidates[0]` 的 text parts，会丢失 prompt feedback、安全、其他 candidates/parts、response id 与 usage 明细。80 uncertain + 66 settled = 146 micro-USD 是 provider-neutral MockTransport/SQLite fixture，不是 Google 定价、usage、发票或成本优化。不能写成“接入最新 Gemini”“支持全量多模态”“验证长上下文/缓存收益”或“生产级 Google Cloud 网关”。
+同一句或紧邻位置必须说明：所有 `generateContent` 证据来自仓库准备的固定事件和离线 state machine，未执行 Google GenAI SDK、账号、DNS/TLS、真实 HTTP/SSE、Gemini model、多模态、tool、thought/signature、file/cache 或 billing；text parser 只读 `candidates[0]` 的 text parts，会丢失 prompt feedback、安全、其他 candidates/parts、response id 与 usage 明细。80 uncertain + 66 settled = 146 micro-USD 是 provider-neutral MockTransport/SQLite 样例，不是 Google 定价、usage、发票或成本优化。不能写成“接入最新 Gemini”“支持全量多模态”“验证长上下文/缓存收益”或“生产级 Google Cloud 网关”。
 
 本仓库当前可如实写成：
 
-> 为 OpenAI Responses 实现 SDK-shaped typed-event 离线 replay，对固定 3,208-byte/15-event/2-item authored fixture 重建 text 与 function call，校验 response/item/content lifecycle、delta→done→terminal output 和 12+9=21 usage；以输入/event projection/receipt fingerprints 绑定工件，并用 16 个测试覆盖错序、refusal、incomplete/failed、未知字段、invalid UTF-8、duplicate/non-finite JSON 与截断。
+> 为 OpenAI Responses 实现 SDK-shaped typed-event 离线 replay，对仓库准备的固定 3,208-byte/15-event/2-item 事件流重建 text 与 function call，校验 response/item/content lifecycle、delta→done→terminal output 和 12+9=21 usage；以输入/event projection/receipt fingerprints 绑定工件，并用 16 个测试覆盖错序、refusal、incomplete/failed、未知字段、invalid UTF-8、duplicate/non-finite JSON 与截断。
 
 同一句或紧邻位置必须披露：没有执行 OpenAI SDK、HTTP/SSE/WebSocket、真实 API、模型或 billing；authored `model`、response id 与 usage 不认证 provider；reviewed subset 不是完整 Responses API；连续 `sequence_number` 是本地 evidence 规则。不能把它改写成“接入最新 GPT”“验证线上 token 计费”“生产级 OpenAI 网关”或“保证工具调用安全”。
 
@@ -112,7 +113,7 @@ Gemini 子集可如实写成：“为 legacy-but-supported `generateContent` 构
 
 更完整的项目讲法是：“将 combined 数据审计与 train-only trainer 分权，用 readiness 绑定有序训练集、split/group/lexical/governance 决策；在 backward 前核对目标 tokenizer 的 assistant mask 与 configured collator 最终 labels；发布 adapter 时绑定 base revision、tokenizer/template 并做新基座重载；最后用同一 held-out artifact 比较 base、Prompt/RAG 与 adapter。”只有在目标 GPU 实测后，才补充 QLoRA 峰值、吞吐和 OOM 降级曲线；公式估算、CPU/Gloo 或固定 Qwen recorded control 不能代替 CUDA 结果。
 
-SFT 标签管线可如实写成：“在固定 revision、加载前重哈希的 Qwen2.5-0.5B-Instruct 上，发现原生模板对多轮、并行 tool calls、tool preamble 三条 authored fixture 返回全零 assistant mask；审核 generation-aware 模板并在 Arrow 前预分词后，以真实 TRL 0.29.1 collator 核对 `[3,301]`、90 个监督 labels/813 个 `-100`，并执行 CPU FP32 no-grad forward。”同一句必须披露模板证据只覆盖固定 Qwen schema/fixture，forward loss `1.251716` 不是训练结果；不能写成“完成 SFT”“loss 已收敛”“数据合规”或“支持任意 provider 工具格式”。
+SFT 标签管线可如实写成：“在固定 revision、加载前重哈希的 Qwen2.5-0.5B-Instruct 上，发现原生模板对仓库准备的三条多轮、并行 tool calls、tool preamble 样例返回全零 assistant mask；审核 generation-aware 模板并在 Arrow 前预分词后，以真实 TRL 0.29.1 collator 核对 `[3,301]`、90 个监督 labels/813 个 `-100`，并执行 CPU FP32 no-grad forward。”同一句必须说明模板证据只覆盖固定 Qwen schema 和这三条样例，forward loss `1.251716` 不是训练结果；不能写成“完成 SFT”“loss 已收敛”“数据合规”或“支持任意 provider 工具格式”。
 
 仓库当前可以如实写成：“在固定 revision、加载前逐文件重哈希的 Qwen2.5-0.5B-Instruct 上，以 CPU FP32 执行 41-token prompt/3-token assistant-only supervision、24 层 `q_proj/v_proj` LoRA backward 与一次 AdamW step；验证 494,032,768 frozen-base 参数 fingerprint 不变、48 个 B tensors 非零，并将 1.09 MB adapter 重载到新基座得到 bit-exact logits。”必须同时披露这是单样本单步，loss 从约 0.003864 升到 0.584557；不能改写成“loss 下降”“质量提升”“完成 QLoRA”或“单卡 GPU 训练优化”。若简历要写后四项，需再补 held-out 曲线、目标 CUDA/bitsandbytes、峰值显存、吞吐和统一质量回归。
 
@@ -191,11 +192,11 @@ MoE 机制项目可写“从零实现 padding-aware top-k、per-expert capacity�
 
 **指标**：人工一致性、judge precision、回归检出率、评测耗时/成本、发布阻断与线上事故关联。
 
-**最低证据包**：不可变 case id 之外，还要用 manifest 绑定每个 case 的 input/gold/slice/metadata、ordered baseline/candidate result、recorded output identity、metric implementation revision、scorer 与 system revision；comparison artifact 再绑定 bootstrap seed/sample/confidence、质量/安全/延迟/slice 阈值、统计结果和全部失败原因。展示 duplicate key、同 ID 换 gold、结果/manifest/threshold 篡改和 metric revision mismatch 被拒绝，并区分只检查工件内部自洽的 `verify-comparison` 与重开 answers/results/manifests、重新评分和重建 comparison 的 `verify-evidence`。若展示 HMAC release ledger，还要把 chain authentication、引用 artifact byte rehash 和 ledger 外 trusted-head 截断检测分开报告；公开 fixture key、caller timestamp 或无外部 head 的合法链不能写成生产 key custody、可信时间或不可回滚历史。再附逐标注者原始判断与 assignment/presentation metadata、专家校准子集、agreement 的明确分母、paired difference 与 case-level 置信区间。unsigned fingerprint 和自报 system id 不能写成真实模型来源认证或不可篡改历史；若没有真实人类实验或发布历史，就只能展示 authored fixture/离线 gate 行为，不能声称标注一致性、因果位置偏差或线上事故下降。
+**最低证据包**：不可变 case id 之外，还要用 manifest 绑定每个 case 的 input/gold/slice/metadata、ordered baseline/candidate result、recorded output identity、metric implementation revision、scorer 与 system revision；comparison artifact 再绑定 bootstrap seed/sample/confidence、质量/安全/延迟/slice 阈值、统计结果和全部失败原因。展示 duplicate key、同 ID 换 gold、结果/manifest/threshold 篡改和 metric revision mismatch 被拒绝，并区分只检查工件内部自洽的 `verify-comparison` 与重开 answers/results/manifests、重新评分和重建 comparison 的 `verify-evidence`。若展示 HMAC release ledger，还要把 chain authentication、引用 artifact byte rehash 和 ledger 外 trusted-head 截断检测分开报告；公开的样例 key、caller timestamp 或无外部 head 的合法链不能写成生产 key custody、可信时间或不可回滚历史。再附逐标注者原始判断与 assignment/presentation metadata、专家校准子集、agreement 的明确分母、paired difference 与 case-level 置信区间。unsigned fingerprint 和自报 system id 不能写成真实模型来源认证或不可篡改历史；若没有真实人类实验或发布历史，就只能展示仓库准备的固定样例和离线 gate 行为，不能声称标注一致性、因果位置偏差或线上事故下降。
 
 本仓库可如实写成：“固定 Qwen2.5-0.5B-Instruct immutable revision，在 CPU FP32 greedy 下真实生成 7 条 authored cases；保存 raw/token/terminal identity，并以 reviewed suite/report 重算 literal exact 4/7、NFKC+casefold normalized exact 5/7、token F1 6/7，定位英文算术、大小写复制和 JSON metric mismatch。”必须同句或紧邻披露：suite 未外部预注册、未独立抽样/留出、非代表性、无统计功效；没有 latency、系统对照、judge、人评或发布 gate。禁止把 token F1 的 `6/7=85.7%` 改写成“Qwen 准确率 85.7%”或“模型质量达到 85.7%”。
 
-结构化评测还可如实写：“实现 strict JSON Schema v2 与 canonical JSON value v1 两个独立 scorer；duplicate object key、`NaN/Infinity`、`$id`/external ref fail closed，五条 fixture 精确展示 schema-valid wrong value 与 F1=1 的 reversed array 仍被 value gate 拒绝，并把 metric revision 写入 run manifest。”同时披露：`format` 仍是 annotation，value policy 区分 integer/float、保留 array order；authored fixture 的 `latency_seconds=0.0` 不是性能测量，两种 scorer 都不证明业务语义、权限、真实模型质量或生产安全。
+结构化评测还可如实写：“实现 JSON Schema v2 与 canonical JSON value v1 两个独立 scorer；解析器拒绝 duplicate object key、`NaN/Infinity`、`$id` 和 external ref，五条固定样例精确展示 schema-valid wrong value 与 F1=1 的 reversed array 仍被 value gate 拒绝，并把 metric revision 写入 run manifest。”同时说明：`format` 仍是 annotation，value policy 区分 integer/float、保留 array order；样例中的 `latency_seconds=0.0` 只是占位值，不是性能测量，两种 scorer 都不证明业务语义、权限、真实模型质量或生产安全。
 
 ## 推荐的证据组织：从结果追到原始 artifact
 

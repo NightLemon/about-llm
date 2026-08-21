@@ -1,6 +1,8 @@
-# DeepSeek 证据台账：MLA、MoE 与推理系统 controls
+# DeepSeek 证据台账：MLA、MoE 与推理系统验证
 
-本页保存精确 revision、config 字段、公式边界、fixture 与 control 结论，供复核、实验设计和 claim 审计使用。它不是第一次学习 DeepSeek 的入口；若你还不能解释 MoE、MLA 与 reasoning post-training 分别解决什么问题，请先读[DeepSeek 教材](../models/deepseek.md)。
+本页保存精确 revision、config 字段、公式边界、固定输入和验证结论，供复核、实验设计和 claim 审计使用。
+它不是第一次学习 DeepSeek 的入口；若你还不能解释 MoE、MLA 与 reasoning post-training 分别解决什么问题，
+请先读[DeepSeek 教材](../models/deepseek.md)。
 
 **读者入口**：[DeepSeek 教材](../models/deepseek.md) · [Transformer](../core/transformer.md) · [前沿专题](../frontier/reasoning-long-context-moe.md)
 { .doc-nav }
@@ -46,7 +48,7 @@ L0 不是实质证据；L1–L5 才是五级证据强度：
 | L1 | 固定 revision/source URL 与官方报告链接 | 审阅对象和论文主张来源 | 当前云产品或所有衍生模型事实 |
 | L2 | immutable V3 config raw bytes + semantic snapshot | 字段出现、保守 marker classification、公式拒绝 | 实际 tensor layout、参数量、显存 |
 | L3 | **没有** | — | 已下载/校验/加载 V3 权重 |
-| L4 | **没有 DeepSeek target runtime** | authored fixtures 只能证明通用机制 | 已执行 MLA/MoE/FP8/R1 |
+| L4 | **没有 DeepSeek target runtime** | 仓库准备的固定样例只能证明通用机制 | 已执行 MLA/MoE/FP8/R1 |
 | L5 | **没有** | — | 质量、长上下文、GPU 性能或生产 SLO |
 
 ### 通用机制证据是旁路，不是升级台阶

@@ -1,6 +1,8 @@
-# 云模型 API 证据台账：Adapter、Streaming 与 Budget controls
+# 云模型 API 证据台账：Adapter、Streaming 与预算验证
 
-本页保存多供应商字段核对日期、strict parser、stream/retry/budget fixtures 与精确证据边界，供 adapter 实现和 claim 审计使用。第一次学习请先读[云 API 契约基础](../models/cloud-api-contracts.md)，再读[可靠性进阶](../models/cloud-api-reliability.md)。
+本页保存多供应商字段核对日期、无歧义 parser、stream/retry/budget 固定输入与精确证据边界，供 adapter 实现和
+claim 审计使用。第一次学习请先读[云 API 契约基础](../models/cloud-api-contracts.md)，再读
+[可靠性进阶](../models/cloud-api-reliability.md)。
 
 **读者入口**：[契约基础](../models/cloud-api-contracts.md) · [可靠性进阶](../models/cloud-api-reliability.md) · [可运行项目](../practice/projects/cloud-api-contracts.md)
 { .doc-nav }
@@ -482,7 +484,7 @@ integrations/
 
 Canonical types 不依赖 SDK。Provider adapter 可以依赖 canonical types，但业务 runtime 不应直接依赖 SDK response class。这样可以：
 
-- 用 authored fixture 回放 parser；
+- 用本仓库准备的固定事件回放 parser；
 - 固定 SDK/API 升级前后的 mapping；
 - 在无密钥环境测试错误与边界；
 - 为真实 network smoke test 单独设置 marker、预算和 allowlist。

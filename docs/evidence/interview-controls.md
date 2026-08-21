@@ -1,6 +1,7 @@
-# LLM 面试深挖题与 control 台账
+# LLM 面试深挖题与验证台账
 
-本页保留完整技术追问、公式、反例和仓库 control 边界，供第二轮深挖与证据复核。第一次准备面试请从[面试题与回答方法](../career/interview-questions.md)开始，不要按编号逐题背诵本页。
+本页保留完整技术追问、公式、反例和仓库验证边界，供第二轮深挖与证据复核。第一次准备面试请从
+[面试题与回答方法](../career/interview-questions.md)开始，不要按编号逐题背诵本页。
 
 **证据导航**：[回答方法与核心题](../career/interview-questions.md) · [系统设计](../career/system-design.md) · [简历项目](../career/resume-projects.md) · [项目实验台账](project-controls.md)
 { .doc-nav }
@@ -242,7 +243,7 @@ oracle@N 问 N 个候选中是否至少存在一个 target-success candidate；s
 
 不能按本 rank kept count 条件跳过。Collective 要求 process group 中各 rank 以兼容顺序参与；某个 source 的全部 assignments 被 drop，只说明它发送/接收零行，不代表其他 owner 没有来自别处的工作。Autograd 图还必须保留从最终 loss 到 empty returned payload 的 zero-size collective graph edge，否则该 rank 不会触发 reverse all-to-all，peer 可能永久等待。生产实现还要核对 backend 对 zero splits 的支持、collective ordering、异常传播与 watchdog，不能只看 tensor shape。
 
-仓库固定 control 的 global keep mask 是 `[F,T,T,F]`，source→owner splits 为 `[[1,1],[0,0]]`；rank 1 source 零 dispatch/return，却仍参加两次 backward payload collective。Dropped token 的 routed output 与 task hidden gradient为 0，rank-1 router local gradient为零，SUM 后梯度与单进程 capacity oracle一致。这只证明 CPU/Gloo authored fixture；不证明 NCCL、DDP、目标 MoE、容错、收敛或性能。
+仓库在这组实验中将 global keep mask 固定为 `[F,T,T,F]`，source→owner splits 固定为 `[[1,1],[0,0]]`；rank 1 source 零 dispatch/return，却仍参加两次 backward payload collective。Dropped token 的 routed output 与 task hidden gradient为 0，rank-1 router local gradient为零，SUM 后梯度与单进程 capacity oracle一致。这只证明这组固定输入在 CPU/Gloo 下的行为；不证明 NCCL、DDP、目标 MoE、容错、收敛或性能。
 
 ### 13.3 Hard top-k 不可导，router 为什么还能训练？
 
@@ -390,7 +391,7 @@ Request/response/decision fingerprint 只能证明所列 canonical bytes 一致�
 
 ### 23.8 MCP stdio 接通后，为什么仍不能说“工具互操作和安全已经完成”？
 
-先说明具体实现证据：固定 MCP version；client 启动 server subprocess；UTF-8 JSON-RPC 经 stdio 传输；initialize response 完成版本/capability 协商，initialized 后才 list/call tools。仓库的 authored strict control 把 schema 错误作为 `isError: true` tool result、unknown tool 作为 JSON-RPC error；official-SDK stdio control 中 unknown name 则进入应用 handler 并返回 tool error。错误分层是实现/版本/请求路径的一部分，不能在没有具体 trace 时用一句“模型重试”抹平。
+先说明具体实现证据：固定 MCP version；client 启动 server subprocess；UTF-8 JSON-RPC 经 stdio 传输；initialize response 完成版本/capability 协商，initialized 后才 list/call tools。仓库提供的验证程序把 schema 错误作为 `isError: true` tool result，把 unknown tool 作为 JSON-RPC error；official-SDK stdio 实验中的 unknown name 则进入应用 handler 并返回 tool error。错误分层是实现、版本和请求路径的一部分，不能在没有具体 trace 时用一句“模型重试”抹平。
 
 再说明缺口：discovery 和 schema-valid 不建立 authenticated subject、tenant ACL、资源归属、approval、幂等或 effect verifier；tool result/prompt/resource 仍是不可信输入。仓库已有 official-SDK Streamable HTTP control 把官方 client/session manager 与真实 loopback TCP/HTTP 放进同次运行，但它没有 malformed body、Host/Origin、resumption、TLS/OAuth、远程或 conformance 负例，私有 shutdown token 也不是 MCP auth。另一个 authored HTTP control 覆盖 Origin/Bearer/session/cancel，却只是自写固定子集。完整回答应分别给 framing/lifecycle、transport、官方 conformance/SDK matrix、真实远程网络、安全控制面和业务 verifier 证据，而不是只展示一次 tools/list 成功。
 

@@ -14,16 +14,16 @@
 
 | 层级 | 本仓库实例 | 可以支持的结论 |
 |---|---|---|
-| 公式与状态机 oracle | sampling、batching、KV allocator、量化 | 固定输入下的公式、排序、状态转移和字节账本 |
-| 本地集成 control | Qwen loopback HTTP、ASGI 取消、tiny Transformers thread | 指定框架、进程和网络路径在当前环境真实执行 |
+| 公式与状态机参考 | sampling、batching、KV allocator、量化 | 固定输入下的公式、排序、状态转移和字节账本 |
+| 本地集成实验 | Qwen loopback HTTP、ASGI 取消、tiny Transformers thread | 指定框架、进程和网络路径在当前环境真实执行 |
 | Workload contract | attempt artifact、offered/dispatch 时钟、SLO gate | 给定 trace 的分母、分位数、终态和门禁计算 |
 | 目标运行证据 | Linux/GPU vLLM 与固定 workload | 指定模型、硬件、版本和流量下的容量、质量与 SLO |
 
-前三层可以在仓库中复算。第四层必须在目标环境产生，不能由 CPU fixture、README 命令或全绿测试代替。
+前三层可以在仓库中复算。第四层必须在目标环境产生，不能由 CPU 固定样例、README 命令或全绿测试代替。
 
 ## 教材结论与对应证据
 
-| 教材结论 | 主要实现或测试 | Oracle 的独立性 | 仍未证明 |
+| 教材结论 | 主要实现或测试 | 判定依据为什么独立于被测实现 | 仍未证明 |
 |---|---|---|---|
 | 标准单序列工作量为 (P+O-1) positions | `tests/test_continuous_batching.py` | 手算总量与逐轮 conservation 对账 | Padding、speculation、真实 kernel work 或计费 |
 | KV 字节随层、KV heads、head dim、长度和 dtype 增长 | `tests/test_inference_memory.py` | 公式 fixture 与边界输入 | Runtime 对齐、workspace、allocator 或峰值 VRAM |
@@ -38,7 +38,7 @@
 | 断连传播与模型停止、KV 释放是三份证据 | `tests/test_incremental_streaming_control.py` 与 tiny-Transformers recorded verifier | ASGI task 与显式 cooperative generation thread 分开观测 | 未修改 runtime、不可中断 kernel 或 GPU KV release |
 | 固定 nano-vLLM trace 可对账 phase、prefix hit 与 KV 释放 | `tests/test_nano_vllm_study.py` + 目标 GPU report | CPU verifier 独立复算 schema、时间、指标和 KV 不变量；GPU runner 观察真实 step | HTTP SLO、模型质量、跨引擎排名或其他硬件版本 |
 
-测试名称表达的是证据类型，不表达“整个系统正确”。例如 attention parity 测试证明当前 fixture 的数值等价，
+测试名称表达的是证据类型，不表达“整个系统正确”。例如 attention parity 测试说明当前固定输入的数值等价，
 不能证明实现已经使用 PagedAttention GPU kernel。
 
 ## 快速正确性门禁
