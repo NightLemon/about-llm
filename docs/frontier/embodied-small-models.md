@@ -225,8 +225,8 @@ Draft model 提议多个 token，target model 并行验证。严格的 speculati
 概率级规则不能省略。Proposal \(x\sim q\) 以 \(\min(1,p(x)/q(x))\) 接受；拒绝时，从 normalized
 \((p-q)_+\) 采样。首次拒绝后丢弃剩余 draft，只有全部接受才发出 bonus target token。
 
-仓库已有一步边际与 block 控制流 oracle，但 authored probability vector 不是目标模型 logits，CPU 循环也不是
-verification kernel。
+仓库已有一步边际概率和 block 控制流的参考实现，但输入概率是本仓库为讲解算法准备的，并非目标模型 logits；
+CPU 循环也不能代表目标 GPU 上的 verification kernel。
 
 并非任何“让小模型先写、大模型挑”都无损。若只接受 draft 高分 token 或改变采样逻辑，输出分布会变。Speedup 取决于 draft latency、acceptance rate、proposal length、target verification kernel 和 batch。
 
@@ -310,11 +310,11 @@ Router、verifier、tool policy 和 human approval 分别有独立版本与评�
 
 ## 20. 当前仓库证据边界
 
-仓库有 Safe Agent 的审批、幂等和 reconciliation，以及 Roofline/KV、LoRA、speculative sampling 概率 oracle
-和评测门禁。这些可以作为 GUI/小模型系统的组件证据。
+仓库已经实现 Safe Agent 的审批、幂等和 reconciliation，也提供 Roofline/KV、LoRA、speculative sampling
+的公式对照和评测门禁。这些组件可以帮助检查 GUI/小模型系统中的局部机制。
 
 仓库没有机器人 simulator/硬件、真实 GUI benchmark、移动设备 SLM、federated round 或 speculative decoding
-kernel 实跑。因此，本章是架构与验收协议，不是具身或端侧生产验证。
+kernel 实跑。因此，本章提供的是架构设计与验收思路；具身或端侧系统仍需在真实设备上验证。
 
 ## 21. 常见错误结论
 

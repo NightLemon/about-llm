@@ -161,7 +161,7 @@ t0 reserve
 - redirect 默认关闭；
 - 显式 proxy、certificate、DNS 与 egress policy；
 - 认证信息来自 secret manager 或受控环境注入；
-- request body 和 headers 通过 strict serialization。
+- request body 和 headers 采用确定的序列化规则，并检查无法表示的值。
 
 若 URL/preflight 已失败，不应先占用预算，也不能把 secret 放进 URL 或错误消息。
 
@@ -261,7 +261,7 @@ canonical types
 ↑
 provider request/response adapters
 ↑
-strict JSON and provider event state machines
+JSON validation and provider event state machines
 ↑
 HTTP/SSE transport
 ↑
@@ -288,7 +288,7 @@ Canonical types 不依赖供应商 SDK。业务 runtime 也不直接读取 SDK r
 
 内部 trajectory 与公开 artifact 分开。公开输出使用 closed-schema allowlist，再独立做 secret/PII、版权、consent 和用途审查。
 
-## 从离线 control 到真实 smoke
+## 从离线验证走向真实 smoke
 
 真实测试必须显式 opt-in，并限制：
 
@@ -319,7 +319,8 @@ DNS/TLS/HTTP connected
 
 ### 解析错误
 
-先保存受控 raw artifact identity，再检查 Content-Type、strict JSON、schema revision 和 unknown fields。不要转成字符串后继续业务。
+先保存原始响应及其内容摘要，再检查 Content-Type，并按 JSON 规范处理重复字段、非法数值、schema revision
+和未知字段。只有解析成功后才能进入业务逻辑，解析失败的响应应单独留存和排查。
 
 ### 流式重复或缺字
 
@@ -350,7 +351,8 @@ DNS/TLS/HTTP connected
 
 对每个 case，先预测 retryable、replay-safe、outcome-known、reservation terminal 和用户可见状态，再运行对账。
 
-仓库中的 strict fixtures、逐 attempt ledger、命令与当前边界见[云 API 证据台账](../evidence/cloud-api-controls.md)。
+仓库用于检查解析规则的固定样例、逐 attempt 记录、命令与当前适用范围见
+[云 API 证据台账](../evidence/cloud-api-controls.md)。
 
 ## 常见错误
 
@@ -382,7 +384,7 @@ DNS/TLS/HTTP connected
 ## 继续学习
 
 - [实验 0C](../practice/labs/lab-0c-cloud-budget.md)：逐 attempt 预算实验。
-- [Cloud API 项目](../practice/projects/cloud-api-contracts.md)：strict adapters、SSE 与 retry controls。
+- [Cloud API 项目](../practice/projects/cloud-api-contracts.md)：会检查输入结构的 adapters、SSE 与 retry 验证程序。
 - [Agent Runtime](../applications/agent-runtime.md)：tool effect、outbox 和 reconciliation。
 - [生产检查表](../practice/production-checklist.md)：发布、观测和回滚。
-- [云 API 证据台账](../evidence/cloud-api-controls.md)：精确策略、fixtures 和未验证范围。
+- [云 API 证据台账](../evidence/cloud-api-controls.md)：具体策略、固定样例和未验证范围。

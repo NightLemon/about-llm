@@ -80,7 +80,9 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 \frac{\exp(s_i-\max_j s_j)}{\sum_k\exp(s_k-\max_j s_j)}.
 \]
 
-若一行所有 key 都被 mask，直接对全 `-inf` 做 softmax 会产生未定义的 `0/0`/NaN。应让数据与 mask 构造保证每个有效 query 至少能看到一个 key，或由 kernel 明确定义该情况；仓库 NumPy oracle 选择 fail closed。
+若一行所有 key 都被 mask，直接对全 `-inf` 做 softmax 会产生未定义的 `0/0`/NaN。数据与 mask 应保证
+每个有效 query 至少能看到一个 key；如果做不到，kernel 就要明确定义这种输入。本仓库的 NumPy 实现遇到
+全遮挡行时会直接报错，避免悄悄传播 NaN。
 
 ## 3. 多头张量形状
 
@@ -220,17 +222,17 @@ assert concat(step_0, ..., step_T_minus_1) == full
 
 这项等价需要相同权重、RoPE position、visibility、未被错误截断的 cache，以及可比数值路径。训练 dropout 必须关闭；量化 cache、滑窗淘汰、不同 kernel reduction order 可能产生数值差异。小数组 `allclose` 只证明 reference algebra，不证明生产 cache allocator、并发调度或 GPU 吞吐。
 
-## 9. 可执行 correctness oracle
+## 9. 用 NumPy 对照实现检查公式
 
 仓库 `src/about_llm/from_scratch/attention_numpy.py` 提供：
 
 - 数值稳定 softmax 与 fully-masked-row 拒绝；
 - 支持 past length 的 causal mask；
 - scaled dot-product attention；
-- 不物化完整 score/probability 的 blockwise online-softmax oracle；
-- float64 累积的 RMSNorm reference；
+- 不物化完整 score/probability 的 blockwise online-softmax 对照实现；
+- float64 累积的 RMSNorm 参考实现；
 - interleaved-pair RoPE；
-- 通过显式 K/V head repeat 定义的 GQA reference。
+- 通过显式 K/V head repeat 定义的 GQA 参考实现。
 
 ~~~powershell
 python -m pytest tests/test_attention_numpy.py -q
@@ -241,7 +243,7 @@ NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 再验证完整 forward、
 LayerNorm、activation、mask、weight tying、loss 与 optimizer，不能因为模块同名就假设数值等价。
 
 `blockwise_online_attention` 覆盖 causal prefill、带历史 K/V 的单 token decode 和任意 boolean visibility mask。
-任一 query 没有可见 key 时会 fail closed。精确 fixture、反事实差值和未覆盖项集中在
+任一 query 没有可见 key 时，函数会报错而不是返回无效概率。具体输入、反事实差值和未覆盖项集中在
 [Transformers 控制台账](../evidence/transformers-controls.md)。
 
 ## 10. 复杂度和 kernel 边界

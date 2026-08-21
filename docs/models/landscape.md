@@ -64,7 +64,7 @@ c_{api}=(provider,platform,region,api\ surface,model\ id,snapshot,checked\_at,re
 | Gemini | Gemini API 或 Vertex AI | platform、region、Interactions 或 `generateContent`、model id、检查日期 | parts/steps、函数调用、多模态输入是否被使用、状态与存储语义 | 把终端产品、Gemini API、Vertex AI 混成一个接口 |
 | Llama | 开放权重/托管服务 | 固定 checkpoint、tokenizer/template、license、runtime | config/权重匹配、量化、KV、单卡容量、Base/Instruct 边界 | 把“开放权重”写成无条件开源或自由商用 |
 | Qwen | 开放权重或云 API | 本地/云路线、checkpoint、模板、工具 schema、processor | 中文/多语言 tokenization、dense/MoE、工具轮次、runtime 兼容 | 用本地 checkpoint 的 config 推断云端 SKU |
-| DeepSeek | 开放权重或云 API | checkpoint/API 身份、架构字段、remote-code/runtime 边界 | dense/MoE、MLA 拒绝标准 KV 公式、推理模式和模板 | 因同品牌就给蒸馏模型套上 V3/R1 架构 |
+| DeepSeek | 开放权重或云 API | checkpoint/API 身份、架构字段、remote-code/runtime 边界 | dense/MoE、MLA 需要不同 KV 公式、推理模式和模板 | 因同品牌就给蒸馏模型套上 V3/R1 架构 |
 
 进入各章查看家族特有契约：
 
@@ -98,7 +98,7 @@ c_{api}=(provider,platform,region,api\ surface,model\ id,snapshot,checked\_at,re
 | 数据驻留与地域 | provider/region 政策或本地部署拓扑 | “企业版”三个字 |
 | 许可与用途 | 固定版本 license、法务/负责人结论 | model card 中一句宽泛说明 |
 | 输入模态 | 目标 API/processor 的真实输入控制 | 产品网页展示过图片 |
-| 输出与工具 | 目标 model/API 的 schema、tool、stream control | “OpenAI-compatible” |
+| 输出与工具 | 目标 model/API 的 schema、tool 与 stream 行为 | “OpenAI-compatible” |
 | 上下文容量 | tokenizer 后真实长度、输出预留、目标任务质量 | config 中的最大位置数 |
 | 延迟/SLO | 固定 workload 的 offered-load 测量 | 单请求 warm latency |
 | 本地容量 | 权重、KV、激活、workspace 与 runtime 峰值 | 文件大小或参数量乘 dtype |
@@ -111,7 +111,8 @@ c_{api}=(provider,platform,region,api\ surface,model\ id,snapshot,checked\_at,re
 feasible(c)=\bigwedge_j g_j(c)
 \]
 
-只有 `feasible(c)=true` 的候选才进入质量/成本比较。`unknown` 不应自动当作 `true`；高风险约束缺证据时应 fail closed，低风险探索可以显式记录 exception、负责人和到期时间。
+只有 `feasible(c)=true` 的候选才进入质量/成本比较。`unknown` 表示信息还不够：高风险约束缺少证据时先停止，
+低风险探索则可以记录 exception、负责人和到期时间后继续。
 
 ## 第二步：再做多目标比较
 

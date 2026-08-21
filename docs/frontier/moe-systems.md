@@ -204,13 +204,14 @@ Expert parameters 只在 owner 上更新；router 可能在每个 data/expert ra
 - Optimizer state placement；
 - Checkpoint sharding 和 resume。
 
-一个 all-to-all forward 对账不能证明 backward、optimizer 或收敛正确。
+一次 all-to-all forward 对账只检查前向交换与合并。Backward、optimizer 和训练收敛需要各自的实验。
 
 ### Loss normalization 很容易错
 
 不同 ranks 接受的 tokens 数可能不同。简单平均每 rank loss，会让 token 少的 rank 权重过大。
 
-目标通常要按 global valid tokens 或明确 assignments 聚合。记录 numerator、denominator 和 world-size factor，并与单进程 global oracle 对账。
+目标通常要按 global valid tokens 或明确 assignments 聚合。记录 numerator、denominator 和 world-size factor，
+再与单进程参考实现的结果逐项比较。
 
 ## MoE 与其他并行怎样组合
 
@@ -247,7 +248,8 @@ Prefill token 多，可能更容易形成较大 expert batches；decode 每序�
 
 MoE expert capacity 决定模型层内如何处理 assignments；服务 admission/queue capacity 决定请求是否进入系统。
 
-即使 MoE 内部 dropless，服务仍可能因 GPU memory、queue deadline 或并发拒绝请求。不要把两个 capacity factor 混为一谈。
+即使 MoE 路由内部使用 dropless，服务层仍可能因为 GPU memory、queue deadline 或并发上限而无法接收请求。
+路由 capacity 和服务 capacity 位于不同层级，应分别命名和观测。
 
 ## Expert 是否“学会了技能”
 
@@ -280,7 +282,7 @@ MoE expert capacity 决定模型层内如何处理 assignments；服务 admissio
 
 ### Level 4：两 rank dispatch
 
-Rank 0/1 各持有一个 expert，真实交换 token + metadata，和单进程 oracle 对账。
+Rank 0/1 各持有一个 expert，真实交换 token + metadata，再与单进程参考实现对账。
 
 ### Level 5：Backward 与 optimizer
 
@@ -305,7 +307,7 @@ python -m pytest tests/test_moe_routing.py tests/test_moe_training.py -q
 - Global count collective 被写成 token-to-owner dispatch。
 - Forward all-to-all 通过就声称 backward/optimizer 正确。
 - Per-rank mean loss 代替 global token-weighted loss。
-- CPU/Gloo fixture 外推到 CUDA/NCCL 性能。
+- 把 CPU/Gloo 固定样例的结果外推成 CUDA/NCCL 性能。
 - Router 分布图直接解释为专家技能。
 
 ## 面试时怎样回答

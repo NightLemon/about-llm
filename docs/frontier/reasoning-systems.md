@@ -105,7 +105,8 @@ P(\text{majority})
 
 增加采样会让 easy cases 更稳定地正确，也让 hard cases 更稳定地投错。总体 majority 不一定像 i.i.d. \(p=0.6\) 公式那样上升。
 
-因此保存 per-case candidates 和 votes，按 case cluster 估计收益。不要把每条采样当成独立 test case。
+因此要保存 per-case candidates 和 votes，并按 case cluster 估计收益。同一个问题产生的多条采样彼此相关，
+统计时应把它们视为同一组，而不是独立 test case。
 
 开放文本还需要 canonicalization。数学等价式、格式差异或多个不同错误答案会让 plurality 与 binary majority 完全不同。
 
@@ -251,7 +252,8 @@ python projects/inference-serving/self_consistency_correlation_toy.py
 python projects/inference-serving/verifier_best_of_n_toy.py
 ~~~
 
-这些 toys 证明有限 authored distributions 的数学，不证明目标模型一定改善或退化。精确结果见[证据台账](../evidence/frontier-controls.md)。
+这些小实验只检查几组预设概率分布上的数学关系。目标模型是否改善或退化，需要在它实际生成的候选上测量。
+具体计算结果见[证据台账](../evidence/frontier-controls.md)。
 
 ## 常见错误
 

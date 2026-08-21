@@ -207,8 +207,8 @@ token count，再按全窗口分母缩放；`ignore_index` 位置既不进分子
 分布式训练还要确认框架对各 rank 梯度做 sum 还是 mean。DDP 默认取 rank mean 时，全局 token mean 的缩放需要
 显式包含 world size。AMP 则要求先 unscale 再做 global-norm clipping，checkpoint 也要保存 scaler。
 
-这些不是只靠文字记忆的细节。运行下面的独立 controls 可以看到错误 reduction、`no_sync` scope 和 AMP 顺序怎样
-改变梯度：
+这些不是只靠文字记忆的细节。下面三个小实验分别改变 reduction、`no_sync` 的作用范围和 AMP 顺序，
+你可以直接观察梯度怎样随之变化：
 
 ```powershell
 python projects/single-gpu-finetuning/gradient_accumulation_toy.py

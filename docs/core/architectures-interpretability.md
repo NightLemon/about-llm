@@ -181,9 +181,10 @@ Router index 是离散选择。Hard index 本身不会自然把 task gradient �
 可解释性分析还要分开两个问题：expert 在处理什么，以及哪些 tokens 为什么被路由到它。
 平均激活主题或人为 expert 名称，并不证明一个 expert 只有单一功能。
 
-仓库的 NumPy/PyTorch controls 逐层检查 capacity、sparse-vs-dense forward/backward、
-two-process global competition、owner-only all-to-all 和 reverse gradient。它们是 authored CPU/Gloo fixtures，
-不是 DeepSeek、Qwen 或目标 GPU runtime 的 routing policy 与性能证据。完整通信主线见
+仓库提供了一组 NumPy/PyTorch 小实验，逐层检查 capacity、sparse-vs-dense forward/backward、
+two-process global competition、owner-only all-to-all 和 reverse gradient。实验使用 CPU/Gloo 和本仓库准备的
+固定输入，目的是把路由与通信过程拆开观察。DeepSeek、Qwen 的实际 routing policy 和目标 GPU 性能仍需另行验证。
+完整通信主线见
 [分布式训练](../systems/distributed-training.md)。
 
 ## 从架构推导运行时依赖 { #architecture-runtime-dependencies }
@@ -361,7 +362,7 @@ Patching 把另一个输入的 activation 放进当前 computation，可能制�
 正确结论是“在这项 intervention 下，该 site 改变了指定 metric”。Redundancy、backup path 和 entangled features
 仍可能让单组件 ablation 或 patching 给出不完整答案。
 
-### 先用随机 MiniGPT 验证 hook 和 causal negative control
+### 先用随机 MiniGPT 检查 hook 和因果负例
 
 仓库的 `activation_patching.py` 在固定 seed 的两层 MiniGPT 上执行真实 PyTorch hook：
 
@@ -371,15 +372,15 @@ python -m pytest tests/test_activation_patching.py -q
 ~~~
 
 Clean `[1,2,3,4]` 与 corrupt `[5,2,3,4]` 只改首 token。
-Patch layer-0 post-residual 的 source、readout 和 joint causal prefix 会按预期移动 authored logit metric；
+Patch layer-0 post-residual 的 source、readout 和 joint causal prefix 会按预期改变预先选定的 logit metric；
 patch future position 不能改变过去 readout，作为 causal mask 与 hook-site 负对照。
 
-这是随机、未训练模型上的 tensor contract。Metric token pair 是事后为 fixture 选择，
-joint prefix 恢复 clean output 也接近计算图上的构造性正对照，不能称为自然语言 circuit discovery。
+这一步只检查随机、未训练模型上的张量和 hook 是否按预期工作。Metric token pair 是看过 clean/corrupt 差异后
+为这个样例选择的，joint prefix 恢复 clean output 也是特意构造的正例。因此它还不是自然语言 circuit discovery。
 
-### 固定 Qwen checkpoint 上的单事实 control
+### 在固定 Qwen checkpoint 上做一次单事实干预
 
-`run_qwen_activation_patching_control.py` 加载固定 Qwen2.5-0.5B-Instruct revision。
+`run_qwen_activation_patching_control.py` 加载指定版本的 Qwen2.5-0.5B-Instruct。
 Templated clean/corrupt inputs 都是 26 tokens，仅位置 19 从单 token ` France` 改成 ` Germany`；
 readout position 25 使用 `Paris - Berlin` logit difference。
 
@@ -388,18 +389,18 @@ python projects/transformers-basics/run_qwen_activation_patching_control.py `
   --local-files-only
 ~~~
 
-固定 layers 0、11、23，不在扫描结果后挑最好层。录制 control 中：
+实验开始前就选定 layers 0、11、23，不在看到结果后挑最好层。记录到的结果如下：
 
 | Patch | Recovery | 应怎样解释 |
 |---|---:|---|
 | Source pos 19, layer 0 | 约 1.000 | 整个 source residual 替换后恢复这一个 metric |
 | Source pos 19, layer 11 | 约 0.992 | 该 pair/intervention 上接近恢复，尚未定位 lookup 或 routing |
 | Source pos 19, layer 23 | 0 | 最后一层 source site 后没有跨位置 mixing |
-| All positions, layer 0 | 1 | 构造性 positive control |
-| Readout pos 25, layer 23 | 1 | 直接替换最终 readout residual 的 positive control |
+| All positions, layer 0 | 1 | 特意构造的正例 |
+| Readout pos 25, layer 23 | 1 | 直接替换最终 readout residual 的正例 |
 | Future pos 26, layer 0 | 0 | Future patch 不能改变过去 readout |
 
-这条 control 把证据从 toy graph 推进到真实 target weights，但仍只有一个英文事实、一个 template、batch 1。
+这次干预已经运行在真实 target weights 上，但样本仍然只有一个英文事实、一个 template，batch size 也是 1。
 Source patch 一次替换 896 dimensions，可能同时搬运实体、词形、position 和其他 features。
 
 要形成机制研究，还需要 random/unrelated sources、paraphrases、cross-language pairs、多个 facts、
@@ -493,8 +494,9 @@ Module 名称不是概念边界。名为 `attention` 的 hook 可能拿到 per-h
 7. 在 templates、languages、positions、facts 和 seeds 上报告分布；
 8. 将结论限定在 behavior、metric、site 与 intervention 范围内。
 
-仓库当前既有随机 MiniGPT hook correctness fixture，也有固定 Qwen checkpoint 的单事实 control。
-它们证明 protocol 和局部 intervention 可执行，尚未构成多样本、预注册、held-out 的 target mechanism study。
+仓库目前用随机 MiniGPT 检查 hook，又在固定 Qwen checkpoint 上完成了一次单事实干预。
+两者说明这套实验流程和局部 intervention 可以运行；要研究目标模型的普遍机制，还需要多样本、预注册方案和
+held-out 验证。
 
 ## 安全结论不能从一个 circuit 外推
 

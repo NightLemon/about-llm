@@ -72,7 +72,7 @@ python projects/inference-serving/sampling_toy.py
 1. 复算 top-k 后的概率和 top-p crossing token。
 2. 用固定 uniform 找出对应 CDF 区间。
 3. 交换 top-k/top-p 顺序，解释 support 为什么变化。
-4. 把这次结果限定在当前 CPU fixture；目标模型和目标 runtime 需要另行实测。
+4. 把结论限定在当前 CPU 样例；目标模型和目标 runtime 需要另行实测。
 
 完整步骤和反馈卡见[实验 0A](../practice/labs/lab-0a-sampling.md)。
 

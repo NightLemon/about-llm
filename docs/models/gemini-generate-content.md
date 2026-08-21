@@ -47,7 +47,9 @@ GenerateContentResponse
 
 官方 reference 说明 prompt 被阻止时可能没有 candidates，并应检查 `promptFeedback`。因此空候选不是空文本成功。
 
-教学时可以先实现 text-only projection，但必须把它命名为窄 adapter，并对非 text part、多 candidate 和安全阻止显式拒绝。仓库当前 request builder 与 parser 的精确覆盖范围见[证据台账](../evidence/gemini-controls.md#request-builder)。
+教学时可以先实现 text-only projection，但名称和文档要说明它只处理文本。遇到非 text part、多 candidate 或
+安全阻止时，adapter 应返回明确错误，而不是悄悄丢掉内容。仓库当前 request builder 与 parser 处理到哪些情况，
+见[证据台账](../evidence/gemini-controls.md#request-builder)。
 
 ## `streamGenerateContent` 不是 Interactions stream
 
@@ -114,7 +116,7 @@ OpaqueProviderPart(type, allowlisted_projection)
 
 ## 多模态评测：证明目标模态产生因果影响
 
-单个“看图答对”case 不能证明模型使用图像。建议每个样本建立 paired counterfactual：
+单个“看图答对”样本无法区分模型是在看图，还是仅凭文字与常识猜中。可以为每个样本建立 paired counterfactual：
 
 | 条件 | 改动 | 预期用途 |
 |---|---|---|
@@ -207,7 +209,7 @@ Interactions 的 `function_call` step 或 `generateContent` function part 都只
 
 ```text
 provider proposal
-  → accumulate/parse strict arguments
+  → accumulate arguments and validate JSON/schema
   → schema validation
   → trusted resource resolution
   → tenant/subject/ACL/policy

@@ -234,7 +234,8 @@ Judge 不是真值来源。它也可能有：
 | 不同语言是否可靠 | slice agreement |
 | Judge 是否稳定 | repeated-decision consistency |
 
-高相关性也不能证明 judge 在关键安全错误上有足够 recall。保存 disagreement examples，比只报一个 correlation 更有学习价值。
+高相关性只描述总体上的同向变化，无法告诉我们 judge 是否漏掉了关键安全错误。除了 correlation，
+还应保存 judge 与人工标注不一致的样本，逐个查看漏判发生在哪里。
 
 ## 一个发布门禁怎样组合指标
 
@@ -280,7 +281,7 @@ Toy 输出证明统计实现对固定输入的行为，不证明你的 case set 
 - 尝试很多 Prompt/指标后只报告最佳结果。
 - 用 overall 掩盖关键语言或安全 slice 退化。
 - Judge 分数很高就当 ground truth，不做人工校准。
-- 两个 authored cases 的 bootstrap 通过就声称生产提升。
+- 只对两条自编样例做 bootstrap，就声称生产效果已经提升。
 
 ## 面试时怎样回答
 

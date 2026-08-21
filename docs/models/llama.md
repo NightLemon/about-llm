@@ -69,9 +69,12 @@ repository at immutable revision
 | L4 | 目标 runtime forward/generate | cache、logits 和执行路径 |
 | L5 | 目标任务与硬件评测 | 质量、性能、容量和 SLO |
 
-不要把不同层的结论拼起来。例如，model card 报告一个上下文长度，authored fixture 验证了 GQA 公式，另一个模型的 weight smoke 成功；三者不能合成“这个 Llama checkpoint 的长上下文已经验证”。
+不同层的材料回答不同问题。例如，model card 可以声明上下文长度，本仓库的固定样例可以检查 GQA 公式，
+另一个模型的 weight smoke 可以检查加载路径。只有在同一个 Llama checkpoint 上完成对应运行，才能讨论它的
+长上下文是否真正可用。
 
-本仓库当前固定了一份 Llama 3.2 model-card 发布证据，但没有把它冒充真实 Llama 权重执行。精确 revision 和 control 范围见[证据台账](../evidence/llama-controls.md)。
+本仓库保存了一份指定版本的 Llama 3.2 model card，尚未运行对应 Llama 权重。具体 revision 和已经核对的内容见
+[证据台账](../evidence/llama-controls.md)。
 
 ## 从 config 画出一层 decoder
 
@@ -374,7 +377,7 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 - 把 Llama 当作固定 config，或只保存一个家族短名。
 - 把 model-card 参数与上下文声明写成独立测量。
 - 只固定 model，不固定 tokenizer、template 和 generation。
-- 把 authored GQA 公式 fixture 写成目标 checkpoint 显存。
+- 把 GQA 公式样例计算出的数字写成目标 checkpoint 的真实显存。
 - 用文件位宽推断 GPU 峰值或端到端 speedup。
 - 把 LoRA trainable parameters 少写成训练显存同比下降。
 - 给 Base 套 Instruct template 并期待相同行为。
@@ -408,4 +411,4 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 - Meta，[Llama models repository](https://github.com/meta-llama/llama-models)。
 - Touvron 等，[LLaMA](https://arxiv.org/abs/2302.13971)。
 - Hugging Face，[Chat templates](https://huggingface.co/docs/transformers/en/chat_templating)。
-- 本仓库固定的 model-card revision 与 controls 见[Llama 证据台账](../evidence/llama-controls.md)。
+- 本仓库使用的 model-card revision 与核对内容见[Llama 证据台账](../evidence/llama-controls.md)。

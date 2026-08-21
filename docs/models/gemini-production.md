@@ -153,7 +153,8 @@ exact request identity
 
 价格快照要独立版本化，并记录平台、模型、模态、cache、thinking、tool、batch/tier、区域和生效时间。provider-reported usage 用于近实时控制，最终仍需与 billing export 对账。
 
-本地 reservation 只能证明预算代码如何记账，不能证明供应商最终计费。仓库使用的固定算术样例与边界见[证据台账](../evidence/gemini-controls.md#budget-control)。
+本地 reservation 展示的是预算代码如何记账；供应商最终收取多少仍以真实 usage 和账单为准。仓库使用的
+固定算术样例及其适用范围见[证据台账](../evidence/gemini-controls.md#budget-control)。
 
 ## 生产 adapter 的目录与能力协商
 
@@ -278,7 +279,7 @@ TaskResult
 - official docs checked_at 与 capability probe；
 - model/API/platform identity；
 - eval dataset/report；
-- raw/typed parser fixtures；
+- raw/typed parser 固定样例；
 - error/retry/cancel matrix；
 - tool/ACL/approval policy；
 - budget/pricing snapshot；

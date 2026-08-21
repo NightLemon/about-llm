@@ -39,7 +39,7 @@ flowchart TD
 
 官方 overview 说明：`interactions.create` 的响应只返回模型生成 steps，而持久 resource 经 `interactions.get` 可包含完整上下文中的 user input steps。客户端不能假设 create/get 的投影视图完全相同。
 
-### authored request 形状
+### 先看一份请求长什么样
 
 下面只用于解释字段关系，不是本仓库执行过的请求：
 
@@ -84,7 +84,7 @@ flowchart TD
 - `steps[]` 的类型、顺序和 identity；
 - `final_text_projection`；
 - `projection_loss` 标记；
-- 未理解 step 的 fail-closed/forward-compatible policy。
+- 没有为未知 step 定义“停止处理”或“保留后继续兼容”的明确策略。
 
 只保存 `output_text` 会破坏工具重放、审计、无状态续聊和多模态输出的完整性。
 
@@ -168,7 +168,7 @@ interaction.created
 
 ### step 级不变量
 
-一个 strict Interactions parser 至少应验证：
+Interactions parser 至少应逐项验证：
 
 1. `interaction.created` 只能出现一次；
 2. created 前不得出现 step；
@@ -182,7 +182,7 @@ interaction.created
 10. `[DONE]` 不能替代 typed terminal object；
 11. `[DONE]` 后拒绝 provider event；
 12. transport EOF 前必须取得协议 terminal；
-13. unknown event/step/delta 按版本策略 fail closed 或隔离保存；
+13. unknown event/step/delta 按版本策略停止处理，或隔离保存等待人工确认；
 14. usage 是 provider 报告的 token accounting，不是 SSE event 数；
 15. raw bytes、SSE event 与 typed delta 是三层不同对象。
 
@@ -224,7 +224,7 @@ provider completed
 - 断线期间工具是否已执行；
 - cancellation 与 background 状态的竞态。
 
-本仓库没有 Interactions event fixture、resume parser 或真实 SSE 证据，因此这里只给设计要求，不声称已实现。
+本仓库目前还没有 Interactions event 样例、resume parser 或真实 SSE 运行记录，因此本节只给出设计要求。
 
 ## Background interaction 状态机
 

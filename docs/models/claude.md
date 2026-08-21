@@ -32,7 +32,8 @@ Claude 的公开论文、产品页面和真实 API 运行是三类不同证据�
 
 参数量、层数、稠密/稀疏结构、训练数据和未公开的后训练细节都应保持 unknown。不要从输出风格、产品名称或旧论文反推。
 
-具体 model ID、上下文、价格、限额和 beta feature 都会变化。本页讲稳定的接入方法；精确核对日期与 control 范围见[证据台账](../evidence/claude-controls.md)。
+具体 model ID、上下文、价格、限额和 beta feature 都会变化。本页讲相对稳定的接入方法；需要核对某个日期的
+字段和本仓库实际运行过哪些检查时，再查阅[证据台账](../evidence/claude-controls.md)。
 
 ## 研究路线提供什么直觉
 
@@ -106,7 +107,7 @@ ProviderResponse
 | 只有 tool proposal | tool_proposed，不是空字符串 |
 | text + tool proposal | mixed typed result |
 | refusal/safety outcome | typed refusal |
-| unknown block | fail closed 或受控 extension |
+| unknown block | 停止处理，或交给明确注册的 extension |
 | terminal 缺失 | incomplete/error |
 
 “response 可以解析”只证明协议层过关，不证明内容正确、引用有效、工具获权或任务成功。
@@ -185,7 +186,7 @@ proposal
 
 工具名、参数、schema revision、call ID、policy decision、幂等键和 provider receipt 都应进入审计。审批应绑定规范化参数和资源版本，防止审批后参数漂移。
 
-### 超时不等于没有执行
+### 超时后仍要确认远端发生了什么
 
 客户端 timeout、cancel 或 read failure 无法证明 provider 或外部工具没有收到请求。对于写操作，应先持久化 intent/outbox，再用业务幂等键执行。
 
@@ -274,7 +275,8 @@ Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至�
 
 ### Level 2：多 block 与失败回放
 
-用离线 fixtures 覆盖多个 text blocks、tool-only、unknown block、max-token stop、provider error 和缺失 terminal。确认 parser 不静默丢数据。
+准备一组离线样例，分别包含多个 text blocks、tool-only、unknown block、max-token stop、provider error 和
+缺失 terminal。逐项确认 parser 会保留或明确报告这些情况，而不是静默丢失数据。
 
 ### Level 3：流式状态机
 
@@ -284,7 +286,9 @@ Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至�
 
 准备只读、幂等写入和高风险写入三类工具，测参数正确率、权限拒绝、审批、重复副作用、outcome uncertain 与 prompt injection。
 
-本仓库的离线 adapter、stream、retry 和预算 controls 入口见[Claude 证据台账](../evidence/claude-controls.md)。它们不访问真实账号，也不证明当前 provider 行为。
+本仓库提供了 adapter、stream、retry 和预算的离线验证程序，入口见
+[Claude 证据台账](../evidence/claude-controls.md)。这些程序不访问真实账号；当前 provider 的实际行为仍要用
+受控的真实请求核对。
 
 ## 常见错误
 
@@ -296,7 +300,7 @@ Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至�
 - 把 model proposal 当成业务授权，或把 timeout 当成未执行。
 - 对所有 429/5xx 或断流透明重试，不记录独立 attempt 和费用。
 - 只报长上下文 needle 命中或 prompt-cache hit rate。
-- 用离线 fixture 声称已经验证真实 Claude 质量、计费或生产可靠性。
+- 把离线样例的结果写成真实 Claude 质量、计费或生产可靠性结论。
 
 ## 面试时怎样回答
 
@@ -324,4 +328,4 @@ Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至�
 - [Agent Runtime](../applications/agent-runtime.md)：授权、执行、回放与可观测性。
 - [Evaluation Gate](../practice/projects/evaluation-gate.md)：paired cases 与发布决策。
 - [Opaque Reasoning 工件安全](../quality/reasoning-artifact-security.md)：不透明状态与轨迹发布。
-- [Claude 证据台账](../evidence/claude-controls.md)：精确 controls、命令和未验证边界。
+- [Claude 证据台账](../evidence/claude-controls.md)：具体检查程序、命令和目前尚未验证的部分。

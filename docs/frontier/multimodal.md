@@ -159,7 +159,7 @@ LLM 负责结合上下文，金额、日期或药物剂量等字段再由 determ
 ## 怎样证明模型真的看了图片
 
 票据问题有时只靠语言先验就能猜中：用户问“总金额”，模型可能从文件名、OCR、历史对话或常见模板得到答案。
-因此要加入 modality-use controls：
+因此要加入能判断模型是否真正使用某种模态的对照：
 
 1. 遮蔽图片，保留同一文本问题；
 2. 把票据替换为金额不同、布局相似的图片；
@@ -227,7 +227,8 @@ Streaming 语音还要测 first partial、finalization、endpointing、real-time
 过早 endpoint 会截断，过晚则增加延迟；echo、噪声、重叠说话、口音和 codec 都应单独切片。
 
 TTS 先生成 acoustic representation，再由 vocoder 输出波形。系统除了 intelligibility，还要控制 speaker、prosody、latency 和打断。
-Speech-to-speech 可以减少中间文本依赖，却仍处理内容、声音身份和敏感属性；安全系统需要 audio-native control 或受控 ASR audit path。
+Speech-to-speech 可以减少中间文本依赖，却仍处理内容、声音身份和敏感属性。安全系统需要直接面向音频的
+评测，或者使用权限明确、过程可审计的 ASR 路径。
 
 ## 换成视频后，采样可能直接漏掉事件
 

@@ -143,7 +143,7 @@ JSON mode 或 schema-constrained output 可以降低解析失败，但不能保�
 ~~~text
 provider terminal
 → refusal/incomplete/error split
-→ strict JSON and schema
+→ validate JSON and schema
 → domain invariants
 → identity and ACL
 → budget / approval / idempotency
@@ -212,7 +212,8 @@ OpenAI 官方文档说明 Responses API 的 HTTP streaming 使用 SSE 和 typed 
 
 ### Level 2：离线错误与类型回放
 
-为多 text、refusal、tool-only、unknown item、invalid JSON、missing usage 和 incomplete response 建立 fixtures。
+为多 text、refusal、tool-only、unknown item、invalid JSON、missing usage 和 incomplete response 分别准备
+固定样例。
 
 验收：每个输入得到明确 typed state，日志不包含 secret 或 raw user body。
 
@@ -259,7 +260,7 @@ request attempt
 - 只看到 EOF 就把 stream 标成 completed。
 - 用 application stop string 伪造 provider terminal。
 - 让 provider options 接受任意未知字段。
-- 用离线 fixtures 声称真实账号、网络、usage 或 billing 已验证。
+- 把离线样例写成真实账号、网络、usage 或 billing 已经验证。
 
 ## 面试时怎样回答
 
@@ -286,8 +287,8 @@ request attempt
 - [Claude](claude.md)：Messages blocks 与工具状态机。
 - [Gemini](gemini.md)：多套 API surface 的对象辨析。
 - [GPT](gpt.md)：Responses typed outputs 与评测。
-- [Cloud API 项目](../practice/projects/cloud-api-contracts.md)：离线 adapter 与状态机 controls。
-- [云 API 证据台账](../evidence/cloud-api-controls.md)：精确字段、日期、fixtures 与命令。
+- [Cloud API 项目](../practice/projects/cloud-api-contracts.md)：离线 adapter 与状态机验证程序。
+- [云 API 证据台账](../evidence/cloud-api-controls.md)：具体字段、核对日期、固定样例与命令。
 
 ## 官方文档
 

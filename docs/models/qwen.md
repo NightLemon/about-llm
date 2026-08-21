@@ -106,7 +106,8 @@ Base 模型通常学习续写；Instruct 模型依赖特定对话模板。把普
 4. 比较最后位置 logits；
 5. 一次固定 generation，保存 token trace 与停止原因。
 
-这能证明指定环境和输入的执行路径，不证明中文能力、有效长上下文、GPU 性能或生产稳定性。精确 revision、hash 和录制报告见[证据台账](../evidence/qwen-controls.md)。
+这次运行说明指定环境能够加载这些权重，并按给定输入完成前向和生成。中文能力、有效长上下文、GPU 性能和
+生产稳定性需要各自的任务与运行环境。具体 revision、hash 和录制报告见[证据台账](../evidence/qwen-controls.md)。
 
 ## 架构怎样读
 
@@ -115,7 +116,8 @@ Base 模型通常学习续写；Instruct 模型依赖特定对话模板。把普
 最后检查目标 runtime 是否拥有对应 model class、cache manager、kernel、scheduler 和输出 parser。
 
 完整方法和兼容性阶梯见[从架构推导运行时依赖](../core/architectures-interpretability.md#architecture-runtime-dependencies)。
-本页固定 Qwen2.5 control 只为它实际执行的标准 text-only decoder 路径提供证据；不能把这条证据借给同品牌下的多模态、MoE、混合 state 或额外预测 head checkpoint。
+本页的 Qwen2.5 验证程序只运行了标准 text-only decoder。Qwen 品牌下的多模态、MoE、混合 state 或额外
+预测 head 使用不同结构，需要分别选择匹配的模型类和运行库。
 
 ### Dense 与 MoE 不能共用参数口径
 

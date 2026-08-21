@@ -26,10 +26,11 @@
 
 1. **公开研究事实**：GPT-1/2/3、InstructGPT 等论文明确报告的训练目标、实验设置与观察；
 2. **当前产品契约**：官方 model catalog 与 Responses API reference 在某个检查日期公开的型号、请求对象、输出对象和事件类型；
-3. **本地可执行证据**：本仓库对一份 authored JSONL 的解析、状态迁移和对账不变量。
+3. **本地可执行结果**：本仓库用一份自编 JSONL 检查解析、状态迁移和对账规则。
 
-这三类证据不能互相借用。旧论文不能证明当前闭源产品的参数量、层数、训练数据或完整后训练配方；
-接口文档也不披露模型内部机制；离线 replay 更不能证明真实服务执行、模型质量、账单或生产可靠性。
+三类材料分别回答不同问题：旧论文解释公开过的研究方法，接口文档说明当前协议，本地 replay 检查我们自己的
+解析和状态机。当前闭源产品的内部结构、真实服务执行、模型质量、账单和生产可靠性，都需要与问题匹配的
+新证据。
 当前产品信息属于**时间敏感**事实，本页最近核对日期为 **2026-08-19**。
 
 ## 自回归公式只描述了系统的一层
@@ -159,7 +160,8 @@ terminal status
 
 Responses 中的 function call arguments 仍是模型生成文本。即使它恰好解析成 JSON object，也只证明语法可解析。生产 runtime 要重新检查类型、资源归属、身份、权限、预算、审批、幂等键与前置状态，再把受控结果提交给 handler。
 
-若 arguments 不是有效 JSON object，不应“尽力修复后假装原参数已校验”。本仓库 replay 保留原字符串，并把 `arguments_is_strict_object` 设为 `false`，让后续策略显式拒绝或进入隔离修复流程。
+若 arguments 不是有效 JSON object，adapter 会保留原字符串，并把 `arguments_is_strict_object` 设为 `false`。
+后续策略可以明确报错，或者把它送入独立的修复流程；修复后的对象不能冒充原参数已经通过校验。
 
 截至 2026-08-19，官方 Function Calling guide 把这条链路写成多步交互：应用提供 tool definition，
 模型返回 tool call，**应用侧**执行代码，再用对应 `call_id` 回传 `function_call_output`，模型才继续生成最终响应
@@ -198,7 +200,8 @@ response.output_item.done
 response.completed
 ```
 
-真实流可能选择其他受支持事件与 item。adapter 应按 type dispatch，未知类型默认 fail closed 或进入显式的 opaque/quarantine 路径，不能把“当前 parser 不认识”当成“可以忽略”。
+真实流可能选择其他受支持事件与 item。adapter 应按 type dispatch。遇到未知类型时，默认停止处理，
+或者把原始内容放进明确的 opaque/quarantine 路径；“当前 parser 不认识”本身不是忽略数据的理由。
 
 ### Delta、done 与 terminal 是三次不同的对账
 
@@ -221,8 +224,8 @@ EOF 本身不是成功终态。缺 terminal event、item 尚未 done、content �
 ### `sequence_number` 的本地严格规则
 
 官方事件对象包含 `sequence_number`。为了让固定 evidence artifact 容易审计，本仓库额外要求它从 0 开始且严格连续。
-这是**本地 replay 契约**，用于发现 authored fixture 的缺失、重复和重排；它不是对任意网络恢复、SDK 重连
-或未来 API 传输语义的普遍保证。
+这是本地 replay 的检查规则，用于发现固定样例中的事件缺失、重复和重排。网络恢复、SDK 重连和未来 API
+传输各有自己的协议，需要分别验证。
 
 ## 亲手重放开头那次天气响应
 
@@ -246,7 +249,8 @@ python projects/cloud-api-contracts/openai_responses_replay.py `
 | event projection | `sha256:9cc5964da2517f2076a1c624c2636bd8ca75077b89f024c7710b1b720cbd713e` |
 | receipt | `sha256:c4829c19895dcb4013141da3d11b5dc9befee8189210a0901f0cb14c19942579` |
 
-Fixture 使用 `model: gpt-reviewed-snapshot` 这样的 authored label，不冒充真实 model id。收据明确记录本次执行范围：
+样例使用 `model: gpt-reviewed-snapshot` 这个自定义标签，避免让人误以为运行了真实 model id。收据会明确记录
+本次执行范围：
 重放 SDK-shaped events，检查 sequence/item lifecycle，并对账 terminal output 与 usage。
 
 它没有执行 HTTP/SSE/WebSocket transport、OpenAI SDK 或远程 API。
@@ -261,7 +265,7 @@ Fixture 使用 `model: gpt-reviewed-snapshot` 这样的 authored label，不冒�
 - output index、item id、content index 和 done 顺序；
 - accumulated delta、done item 与 terminal output 对账；
 - `input_tokens + output_tokens = total_tokens`；
-- duplicate JSON key、`NaN`/`Infinity`、invalid UTF-8、未知事件字段、截断和资源超限 fail closed；
+- 遇到 duplicate JSON key、`NaN`/`Infinity`、invalid UTF-8、未知事件字段、截断或资源超限时停止解析并报错；
 - reasoning/其他 output item 只作为 opaque item 保存生命周期，不解释语义。
 
 资源边界是 4 MiB 文件、1 MiB 单行和最多 10,000 events。这些数值是本地防御默认值，不是 OpenAI 配额。
@@ -284,13 +288,14 @@ python -m pytest tests/test_openai_responses_replay.py -q
 
 正确结果不是“尽量输出已有文本”，而是拒绝生成成功收据。部分文本可以作为受控诊断证据保存，但不能被包装成完整 response。
 
-### 这个实验没有证明什么
+### 这个实验说明了什么
 
-这份 authored/offline 工件**不证明真实 OpenAI API**或真实模型执行，也不覆盖 provider identity、账号认证、
-DNS/TLS/HTTP2、SSE framing、SDK 兼容、backpressure、取消传播、usage 真值、计费、模型质量或生产可靠性。
+这份离线报告说明当前 parser 和 state machine 能处理前面列出的事件，并在输入损坏时停止。它使用本仓库准备的
+固定输入，没有连接 OpenAI API，也没有运行真实模型。
 
-它也不是完整 Responses API：没有覆盖所有 input/output item、所有 tool、音频/图像、web/file/computer use、
-所有 error event、状态续接和未来新增事件。
+真实接入还要验证 provider 身份、账号认证、网络、SSE framing、SDK、backpressure、取消、usage、计费、
+模型质量和生产可靠性。当前样例也只覆盖 Responses API 的一小部分，没有包含全部 input/output item、tool、
+音频/图像、web/file/computer use、error event 和状态续接。
 
 ## 从 reference 走向生产 adapter
 
@@ -383,12 +388,14 @@ temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格
 
 ### 可写进简历的诚实版本
 
-> 为 OpenAI Responses 设计 typed-event 离线 replay：在 15-event/2-item authored fixture 上校验
+> 为 OpenAI Responses 设计 typed-event 离线 replay：在一组包含 15 个 event、2 个 item 的固定样例上校验
 > response/item/content 生命周期，重建 text 与 function arguments，并对 delta/done/terminal output、
-> 12+9=21 usage 和输入/收据 fingerprint 做 fail-closed 对账；16 个测试覆盖错序、未知字段、refusal、
+> 12+9=21 usage，并用输入/收据 fingerprint 发现内容变化；16 个测试覆盖错序、未知字段、refusal、
 > incomplete/failed、截断与非有限 JSON。
 
-紧邻这句话必须写明：这是 SDK-shaped authored fixture，不是 OpenAI SDK/真实 API/network/billing/质量/安全证据，也不支持完整 Responses surface。若候选人能解释这条边界，项目价值通常高于只展示一次成功 API 调用。
+紧接着应说明：样例只模仿 SDK 的事件形状，没有调用 OpenAI SDK 或真实 API，也没有覆盖完整 Responses surface。
+如果候选人能解释本地 replay 与真实网络、计费、质量和安全验证的区别，这个项目就比只展示一次成功 API 调用
+更有说服力。
 
 ## 一手资料
 

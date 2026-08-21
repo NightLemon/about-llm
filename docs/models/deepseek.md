@@ -118,7 +118,7 @@ v_{t,i}^{C}=W_i^{UV}c_t^{KV}.
 
 这不是在标准 K/V tensor 上简单减少 head 数，而是改变了缓存对象。部分 projection 还可吸收到 query 或输出侧计算中，避免在每一步完整展开历史 K/V。
 
-### 为什么必须拒绝标准公式
+### 为什么这里不能套用标准 KV 公式
 
 看到 config 同时存在 query/KV head 数，并不证明它采用标准 MHA layout。若同一 checkpoint 还声明 latent rank、独立的 non-RoPE/RoPE 维度或自定义 attention，实现可能拥有完全不同的 cache tensor。
 
@@ -130,7 +130,8 @@ v_{t,i}^{C}=W_i^{UV}c_t^{KV}.
 4. 再加入 page、block table、scale、workspace 和 allocator 开销；
 5. 用目标硬件上的峰值显存校准。
 
-本仓库会对已知 MLA markers **fail closed**，而不是给出看似精确的标准 KV 数字。精确字段与拒绝 control 见[证据台账](../evidence/deepseek-controls.md)。
+本仓库看到已知 MLA markers 时会停止计算，并提示标准 KV 公式不适用。这样可以避免得到一个形式精确、
+实际口径错误的数字。触发这一判断的字段和验证样例见[证据台账](../evidence/deepseek-controls.md)。
 
 ## R1：训练行为与基础架构是两层
 
@@ -192,7 +193,9 @@ FP8 的效果取决于格式、scale granularity、累加 dtype、异常值处�
 
 config 中出现 auto_map 只表示声明了自定义模块映射。若没有固定并审阅 remote code，不能声称该执行路径安全或可复现。
 
-本仓库当前对 DeepSeek-V3 的模型级证据止于固定 config 的 L2；通用 MoE fixtures 不是该 checkpoint 的 L4。具体 revision、hash 和已执行 control 都在[证据台账](../evidence/deepseek-controls.md)中披露。
+本仓库目前只核对了指定 DeepSeek-V3 config 的架构字段，尚未运行对应权重。通用 MoE 样例只能解释机制，
+不能代替这个 checkpoint 的前向执行。具体 revision、hash 和已经运行的检查见
+[证据台账](../evidence/deepseek-controls.md)。
 
 ## 单卡与云 API 怎样选择
 
@@ -200,7 +203,7 @@ config 中出现 auto_map 只表示声明了自定义模块映射。若没有固
 
 ### 单卡路线
 
-开始下载前先做 fail-closed preflight：
+下载较大文件以前，先运行一次预检；缺少必要条件时直接停止：
 
 1. 固定 model revision，检查 weight shard 总字节数；
 2. 读取学生 config，确认 dense/MoE 与 MHA/GQA/MLA；
@@ -231,7 +234,8 @@ config 中出现 auto_map 只表示声明了自定义模块映射。若没有固
 3. **行为评测**：比较 direct answer、reasoning prompt 和固定预算采样。
 4. **服务检查**：在 Transformers 与目标 serving runtime 中对齐输入、停止和输出。
 
-每轮开始前先写预测，例如“更大的采样预算会提高 oracle coverage，但 verifier 选择未必同步提高”。运行后逐 case 对账，而不只看平均分。
+每轮开始前先写预测。例如，增加采样预算通常会提高“候选中至少有一个正确答案”的比例，但 verifier
+未必更容易选中它。运行后逐个 case 查看候选和选择结果，而不只看平均分。
 
 实现入口：
 
@@ -250,9 +254,11 @@ config 中出现 auto_map 只表示声明了自定义模块映射。若没有固
 - verifier、工具、超时和重试；
 - attempted 与 successful case 的成本和延迟。
 
-pass@k 回答“至少一个候选正确”的 oracle coverage；self-consistency 和 verifier selection 回答“系统能否选出正确候选”。二者不是同一个指标。
+pass@k 回答“候选中是否至少有一个正确答案”；self-consistency 和 verifier selection 回答“系统最终能否
+选出正确候选”。一个衡量候选覆盖，另一个衡量选择能力。
 
-若候选数增加但 verifier 很弱，成本会增加，最终答案却可能不变甚至变差。因此不要把更长输出本身当作更强推理。
+若候选数增加但 verifier 很弱，成本会增加，最终答案却可能不变甚至变差。输出更长只说明使用了更多 token，
+推理能力是否提高仍要看最终任务结果。
 
 ## 常见错误
 
@@ -263,7 +269,7 @@ pass@k 回答“至少一个候选正确”的 oracle coverage；self-consistenc
 - 把 FP8/MTP 字段写成已经执行的 kernel、显存收益或解码加速。
 - 只比较最终答案，不固定 token、候选、工具和 verifier 预算。
 - 用 API 兼容格式推断 provider 内部权重和训练实现。
-- 把通用 MoE 或 RL 教学 fixture 写成 DeepSeek checkpoint 复现。
+- 把通用 MoE 或 RL 教学样例写成 DeepSeek checkpoint 复现。
 
 ## 面试时怎样回答
 
@@ -295,4 +301,4 @@ pass@k 回答“至少一个候选正确”的 oracle coverage；self-consistenc
 - DeepSeek-AI，[DeepSeek-V3 Technical Report](https://arxiv.org/abs/2412.19437)。
 - DeepSeek-AI，[DeepSeek-R1](https://github.com/deepseek-ai/DeepSeek-R1)。
 - DeepSeek-AI，[DeepSeek-V2](https://arxiv.org/abs/2405.04434)。
-- 精确 config、revision 与本仓库 control 见[DeepSeek 证据台账](../evidence/deepseek-controls.md)。
+- 具体 config、revision 与本仓库运行过的检查见[DeepSeek 证据台账](../evidence/deepseek-controls.md)。

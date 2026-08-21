@@ -87,7 +87,9 @@ Greedy 快、无需随机数，适合作为可复现基线。但“每一步概�
 
 ### 3.1 Top-k
 
-保留 logit 最大的 \(k\) 个 token，其余设为 \(-\infty\)。若第 \(k\) 位存在并列，必须再定义 tie-break：有的 threshold 实现会把同分 token 全部留下，候选数可能大于 \(k\)；仓库 NumPy oracle 则按 token id 升序打破并列，恰好保留 \(k\) 个。
+保留 logit 最大的 \(k\) 个 token，其余设为 \(-\infty\)。若第 \(k\) 位存在并列，还要定义 tie-break。
+有的 threshold 实现会留下全部同分 token，使候选数超过 \(k\)；本仓库的 NumPy 实现按 token id 升序
+打破并列，因此恰好保留 \(k\) 个。
 
 - 优点：在 exact-k 约定下候选数量有上界，直观；
 - 局限：无论分布很尖还是很平都使用同一个 \(k\)。
@@ -147,9 +149,10 @@ sample = model.generate(
 
 这是教学实现，不包含 EOS、批内独立停止、KV Cache 或流式 UTF-8 解码。
 
-`generation_runtime_control.py` 进一步真实调用 Transformers `generate()`，验证 config-level 与 call-level EOS、
-`max_new_tokens` 和 stopping loop 的覆盖顺序。它使用 authored logits processor 固定 token trace，因此证明协议路径，
-不代表任意 checkpoint 的生成质量或 vLLM/云 Provider 语义。精确 trace 见
+`generation_runtime_control.py` 会真实调用 Transformers `generate()`，观察 config-level 与 call-level EOS、
+`max_new_tokens` 和 stopping loop 的覆盖顺序。为了让输出可预测，脚本使用本仓库提供的 logits processor
+生成一条固定 token 轨迹。这能检查 Transformers 的调用路径；checkpoint 质量以及 vLLM、云 Provider 的行为
+需要分别验证。完整轨迹见
 [Transformers 控制台账](../evidence/transformers-controls.md)。
 
 ## 4. Logits processor 与惩罚
@@ -195,7 +198,7 @@ Beam search 每一步保留累计分数最高的 \(B\) 个部分序列。序列�
 s(x_{1:T})=\frac{\log p(x_{1:T})}{T^\alpha},\qquad \alpha\ge 0.
 \]
 
-这里必须定义 \(T\) 是否包含 prompt、EOS 和特殊 token。仓库 oracle 只计生成 token，包含已发出的 EOS，
+这里必须定义 \(T\) 是否包含 prompt、EOS 和特殊 token。本仓库的计算只计生成 token，包含已发出的 EOS，
 不计 prompt。由于 log probability 为负，增大正的 \(\alpha\) 会让长序列分数更靠近 0；它并非简单的“惩罚长文本”。
 不同 runtime 还可能采用不同 normalization、finished-candidate cap 和 early-stopping 语义。
 
@@ -207,14 +210,14 @@ EOS 候选完成后不再送入模型；未完成 prefix 到达 `max_new_tokens`
 分数上界、length normalization 和实现契约，不能只看当前 raw score。Beam 常用于翻译、语音识别等输出空间
 较明确的任务；开放对话中，大 beam 可能产生更通用、更重复的文本。
 
-运行可手算的 deterministic oracle：
+运行这个可以手算结果的确定性示例：
 
 ~~~powershell
 python projects/inference-serving/beam_search_toy.py
 ~~~
 
 Toy 会保存每一步 active beam、扩展、已完成 EOS 与最终排序，还演示 length penalty 如何改变短/长序列排名。
-它用于检查搜索契约，不执行模型、tokenizer、KV Cache 或 GPU kernel。精确 fixture 留在实验输出中。
+它用于检查搜索规则，不执行模型、tokenizer、KV Cache 或 GPU kernel。每一步使用的固定输入都保存在实验输出中。
 
 需要记录：beam width、raw cumulative log probability、length penalty 公式与长度口径、EOS 语义、early stopping、finished-candidate cap、tie-break、每个输入返回几个序列，以及完成序列与未完成序列如何比较。
 
@@ -243,7 +246,7 @@ byte chunk 不会改变结果。若同一字符同时完成多个 stop，按配�
 python projects/inference-serving/stop_matching_toy.py
 ~~~
 
-Fixture 把 `甲🙂乙<END>尾` 同时切开 emoji bytes 和 `<END>`，最终仍只返回 `甲🙂乙`。它还覆盖重叠 stop：
+这个样例把 `甲🙂乙<END>尾` 同时切开 emoji bytes 和 `<END>`，最终仍只返回 `甲🙂乙`。它还覆盖重叠 stop：
 若 `BC` 与 `ABC` 在同一字符完成，按配置优先级选择。其他服务可能采用 longest-match 或不同 priority，
 所以 overlap 规则必须写入契约。
 
@@ -275,13 +278,13 @@ Fixture 把 `甲🙂乙<END>尾` 同时切开 emoji bytes 和 `<END>`，最终�
 
 分母为 0 是明确的 constraint dead end，不能偷偷解除约束。EOS 只有在当前状态接受完整输出时才能被允许；反过来，到达接受状态也不等于请求已经以 EOS 正常完成，仍可能因 length、取消或错误终止。Beam search 下每条 prefix 还要携带自己的语法状态，分叉时不能共享一份可变 parser state。
 
-运行仓库有限字符串集合的 trie/DFA oracle：
+运行仓库提供的 trie/DFA 对照示例：
 
 ~~~powershell
 python projects/inference-serving/constrained_decoding_toy.py
 ~~~
 
-Fixture 只接受 `{"x":1}` 或 `{"x":2}`。Token `1]` 的第一个字符虽然合法，完整片段却无法到达有效状态，
+这个固定样例只接受 `{"x":1}` 或 `{"x":2}`。Token `1]` 的第一个字符虽然合法，完整片段却无法到达有效状态，
 所以必须整 token 屏蔽；`1}` 与 `2}` 在 allowed mass 内重新归一化。EOS 只在 accepting state 开放。
 
 Toy 直接拼接 supplied token text，没有执行真实 tokenizer 的 byte decoder 或 normalization。生产约束器必须按实际

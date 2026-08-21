@@ -69,7 +69,7 @@ flowchart LR
 |---|---|---|
 | 论文/技术报告 | 方法与受控实验 | 作者在固定设置下主张什么 |
 | Config/code markers | expert 数、position fields、生成选项 | 静态实现候选 |
-| Mechanism fixture | authored routing、sampling、cache oracle | 局部数学与状态机 |
+| 机制样例 | 本仓库提供的 routing、sampling 与 cache 参考实现 | 局部数学与状态机 |
 | Target runtime | 真实 cache、routing、candidate trace | 指定实现实际做了什么 |
 | Workload evaluation | 任务、硬件、负载和成本 | 候选系统是否值得发布 |
 
@@ -107,7 +107,8 @@ Timeout、OOM、truncation、invalid output、dropped token、tool error 和 ver
 
 ### 5. 解释边界
 
-机制 fixture 不等于目标模型；目标模型单例不等于总体质量；离线质量不等于生产容量。
+三层实验回答三种问题：机制样例检查局部公式，目标模型运行检查一个具体配置，生产压测检查真实容量。
+后一级的结论都需要新的输入和环境，不能从前一级直接推出。
 
 ## 三种常见错误归因
 
@@ -129,9 +130,9 @@ MoE 仍需存储/分片总权重，并承担 routing、expert imbalance、all-to
 
 1. **Reasoning 条件**：固定 context，比较 single sample 与 best-of-N。
 2. **Long-context 条件**：固定生成预算，改变 evidence 位置和 distractors。
-3. **MoE 条件**：只用 authored routing fixture，改变 capacity 和 token distribution。
+3. **MoE 条件**：只用本仓库提供的路由样例，改变 capacity 和 token distribution。
 
-不要把三组结果合并成一个总分。分别回答：
+三组结果分别回答下面的问题，因此分开报告：
 
 - 更多 candidate 是否提高 oracle，verifier 能否选对？
 - 输入更长后，答案证据是否仍能被找到和整合？
@@ -192,4 +193,4 @@ MoE 仍需存储/分片总权重，并承担 routing、expert imbalance、all-to
 - [推理系统](reasoning-systems.md)：sampling、search、verifier 与 tools。
 - [长上下文系统](long-context-systems.md)：position、attention、KV、RAG 与评测。
 - [MoE 系统](moe-systems.md)：router、capacity、通信与部署。
-- [前沿证据台账](../evidence/frontier-controls.md)：数学 toys、collective controls 和严格边界。
+- [前沿证据台账](../evidence/frontier-controls.md)：数学小实验、collective 验证程序和适用范围。

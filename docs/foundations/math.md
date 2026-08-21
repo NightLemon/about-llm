@@ -112,7 +112,8 @@ x^Ty=\lVert x\rVert_2\lVert y\rVert_2\cos\theta
 - \(\lVert x\rVert_\infty=\max_i|x_i|\)：最大分量；
 - Frobenius norm：矩阵所有元素的 L2。
 
-不同 norm 回答不同问题。参数 L2 小不等于模型输出变化小，输出还受输入、层间放大和非线性影响。
+不同 norm 回答不同问题。较小的参数 L2 只说明权重在这个度量下变化不大；模型输出还会受到输入、
+层间放大和非线性的共同影响。
 
 ### Rank、SVD 与低秩更新
 
@@ -124,7 +125,7 @@ W=U\Sigma V^T
 
 奇异值描述不同输入方向的放大程度。保留前 \(r\) 个奇异值给出 Frobenius/L2 意义下的最佳 rank-\(r\) 近似（在相应经典条件下）。
 
-LoRA 不等于直接对原权重做 SVD 截断，而是学习低秩**增量**：
+LoRA 保留原权重，学习的是一个低秩**增量**；它和直接对原权重做 SVD 截断是两种操作：
 
 \[
 W'=W_0+\frac{\alpha}{r}BA,
@@ -204,7 +205,8 @@ o_b=e^{m_{b-1}-m_b}o_{b-1}+\sum_j e^{s_{b,j}-m_b}v_{b,j}.
 在实数算术下，这和一次性计算 dense softmax 完全等价；有限精度下，block 划分与归约顺序可能造成微小误差，不能要求逐 bit 相同。
 仓库的 blockwise online attention 使用 float64 累积，只构造当前 score tile 与每行状态，不返回完整 probability matrix。
 报告的 logical peak score elements 只是最大逻辑 tile，不包含 Q/K/V、输出、NumPy temporary 或 allocator，因此不是进程峰值内存测量。
-这个 CPU oracle 也不证明 CUDA kernel、FlashAttention backend、HBM traffic、速度或 vLLM 行为。
+这份 CPU 对照结果只检查公式和中间状态。CUDA kernel、FlashAttention backend、HBM traffic、速度和
+vLLM 行为仍需在对应运行环境中测量。
 
 ~~~powershell
 python projects/transformers-basics/online_softmax_demo.py
@@ -241,7 +243,9 @@ p(x_{1:T})=\prod_{t=1}^Tp(x_t\mid x_{<t})
 
 ### Token 概率不是事实置信度
 
-`p(next_token="巴黎" | prompt)` 是生成分布下该 token 的概率，受到措辞、tokenizer、采样和训练分布影响。它不等于“巴黎是正确答案”的 Bayesian posterior。一个事实可能有多种 tokenization/表达；模型也可能对错误模板非常自信。
+`p(next_token="巴黎" | prompt)` 是生成分布下该 token 的概率，受到措辞、tokenizer、采样和训练分布影响。
+它回答“模型接下来有多可能生成这个 token”，而不是“巴黎有多可能是事实上的正确答案”。同一事实可以有多种
+tokenization 和表达方式，模型也可能对错误模板给出很高概率。
 
 如果产品需要置信度，应定义事件和标签，在目标分布做 calibration、selective prediction/abstention 和切片评测，而不是直接展示首 token probability。
 
