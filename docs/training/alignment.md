@@ -238,7 +238,8 @@ DPO 的 \(\beta\) 控制 reference-relative preference signal 的尺度。它不
 
 Sequence log-probability 是 token log-probability 的和时，较长 response 拥有更多项；若改成平均，又得到不同目标。训练、验证和不同实现必须明确 sum/mean、mask 与 length normalization。
 
-DPO 仍依赖可靠 pairs、固定 reference、support overlap 和独立评测。它省掉显式 RM + online rollout，不等于消除了对齐假设。
+DPO 仍依赖可靠 pairs、固定 reference、support overlap 和独立评测。它省掉了显式 RM + online rollout，
+但数据和目标函数中的对齐假设仍然存在。
 
 ## PPO：在 policy 自己的输出上学习
 
@@ -369,12 +370,12 @@ Offline evaluation 使用固定 prompts，对 baseline/candidate 做 paired comp
 
 1. **SFT baseline**：验证 template、labels 和 held-out behavior。
 2. **Preference audit**：保留 A/B、tie、order、generator、group 和 split。
-3. **DPO control**：固定 policy/reference，手算一对样本的四个 sequence log-probabilities。
+3. **DPO 公式检查**：固定 policy/reference，手算一对样本的四个 sequence log-probabilities。
 4. **训练运行**：从单 batch overfit 到小规模 adapter，保存 before/after artifact。
 5. **独立评测**：比较任务、安全、长度、KL 和通用能力。
 6. **RM/PPO 扩展**：只有 DPO 无法解决在线探索需求时再增加。
 
-实现、命令、Qwen target DPO control 和各种 negative cases 见[对齐证据台账](../evidence/alignment-controls.md)。
+实现、命令、Qwen target DPO 验证程序和各种 negative cases 见[对齐证据台账](../evidence/alignment-controls.md)。
 
 ## 常见错误
 
@@ -383,7 +384,7 @@ Offline evaluation 使用固定 prompts，对 baseline/candidate 做 paired comp
 - RM pair accuracy 高就认为没有长度或风格 shortcut。
 - DPO 不固定 reference、template、mask、reduction 和 beta。
 - PPO reward 上升就声称真实任务与安全提升。
-- 用 tiny fixture 拼成目标 checkpoint 已完成 RLHF 的结论。
+- 把小型固定样例的结果拼成“目标 checkpoint 已完成 RLHF”。
 - 只测 harmful refusal，不测安全请求的 over-refusal。
 - 用模型行为替代工具权限、幂等和人工审批。
 
@@ -413,4 +414,4 @@ Offline evaluation 使用固定 prompts，对 baseline/candidate 做 paired comp
 - [单卡微调项目](../practice/projects/single-gpu-finetuning.md)：SFT、LoRA 与 DPO 的渐进路线。
 - [SFT 数据闭环](sft-data-pipeline.md)：模板、labels、数据治理和切分。
 - [Agent Runtime](../applications/agent-runtime.md)：权限、副作用和回放。
-- [对齐证据台账](../evidence/alignment-controls.md)：严格数据契约、公式 controls 与命令。
+- [对齐证据台账](../evidence/alignment-controls.md)：数据检查规则、公式对照与运行命令。

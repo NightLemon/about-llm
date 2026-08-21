@@ -24,7 +24,7 @@
 4. Checkpoint、RNG 和 data cursor 能否在所有 rank 上恢复同一训练状态。
 
 本章沿这条排查顺序学习分布式训练。仓库没有目标多 GPU 或多机集群，
-因此本地证据限于算法、CPU 多进程 controls 和验收协议；任何 GPU 吞吐、MFU 与拓扑结论都要在目标环境实测。
+因此本章只能在本地检查算法、CPU 多进程通信和验收方法。GPU 吞吐、MFU 与拓扑结论都要在目标环境实测。
 
 ## 先做一张显存账本
 
@@ -222,9 +222,9 @@ router / auxiliary loss and precision
 平均负载看起来平衡时，一个 tail expert 仍可能让同步 step 等待。Small batch 还会让每个 expert GEMM 太小。
 EP 对 all-to-all、metadata order 和拓扑非常敏感。
 
-仓库提供四层 CPU/Gloo controls，分别检查 global capacity competition、owner-only all-to-all dispatch、
-reverse-split backward，以及 capacity drop 与训练图组合。它们使用 authored tensors 和本机 processes，
-没有验证 NCCL、多节点、target MoE checkpoint、GPU throughput 或可扩展 runtime。
+仓库提供四个逐层推进的 CPU/Gloo 小实验，分别检查 global capacity competition、owner-only all-to-all
+dispatch、reverse-split backward，以及 capacity drop 与训练图组合。输入张量由本仓库准备，进程都运行在
+同一台机器上。NCCL、多节点、target MoE checkpoint、GPU throughput 和可扩展 runtime 仍需另行验证。
 精确 split、gradient 与 fixed values 见[准确性台账](../evidence/accuracy-ledger.md)。
 
 ## 组合并行要映射到物理拓扑
@@ -318,11 +318,12 @@ Rank 0 聚合 full model 可能再次 OOM，抵消分片训练的内存收益。
 Data cursor 还要区分 sampler-emitted、main-loop-consumed 与 optimizer-committed。
 DataLoader prefetch 可能已经发出尚未消费的 IDs；gradient accumulation 崩溃时还可能存在未提交 gradients。
 
-仓库的 resume controls 展示两条策略：回到 committed cursor 重放，或保存 pending samples、gradients 与 crash RNG sidecar 后继续。
-两条都能在当前 CPU fixture 中 bit-exact 恢复；漏 gradients 或使用错误 RNG 的隔离负例会漂移。
+仓库的恢复实验展示两条策略：一是回到 committed cursor 重放，二是保存 pending samples、gradients 与
+crash RNG sidecar 后继续。在当前 CPU 样例中，两条路径都能 bit-exact 恢复；故意漏掉 gradients 或使用
+错误 RNG 时，参数会出现可观察的漂移。
 精确 checkpoint schema、fault snapshots 和数值见[单 GPU 微调项目](../practice/projects/single-gpu-finetuning.md)。
 
-这些 controls 没有让多 rank data、collective 和 optimizer 成为一个原子事务。
+这些本地实验并没有让多 rank data、collective 和 optimizer 变成一个原子事务。
 分布式实现仍要定义 global commit receipt、失败 rank 的共同回滚/重放和可接受的重复样本策略。
 
 ## 正确性验收从单步开始
@@ -356,7 +357,7 @@ Dropout RNG 需要 rank/device-aware 且可重放。TP 区域的某些 mask 需�
 注入 rank crash、checkpoint 中断、worker 重启、collective timeout 和非有限 gradient。
 恢复后比较 data ledger、训练状态与下一个若干 step，而不只看模型文件能否加载。
 
-## 仓库中的 CPU controls 验证了什么
+## 用 CPU 小实验逐层排查
 
 从单进程到双进程依次运行：
 
@@ -368,7 +369,7 @@ python projects/single-gpu-finetuning/amp_grad_scaler_control.py
 python projects/single-gpu-finetuning/ddp_amp_overflow_consensus_control.py
 ~~~
 
-| Control | 主要观察 |
+| 实验 | 主要观察 |
 |---|---|
 | Gradient accumulation toy | Token sum/count 与 local-mean weighting 的差异 |
 | DDP token mean | 默认 gradient mean 下 \(D/N\) scaling |
@@ -376,8 +377,8 @@ python projects/single-gpu-finetuning/ddp_amp_overflow_consensus_control.py
 | AMP scaler | unscale-before-clip、overflow skip 与 scaler resume |
 | DDP + AMP | Reduction 前 non-finite、reduction 后单-rank fault 与共同 skip |
 
-它们使用 PyTorch CPU、Gloo、小参数和 authored inputs。结果能检查公式、collective 路径和故障状态，
-不能拼接成 FSDP/ZeRO/TP/PP/EP、CUDA、多节点、目标 Trainer、收敛、吞吐或模型质量证据。
+这些实验使用 PyTorch CPU、Gloo、小参数和本仓库准备的输入，可以检查公式、collective 路径和故障状态。
+FSDP/ZeRO/TP/PP/EP、CUDA、多节点、目标 Trainer、收敛、吞吐和模型质量都需要更高一层的实际运行。
 
 ## 性能报告要让两个 run 真能比较
 
@@ -444,7 +445,7 @@ activation/gathered-parameter 峰值，以及大规模故障率下 checkpoint in
 
 ## 从本地走向目标集群
 
-1. 在单进程 toy 上固定 loss numerator、denominator 和 update oracle；
+1. 在单进程小例子上写清 loss numerator、denominator 和预期 update；
 2. 用两个 CPU/GPU processes 检查 DDP reduction、data IDs 与 failure consensus；
 3. 在单节点多 GPU 逐个启用 DP、sharding、TP，不同时改变多个维度；
 4. 固定 global workload 做 strong scaling，固定 per-device workload 做 weak scaling；

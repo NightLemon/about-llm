@@ -41,7 +41,7 @@ Decode 每条序列每轮通常只增加一个输入位置，却要反复读取�
 - 小 batch decode 常更偏 memory-bandwidth-bound；
 - Batch 增大后，权重读取可被更多序列复用，decode 的算术强度会提高。
 
-因此不要把“prefill 是计算瓶颈、decode 是带宽瓶颈”写成不带条件的结论。
+因此，“prefill 更偏计算、decode 更偏带宽”是一条分析起点。最终瓶颈仍要结合 batch、长度、kernel 和硬件实测。
 
 ## 用 Roofline 建立最小性能直觉
 
@@ -212,7 +212,8 @@ python projects/inference-serving/quantization_toy.py `
   --output-features 16 --input-features 33 --batch-size 8
 ~~~
 
-它最终仍用 FP32 NumPy matmul，所以能验证格式与误差账本，不能证明 low-bit GPU 加速或 resident VRAM 降低。
+它最终仍用 FP32 NumPy matmul，所以适合检查文件格式和量化误差。Low-bit GPU 是否加速、resident VRAM
+是否降低，需要匹配的 GPU kernel 与显存测量。
 
 ### Activation 与 KV quantization
 
@@ -314,7 +315,8 @@ CUDA Graph 适合重复、shape 较稳定的执行路径，常用于 decode；�
 | KV quantization | `projects/inference-serving/kv_quantization_toy.py` | Code/scale 与 GQA 误差 |
 | Speculative sampling | `projects/inference-serving/speculative_decoding_toy.py` | Acceptance/residual 概率 |
 
-精确测试、fixture 数字和“不证明什么”集中在[推理服务证据页](../evidence/inference-serving-controls.md)。
+具体测试、固定样例数值和目前尚未验证的部分集中在
+[推理服务证据页](../evidence/inference-serving-controls.md)。
 
 ## 自测与面试表达
 

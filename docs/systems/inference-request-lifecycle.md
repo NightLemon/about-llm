@@ -46,7 +46,8 @@ flowchart LR
 - **引擎层**决定请求何时进入 GPU、每轮执行哪些序列，以及 KV 占多少容量。
 - **模型层**执行 Transformer forward，产生 logits，再由采样器选出 token。
 
-HTTP 请求进入服务，不等于已经进入模型。模型产生 token，也不等于客户端已经收到字节。
+HTTP 请求进入服务以后，还要经历排队、调度和模型执行；模型产生 token 后，又要经过解码、缓冲和网络发送，
+客户端才会收到字节。两段过程应使用不同时间戳观测。
 这三个时刻必须分别记录。
 
 ## 请求 A：从 prompt 到三个输出 token
@@ -163,7 +164,7 @@ B: prompt=2, output=2
 移除已完成请求，让 batch 的成员随时间变化。
 
 下面只展示一种教学策略：decode-ready 请求每轮先获得一个位置，剩余 token budget 用于 chunked prefill。
-这正是本仓库 CPU 调度 oracle 固定的策略，不代表所有 vLLM 版本。
+本仓库的 CPU 调度示例采用这套策略，方便逐轮手算。不同 vLLM 版本可能采用其他优先级和抢占规则。
 
 | 调度轮次 | 新 admission | prefill 工作 | decode 工作 | 边界上可见输出 |
 |---:|---|---|---|---|
@@ -245,8 +246,8 @@ logits
 顺序是协议的一部分。两个服务即使都接受 `temperature` 和 `top_p`，也可能因默认值、processor 顺序、
 tokenizer 或 tie-break 不同而产生不同分布。
 
-Stop string 可能跨 token 或 SSE chunk。客户端截掉了 stop 文本，不等于服务端及时停止 forward，
-也不等于 KV 已释放或计费已终止。
+Stop string 可能跨 token 或 SSE chunk。客户端即使已经截掉 stop 文本，服务端仍可能继续 forward。
+模型停止、KV 释放和计费终止是后续的独立事件，需要服务端 trace 才能确认。
 
 ## 四个时刻怎样变成指标
 

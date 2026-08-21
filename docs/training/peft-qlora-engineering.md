@@ -167,7 +167,7 @@ valid supervised token count
 Chat template 会加入 system、tool 和 special tokens，不能按原始字符串位置猜 mask。System/user/padding 与不希望监督的
 控制 token 应为 `-100`；目标 assistant tokens 的 label 才等于 input token ID。
 
-仓库固定 Qwen SFT control 演示了一个真实故障：原生 template 没有 generation span，TRL assistant mask 全为 0；
+仓库的 Qwen SFT 验证程序演示了一个真实故障：原生 template 没有 generation span，TRL assistant mask 全为 0；
 审核 template 才把 assistant serialization 交给 collator。完整讲解见[SFT 数据闭环](sft-data-pipeline.md)。
 
 ## 目标 GPU 的最小 dry-run
@@ -206,21 +206,23 @@ python projects/single-gpu-finetuning/smoke_peft.py `
   --artifact-root artifacts/peft-export-control
 ```
 
-Strict verifier 在框架加载前检查目录文件集、safetensors 结构、base/merged tensor signatures 和 LoRA A/B。
+在框架加载以前，检查程序会核对目录文件集、safetensors 结构、base/merged tensor signatures 和 LoRA A/B。
 Unkeyed hash 只能发现意外漂移，不认证发布者；可写目录中的 verify-then-reopen 仍有 TOCTOU，需要不可变发布路径、
 ACL/lease 或内容寻址句柄。
 
-## 固定 Qwen LoRA control 该怎样解读
+## 这次 Qwen LoRA 运行说明了什么
 
 ```powershell
 python projects/single-gpu-finetuning/run_qwen_target_lora_control.py `
   --verify projects/single-gpu-finetuning/qwen2.5-0.5b-lora.recorded-report.json
 ```
 
-这条 recorded control 在固定 Qwen2.5-0.5B-Instruct 上真实做过 CPU FP32 assistant-only backward、一次 AdamW step、
-base freeze、PEFT export 与 fresh reload。Reload logits 对账通过，但单样本 loss 反而上升。
+这份运行记录来自指定版本的 Qwen2.5-0.5B-Instruct。它真实执行了 CPU FP32 assistant-only backward、
+一次 AdamW step、base freeze、PEFT export 与 fresh reload。Reload logits 可以与导出前对上，但单样本 loss
+反而上升。
 
-因此它证明“目标 checkpoint 的 Adapter 路径执行过”，不证明训练超参数合理、held-out 质量改善或 GPU/QLoRA 可用。
+因此我们可以确认这个 checkpoint 的 Adapter 路径确实执行过。训练超参数是否合理、held-out 质量是否改善，
+以及 GPU/QLoRA 是否可用，需要新的实验。
 精确参数量、fingerprints 与 artifact sizes 留在[项目控制台账](../evidence/project-controls.md)。
 
 ## 训练恢复比 Adapter 保存多得多
@@ -233,9 +235,10 @@ window。要声称训练可恢复，先定义 checkpoint 落在哪个 commit bou
 - 只在 zero-grad/optimizer-committed boundary 保存，恢复后从下一未提交 sample 继续；
 - 保存半窗口 gradients、position、divisor、crash-time RNG，并把 sidecar 与 base checkpoint 原子发布。
 
-仓库 controls 分别覆盖 GradScaler omission、DataLoader prefetch cursor 和 consumed—optimizer-committed crash window。
-它们是 tiny CPU 因果反例，不应被外推为目标 PEFT trainer 已实现 exact resume。运行入口见
-[Single-GPU Finetuning 深挖 controls](../practice/projects/single-gpu-finetuning.md#controls)。
+仓库用三个小型 CPU 故障实验，分别展示漏存 GradScaler、DataLoader prefetch cursor 和
+consumed—optimizer-committed crash window 会造成什么后果。它们帮助理解恢复状态，但不能代替目标 PEFT
+trainer 的 exact resume 验收。运行入口见
+[Single-GPU Finetuning 深挖实验](../practice/projects/single-gpu-finetuning.md#controls)。
 
 ## 多 Adapter 什么时候值得
 

@@ -72,7 +72,8 @@ Source registry 应记录：
 生成文件和多个许可证。自动探测器适合发现待复核项，`unknown` 应进入隔离或人工决策，而不是自动变成允许。
 
 Source allowlist 可以把未知来源挡在采集入口。若先抓取所有内容，再靠正则清理，敏感数据已经进入下载缓存、日志、
-备份和中间文件。仓库的 [SFT 数据流水线](sft-data-pipeline.md)展示了 fail-closed registry、用途绑定和有限 scanner，
+备份和中间文件。仓库的 [SFT 数据流水线](sft-data-pipeline.md)展示了遇到未知来源时停止的 registry、用途绑定
+和有限 scanner，
 它是工程 reference，不是法律判断或完整 PII 检测器。
 
 ## Raw 快照回答“当时拿到了什么”
@@ -180,11 +181,11 @@ python projects/single-gpu-finetuning/minhash_lsh_toy.py
 仓库实现先用 SHA-256 把 Unicode shingle 稳定映射到 \(2^{61}-1\) 模域，再用 seed 派生 affine hash 系数。
 Band 命中只产生 candidate，程序随后重算精确 Jaccard。
 
-固定的 5-item、10-pair fixture 使用 64 hashes 和 16×4 bands，得到 3 个候选；只有 1 个达到 0.8，
+固定的 5-item、10-pair 样例使用 64 hashes 和 16×4 bands，得到 3 个候选；只有 1 个达到 0.8，
 所以这次 snapshot precision 是 `1/3`。Exhaustive ground truth 上 recall 为 1。另一个 1-hash 反例中，
 两个集合的 Jaccard 是 `2/3`，却没有 band collision，observed recall 为 0。
 
-这些数字解释当前小 fixture 的候选机制。换新闻镜像、代码 fork 或数学证明后，需要重新标注 pair，
+这些数字解释当前小样例的候选机制。换成新闻镜像、代码 fork 或数学证明后，需要重新标注 pair，
 并报告 precision/recall、cluster size、token 移除率、语言/来源差异和 canonical selection。
 
 去重顺序同样会改变结果：先切 chunk 容易删除共享局部段落；先对整文档去重会保留局部复制。

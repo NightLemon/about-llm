@@ -158,7 +158,8 @@ Scheduler 每轮要在四个目标之间权衡：
 Chunked prefill 会把长 prompt 分成片段，使它有机会与 decode 工作交错。
 KV 不足时，有的系统会拒绝新请求，有的会抢占并在以后重算 context，也可能使用其他策略。
 
-Continuous batching 不等于固定的 prefill-first、decode-first 或抢占规则。
+Continuous batching 只表示引擎会在请求执行期间持续重组 batch；prefill-first、decode-first 和抢占规则仍由
+具体 scheduler 决定。
 这些行为必须针对具体 runtime 和版本确认。
 
 ## 用户体验由哪些指标描述
@@ -207,7 +208,7 @@ TPOT 常用首 token 后的生成区间除以 `output_tokens - 1`。只有一个
 
 仓库中可以先读[端到端请求生命周期](inference-request-lifecycle.md)，再运行
 [Inference Serving 项目](../practice/projects/inference-serving.md)。
-精确 oracle 与测试范围位于[推理服务证据页](../evidence/inference-serving-controls.md)。
+用于手算对照的实现与测试范围位于[推理服务证据页](../evidence/inference-serving-controls.md)。
 
 ## 自测
 

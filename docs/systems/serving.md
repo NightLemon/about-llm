@@ -162,7 +162,8 @@ Request ID 关联一次网络 attempt；logical call ID 聚合调用方重试；
 三者用途不同。纯文本重放会产生另一份 token 和费用；付款、发信或创建资源等副作用还需要稳定 effect ID、
 状态查询与 reconciliation，不能靠 HTTP 客户端盲目重试。
 
-版本协商应 fail closed。客户端请求的 model、adapter 或 API feature 不存在时，服务不能静默换模型后返回普通成功。
+版本协商失败时应明确报错。客户端请求的 model、adapter 或 API feature 不存在时，服务不能静默换模型后
+返回普通成功，否则调用者无法知道实际运行了什么。
 如果产品允许降级，receipt 中要写实际 revision、降级原因和能力差异，质量与合规策略也要先批准这条路径。
 
 ### 流式输出与取消是两个协议

@@ -135,10 +135,12 @@ python projects/single-gpu-finetuning/continual_replay_toy.py
 Task B 的标签规则相反，但输入包含显式 task-id feature，因此同一个 2→16→2 MLP 可以同时解出两项任务。
 这样可以避免把“模型容量上不可能同时满足”误称为遗忘。
 
-在固定 seed 的 CPU fixture 中，无 replay 在学完 B 后把 A accuracy 从 1.0 降到约 0.027，旧任务 forgetting
+在固定 seed 的 CPU 样例中，无 replay 在学完 B 后把 A accuracy 从 1.0 降到约 0.027，旧任务 forgetting
 约为 0.973；把**全部**旧样本与新样本按 1:1 联合 replay 后，两项 accuracy 都是 1.0，旧任务 forgetting 为 0。
 
-两条路径的 FWT 都约为 -0.418，因为它由训练 B 之前的状态决定；B 阶段是否 replay 不可能追溯改变它。这个负值只说明本 fixture 中学 A 后、尚未学 B 时的 B accuracy 低于随机初始化基线，不是“replay 产生负迁移”的证据。
+两条路径的 FWT 都约为 -0.418，因为它由训练 B 以前的状态决定，B 阶段是否 replay 无法追溯改变它。
+这个负值只说明：在当前样例中，模型学完 A、尚未学习 B 时，B accuracy 低于随机初始化基线。它不是
+“replay 产生负迁移”的证据。
 
 这是 task-incremental、单 seed、full-batch、全量旧数据的 CPU synthetic toy。它没有覆盖有限 buffer、
 class/domain-incremental 的未知路由、真实 LLM/语料、安全 retention、隐私删除、计算开销或置信区间，
@@ -159,7 +161,8 @@ Benchmark 默认使用训练 seed 0–19。每个 seed 的 Task A checkpoint 都
 **optimizer-step matched，而不是 example/compute matched**。新样本呈现量都是 25,600，旧样本呈现量分别为
 0、6,400 和 25,600。
 
-当前 CPU/PyTorch fixture 的聚合结果如下。区间是 5,000 次 percentile bootstrap 得到的 95% paired seed-level difference interval：
+当前 CPU/PyTorch 样例的聚合结果如下。区间是 5,000 次 percentile bootstrap 得到的 95% paired
+seed-level difference interval：
 
 | Strategy | mean old-task final acc | mean new-task final acc | mean final ACC | old-task acc gain vs no replay（95% CI） |
 | --- | ---: | ---: | ---: | ---: |
@@ -427,7 +430,8 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 还实际运行了两任务 task-incremental 的 no/finite/full replay 对照与 20-seed 配对区间。
 
 仓库没有在目标 LLM、真实时间序列、多任务/数据采样、compute-matched 配置或安全集上执行完整 benchmark，
-也没有目标模型 unlearning 攻击实验。因此，现有证据不能证明灾难性遗忘或机器遗忘已经解决。
+也没有目标模型 unlearning 攻击实验。因此，当前结果只展示了几种方法在这些样例上的行为；灾难性遗忘和
+机器遗忘是否得到解决，还需要目标模型与目标数据上的验证。
 
 ## 19. 常见错误结论
 

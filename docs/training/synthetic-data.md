@@ -394,7 +394,7 @@ boolean 冒充 integer、重复 ID 与超限输入。样例中的 duplicate、re
 
 ## 18. 当前仓库证据边界
 
-仓库已经执行 strict JSON、lineage/verifier/duplicate audit、mixture exposure 计算和 v2 artifact 的本地复算，
+仓库已经执行 JSON 结构检查、lineage/verifier/duplicate audit、mixture exposure 计算和 v2 artifact 的本地复算，
 并用 40 个专项测试锁定这些契约。它没有调用真实 teacher/verifier、训练 student、执行多代反馈、
 做近似去重 benchmark 或人工标注。
 

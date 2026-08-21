@@ -235,10 +235,10 @@ labels[t] == input_ids[t]   when assistant_mask[t] == 1
 labels[t] == -100           for other valid tokens and padding
 ```
 
-### 固定 Qwen final-label control { #target-qwen-sft-final-label-control }
+### 在固定 Qwen 版本上检查 final labels { #target-qwen-sft-final-label-control }
 
-仓库为固定 `Qwen/Qwen2.5-0.5B-Instruct` revision 保存了一个 target control。
-它在三条多轮/tool fixtures 上比较原生模板与审核模板的 input IDs，检查 assistant masks，
+仓库为指定的 `Qwen/Qwen2.5-0.5B-Instruct` revision 保存了一份运行记录。
+它用三条多轮/tool 固定样例比较原生模板与审核模板的 input IDs，检查 assistant masks，
 再让真实 TRL collator 生成 final labels，并执行一次目标模型 CPU FP32 no-grad loss。
 
 ~~~powershell
@@ -246,8 +246,8 @@ python projects/single-gpu-finetuning/run_qwen_target_sft_label_control.py `
   --verify projects/single-gpu-finetuning/qwen2.5-0.5b-sft-label.recorded-report.json
 ~~~
 
-这个 control 验证固定 records、template、collator 和 checkpoint revision 的连接，
-没有执行 backward、optimizer 或模型质量评测。精确 token counts 与固定 loss 见
+这次运行检查 records、template、collator 和 checkpoint revision 是否正确连接起来。
+它没有执行 backward、optimizer 或模型质量评测。具体 token counts 与 loss 见
 [单 GPU 微调项目](../practice/projects/single-gpu-finetuning.md#run)。
 
 ## Padding、packing 与 truncation 不能改变标签语义
@@ -284,10 +284,10 @@ python projects/single-gpu-finetuning/amp_grad_scaler_control.py
 ~~~
 
 第一条用 `[1,3]` 有效 labels 说明 sum/count 与 full batch 一致，而等权 micro-batch mean 改变 gradient。
-后续 controls 分别覆盖 DDP 默认 reducer 的 \(D/N\) scaling、`no_sync` + clipping + SGD，
+后续小实验分别覆盖 DDP 默认 reducer 的 \(D/N\) scaling、`no_sync` + clipping + SGD，
 以及 AMP 的 unscale-before-clip 和 overflow skip。
 
-这些都是 tiny CPU controls，没有接入完整目标 SFT Trainer、CUDA 或真实数据质量。
+这些都是小型 CPU 实验，没有接入完整目标 SFT Trainer、CUDA 或真实数据质量评测。
 迁移时还要核对 framework 是否已经除 accumulation steps、何时 all-reduce count，
 以及 optimizer、scheduler 和 GradScaler 在 skip 时是否共同保持不变。
 
@@ -342,7 +342,7 @@ Readiness 也不等于 tokenizer/mask audit。模型 revision 加载后，训练
 小批次 overfit 是管道验收，不是泛化实验。Loss 应明显下降，生成能复现目标格式；
 若失败，优先检查 template、mask、冻结参数、optimizer、数据读取和 learning rate，而不是增加 GPU。
 
-仓库的 tiny offline smoke test 贯通 strict records、Transformers template mask、TRL collator labels 和 optimizer step：
+仓库的离线 smoke test 会检查输入记录，再贯通 Transformers template mask、TRL collator labels 和 optimizer step：
 
 ~~~powershell
 python projects/single-gpu-finetuning/smoke_trl_sft.py
@@ -366,7 +366,7 @@ Gradient accumulation 崩溃时还可能存在 partial-window gradients。两种
 1. 回到 optimizer-committed boundary，恢复该时刻 RNG，并重放未提交 samples；
 2. 保存 pending sample IDs、position/divisor、gradients 与 crash-time RNG sidecar 后继续。
 
-仓库 CPU controls 对两条路径都做 bit-exact 对照，并用“漏 gradients”和“恢复错误 RNG”的负例展示参数漂移。
+仓库的 CPU 实验对两条路径都做 bit-exact 比较，并用“漏 gradients”和“恢复错误 RNG”的负例展示参数漂移。
 Manifest-last 只能检测当前 bundle 是否完整，仍没有让 sample、optimizer 和所有 checkpoint files 成为跨故障原子事务。
 
 真实 SFT 还要纳入 assistant mask、有效-token denominator、adapter、optimizer、scheduler、GradScaler、

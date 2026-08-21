@@ -126,7 +126,7 @@ PAD 也可能与 EOS 重合。真正危险的是：
 - 请求 override 静默改变 config 中的长度或采样语义。
 
 固定一个短 prompt，保存 token ids、渲染后的模板、输出 token ids、usage 和 finish reason，
-用它作为升级前后的最小差分 fixture。
+把它作为升级前后的最小差分样例。
 
 ## 两个容量旋钮先用人话理解
 
@@ -236,7 +236,7 @@ python projects/inference-serving/benchmark_openai.py `
 三者不是同一事件。客户端断连可以先发生，backend 可能继续生成；Python task 被取消也不能证明已经进入的 GPU kernel 可中断。
 
 目标 vLLM 版本应使用自身 abort API、scheduler trace 和 block-release trace 验收。
-本仓库的 async iterator 与 Transformers thread control 只提供较低层的对照证据，见
+本仓库的 async iterator 与 Transformers thread 验证程序只检查较低层的取消传播，见
 [推理服务证据页](../evidence/inference-serving-controls.md#local-http-cancel)。
 
 ## Admission、背压与过载
@@ -292,7 +292,7 @@ Autoscaling 也不能只看 GPU utilization：GPU 可能因 admission 太严而�
 model/tokenizer/template/adapter identity
 runtime/container/driver/hardware identity
 启动配置
-token-level contract fixtures
+token-level behavior samples
 质量与安全 case
 固定 workload attempts 和 server trace
 容量曲线与失败样例
@@ -344,7 +344,7 @@ Canary 期间保留旧版本容量，确认回滚真正可执行，而不是只�
 
 - 先跟随[一次请求如何穿过推理引擎](inference-request-lifecycle.md)复述状态和计时边界。
 - 用[Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)理解 block table 与 COW。
-- 在[Inference Serving 项目](../practice/projects/inference-serving.md)完成本地 control 和目标 GPU 验收。
+- 在[Inference Serving 项目](../practice/projects/inference-serving.md)完成本地验证和目标 GPU 验收。
 - 用[证据页](../evidence/inference-serving-controls.md)核对每条结论的测试与外推边界。
 
 完成后，你应当得到一份可审阅的验收报告，而不只是一个启动成功的终端截图。

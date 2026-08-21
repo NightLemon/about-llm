@@ -33,7 +33,8 @@ J=\sum_i p_i r_i,
 \frac{\partial J}{\partial z_j}=p_j(r_j-J).
 \]
 
-这个有限问题很重要：它给出 policy gradient 的 exact oracle。真实 LLM 无法枚举所有 response，但采样估计器应在这个小问题上对账。
+这个有限问题很重要：所有 action 都能枚举，所以 policy gradient 可以手算。真实 LLM 无法枚举所有 response，
+但采样估计器至少应先在这个小问题上与手算结果对上。
 
 ## 2. Score-function / REINFORCE 梯度
 
@@ -80,7 +81,8 @@ python -m pytest tests/test_policy_gradient.py -q
 - baseline 为 0、expected reward 或最小方差常数时，估计器期望相同；
 - 三者 total variance 约为 2.609983、0.884520、0.784108。
 
-测试还用 central finite difference 独立核对 exact gradient。这个 control 没有执行环境、模型或 Monte Carlo sampling，不能证明某个 RL 训练稳定或 reward 有效。
+测试还用 central finite difference 独立核对 exact gradient。这个公式实验没有执行环境、模型或 Monte Carlo
+sampling，因此只回答梯度实现是否符合当前定义；RL 训练稳定性和 reward 有效性需要另外评测。
 
 ## 3. 从 bandit 到 MDP
 
@@ -134,7 +136,7 @@ A_t=\delta_t+\gamma\lambda c_t A_{t+1},
 
 \(c_t\) 在 episode boundary 和 padding 处为 0。较小 \(\lambda\) 更依赖 value、方差低而 bias 可能更大；较大 \(\lambda\) 更接近 Monte Carlo return。
 
-运行现有 NumPy control：
+运行现有 NumPy 对照示例：
 
 ~~~powershell
 python projects/single-gpu-finetuning/ppo_objective_toy.py
@@ -261,7 +263,7 @@ Policy 会寻找 reward 中最容易提高的方向，而不是理解设计者�
 
 ## 14. 证据阶梯
 
-1. **公式 control**：有限 action 枚举、finite difference、mask 和边界测试；
+1. **公式检查**：有限 action 枚举、finite difference、mask 和边界测试；
 2. **toy optimization**：真实更新小 policy，确认 objective 与行为同向；
 3. **small model**：固定 tokenizer/checkpoint，记录 rollout 与完整训练状态；
 4. **held-out evaluation**：任务、安全、长度、reward shortcut 和 verifier OOD；

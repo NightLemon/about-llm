@@ -144,9 +144,9 @@ L=\frac{\sum_i S_i}{\sum_i n_i}.
 DDP 默认对 rank gradients 求 mean，还会引入 world-size 因子。AMP 又要求先 unscale，再进行 global-norm clipping；
 任何 micro-batch 出现 non-finite 时，整个 update 的 step/scheduler 行为必须跨 rank 一致。
 
-仓库提供四层 controls：
+仓库提供四个逐层推进的小实验：
 
-| Control | 回答的问题 |
+| 实验 | 回答的问题 |
 |---|---|
 | `gradient_accumulation_toy.py` | Batch mean 与 token mean 是否给出同一梯度 |
 | `ddp_token_mean_control.py` | DDP rank mean 下 world-size 怎样进入缩放 |
@@ -154,7 +154,7 @@ DDP 默认对 rank gradients 求 mean，还会引入 world-size 因子。AMP 又
 | `ddp_amp_overflow_consensus_control.py` | 一个 rank overflow 时所有 rank 是否共同 skip |
 
 精确 tensors、fractions 和负例放在[分布式训练](../systems/distributed-training.md#global-batch-loss-normalization)。
-这些 tiny CPU controls 验证局部机制，不代表大型预训练收敛或 GPU 吞吐。
+这些小型 CPU 实验只检查局部机制；大型预训练是否收敛、GPU 吞吐如何，仍需目标训练任务回答。
 
 ## (6ND) 能估什么，不能估什么
 
@@ -266,15 +266,15 @@ model / tokenizer / data / config / code identities
 两种都要把 model、optimizer、scheduler、RNG 与 data state 绑定为同一发布身份。Manifest-last 只能标记文件集完整，
 仍要考虑目录原子发布、`fsync`、远程对象存储和来源认证。
 
-仓库的 resume controls 分别演示：
+仓库的恢复实验分别演示：
 
 - 漏 Scheduler/GradScaler/RNG/data state 会怎样分叉；
 - DataLoader 从 emitted cursor 恢复会漏掉预取队列中的样本；
 - 恢复正确 RNG 却漏掉半窗口 gradients，step 数相同也会得到不同参数；
 - 保存 gradients 但使用错误 RNG，同样无法 exact replay。
 
-运行与精确结果见[Single-GPU Finetuning controls](../practice/projects/single-gpu-finetuning.md#controls)。它们是 tiny CPU
-故障注入，不代表跨节点预训练 checkpoint 已完成。
+运行方法与具体结果见[Single-GPU Finetuning 恢复实验](../practice/projects/single-gpu-finetuning.md#controls)。
+这些都是小型 CPU 故障注入；跨节点预训练 checkpoint 需要在目标集群上重新验收。
 
 ### 怎样做恢复等价性测试
 

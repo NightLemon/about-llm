@@ -19,7 +19,7 @@ Optax 把 gradients 和 optimizer state 变成 updates，最后由 JIT 编译并
 把这条数据流跑通后，你会理解 JAX 为什么要求显式传递 params、state 与 PRNG keys，也能判断“CPU tiny model
 可训练”与“GPU/TPU 上可扩展”之间还缺哪些证据。
 
-仓库已在 CPU JAX device 完成 tiny-batch overfit、PyTorch↔JAX 同契约 parity 和跨进程 resume control。
+仓库已在 CPU JAX device 完成 tiny-batch overfit、PyTorch↔JAX 同规则 parity 和跨进程恢复实验。
 它们没有验证 CUDA/TPU、mixed precision、多机网络或大模型吞吐。
 
 ## 为什么 JAX 看起来不像传统 Module
@@ -290,7 +290,7 @@ python -m pytest tests/test_gpt_jax.py
 5. 固定 tiny batch 的 final loss 显著低于 initial loss；
 6. 输出 backend/device 和同步计时边界；
 7. 未安装 Optax 时测试不能被宣称为通过。
-8. parity control 的 LayerNorm 路径通过，而原生 RMSNorm 反事实保持显著非零。
+8. parity 实验中的 LayerNorm 路径可以对上，而原生 RMSNorm 反事实仍有明显非零差异。
 
 Tiny-batch overfit 只验训练闭环，不验泛化；跨框架 parity 只验当前显式相同契约，不验两个默认模型或训练栈
 整体等价。下一步仍需增加独立 validation、多 seed、全部 dropout sites、norm/bias decay mask，并分别验证两框架
