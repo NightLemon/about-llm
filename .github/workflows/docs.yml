@@ -38,6 +38,7 @@ jobs:
       - run: python scripts/check_repo_hygiene.py
       - run: python scripts/check_docs.py
       - run: python scripts/check_content_accuracy.py
+      - run: python scripts/report_readability.py --scope reader --top 30
       - run: python scripts/doctor.py --profile docs
       - run: mkdocs build --strict
       - run: python scripts/check_built_site.py

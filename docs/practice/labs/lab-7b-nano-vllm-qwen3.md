@@ -23,13 +23,13 @@
 
 这是一项真实 GPU 长任务：四个独立进程会分别加载模型，CUDA Graph 组还要先 capture；32 个消融 case
 各运行一次 warmup 和五次 measurement。3070 Laptop 的实际耗时取决于功耗、散热、驱动和依赖构建，
-不要把某次运行时间预先写进教材。
+因此本页不会预先承诺运行时间。
 
-## 先固定你究竟运行了什么
+## 本实验使用的版本和参数
 
-本实验拒绝浮动版本。Manifest 固定：
+为了让实验结果可以复现，本实验使用以下版本和参数。它们也写在 Manifest 中，运行脚本会据此核对环境。
 
-| 对象 | 固定身份 |
+| 对象 | 本实验使用的版本或设置 |
 |---|---|
 | nano-vLLM | `GeeeekExplorer/nano-vllm@bb823b3e06983d71485a8e1f23715ebd87d98ef8` |
 | 模型 | `Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca` |
@@ -38,10 +38,11 @@
 | 输入 / 输出 | 768 synthetic token IDs / 8 sampled tokens |
 | 对照 | eager/CUDA Graph、exact/drift、batch budget 256/1024、并发 1/2/4/8 |
 
-Collector 会在加载模型前检查 nano-vLLM 的 Git HEAD、origin 和 dirty state，并对 config、tokenizer、
-generation config 与权重逐文件核对大小和 SHA-256。`git status` 中哪怕只有一个未跟踪文件，也会拒绝运行。
+加载模型以前，Collector 会核对 nano-vLLM 的 Git commit 和远端地址，还会确认源码目录没有本地改动。
+随后，它逐个检查 config、tokenizer、generation config 和权重文件的大小与 SHA-256。只要版本或文件内容
+与表中记录不同，脚本就会停止，并告诉你具体是哪一项不一致。源码目录里有未跟踪文件时也会停止。
 
-推荐在 WSL 的独立环境准备依赖，不要用 editable install 把构建产物写进被检查的源码目录：
+推荐在 WSL 的独立环境准备依赖。安装时避免用 editable install 向被检查的源码目录写入构建产物：
 
 ~~~bash
 git clone https://github.com/GeeeekExplorer/nano-vllm.git ~/src/nano-vllm
@@ -54,7 +55,7 @@ hf download Qwen/Qwen3-0.6B \
   --local-dir ~/models/Qwen3-0.6B-c1899de
 ~~~
 
-依赖安装以该 commit 的 `pyproject.toml` 为准。先确认 WSL 中的 `nvidia-smi`、PyTorch CUDA、
+依赖安装以这个 nano-vLLM 版本的 `pyproject.toml` 为准。先确认 WSL 中的 `nvidia-smi`、PyTorch CUDA、
 FlashAttention 和 Triton 能工作，再启动长实验。Windows CPU Python 不能代替这项检查。
 
 ## 先看一次请求的源码路线
@@ -81,11 +82,11 @@ Collector 不复制一套 scheduler，也不伪造 model output。它临时包�
 本轮选择与 KV 账本，然后仍调用 upstream `LLMEngine.step()` 完成真实 model runner、sampler 和
 postprocess；step 返回后再记录状态。这样 trace 与被测控制流来自同一次执行。
 
-### 谁负责模型，谁负责 runtime
+### 谁负责模型，谁负责推理运行时
 
-“运行 Qwen3 需要 Transformers”不等于“这次 forward 由 Transformers model class 完成”。
+Transformers 参与读取配置和 tokenizer；真正执行这次 forward 的模型类来自 nano-vLLM。
 
-| 部件 | 在固定 commit 中承担的职责 | 不要误解成 |
+| 部件 | 在本实验中承担的职责 | 它不负责什么 |
 |---|---|---|
 | Transformers | `AutoConfig`、`AutoTokenizer`、Qwen3 config 类型 | `AutoModel.generate()` 在生成 |
 | nano-vLLM | Sequence、Scheduler、BlockManager、ModelRunner、Qwen3 模型实现和 Sampler | 官方 vLLM 的精简配置 |
@@ -96,7 +97,7 @@ postprocess；step 返回后再记录状态。这样 trace 与被测控制流来
 | xxhash | 计算链式 token-block cache key；命中后仍比较 token IDs | 权限校验或密码学认证 |
 | NCCL | 初始化 tensor-parallel process group；本实验 world size 为 1 | 已执行多卡通信实验 |
 
-固定 Qwen3-0.6B 是 text-only dense decoder。nano-vLLM 在这里实现 RMSNorm、RoPE、GQA、
+这里使用的 Qwen3-0.6B 是 text-only dense decoder。nano-vLLM 在这里实现 RMSNorm、RoPE、GQA、
 gated SiLU MLP 和 causal LM head；它不需要多模态 processor，也没有运行视觉 encoder。
 
 ## 768 个 prompt token 怎样进入三个 block
@@ -112,8 +113,8 @@ block 2: token positions 512..767
 每个样本先运行一条不计入性能的 primer。Primer 完成后，活动引用已经释放，但完整 block 的 hash/token
 metadata 可以留在 free blocks 中供 prefix lookup 使用。
 
-固定实现的 `can_allocate()` 只扫描 `num_blocks - 1` 个 prefix blocks，不把 sequence 的最后一个 block
-作为可复用前缀。因此这个 768-token fixture 的 reviewed expectation 是两个命中 block，不是三个。
+这个版本的 `can_allocate()` 只扫描 `num_blocks - 1` 个 prefix blocks，不把 sequence 的最后一个 block
+作为可复用前缀。因此，对于这组 768-token 输入，后来的请求应该命中两个 block，而不是三个。
 
 ### Exact prefix
 
@@ -183,11 +184,11 @@ sum(block.ref_count) == 所有活动 block-table references
 | 第七次 decode 后 | finished | 0 | 0 | 达到 max tokens，block table 已清空 |
 
 这里的 `Sequence.is_prefill` 是另一个字段：它在首次 decode 被调度时才切成 false。
-不要只凭 status 推断当前 model runner 路径，要同时看本轮 `is_prefill` 与 scheduled work。
+判断当前 model runner 路径时，需要同时查看 status、本轮 `is_prefill` 和 scheduled work。
 
 ## CUDA Graph 究竟覆盖哪一段
 
-固定 `ModelRunner.run_model()` 的分支是：
+这个版本的 `ModelRunner.run_model()` 按下面的条件选择执行路径：
 
 ```text
 is_prefill == true       -> eager model call
@@ -197,12 +198,12 @@ decode batch > 512       -> eager model call
 ```
 
 本实验最多并发 8，所以 `cuda_graph` 组的 decode 符合 replay 条件；prefill 无论在哪一组都走 eager。
-`enforce_eager=True` 只控制这里的 model CUDA Graph 分支，不表示程序完全禁用了所有编译：固定 Sampler
+`enforce_eager=True` 只控制这里的 model CUDA Graph 分支，不表示程序完全禁用了所有编译：本实验使用的 Sampler
 仍带有 `torch.compile`。
 
 CUDA Graph capture 发生在 engine 初始化，不在 measurement window 内；但 capture 后保留的 graph pool、模型、
-KV arena 和 allocator reserved memory 仍会影响测得的显存基线。不要把 `reset_peak_memory_stats()` 理解成
-“显存从零开始”。
+KV arena 和 allocator reserved memory 仍会影响测得的显存基线。`reset_peak_memory_stats()` 只重置峰值统计，
+不会把这些已经保留的显存变成零。
 
 ## 运行完整消融
 
@@ -228,9 +229,12 @@ python projects/inference-serving/nano_vllm_study.py verify \
   --report artifacts/inference/nano-vllm-study.json
 ~~~
 
-Verifier 不需要 GPU。它拒绝 duplicate JSON key、NaN/Infinity、未知字段、revision/identity 漂移、
-时间倒流、TTFT/TPOT/E2E/吞吐算术错误、prefill budget 超限、decode 非单 token 调度、prefix hit 漂移和
-KV 账本不守恒。Fingerprint 没有密钥，只能发现内容漂移，不能认证是谁运行了实验。
+Verifier 不需要 GPU。它会重新检查 JSON 结构、版本信息、时间顺序、性能指标计算和 KV block 数量。
+例如，报告中出现重复字段、`NaN/Infinity`、未知字段、与 Manifest 不同的版本、倒退的时间戳、
+超出预算的 prefill，或者一次 decode 调度了多个 token，验证都会失败。
+
+报告里的 fingerprint 是内容摘要：内容改变时摘要也会改变，所以它可以帮助发现报告是否被修改。
+它没有使用密钥，无法证明报告由谁生成。
 
 ## 怎样读四组消融，而不是只找最快数字
 
@@ -251,7 +255,7 @@ TPOT 使用首 token 之后的七个 token 间隔。它们不包含 HTTP、网�
 ## 实验记录模板
 
 ```text
-Identity：source/model revision，Python/Torch/CUDA/driver，GPU
+运行环境：source/model revision，Python/Torch/CUDA/driver，GPU
 预测：exact/drift 各命中几块，256/1024 各需几次 prefill
 单请求 trace：waiting/running/finished，cached/scheduled token，KV before/after
 消融：五个原始样本、中位数、失败终态
@@ -259,8 +263,8 @@ Identity：source/model revision，Python/Torch/CUDA/driver，GPU
 边界：没有证明 HTTP SLO、模型质量、跨引擎排名或另一台 3070 的性能
 ```
 
-只有报告通过 verifier 并完成脱敏审查后，才能把其中数字提升为本仓库的 3070 recorded evidence。
-在这之前，本页只声明 runner、schema 和机制 expectation，不声明任何 3070 性能结果。
+报告通过验证并完成脱敏审查后，我们才会把其中数字记录为本仓库的 3070 实测结果。
+在这之前，本页只介绍运行脚本、报告格式和预期观察到的机制，不提供任何 3070 性能数字。
 
 ## 自测
 
