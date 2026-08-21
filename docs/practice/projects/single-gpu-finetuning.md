@@ -14,11 +14,11 @@
 - 在没参与训练的 case 上，它比 Prompt 或 RAG baseline 好在哪里？
 - 这张 GPU 上实际用了多少显存，失败配置是什么？
 
-本项目把这些问题串成一条单卡路径。第一次学习按“端到端主线”运行；DDP、AMP 和精确恢复 controls 留到遇到
+本项目把这些问题串成一条单卡路径。第一次学习按“端到端主线”运行；DDP、AMP 和精确恢复实验留到遇到
 相应故障时再查。
 
 !!! note "Qwen2.5 是固定实验对象，不是模型推荐"
-    仓库保存了一组不可变 Qwen2.5-0.5B-Instruct recorded controls，用于离线复核模板、LoRA 和 DPO 路径。
+    仓库保存了一组固定的 Qwen2.5-0.5B-Instruct 运行记录，用于离线复核模板、LoRA 和 DPO 路径。
     选择它是为了固定证据，不代表新项目必须使用 Qwen2.5。换成 Qwen3、Llama 或其他 checkpoint 时，
     需要重新确认 module names、chat template、special tokens、attention/runtime 支持和许可。
 
@@ -94,7 +94,7 @@ QLoRA 还需要 `.[qlora]`，并核对 PyTorch、CUDA、driver、bitsandbytes �
 
 ### 第 1 步：发布 train-only readiness
 
-仓库示例只有两条 authored train records，用于验证协议，不能训练出有用模型：
+仓库示例只有两条人工编写的 train records，用于检查数据协议，不能训练出有用模型：
 
 ```powershell
 python -m about_llm.finetuning_cli prepare-training `
@@ -142,7 +142,7 @@ structured conversation
 → 人工抽查 token / mask / labels
 ```
 
-Qwen2.5 原生 template 没有 TRL 所需的 `{% generation %}` span；在项目的 tool-aware fixture 上会得到全零
+Qwen2.5 原生 template 没有 TRL 所需的 `{% generation %}` span；在项目的 tool-aware 固定样例上会得到全零
 assistant mask。审核模板保持序列化内容不变，只标出 assistant 区域。先检查 recorded report：
 
 ```powershell
@@ -153,7 +153,7 @@ python projects/single-gpu-finetuning/run_qwen_target_sft_label_control.py `
 然后在自己的样本上打印 `input_ids`、解码片段、assistant mask、final labels 与有效监督 token 数。System、user、
 tool observation、padding 以及不希望学习的控制 token 应为 `-100`。最终要看 Trainer 收到的 batch，不能只看 Dataset 中间列。
 
-### 第 4 步：先跑离线 tiny control
+### 第 4 步：先跑离线 tiny 模型
 
 ```powershell
 python projects/single-gpu-finetuning/smoke_trl_sft.py
@@ -230,16 +230,16 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 | 数据与训练 run identity | 能追溯来源 |
 
 用一个全新 base load 加载 adapter，而不是继续复用训练进程里的 model object。对固定输入比较保存前后 logits/输出，
-同时验证 base identity 漂移会 fail closed。重载成功说明 artifact plumbing 正常，仍不代表任务质量提升。
+同时验证 base identity 漂移会在加载前被拒绝。重载成功说明 artifact plumbing 正常，仍不代表任务质量提升。
 
-仓库的固定 Qwen LoRA control 可离线核对这条路径：
+仓库保存的 Qwen LoRA 运行可用于离线核对这条路径：
 
 ```powershell
 python projects/single-gpu-finetuning/run_qwen_target_lora_control.py `
   --verify projects/single-gpu-finetuning/qwen2.5-0.5b-lora.recorded-report.json
 ```
 
-它真实做过 CPU FP32 backward、一次 AdamW update、base freeze、PEFT export 与新 base 重载。该 authored 单样本的
+它真实做过 CPU FP32 backward、一次 AdamW update、base freeze、PEFT export 与新 base 重载。这条人工编写样本的
 loss 反而上升，所以正确结论是“训练与发布链路执行过”，而不是“LoRA 已改善模型”。
 
 ### 第 7 步：用 held-out gate 决定是否发布
@@ -279,26 +279,26 @@ python -m about_llm.preference_cli prepare-training `
 python projects/single-gpu-finetuning/smoke_trl_dpo.py
 ```
 
-固定 Qwen DPO control 只用 authored `good/bad` pair 验证 TRL/LoRA backward 与 artifact 路径；它没有人类偏好或
+固定 Qwen DPO 运行只用人工编写的 `good/bad` pair 检查 TRL/LoRA backward 与 artifact 路径；它没有人类偏好或
 安全标签。正式训练前仍要做 `--data-preflight-only`、tokenizer 抽查、显存测量和 held-out preference 评测。
 
 ## 遇到故障时按哪条证据查
 
-| 现象 | 先检查 | 下一份 control |
+| 现象 | 先检查 | 下一项实验 |
 |---|---|---|
-| Assistant mask 全零 | Template 是否标 generation span | SFT label control |
+| Assistant mask 全零 | Template 是否标 generation span | SFT label 检查 |
 | 变长 batch 梯度不对 | Loss sum、有效 token denominator | `gradient_accumulation_toy.py` |
 | 多卡梯度缩小 | DDP 是 sum 还是 mean | `ddp_token_mean_control.py` |
 | `no_sync` 没减少通信 | Forward 是否也在 context 内 | `ddp_accumulation_no_sync_control.py` |
 | AMP clip 结果太小 | 是否先 unscale 再 clip | `amp_grad_scaler_control.py` |
 | 某 rank overflow 后分叉 | Skip 决策是否跨 rank 一致 | `ddp_amp_overflow_consensus_control.py` |
-| Resume 漏样本 | Emitted、consumed、committed cursor | DataLoader/commit controls |
-| Resume 参数仍漂移 | RNG、pending gradients、scheduler/scaler | Checkpoint controls |
+| Resume 漏样本 | Emitted、consumed、committed cursor | DataLoader/commit 实验 |
+| Resume 参数仍漂移 | RNG、pending gradients、scheduler/scaler | Checkpoint 实验 |
 | Adapter 能加载但回答退化 | Base/template/config 与 held-out slice | Reload + Evaluation Gate |
 
-这些 controls 用于回答一个具体机制问题，不需要在第一次单卡实验前全部跑完。
+这些实验各自回答一个具体机制问题，不需要在第一次单卡实验前全部跑完。
 
-## 深挖机制 controls { #controls }
+## 深挖机制实验 { #controls }
 
 当你开始研究分布式归一化、AMP 或 exact resume，再运行：
 

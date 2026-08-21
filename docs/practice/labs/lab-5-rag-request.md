@@ -195,7 +195,7 @@ final action               = abstain
 | 是否主题相关 | 部分相关 | 不能 |
 | 是否覆盖所需事实 | 否 | 应拒答 |
 
-`0.55` 是 authored fixture 的 lexical threshold，不是生产默认值。
+`0.55` 只是这个固定样例使用的 lexical threshold，不是生产默认值。
 真实阈值需要在独立 calibration split 上比较 coverage 与 accepted-answer risk。
 
 ## 第六步：破坏一个 rerank 绑定
@@ -255,4 +255,4 @@ python -m pytest tests/test_rag_citations.py -q
 ```
 
 下一步进入[召回、混合检索与重排](../../applications/rag-retrieval.md)，
-把本实验的 BM25 与 authored score 替换成可独立评测的 dense retriever 和 learned reranker。
+把本实验的 BM25 与预先记录的 score 替换成可独立评测的 dense retriever 和 learned reranker。

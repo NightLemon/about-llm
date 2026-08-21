@@ -185,7 +185,7 @@ approval.drifted_amount_negative_control.message = ... approval_execution_mismat
 approval.provider_attempts_after_drift = 0
 ```
 
-注意：fixture grant 没有数字签名。字段匹配只能检查绑定关系，不能认证工件是谁签发的。
+注意：这个固定样例里的 grant 没有数字签名。字段匹配只能检查绑定关系，不能认证工件是谁签发的。
 
 ## 第七步：区分 attempt、effect 与 completion
 
@@ -222,7 +222,7 @@ provider_effect_count = 1
 
 Runtime 看到 pending claim 后停止。它没有因为“上次函数报错”就重新执行 Handler。
 
-这只证明当前 SQLite fixture 的 replay fence。它不证明：
+这个结果只说明当前 SQLite 固定故障样例中的 replay fence 按设计工作。它没有覆盖：
 
 - provider 一定实现 idempotency；
 - 任意多进程/多区域竞争都只产生一次 effect；
@@ -267,7 +267,7 @@ recovery.revoked_replay_negative_control.status = policy_denied
 python -m pytest tests/test_agent_refund_lifecycle.py -q
 ~~~
 
-这两个测试只锁定本章最关键的 oracle：
+这两个测试只锁定本章最关键的判定条件：
 
 - closed schema 和跨 tenant 请求在 Handler 前被拒绝；
 - pending replay 不重复调用 provider；
@@ -282,7 +282,7 @@ python -m pytest tests/test_agent_refund_lifecycle.py -q
 ```text
 任务：subject、tenant、order、amount、capability
 运行前预测：九个阶段的状态和 handler 是否运行
-信任边界：model-authored / trusted context / server-resolved
+信任边界：模型提出 / 可信上下文提供 / 服务端解析
 ACL 负例：资源、reason code、provider attempts
 故障时间线：claim、effect、timeout、pending
 重放证据：handler attempted、request attempts、effect count

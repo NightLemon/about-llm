@@ -9,8 +9,9 @@
 实现一个最小 decoder-only Transformer。模型跑通后，再依次回答三个问题：PyTorch/JAX 是否真在计算同一个函数，
 optimizer trajectory 是否对齐，跨进程 checkpoint 是否恢复了完整训练状态。
 
-!!! warning "四层证据不能合并"
-    tiny-batch overfit、plain-SGD parity、shared-mask AdamW parity 与 strict resume 是四个不同实验。前一层不能替后一层作证；四层合起来也没有执行 CUDA/TPU、多设备 sharding、目标模型或生产训练。
+!!! warning "四个实验回答四个问题"
+    Tiny-batch overfit、plain-SGD parity、shared-mask AdamW parity 与精确恢复分别检查训练接线、跨框架函数、
+    optimizer 轨迹和状态恢复。前一个实验的成功不能替后一个作证；四者也都没有执行 CUDA/TPU、多设备 sharding、目标模型或生产训练。
 
 ## 四层学习与证据地图
 
@@ -130,9 +131,10 @@ python projects/jax-minigpt/cross_framework_parity.py
 
 ### 为什么不能比较两个随机模型
 
-两个框架各自随机初始化后，即使 loss 都有限，也无法判断差异来自权重、架构、数值约定还是实现错误。该 control 用 name-ordered sin/cos 解析参数生成 PyTorch 权重，再显式映射到 JAX：
+两个框架各自随机初始化后，即使 loss 都有限，也无法判断差异来自权重、架构、数值约定还是实现错误。
+这个实验用 name-ordered sin/cos 解析参数生成 PyTorch 权重，再显式映射到 JAX：
 
-| 必须对齐的约定 | Control 选择 |
+| 必须对齐的约定 | 本实验的选择 |
 |---|---|
 | normalization | affine LayerNorm，含 mean subtraction、scale/bias，epsilon=`1e-5` |
 | Linear layout | PyTorch `[out,in]` 映射为 JAX `[in,out]` |
@@ -143,7 +145,8 @@ python projects/jax-minigpt/cross_framework_parity.py
 | optimizer | plain SGD，lr=`0.025`，无 momentum/decay |
 | runtime | 强制 CPU float32；不使用 framework RNG |
 
-当前 11-vocab、2-layer、8-dim、2-head fixture 对账 logits、loss、20 个 unique parameters 的 gradients、一步参数与 post-step forward：
+当前固定输入使用 11-vocab、2-layer、8-dim、2-head 模型，对账 logits、loss、20 个 unique parameters 的
+gradients、一步参数与 post-step forward：
 
 | 比较项 | max absolute difference | 门槛 |
 |---|---:|---:|
@@ -168,7 +171,7 @@ logits 差异会远大于 parity tolerance。它提醒我们：Normalization、e
 python projects/jax-minigpt/cross_framework_training_parity.py
 ~~~
 
-该 control 在已对齐的 LayerNorm 主干上加入：
+接下来在已对齐的 LayerNorm 主干上加入：
 
 - NumPy PCG64 seed `20260814` 外部物化的三张 embedding inverted-dropout masks；
 - dropout rate `0.25`，每步 kept elements 为 `54/50/45`；
@@ -188,10 +191,10 @@ g'_t=g_t\min\left(1,\frac{c}{\lVert g_t\rVert_2}\right),
 [项目控制台账](../../evidence/project-controls.md)。
 
 故意循环移位 JAX mask 后，最终参数出现明显差异。共享 mask 只是在隔离随机输入变量，不证明 native RNG
-equivalence，也没有验证全部 dropout sites、JIT 或 accelerator kernel。当前 control 对所有参数 decay，
+equivalence，也没有验证全部 dropout sites、JIT 或 accelerator kernel。当前实验对所有参数 decay，
 因此也没有覆盖生产常见的 norm/bias decay mask。
 
-## Strict checkpoint 与跨进程 bit-exact resume
+## 可校验 checkpoint 与跨进程 bit-exact resume
 
 ~~~powershell
 python projects/jax-minigpt/checkpoint_resume_control.py
@@ -199,7 +202,7 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 
 ### 需要保存哪些状态
 
-| 状态面 | 本 control |
+| 状态面 | 本实验保存的内容 |
 |---|---|
 | 参数 | 完整 params PyTree leaves/treedef identity |
 | optimizer | Optax count、first/second moments |
@@ -273,13 +276,15 @@ consistency；单文件 `ALLMJAX1` 不能替这些组件作证。
 - [ ] 能用 wrong-mask、RMSNorm、wrong-PRNG、wrong-cursor 四个反例解释因果；
 - [ ] 能说明 bit-exact resume 需要比较 trace 和 full state，而不只是最终 loss；
 - [ ] 能把 CPU、单 accelerator、多设备、目标模型证据分栏；
-- [ ] 能说明 strict hash artifact 的完整性、真实性与 durability 是三个不同问题。
+- [ ] 能说明带完整字段和 hash 的 artifact，其完整性、真实性与 durability 是三个不同问题。
 
-面试中可按“纯函数状态 → tiny overfit → 模型身份 parity → optimizer trajectory → checkpoint state surface → accelerator/sharding 扩展”讲解。简历若只有当前证据，应写“在 CPU tiny fixture 上实现并验证”，不能写“完成大模型 JAX 分布式训练”或“性能优于 PyTorch”。
+面试中可按“纯函数状态 → tiny overfit → 模型身份 parity → optimizer trajectory → checkpoint state surface → accelerator/sharding 扩展”讲解。简历若只有当前证据，应写“在 CPU tiny 固定输入上实现并验证”，
+不能写“完成大模型 JAX 分布式训练”或“性能优于 PyTorch”。
 
 ## 证据边界
 
-当前证据覆盖本机 CPU 上 JAX/JAXlib `0.11.0`、Optax `0.2.8` 的单设备 tiny-batch JIT 训练，强制 CPU 的 PyTorch/JAX LayerNorm/SGD 与 shared-mask AdamW controls，以及 authored `ALLMJAX1` 跨进程 bit-exact resume。
+当前证据覆盖本机 CPU 上 JAX/JAXlib `0.11.0`、Optax `0.2.8` 的单设备 tiny-batch JIT 训练，强制 CPU 的
+PyTorch/JAX LayerNorm/SGD 与 shared-mask AdamW 对照实验，以及本仓库实现的 `ALLMJAX1` 跨进程 bit-exact resume。
 
 它不证明原生 PyTorch/JAX RNG 等价、生产式 decay mask、Flax/Orbax/TensorStore、directory `fsync`/断电、来源认证、CUDA/TPU、混合精度、多设备 mesh/sharding、数据并行效率、目标模型收敛、生成质量或生产性能。每个未执行项都需要目标环境与独立验收。
 

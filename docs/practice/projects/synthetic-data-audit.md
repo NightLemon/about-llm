@@ -17,7 +17,7 @@
 
 这三个数字来自不同问题：
 
-1. **4 candidates**：strict loader 成功解析了几条记录；
+1. **4 candidates**：拒绝重复字段、非法数值和未知字段的 loader 成功解析了几条记录；
 2. **2 eligible**：有几条记录包含全部 required verifier，且结果都是 `passed=true`；
 3. **1 eligible unique**：eligible 记录按声明的 fingerprint profile 去重后，还剩多少种正文。
 
@@ -30,7 +30,7 @@ Lineage、人工复核和 mixture exposure 会另外报告，不会偷偷揉进�
 flowchart LR
   A["真实来源或上代 candidate"] --> B["Generator + prompt revision"]
   B --> C["records JSONL exact bytes"]
-  C --> D["Strict loader"]
+  C --> D["无歧义 JSON loader"]
   D --> E["Lineage diagnostics"]
   D --> F["Required verifier gate"]
   D --> G["Exact identity groups"]
@@ -61,7 +61,7 @@ flowchart LR
 - `mixture.example.json`：real/synthetic target mixture；
 - `audit.example.json`：可完整复算的 v2 recorded artifact；
 - `src/about_llm/synthetic_data.py`：lineage、gate、identity、mixture reference core；
-- `src/about_llm/synthetic_data_cli.py`：strict loader、artifact 与 CLI；
+- `src/about_llm/synthetic_data_cli.py`：JSON loader、artifact 与 CLI；
 - 两个测试文件：正常路径和故意失败路径。
 
 从仓库根目录运行：
@@ -115,7 +115,7 @@ python -m about_llm.synthetic_data_cli `
 
 这里的 size 和 digest 是 contract。只改换行、缩进或对象 key 顺序，也会改变输入 bytes identity；审计逻辑结果可能相同，但旧 artifact 仍应验证失败。
 
-## 5. 为什么输入必须 strict
+## 5. 为什么输入必须无歧义
 
 一行 record 的最小结构是：
 
@@ -134,7 +134,7 @@ python -m about_llm.synthetic_data_cli `
 }
 ~~~
 
-除可缺省且默认为 false 的 `human_reviewed` 外，record 字段都必需。Loader fail closed：
+除可缺省且默认为 false 的 `human_reviewed` 外，record 字段都必需。遇到下列输入时，Loader 会在审计前停止：
 
 - 拒绝 **duplicate JSON keys**，避免不同 parser 对同名 key 取首值或尾值；
 - 拒绝 `NaN`、`Infinity` 与 `-Infinity`，因为它们不是标准 JSON number；
@@ -147,7 +147,8 @@ python -m about_llm.synthetic_data_cli `
 - record 不得把自身列为 parent；
 - records、mixture 与 report 都有 byte-size cap。
 
-Strict parsing 只证明对象被无歧义地解释。它不证明 `generator_revision` 没伪造，也不认证 `human_reviewed=true` 背后真的有人审过。
+这里的解析规则只保证对象被无歧义地解释。它不证明 `generator_revision` 没伪造，也不认证
+`human_reviewed=true` 背后真的有人审过。
 
 ## 6. Parent 指向哪里，代数有没有倒退
 
@@ -192,7 +193,7 @@ Missing 与 present-but-failed 分别进入两个列表；额外 verifier 保留
 - 两个 revision 仍可能共享模型族、训练数据和系统性偏差；
 - verifier pass 不证明 calibration、事实正确或无法 reward hack。
 
-同理，`human_reviewed_count` 只是 authored boolean 的计数，不证明 reviewer 身份、rubric、盲评或 inter-rater agreement。
+同理，`human_reviewed_count` 只是输入文件中 boolean 的计数，不证明 reviewer 身份、rubric、盲评或 inter-rater agreement。
 
 ## 8. 两条通过记录可能只有一份内容
 
@@ -222,7 +223,7 @@ Python 缩进、代码格式、Markdown table、YAML 或格式遵循任务，因
 - eligible count：多少条通过 required verifier gate；
 - eligible unique content count：eligible 集合中有多少 exact identity。
 
-所以 fixture 的两条 eligible 仍计入 `eligible_count=2`，却只贡献
+所以固定样例中的两条 eligible 仍计入 `eligible_count=2`，却只贡献
 `eligible_unique_content_count=1`。选择哪条作为 canonical item，还要结合许可、parent、时间、review 与 split policy；
 本项目不会擅自删除其中一条。
 
@@ -242,7 +243,7 @@ p_i=\frac{w_i}{\sum_j w_j}.
 E[C_i]=Dp_i,\qquad E[repeat_i]=\frac{Dp_i}{n_i}.
 \]
 
-固定 fixture 的 total budget 是 2,000,000 tokens：
+本例预设的 total budget 是 2,000,000 tokens：
 
 | Component | Weight | Fraction | Expected consumed | Unique | Expected repetition |
 |---|---:|---:|---:|---:|---:|
@@ -296,7 +297,7 @@ python -m about_llm.synthetic_data_cli `
 }
 ~~~
 
-Verifier 会 strict-load 现有报告，重新读取 caller-supplied inputs，再按 caller-supplied policy 重跑审计。
+Verifier 先按同样的无歧义规则解析现有报告，再读取 caller-supplied inputs，并按 caller-supplied policy 重跑审计。
 最后，它重算 inputs、audit、mixture、scope 与 fingerprint，并比较 canonical JSON。它不是从报告里取出一个 hash，
 再让同一份可能被篡改的报告验证自己。
 
@@ -307,7 +308,7 @@ Verifier 会 strict-load 现有报告，重新读取 caller-supplied inputs，�
 1. **Input byte drift**：给 records 末尾加空白，旧 artifact 因 size/hash 不同而失败；
 2. **Policy drift**：修改 required verifier、known parent 或 profile，重算结果不同；
 3. **Cooperative rehash**：篡改 `eligible_count` 并重算无密钥 self-hash，仍不匹配可信输入的 full recomputation；
-4. **Strict JSON failure**：duplicate key、non-finite number、unknown field 或无效 UTF-8 在审计前失败；
+4. **JSON parsing failure**：duplicate key、non-finite number、unknown field 或无效 UTF-8 在审计前失败；
 5. **Publication collision**：重复写同一 `--output`，exclusive-create 拒绝覆盖；
 6. **Lineage failure**：unknown parent、cycle 或 round 非单调被独立报告。
 
@@ -328,7 +329,8 @@ python -m pytest `
   tests/test_synthetic_data_cli.py -q
 ~~~
 
-当前 **40 个测试**覆盖 gate 分账、revision overlap、lineage graph、cycle/round、两种 identity profile、mixture 公式、strict JSON、input drift、cooperative rehash、exclusive-create 与 overwrite。
+当前 **40 个测试**覆盖 gate 分账、revision overlap、lineage graph、cycle/round、两种 identity profile、mixture 公式、
+无歧义 JSON 解析、input drift、cooperative rehash、exclusive-create 与 overwrite。
 
 优先运行的反例：
 
@@ -341,7 +343,8 @@ python -m pytest `
   -q
 ~~~
 
-若修改 fixture，应先生成候选报告，再用 diff 审阅每个字段，最后更新 recorded artifact 和准确性 gate；不要只复制新的 fingerprint。
+若修改固定输入，应先生成候选报告，再用 diff 审阅每个字段，最后更新 recorded artifact 和准确性 gate；
+不要只复制新的 fingerprint。
 
 ## 14. 验证失败时从哪里查
 
@@ -350,16 +353,17 @@ python -m pytest `
 1. 比较 records/mixture 的 byte size 与 SHA-256；
 2. 比较 required verifier 的集合、拼写与排序语义；
 3. 比较 known external parents 与 fingerprint profile；
-4. 单独运行 strict loader，定位 JSONL 行号或 schema 字段；
+4. 单独运行 JSON loader，定位 JSONL 行号或 schema 字段；
 5. 比较 `audit` 的 missing/failed/lineage/duplicate 子结构；
 6. 比较 mixture 的 normalized fraction、consumed 与 repetition；
 7. 最后才比较 canonical `report_fingerprint`。
 
-只看到 fingerprint mismatch 时不要猜“哈希算法坏了”。更常见原因是输入换行、policy drift、fixture 字段变化或使用了错误 mixture 文件。
+只看到 fingerprint mismatch 时不要猜“哈希算法坏了”。更常见原因是输入换行、policy drift、固定输入的字段变化，
+或使用了错误 mixture 文件。
 
-## 15. 从离线 control 走向真实流水线
+## 15. 从离线参考实现走向真实流水线
 
-Reference control 之外至少还要补：
+这套离线参考实现之外至少还要补：
 
 - raw teacher request/response、sampling、seed、时间、cost、provider/model revision；
 - prompt/template/tool schema 的 immutable bytes；
@@ -371,7 +375,8 @@ Reference control 之外至少还要补：
 - 每代 dataset/model/eval manifest、stop rule、rollback 与删除传播；
 - artifact signing、publisher identity、atomic publication 与 verify-use binding。
 
-Publication decision 应显式组合多个 gate，例如：`strict_parse AND lineage_policy AND verifier_policy AND contamination_policy AND legal_policy`。不要把这些维度压成无法追责的单一“quality score”。
+Publication decision 应显式组合多个 gate，例如：`strict_parse AND lineage_policy AND verifier_policy AND contamination_policy AND legal_policy`。
+这里的 `strict_parse` 具体指拒绝重复字段、非法数值和未知字段。不要把这些维度压成无法追责的单一“quality score”。
 
 ## 16. 怎样把它讲成一个工程项目
 
@@ -382,7 +387,7 @@ Publication decision 应显式组合多个 gate，例如：`strict_parse AND lin
 - unresolved、cycle、nonmonotonic、missing、failed 的失败账本；
 - target mixture 与 observed exposure 的分账设计；
 - input drift、cooperative rehash、overwrite collision 三个反例；
-- 明确写出当前只是 CPU/offline control。
+- 明确写出当前只是 CPU 上的离线参考实现。
 
 常见追问：
 
@@ -396,7 +401,8 @@ Publication decision 应显式组合多个 gate，例如：`strict_parse AND lin
 
 ## 17. 证据边界
 
-当前项目只证明 strict parsing、lineage/verifier/identity/mixture 计算契约，以及 v2 artifact 能在可信 caller 输入和 policy 下做完整本地复算。
+当前项目说明了无歧义 JSON 解析、lineage/verifier/identity/mixture 计算契约，以及 v2 artifact 能在可信 caller
+输入和 policy 下做完整本地复算。
 
 它没有调用 teacher/student 或 verifier model，也没有运行训练与 observed ledger。Verifier calibration、语义质量与
 多样性评测、license/consent/PII/secret review、semantic near-duplicate 检测、多代 collapse 实验和 downstream

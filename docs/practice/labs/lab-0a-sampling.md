@@ -51,6 +51,7 @@ python projects/inference-serving/sampling_toy.py
 
 最低交付物：一张手算表、一份脚本原始输出、一个故意失败的反例和不超过五行的结论。
 
-固定 logits 的 CPU oracle 只证明当前采样契约和手算一致，不证明目标 checkpoint、Transformers、vLLM 或云 provider 默认顺序相同，也不证明任何配置提高了真实任务质量。
+固定 logits 的 CPU 结果用于核对当前采样契约是否与手算一致。目标 checkpoint、Transformers、vLLM 或云
+provider 可能采用不同默认顺序；配置是否提高真实任务质量还要另做评测。
 
 下一步：进入[实验 0B](lab-0b-generation-protocol.md)，学习 beam、约束、EOS 和流式 stop；只想完成入门路径时，也可以先回到[实验 1](../labs.md#lab-1)。

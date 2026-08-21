@@ -16,7 +16,7 @@ python projects/rag-foundations/rag_request_walkthrough.py
 
 先按 `security context → retrieval → rerank → packing → answer → citation → final` 阅读 JSON。
 完整讲解见[请求生命周期](../../docs/applications/rag-request-lifecycle.md)，动手步骤见
-[实验 5](../../docs/practice/labs/lab-5-rag-request.md)，精确 oracle 见
+[实验 5](../../docs/practice/labs/lab-5-rag-request.md)，手算结果与对应测试见
 [RAG 证据页](../../docs/evidence/rag-answer-controls.md)。
 
 ## 能力地图：需要时再查
@@ -27,7 +27,7 @@ python projects/rag-foundations/rag_request_walkthrough.py
 - 检索前 tenant ACL 过滤；
 - Reciprocal Rank Fusion；
 - 注入式 dense cosine index；
-- 单/多正例 InfoNCE exact control、analytic embedding gradients、hard/false-negative 反事实、ColBERT-style MaxSim 与 SPLADE-style pooling；
+- 单/多正例 InfoNCE 手算实验、analytic embedding gradients、hard/false-negative 反事实、ColBERT-style MaxSim 与 SPLADE-style pooling；
 - authorization-first rerank core、严格 recorded-score artifact 与复用该核心的 sentence-transformers cross-encoder adapter；
 - source-level Recall@k、MRR@k、nDCG@k、Precision@k 与 all-evidence recall@k；
 - graded relevance、必须同时出现的多证据集合、显式无答案 query 与零结果诊断；
@@ -38,7 +38,7 @@ python projects/rag-foundations/rag_request_walkthrough.py
 - 可注入完整 prompt cost 的 greedy context packer、去重、per-source quota 与逐候选决策账本；
 - 目标 tokenizer/chat template 的完整 prospective prompt 重计数、输出 token 预留、模板 identity 与最终 token IDs；
 - packing→raw output→recorded answer 的 generation trace：query/security binding、逐 chunk version/content hash、canonical context、prompt/output identity 与严格审计；
-- 固定 Qwen2.5-0.5B-Instruct 真实权重的 retrieval→packing→greedy generation control：逐步 logits、GenerationMixin 对照，以及不修补的漏引/拒答失败记录；
+- 固定 Qwen2.5-0.5B-Instruct 真实权重的 retrieval→packing→greedy generation 运行：逐步 logits、GenerationMixin 对照，以及不修补的漏引/拒答失败记录；
 - 端到端非 LLM extractive answer baseline：授权检索、byte-budget packing、逐字 span、短引用、lexical coverage 拒答和独立 artifact fingerprint；
 - persistent extractive FastAPI/ASGI service：body 外身份解析、每请求 SQLite 重开、ACL-before-score、closed request schema、结构化错误、readiness、request id、并发/排队/执行 deadline 与完整 artifact response；
 - 授权上下文的规范化 `[S1]` 来源编号、未知引用和漏引段落审计；
@@ -65,14 +65,17 @@ python -m about_llm.rag.cli retrieve `
 
 输出 JSON 保留 rank、score、稳定 chunk id、source/version、heading path、授权后的 `<source>` 上下文和 `[S1]` 来源映射。`tenant-b-secret` 即使包含高相关词也不会进入 tenant-a 候选；没有 `--principal engineering` 时，受限的 `rag-security` 也不会被评分。空 ACL 表示租户内公开，非空 ACL 需要与调用者 principals 至少匹配一项。
 
-### 检索表示学习 exact control
+### 用可手算输入理解检索表示学习
 
 ~~~powershell
 python projects/rag-foundations/retriever_learning_toy.py
 python -m pytest tests/test_retriever_learning.py -q
 ~~~
 
-该 CPU toy 对 supplied embeddings 精确计算单/多正例 InfoNCE、query/document gradients，并比较 easy negative、hard negative、漏标相关文档与 multi-positive mask；同一脚本还隔离验证 ColBERT-style MaxSim 和 SPLADE-style max pooling。它没有运行 encoder、训练 checkpoint 或建立 ANN index，不能证明 authored vectors、labels 或结果代表真实检索质量。完整推导见[检索表示学习](../../docs/applications/retrieval-learning.md)。
+该 CPU toy 对 supplied embeddings 精确计算单/多正例 InfoNCE、query/document gradients，并比较 easy negative、
+hard negative、漏标相关文档与 multi-positive mask；同一脚本还隔离验证 ColBERT-style MaxSim 和 SPLADE-style
+max pooling。它没有运行 encoder、训练 checkpoint 或建立 ANN index，本仓库准备的 vectors 和 labels 也不代表
+真实检索质量。完整推导见[检索表示学习](../../docs/applications/retrieval-learning.md)。
 
 ### 端到端 exact-span 回答基线
 
@@ -87,9 +90,14 @@ python -m about_llm.rag.cli answer-extractive `
   --principal engineering
 ~~~
 
-默认策略从 query 的去重 lexical tokens 中移除一小组固定停用 token；每个候选 span 至少命中 2 个 token，greedy set coverage 达到 0.55 才回答，否则输出明确 abstain。这个阈值只是透明 fixture policy，不是从测试集校准出的生产阈值。`proposed_spans` 在拒答案例中仅记录 gate 前的最佳证据尝试，不会进入 `answer_text` 或 factual claims。
+默认策略从 query 的去重 lexical tokens 中移除一小组固定停用 token；每个候选 span 至少命中 2 个 token，
+greedy set coverage 达到 0.55 才回答，否则输出明确 abstain。`0.55` 只是为了让固定样例可以手算，
+不是从测试集校准出的生产阈值。`proposed_spans` 在拒答案例中仅记录 gate 前的最佳证据尝试，
+不会进入 `answer_text` 或 factual claims。
 
-离线 harness 先生成全部 artifact，再使用 qrels/`answerable` 标签评测；生成 API 本身不接受 relevance、required source 或 expected action。当前 5 条 authored fixture 得到 3 次回答、2 次拒答，action accuracy、grounded-answer pass rate 和 recorded gate pass rate 均为 1.0；这只是固定小语料上的回归结果：
+离线 harness 先生成全部 artifact，再使用 qrels/`answerable` 标签评测；生成 API 本身不接受 relevance、
+required source 或 expected action。当前 5 条人工编写的 case 得到 3 次回答、2 次拒答，action accuracy、
+grounded-answer pass rate 和 recorded gate pass rate 均为 1.0；这只是固定小语料上的回归结果：
 
 ~~~powershell
 python -m about_llm.rag.cli evaluate-extractive `
@@ -112,7 +120,11 @@ python -m about_llm.rag.cli rerank-recorded `
   --top-k 2
 ~~~
 
-核心会在 scorer 前重新检查 tenant/ACL，拒绝重复 document id、非连续 candidate rank、非有限首阶段/重排分数，并以原 candidate rank 处理 score tie。Recorded artifact 精确绑定 query SHA-256、chunk id、content SHA-256 和 scorer identity；缺分、余分、旧 query 或旧内容都 fail closed。示例分数是作者构造的 plumbing fixture，没有执行 learned model、目标 tokenizer/truncation 或质量/延迟评测；`authored-reranker-fixture@v1` 只是未认证标签。真实 CrossEncoder 可通过 adapter 接入同一核心，但仍须固定 revision 并做 held-out qrels 消融。
+核心会在 scorer 前重新检查 tenant/ACL，拒绝重复 document id、非连续 candidate rank、非有限首阶段/重排分数，
+并以原 candidate rank 处理 score tie。Recorded artifact 精确绑定 query SHA-256、chunk id、content SHA-256 和
+scorer identity；缺分、余分、旧 query 或旧内容会在排序前报错。示例分数由本仓库预先填写，只用于检查数据连接，
+没有执行 learned model、目标 tokenizer/truncation 或质量/延迟评测；`authored-reranker-fixture@v1` 只是未认证标签。
+真实 CrossEncoder 可通过 adapter 接入同一核心，但仍须固定 revision 并做 held-out qrels 消融。
 
 ### 持久化摄取、读取与删除
 
@@ -341,7 +353,11 @@ manifest fingerprint 为 `sha256:4ee16617…09dfd`，录制报告 fingerprint �
 
 ### 模型外发布策略的反事实回放
 
-`generation_policy.py` 把 failure control 暴露出的两个问题变成 fail-closed 发布边界，而不修改 attempt-1 的 raw output：授权 context 为空时在 `pre_generation` 阶段确定性 abstain，generator 不得调用；context 非空时只调用一次 generator，随后用本地 citation audit 决定 `publish` 或 `reject`。`reject` 会保留 raw output 供受限审计，但对调用方只给固定拒绝文案。这里的 citation gate 仍只检查短 ID 和段落引用语法，`semantic_entailment_verified` 固定为 false。
+`generation_policy.py` 把第一次运行暴露出的两个问题变成明确的发布规则，而不修改 attempt-1 的 raw output：
+授权 context 为空时在 `pre_generation` 阶段确定性 abstain，generator 不得调用；context 非空时只调用一次
+generator，随后用本地 citation audit 决定 `publish` 或 `reject`。`reject` 会保留 raw output 供受限审计，
+但对调用方只给固定拒绝文案。这里的 citation gate 仍只检查短 ID 和段落引用语法，
+`semantic_entailment_verified` 固定为 false。
 
 代码还把两个序列化面分开：`decision.to_dict()` 是包含 raw output、未知 ID 与未引用段落的**审计投影**，不得直接作为 HTTP response；`decision.to_public_dict()` 是 allowlist 用户面，不包含 `raw_output` 或 finding text，只包含可发布的 `response_text`、typed action/stage 和边界标志。即使 action 是 reject 且模型输出含敏感/注入文本，public projection 也不会因调试字段把它重新带回用户面；受限审计存储仍要单独做访问控制、保留期与脱敏。
 
@@ -359,7 +375,9 @@ python -m pytest tests/test_rag_generation_policy.py -q
 
 ### 真实运行时 guarded control
 
-反事实回放之后还有一条独立证据链：`guarded_transformers_control.py` 让同一 fail-closed policy **真实包裹** `GenerationMixin.generate()` callback。它复用相同的固定 checkpoint 与 authored corpus，但换成不同的 case ID 和 query，避免把 attempt-1 输出伪装成新运行；这两个 query 仍共享语料与设计过程，**不是代表性质量集**。
+反事实回放之后还有一条独立证据链：`guarded_transformers_control.py` 让同一发布规则**真实包裹**
+`GenerationMixin.generate()` callback。它复用相同的固定 checkpoint 与本仓库语料，但换成不同的 case ID 和 query，
+避免把 attempt-1 输出伪装成新运行；这两个 query 仍共享语料与设计过程，**不是代表性质量集**。
 
 ~~~powershell
 python projects/rag-foundations/run_qwen_guarded_rag_control.py --local-files-only
@@ -435,11 +453,21 @@ RAG 的错误可能来自解析、chunk、召回、过滤、重排、上下文�
 
 `split_markdown` 的 chunk id 不包含顺序号，因此在同一标题下插入一个不同段落不会让后续 chunk 全部改名；修改内容、移动标题或相同内容的重复次数变化则会产生新 id。`plan_incremental_update` 明确返回写入和删除集合，调用方应在同一索引事务中应用，并拒绝把“空抓取结果”自动解释为删除全部来源。
 
-`SQLiteChunkStore` 把这条约束落到单机持久层。首次写入要求 `expected_current_version=None`，更新/删除必须给出当前版本；读取与写入之间由 `BEGIN IMMEDIATE` 串行化 writer，陈旧版本 fail closed。同一个 version 若绑定不同 source fingerprint 会拒绝；fingerprint 同时绑定原文、ACL、metadata、`max_chars` 与显式 chunker revision，因而不能在不升级 source version 时悄悄改变切分配置。空切分也不会被解释为全删；删除只能调用显式 `delete_source`。chunks、source manifest 与 stale delete 位于同一事务，测试用 SQLite trigger 在删除后、插入前注入失败，验证旧 version/chunks 完整回滚。
+`SQLiteChunkStore` 把这条约束落到单机持久层。首次写入要求 `expected_current_version=None`，更新/删除必须给出
+当前版本；读取与写入之间由 `BEGIN IMMEDIATE` 串行化 writer，版本已经过期时会拒绝写入。同一个 version 若绑定
+不同 source fingerprint 也会拒绝；fingerprint 同时绑定原文、ACL、metadata、`max_chars` 与显式 chunker revision，
+因而不能在不升级 source version 时悄悄改变切分配置。空切分不会被解释为全删；删除只能调用显式
+`delete_source`。Chunks、source manifest 与 stale delete 位于同一事务，测试用 SQLite trigger 在删除后、
+插入前注入失败，验证旧 version/chunks 完整回滚。
 
-store 重载 heading/ACL/metadata 时使用 strict JSON，拒绝 duplicate key、非有限 number 与类型漂移。`visible_chunks` 先以 tenant 限定 DB 行，再在 Python 中做 principal ACL 过滤，返回值才可交给 BM25/dense scorer。SQLite 文件仍含文档正文和 ACL，默认不加密；生产环境必须配置文件 ACL、加密、备份/删除和审计。
+Store 重载 heading/ACL/metadata 时拒绝 duplicate key、非有限 number 与类型漂移。`visible_chunks` 先以 tenant
+限定 DB 行，再在 Python 中做 principal ACL 过滤，返回值才可交给 BM25/dense scorer。SQLite 文件仍含文档正文
+和 ACL，默认不加密；生产环境必须配置文件 ACL、加密、备份/删除和审计。
 
-这只是单机 reference store，不是向量数据库：没有 embedding column/ANN、在线 snapshot alias、在线 schema migration、跨进程 lease、replication 或多副本一致性。仓库已有 SQLite backup/verify/restore 演练，但只覆盖本地 schema-v1 文件与 authored fixture；`BEGIN IMMEDIATE` 和 online backup 证明单 SQLite 数据库边界内的事务/一致快照，不证明分布式 vector/index 与 source manifest 原子提交或完整生产灾备。
+这只是单机 reference store，不是向量数据库：没有 embedding column/ANN、在线 snapshot alias、在线 schema migration、
+跨进程 lease、replication 或多副本一致性。仓库已有 SQLite backup/verify/restore 演练，但只覆盖本地 schema-v1
+文件与固定样例；`BEGIN IMMEDIATE` 和 online backup 说明单 SQLite 数据库边界内可以得到事务/一致快照，
+不能代表分布式 vector/index 与 source manifest 原子提交或完整生产灾备。
 
 `build_citation_context` 在渲染前再次检查 tenant，去重后分配短来源 id。`audit_citations` 只验证引用是否存在、id 是否已授权以及段落是否漏引；即使它返回成功，也不代表来源在语义上支持 claim。claim-evidence entailment 应使用人工标注集、NLI/LLM judge 和抽样审计，并报告误判率。
 

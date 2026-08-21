@@ -2,6 +2,10 @@
 
 目标：统一业务侧 ChatMessage 与 ChatResponse，但显式保留供应商协议差异，不用一个看似通用的 SDK 隐藏 system、usage、finish reason 和错误语义。
 
+第一次阅读只需运行[离线契约验证](#可运行离线契约验证)。输入是三组固定的 request/response JSONL，输出是
+规范化后的请求、响应和脱敏检查结果；整个过程不会导入 HTTP client，也不会使用真实密钥。确认三种协议都能
+映射到共同对象后，再按需要学习 Responses events、流式、重试和预算。
+
 ## 三类协议
 
 - OpenAI-compatible：可用于按配置接入 GPT，以及提供兼容端点的 DeepSeek/Qwen 服务；
@@ -24,12 +28,12 @@ python -m about_llm.integrations.cloud_api_cli verify `
 
 - `network_performed: false`；
 - `real_credentials_used: false`；
-- 三个 provider fixture 全部通过；
+- 三个 provider 样例全部通过；
 - request headers 中认证值为 `<redacted>`；
 - 输出序列化后不含内部假密钥；
 - system/role/body、text、model、usage 与 finish reason 符合各自契约。
 
-安装仓库后也可使用 `about-llm-cloud-contract`。fixture schema 为：
+安装仓库后也可使用 `about-llm-cloud-contract`。输入 schema 为：
 
 ```json
 {
@@ -44,9 +48,11 @@ python -m about_llm.integrations.cloud_api_cli verify `
 
 `provider` 允许值为 `openai-compatible`、`anthropic-messages` 或 `gemini-generate-content`。
 
-JSONL loader 拒绝 duplicate key、`NaN`/`Infinity`、未知或缺失的顶层字段，以及带额外字段的 message；这避免不同解析器对同一 fixture 得出不同对象。
+JSONL loader 拒绝 duplicate key、`NaN`/`Infinity`、未知或缺失的顶层字段，以及带额外字段的 message；
+这避免不同解析器对同一输入得出不同对象。
 
-这证明 adapter 对固定 fixture 的构建、解析和脱敏行为，不证明 DNS、TLS、认证、配额、区域、SDK 兼容或真实端点当前可用。
+这个结果说明 adapter 对固定输入的构建、解析和脱敏行为符合预期。DNS、TLS、认证、配额、区域、SDK 兼容和
+真实端点可用性需要在联网环境另行验证。
 
 ## OpenAI Responses typed-event 离线 replay
 
@@ -63,22 +69,27 @@ python projects/cloud-api-contracts/openai_responses_replay.py `
 
 Loader 拒绝 duplicate key、`NaN`/`Infinity`、invalid UTF-8、空行、缺少末尾换行、未知或额外 event 字段、4 MiB 文件/1 MiB 单行/10,000 events 超限。Function arguments 无效时保留原字符串并报告 `arguments_is_strict_object=false`，不能冒充已校验工具参数。
 
-该命令没有执行 HTTP/SSE/WebSocket framing、OpenAI SDK 或远程 API，也不认证 authored `model`/response id/usage。它不证明真实 OpenAI 服务、完整 Responses API、模型质量、安全、计费或生产可靠性。当前产品接口与事件 reference 的核对日期为 2026-08-14；完整对象图和生产分层见 [GPT 家族](../../docs/models/gpt.md)。
+该命令没有执行 HTTP/SSE/WebSocket framing、OpenAI SDK 或远程 API，也不会认证样例文件中声明的
+`model`、response id 或 usage。真实 OpenAI 服务、完整 Responses API、模型质量、安全、计费和生产可靠性
+需要其他证据。当前产品接口与事件 reference 的核对日期为 2026-08-14；完整对象图和生产分层见 [GPT 家族](../../docs/models/gpt.md)。
 
 ## Opaque reasoning artifact replay matrix
 
-运行本地 context-binding control：
+运行本地上下文绑定实验：
 
 ~~~powershell
 python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
   --output artifacts/cloud-api/reasoning-replay-matrix.json
 ~~~
 
-命令使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 reasoning bytes 和内存 ledger，不解析 provider signature，不发送请求，也不输出 plaintext/ciphertext。16 个 case 先证明 content-only AEAD 仍接受 cross-subject、cross-tenant、cross-session 和 cross-model 四类错误上下文，再验证 context-bound envelope 对 identity/session/branch/predecessor/model/expiry/key/tamper/replay 分别 fail closed。
+命令使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 reasoning bytes 和内存 ledger，不解析 provider
+signature，不发送请求，也不输出 plaintext/ciphertext。16 个 case 先展示 content-only AEAD 会接受四类错误上下文，
+再检查 context-bound envelope 遇到 identity/session/branch/predecessor/model/expiry/key/tamper/replay 漂移时是否拒绝重放。
 
 顶层 `passed: true` 表示所有观察符合实验预期；其中四个 `unsafe_acceptance_demonstrated: true` 是故意保留的弱协议反例，不是安全通过。完整协议、论文时效和故障注入步骤见 [Reasoning 工件安全](../../docs/quality/reasoning-artifact-security.md)与[实验 0D](../../docs/practice/labs/lab-0d-reasoning-artifact-security.md)。
 
-该 control 不模拟任一真实供应商格式或密码系统。内存 nonce/consumption ledger 不证明持久化、多进程、多区域一致性、KMS/HSM 或 key rotation；predecessor digest 也不是完整 fork/compaction/Merkle 协议。
+这个实验不模拟任一真实供应商格式或密码系统。内存 nonce/consumption ledger 也不覆盖持久化、多进程、
+多区域一致性、KMS/HSM 或 key rotation；predecessor digest 不是完整 fork/compaction/Merkle 协议。
 
 ## Trajectory release gate
 
@@ -90,7 +101,9 @@ python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
   --output artifacts/cloud-api/trajectory-release-report.json
 ~~~
 
-输入为 strict JSON/JSONL；duplicate key、non-finite number 和非对象 candidate 会在解析阶段失败。发布 schema 只允许 `text/tool_call/tool_result/citation` block；reasoning/thinking/signature/encrypted、嵌套工具参数中的禁用字段、未知 block 与未知字段均 fail closed。安全投影退出 0，有 finding 的投影退出 1，输入无效退出 2。
+输入按无歧义的 JSON/JSONL 规则解析：duplicate key、non-finite number 和非对象 candidate 会在解析阶段失败。
+发布 schema 只允许 `text/tool_call/tool_result/citation` block；遇到 reasoning/thinking/signature/encrypted、
+嵌套禁用字段、未知 block 或未知字段时停止发布。安全投影退出 0，有 finding 的投影退出 1，输入无效退出 2。
 
 报告不回显输入值、未知类型或任意字段名，并固定 `provider_artifacts_interpreted: false`、`plaintext_values_emitted: false`。`secret_pii_scan_performed: false` 表示它不检查允许文本中的 secret/PII、版权、consent 或用途；这个 gate 也不是 raw provider response sanitizer。
 

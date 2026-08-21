@@ -16,7 +16,7 @@
 - Prefill、decode、KV block 与输出 token 怎样对齐；
 - TTFT、TPOT、吞吐和失败率的分母是什么；
 - 断连后 HTTP、生成任务和 KV 资源是否分别结束；
-- 结论由 CPU oracle、本地集成还是目标 GPU 实测支持。
+- 结论来自可手算的 CPU 参考结果、本地集成，还是目标 GPU 实测。
 
 ## 最终交付物
 
@@ -35,7 +35,7 @@
 flowchart TD
   A["教材：请求生命周期"] --> B["引导实验：Paged KV / COW"]
   B --> N["目标机制：Qwen3 + nano-vLLM trace"]
-  N --> C["本地 control：协议、取消、指标"]
+  N --> C["本地验证：协议、取消、指标"]
   C --> D["目标服务：vLLM + 固定 workload"]
   D --> E["报告：质量、SLO、容量与失败"]
   C --> F["证据账本"]
@@ -45,7 +45,7 @@ flowchart TD
 - **教材**建立共同语言，不保存完整测试矩阵。
 - **引导实验**隔离一个机制，要求先预测再运行。
 - **项目路径**组合组件并形成可交付成果。
-- **证据页**记录精确 oracle、测试和不能外推的结论。
+- **证据页**记录手算结果、对应测试和这些结果的适用范围。
 
 不要用后一层的命令代替前一层的理解，也不要用前一层的 CPU 结果冒充目标 GPU 证据。
 
@@ -92,7 +92,8 @@ python -m pytest `
 
 ## 阶段 1B：让 Qwen3 真正穿过 nano-vLLM
 
-完成[实验 7B](../labs/lab-7b-nano-vllm-qwen3.md)。这一步处在 CPU Paged KV oracle 与完整 HTTP 服务之间：
+完成[实验 7B](../labs/lab-7b-nano-vllm-qwen3.md)。这一步把 CPU Paged KV 的参考实现放进真实模型 runtime，
+但还没有进入完整 HTTP 服务：
 它真实加载固定 Qwen3-0.6B 权重并执行 CUDA/FlashAttention/Triton，却只研究 engine 内部请求，不提供
 OpenAI-compatible endpoint。
 
@@ -134,17 +135,17 @@ python projects/inference-serving/transformers_thread_cancellation_control.py --
   projects/inference-serving/transformers-thread-cancellation.recorded-report.json
 ~~~
 
-三条 control 分别回答不同问题：
+下面三个验证程序分别回答不同问题：
 
-| Control | 它能证明什么 | 它不能证明什么 |
+| 验证程序 | 可以观察什么 | 还需要怎样验证 |
 |---|---|---|
 | 固定 Qwen HTTP | 指定权重、tokenizer、loopback API 和 generate audit | vLLM/CUDA、增量生成、质量与性能 |
-| Authored async stream | ASGI/backend task 能观察断连并停止 authored token | 模型 forward、不可中断 kernel、KV 释放 |
+| 模拟 async stream | ASGI/backend task 能观察断连并停止模拟 token | 模型 forward、不可中断 kernel、KV 释放 |
 | Tiny Transformers thread | 显式 event/StoppingCriteria 下 generate thread 退出 | 未修改 runtime、目标模型或 GPU 资源回收 |
 
 ### 主动制造一次断连
 
-运行 live control 后，让 client 在首个内容 delta 后关闭连接。报告中分开记录：
+运行 live 验证程序后，让 client 在首个内容 delta 后关闭连接。报告中分开记录：
 
 ```text
 response task terminal
@@ -189,7 +190,7 @@ python -m about_llm.inference_analysis_cli `
   --output artifacts/inference/workload-report.json
 ~~~
 
-这份 fixture 有 3 个成功 attempt 和 1 个 429。它只能验证分析器的分母、时钟和门禁，
+这份固定输入包含 3 个成功 attempt 和 1 个 429。它用于核对分析器的分母、时钟和门禁，
 不能证明任何真实服务达到这些阈值。
 
 完成标准：能解释为什么快速 429 可能降低 offered-to-terminal，同时服务质量反而更差。

@@ -35,7 +35,7 @@ flowchart LR
 | 请求 walkthrough | 权限、召回、重排、packing、引用、拒答 | 否 |
 | 持久化与服务 | 版本、删除、备份、认证、deadline | 否 |
 | 目标 tokenizer packing | 完整 Prompt token 预算 | 需要 tokenizer，可离线 |
-| 固定 Qwen control | 真实模型的引用与拒答失败 | 需要本地约 1 GB snapshot，不需要 GPU |
+| 固定 Qwen 运行 | 真实模型的引用与拒答失败 | 需要本地约 1 GB snapshot，不需要 GPU |
 
 第一次只完成请求 walkthrough。其余路径在你能解释 A/B 两个请求后再进入。
 
@@ -94,7 +94,7 @@ final                  answer
 打开 `sample_corpus.jsonl`，先预测 `tenant-a / engineering` 能看到哪些 source。
 `tenant-b-secret` 即使关键词最多，也不能进入在线请求的查询期统计和排序。
 
-## 选修：检索表示学习 exact control { #retriever-learning-control }
+## 选修：用可手算输入理解检索表示学习 { #retriever-learning-control }
 
 想理解 dense retriever 的训练目标时，再运行：
 
@@ -104,8 +104,8 @@ python -m pytest tests/test_retriever_learning.py -q
 ~~~
 
 它对 supplied embedding 精确计算单/多正例 InfoNCE、解析梯度、hard/false negative、
-ColBERT-style MaxSim 与 SPLADE-style pooling。它没有执行 encoder、ANN 或 GPU，
-也不能说明 authored vectors 代表真实检索质量。推导见
+ColBERT-style MaxSim 与 SPLADE-style pooling。这个例子没有执行 encoder、ANN 或 GPU；
+本仓库准备的 vectors 也不代表真实检索质量。推导见
 [检索表示学习](../../applications/retrieval-learning.md)。
 
 ## 路径一：拆开观察一次请求
@@ -142,7 +142,8 @@ python -m about_llm.rag.cli rerank-recorded `
 Reranker 前会再次授权。Recorded score 精确绑定 query、chunk bytes 与 scorer identity；
 改 query、改内容、缺分、多分或返回非有限数都会失败。
 
-这个 fixture 只证明 plumbing。要声称质量提升，必须在 held-out qrels 上比较排序与延迟。
+这个固定样例用于检查 query、chunk 和 score 的绑定能否正常工作。要声称质量提升，必须在 held-out qrels 上
+比较排序与延迟。
 
 ### 单独看 packing
 
@@ -166,7 +167,7 @@ source_quota
 budget
 ```
 
-`budget-bytes` 使用 UTF-8 bytes，只用于依赖无关的透明 control，不能称为模型 token budget。
+`budget-bytes` 使用 UTF-8 bytes，只用来直观演示 packing 取舍，不能称为模型 token budget。
 
 ### 单独看逐字答案
 
@@ -208,7 +209,7 @@ python -m about_llm.rag.cli evaluate-extractive `
   --cases projects/rag-foundations/sample_eval.jsonl
 ~~~
 
-固定五条 fixture 产生三次 answer、两次 abstain。全绿只说明这组 hand-authored 小数据没有回归，
+固定五条 case 产生三次 answer、两次 abstain。全绿只说明这组人工编写的小数据没有回归，
 不说明阈值、来源与语义适合真实业务。
 
 ### Recorded answer gate
@@ -221,7 +222,7 @@ python -m about_llm.rag.cli evaluate-answers `
 ~~~
 
 这条 gate 检查 case/output exact join、授权 context、claim citation 与 supplied judgment provenance。
-`supported` verdict 来自 fixture，不是评测器自动执行 entailment。
+`supported` verdict 由样例文件提供，不是评测器自动执行 entailment 得出的结论。
 
 ## 路径三：把 Prompt identity 也纳入 packing
 
@@ -327,7 +328,7 @@ Request body 不能自报 tenant/principal；`/health/live` 与 `/health/ready` 
 Response 使用 server request ID、`Cache-Control: no-store`、安全响应头和 public allowlist。
 生产部署仍需在反向代理设置 body/rate limit、TLS 与真实 IAM；应用内上限不能替代 edge admission control。
 
-运行不打开 TCP socket 的固定 control：
+运行一个不打开 TCP socket 的固定验证程序：
 
 ~~~powershell
 python projects/rag-foundations/rag_service_control.py
@@ -361,7 +362,7 @@ python projects/rag-foundations/run_qwen_guarded_rag_control.py --local-files-on
 ~~~
 
 第一条是 counterfactual replay，没有观察 guard 当时包裹模型；
-第二条真实包裹 `GenerationMixin.generate()`，但只有两个 authored case，也没有 GPU/vLLM 证据。
+第二条真实包裹 `GenerationMixin.generate()`，但只运行两个本仓库编写的 case，也没有 GPU/vLLM 证据。
 
 ## Generation trace 与 citation audit
 
@@ -379,7 +380,7 @@ python -m about_llm.rag.cli audit `
 ~~~
 
 Trace 绑定 query/security、chunk/version/content、rendered context、Prompt 和 raw output identity。
-Fixture 是手写协议样例；unsigned hash 不认证模型执行者，也不执行语义蕴含。
+这里使用手写协议样例。Unsigned hash 可以发现内容变化，但不能认证模型执行者，也不会执行语义蕴含判断。
 
 ## 代码阅读顺序
 
@@ -434,4 +435,4 @@ python -m pytest `
 > token-aware packing、exact-span citation 与 typed refusal；用跨 tenant、non-empty no-answer
 > 和 stale-score 负例验证控制边界。
 
-不要写“彻底解决幻觉”或“生产级零泄漏”。本地 fixture 无法支持这类结论。
+不要写“彻底解决幻觉”或“生产级零泄漏”。这些本地固定样例无法支持这类结论。

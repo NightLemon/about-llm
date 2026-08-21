@@ -1,6 +1,8 @@
 # JAX/Optax MiniGPT 训练实验
 
-目标：在核心 JAX 前向实现上补齐自动微分、Optax 状态、全局梯度裁剪、AdamW 更新和 `jax.jit` 训练步，并用一个确定性 tiny batch 证明参数确实更新且 loss 可下降。
+目标：在核心 JAX 前向实现上补齐自动微分、Optax 状态、全局梯度裁剪、AdamW 更新和 `jax.jit` 训练步。
+第一次只运行 `train_tiny.py`：输入是两条固定 token 序列，输出是 60 步 loss、梯度范数和同步计时。
+确认模型能过拟合后，再分别做跨框架对账、AdamW 轨迹和跨进程恢复；四条命令不是同一个“大而全”实验。
 
 ## 运行
 
@@ -29,9 +31,14 @@ python -m pytest tests/test_gpt_jax.py -q
 
 `cross_framework_parity.py` 先钉死一个 11-vocab、2-layer、8-dim、2-head 的 CPU Float32 contract。它不用任一框架 RNG，而是用同一解析式生成 PyTorch 参数，再把 embedding、转置后的 Linear、LayerNorm scale/bias 显式映射到 JAX。两边统一 LayerNorm mean subtraction/epsilon=`1e-5`、tanh-GELU、causal mask、tied token embedding/LM head、masked mean cross entropy 与无 momentum/weight decay 的 plain SGD。
 
-固定 fixture 的初始 logits/loss 最大差为 `7.636845111846924e-08/0`，20 个 unique parameters 的 gradient 全局最大差为 `2.384185791015625e-07`；一步 `lr=0.025` SGD 后，参数/logits/loss 最大差分别为 `7.450580596923828e-09`、`7.450580596923828e-08`、`2.384185791015625e-07`，均低于 authored `2e-6` 容差。两次当前 pinned CPU 环境报告完全一致。
+固定输入的初始 logits/loss 最大差为 `7.636845111846924e-08/0`，20 个 unique parameters 的 gradient 全局最大差为
+`2.384185791015625e-07`；一步 `lr=0.025` SGD 后，参数/logits/loss 最大差分别为
+`7.450580596923828e-09`、`7.450580596923828e-08`、`2.384185791015625e-07`，均低于本实验设定的
+`2e-6` 容差。两次当前 pinned CPU 环境报告完全一致。
 
-原有两份 MiniGPT 不能直接互称等价：PyTorch 使用 affine LayerNorm，JAX 原生路径使用无 bias RMSNorm。把同一主干权重直接送入原生 RMSNorm 路径的 logits 最大差为 `0.37747739627957344`，作为架构未对齐的反事实。该 control 不比较 AdamW state、schedule、dropout/RNG、JIT/异步计时、CUDA/TPU、多设备 sharding、大模型训练、收敛或性能。
+原有两份 MiniGPT 不能直接互称等价：PyTorch 使用 affine LayerNorm，JAX 原生路径使用无 bias RMSNorm。
+把同一主干权重直接送入原生 RMSNorm 路径的 logits 最大差为 `0.37747739627957344`，作为架构未对齐的反事实。
+这个实验不比较 AdamW state、schedule、dropout/RNG、JIT/异步计时、CUDA/TPU、多设备 sharding、大模型训练、收敛或性能。
 
 ### 三步 stochastic AdamW trajectory
 
@@ -39,9 +46,11 @@ python -m pytest tests/test_gpt_jax.py -q
 
 三步 pre-clip norm 均为 `1.32–1.90`，所以 clipping 不是空操作。raw/clipped gradient 最大差为 `3.129243850708008e-07/1.862645149230957e-08`，first/second moments 最大差为 `2.561137080192566e-09/8.003553375601768e-11`，Adam/count/schedule count 均为 `[1,2,3]`；参数与 post-step logits 最大差为 `2.5480985641479492e-06/1.564621925354004e-07`，通过 `5e-6` 门槛。把 JAX mask 的最后一维循环移位后，最终参数差为 `0.06900620367377996`。两次独立进程报告均为 `sha256:68ffa8093a1f2b98…`。
 
-这证明 shared-mask、CPU Float32、三步 authored trajectory 的 optimizer plumbing 对齐；不证明 native RNG equivalence、PRNG state advance、norm/bias decay mask、JIT、checkpoint、CUDA/TPU、sharding、长训练收敛或性能。旧 plain-SGD control 的 RMSNorm 反事实仍承担架构身份边界，不能被这条训练轨迹替代。
+这个结果说明 shared-mask、CPU Float32、三步固定 trajectory 的 optimizer plumbing 对齐。Native RNG equivalence、
+PRNG state advance、norm/bias decay mask、JIT、checkpoint、CUDA/TPU、sharding、长训练收敛和性能仍未验证。
+旧 plain-SGD 实验中的 RMSNorm 反事实负责检查架构身份，不能被这条训练轨迹替代。
 
-## Strict checkpoint 与跨进程恢复
+## 可校验 checkpoint 与跨进程恢复
 
 `checkpoint_resume_control.py` 使用 `ALLMJAX1` 单文件格式：canonical JSON manifest 绑定模型/optimizer/dataset identity 与每个 array 的 name、shape、dtype、offset、size、SHA-256；连续 little-endian payload 保存全部参数叶子、Optax count/moments、dropout/data typed-key data 和 permutation。文件以 outer SHA-256 收尾，loader 在构造 JAX arrays 前拒绝 duplicate/non-canonical JSON、字段、顺序、shape/dtype、digest、截断和多余 bytes；writer 用 exclusive create 与 file `fsync`。
 

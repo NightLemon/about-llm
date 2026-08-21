@@ -68,7 +68,7 @@ final replay = cached
 | Cache replay 重新授权 | 撤权后不能借旧 cache 取回 payload |
 
 这条离线主线真实执行 closed Schema、资源级 ACL、approval binding、SQLite ledger 和 reconciliation。
-Planner 与退款 Provider 是进程内 fixture，因此它验证控制流和状态不变量，不代表生产支付系统已获得 exactly-once。
+Planner 与退款 Provider 都是进程内模拟器，因此这个运行用于检查控制流和状态变化；它不代表生产支付系统已经获得 exactly-once。
 
 ## 路线 A：故障、pending 与人工对账 { #run }
 
@@ -89,7 +89,7 @@ Scenario 包含只读调用、缺审批、合法 grant、cache replay、撤权�
 找到 `uncertain-1`：它必须保持 `pending`，因为 timeout 不能说明远端 effect 没有发生。
 
 Operator 随后查询 provider audit、业务数据库或 outbox。下面的 `abandoned` 只适用于已经确认没有外部副作用的
-离线 fixture：
+离线确认文字：
 
 ```powershell
 python -m about_llm.agents.cli resolve `
@@ -135,8 +135,8 @@ python -m about_llm.agents.cli resume-loop `
 Checkpoint 保存 pending decision、预算、usage、handler counter、event history 与 execution fingerprint。
 Resume 先执行当前授权，再使用原 decision；不会重复计算 Planner token/cost。
 
-这里的 checkpoint 是 strict JSON，但 fingerprint 不是签名，checkpoint 与 SQLite 也不是同一原子事务。
-它用于学习 restart control flow，不等于跨节点 durable workflow。
+这里的 checkpoint 解析器会拒绝重复字段、非法数值和未知字段，但 fingerprint 不是签名，checkpoint 与 SQLite
+也不是同一原子事务。这个例子用于学习 restart control flow，不等于跨节点 durable workflow。
 
 ## 路线 C：严格的模型输出边界
 
@@ -144,11 +144,11 @@ Resume 先执行当前授权，再使用原 decision；不会重复计算 Planne
 python projects/safe-agent/model_planner_control.py
 ```
 
-`StrictJSONModelPlanner` 把模型文本转换为 typed action。它拒绝 Markdown fence、duplicate key、non-finite number、
+`StrictJSONModelPlanner` 把模型文本转换为 typed action。它拒绝 Markdown fence、重复字段、非有限数值、
 未知字段/工具和无效 evidence ID，并检查实际 model revision、usage、cost 与 finish reason。
 
 Request identity 绑定 prompt revision、task state、剩余预算、tool/schema/validator revision 与 output cap。
-Runtime 随后仍会执行 Schema、resource resolver、policy、approval 和 budget。严格 JSON 只是 proposal transport，
+Runtime 随后仍会执行 Schema、resource resolver、policy、approval 和 budget。无歧义的 JSON 只解决 proposal 传输，
 不是授权边界。
 
 `JSONSchemaToolContract` 使用 Draft 2020-12、closed root object 和 local references。它不做类型 coercion、
@@ -166,7 +166,7 @@ python -m pytest tests/test_agent_framework_tool_adapters.py -q
 LangChain `StructuredTool` 与 LlamaIndex `FunctionTool` 都只生成 proposal。Subject、tenant、capability、resource resolver、
 policy 和 handler 仍留在 canonical `AgentRuntime` 中。
 
-Control 检查三类 case：公共资源成功并可 cache；跨 tenant 在 handler 前被拒绝；未知 tool 被 allowlist 拒绝。
+这个验证程序检查三类 case：公共资源成功并可 cache；跨 tenant 在 handler 前被拒绝；未知 tool 被 allowlist 拒绝。
 还保留一个有意的类型错误，提醒你“框架展示了 Schema”不表示所有入口都强制执行完全相同的 Schema。
 
 再运行真实 framework loop：
@@ -175,7 +175,7 @@ Control 检查三类 case：公共资源成功并可 cache；跨 tenant 在 hand
 python projects/safe-agent/framework_agent_loop_control.py
 ```
 
-它进入 LangChain/LangGraph 与 LlamaIndex 的 `model → tool → model` 控制流，但 model 仍是确定性的 scripted fixture。
+它进入 LangChain/LangGraph 与 LlamaIndex 的 `model → tool → model` 控制流，但 model 仍是确定性的脚本模拟器。
 独立 verifier 只接受本地 `completed/cached` receipt；即使 scripted model 自称成功，cross-tenant 与 unknown-tool
 也不能完成任务。
 
@@ -194,7 +194,7 @@ Worker A 调用模拟 Provider 成功，却在本地 ack 前 crash。Lease 过�
 Outbox 让本地 task state 与 pending effect row 在同一数据库事务提交。它不能把远端 Provider 纳入事务；若 Provider
 不 honor idempotency key，重投仍可能产生第二个 effect。详细协议见[Agent Runtime](../../applications/agent-runtime.md#exactly-once)。
 
-## 路线 F：决策理论 exact control { #decision-theory-control }
+## 路线 F：用可穷举状态理解决策理论 { #decision-theory-control }
 
 ```powershell
 python projects/safe-agent/decision_theory_toy.py
@@ -221,16 +221,17 @@ python projects/safe-agent/mcp_streamable_http_control.py
 python projects/safe-agent/a2a_loopback_control.py --verify-official-schema
 ```
 
-| Control | 主要观察 |
+| 验证程序 | 主要观察 |
 |---|---|
 | MCP SDK memory | 官方 client/server types 与内存流 |
 | MCP SDK stdio | 独立 subprocess 的 stdin/stdout transport |
 | MCP SDK HTTP | Loopback HTTP、session 与 POST/GET/DELETE |
-| Authored strict stdio | Malformed framing、UTF-8 与 strict JSON |
-| Authored Streamable HTTP | Origin/Bearer/session/version 与 cancel |
+| 手写 stdio parser | Malformed framing、UTF-8，以及重复字段和非法数值 |
+| 手写 Streamable HTTP server | Origin/Bearer/session/version 与 cancel |
 | A2A loopback | Agent Card、SendMessage/GetTask 与 schema hash |
 
-Official SDK control 与自写 parser control 不能互相借证据：前者证明真实 SDK 路径，后者覆盖特定负例。
+Official SDK 示例与手写 parser 运行的是不同代码路径：前者观察真实 SDK，后者覆盖特定 framing 负例，
+两边的结论不能直接互换。
 Loopback token 也不是 OAuth、TLS、远程互操作或业务授权。学习顺序与协议边界见
 [Agent 互操作](../../applications/agent-interoperability.md)。
 

@@ -2,6 +2,9 @@
 
 目标：把“模型建议动作”和“系统获权执行”分开。任何模型或 Agent 框架都只能产生 ToolCall；执行内核负责 schema、权限、审批、预算和幂等。
 
+第一次只运行下面的退款主线。输入是一笔 300 元退款和一次“远端已受理但响应丢失”的故障，输出是 observation
+到 recovery 的九阶段 trace。能解释为什么最后只有一个副作用后，再选择 planner、框架、MCP/A2A 或 outbox 专题。
+
 ## 从一笔完整退款开始
 
 ~~~powershell
@@ -34,22 +37,29 @@ python projects/safe-agent/refund_lifecycle.py
 - 可列出超时 pending，人工确认外部成功、标记放弃或已补偿；
 - SQLite completion/reconciliation value 同样使用严格 canonical JSON，拒绝 NaN、非字符串 object key 和不透明 Python 对象；
 - reconciliation 保留审计事件，放弃/补偿后的重试必须使用新审批的新 call_id。
-- 有限决策理论 control 精确验证 POMDP belief update、hard-constrained expected utility、value of information，以及 transition graph 的 safety/termination 区别。
+- 有限决策理论小实验精确验证 POMDP belief update、hard-constrained expected utility、value of information，以及 transition graph 的 safety/termination 区别。
 
-## Agent 决策理论 exact control
+## 用可穷举状态理解 Agent 决策
 
 ~~~powershell
 python projects/safe-agent/decision_theory_toy.py
 python -m pytest tests/test_agent_decision_theory.py -q
 ~~~
 
-二状态 fixture 把真实 fault 当 hidden state、诊断结果当 observation。强 signal 把 posterior 更新为约 `[0.8947, 0.1053]`，EVSI 为 `6.0`、扣除查询成本后为 `5.0`；弱 signal 不改变 action，净信息价值为 `-1.0`。一个 unconstrained utility 为 `100` 的 shortcut 仍因 hard allow-mask 不可选。有限 transition graph 另证明 terminal reachable 不等于 guaranteed termination，reachable forbidden 与 cycle 是不同失败。
+二状态固定样例把真实 fault 当 hidden state、诊断结果当 observation。强 signal 把 posterior 更新为约
+`[0.8947, 0.1053]`，EVSI 为 `6.0`、扣除查询成本后为 `5.0`；弱 signal 不改变 action，净信息价值为 `-1.0`。
+一个 unconstrained utility 为 `100` 的 shortcut 仍因 hard allow-mask 不可选。有限 transition graph 还展示了
+terminal reachable 不等于 guaranteed termination，reachable forbidden 与 cycle 是不同失败。
 
-这个纯 NumPy control 没有调用模型、工具、provider 或审批服务，也没有学习概率和 utility；它只验证固定有限抽象，不能证明真实 Agent 校准、最优、安全或必然完成。完整理论见[Agent 决策理论](../../docs/applications/agent-decision-theory.md)。
+这个纯 NumPy 例子没有调用模型、工具、provider 或审批服务，也没有学习概率和 utility；它只检查固定有限抽象。
+真实 Agent 是否校准、最优、安全或必然完成，需要在目标环境另行评测。完整理论见
+[Agent 决策理论](../../docs/applications/agent-decision-theory.md)。
 
 ## 可运行故障/恢复实验
 
-`scenario.example.jsonl` 只注册三个内置离线工具，不执行网络、邮件或真实写操作。它依次演示只读调用、缺少审批、typed grant 后执行、相同 call id 缓存复用、撤权后 cache replay 拒绝、跨 tenant 拒绝，以及“handler 超时、外部状态未知”的 pending 状态。fixture 中的 context 代表可信控制面输入，不能在生产中让模型填写。
+`scenario.example.jsonl` 只注册三个内置离线工具，不执行网络、邮件或真实写操作。它依次演示只读调用、缺少审批、
+typed grant 后执行、相同 call id 缓存复用、撤权后 cache replay 拒绝、跨 tenant 拒绝，以及“handler 超时、
+外部状态未知”的 pending 状态。样例中的 context 代表可信控制面输入，不能在生产中让模型填写。
 
 为每次实验使用一个新的 ledger 路径，保留旧数据库用于审计：
 
@@ -115,7 +125,7 @@ python -m about_llm.agents.cli resume-loop `
 
 resume CLI 构造的是 `simulated_unsigned_approval`，工具也是本地 simulated send。checkpoint fingerprint 不是签名；文件与 SQLite ledger 不原子；approval 等待 downtime 不计入 active wall time；没有并发 lease、一次性 grant store、加密/retention 或 provider session 恢复。因此这里证明的是确定性 restart 控制流，不是生产 durable workflow。
 
-## Strict JSON model planner boundary
+## 从模型文本到 typed proposal
 
 `StrictJSONModelPlanner` 补上“模型文本到 typed proposal”的边界。发送给 transport 的 request fingerprint 绑定 system prompt、prompt revision、task id、剩余 step/token/cost/time、tool catalog/schema revision/validator revision、最近事件的完整 identity/value、输出上限和预期 model revision。工具 observation 会进入最近事件，但 system prompt 明确把它标为 untrusted data；这只是 defense in depth，真正授权仍由可信 `ExecutionContext`、server-resolved resource、policy、approval 和 runtime validator 决定。
 
@@ -135,7 +145,12 @@ python -m pip install -c constraints/ci.txt -e ".[agents]"
 python projects/safe-agent/model_planner_control.py
 ~~~
 
-报告锁定两次 request/response fingerprint、两个 decision id、Draft/schema/validator identity、62 个 authored fixture tokens、0.03 authored cost units、一次 handler attempt 和最终 `verified answer`。四条 negative control 证明 request/state 漂移不能 replay、Markdown-fenced JSON 被拒绝、模型参数虽通过 JSON parser 仍会被 runtime `const` schema 在 resolver/policy/handler 前拒绝、缺 capability 时合法 proposal 也在 handler 前被 policy 拒绝。这里的 token/cost/provider request id 都是 authored metadata；control 不证明真实 API schema、目标模型能遵循协议、provider usage/账单、网络重试、生产 IAM 或开放任务 verifier。接真实 provider 时，adapter 仍需从原始响应提取精确 revision/usage/finish reason，并保存受保护的原始 receipt；缺字段不能猜测。
+报告锁定两次 request/response fingerprint、两个 decision id、Draft/schema/validator identity、62 个预设 token、
+0.03 个预设 cost units、一次 handler attempt 和最终 `verified answer`。四条负例检查 request/state 漂移不能 replay、
+Markdown-fenced JSON 被拒绝、模型参数虽通过 JSON parser 仍会被 runtime `const` schema 在 resolver/policy/handler 前拒绝，
+以及缺 capability 时合法 proposal 也在 handler 前被 policy 拒绝。这里的 token/cost/provider request id 都由样例提供；
+这个程序不验证真实 API schema、目标模型协议遵循率、provider usage/账单、网络重试、生产 IAM 或开放任务 verifier。
+接真实 provider 时，adapter 仍需从原始响应提取精确 revision/usage/finish reason，并保存受保护的原始 receipt；缺字段不能猜测。
 
 手写 `PlannerToolContract` 仍可能与任意 callback validator 漂移；需要强一致时应由 `JSONSchemaToolContract.planner_contract()` 与 `.build_tool()` 同源生成。JSON Schema 只验证声明的 JSON 结构和值约束，不知道 resource 是否存在/归属当前 tenant、调用是否获权、effect 是否安全或 handler 返回是否真实，这些边界不能挪进模型 schema。
 
@@ -180,7 +195,10 @@ Schema projection equality 只能发现已比较字段的漂移。它不证明�
 
 ### 证据边界
 
-这条 control 真实执行两个框架的 tool API 和本仓库 canonical runtime，但只使用一个本地只读 fixture。它没有执行 LangGraph 或 LlamaIndex Agent loop、模型/provider、callback/tracing backend、async/cancel、streaming、memory、网络、remote tool、审批或真实副作用；也没有证明框架默认 ACL、schema enforcement、幂等、生产安全、性能或跨版本兼容。两框架得到相同 value/fingerprint 是 authored fixture 下 canonical core 的预期不变量，不是质量榜或框架等价证明。
+这个程序真实执行两个框架的 tool API 和本仓库 canonical runtime，但只使用一个本地只读样例。它没有执行
+LangGraph 或 LlamaIndex Agent loop、模型/provider、callback/tracing backend、async/cancel、streaming、memory、
+网络、remote tool、审批或真实副作用；也没有验证框架默认 ACL、schema enforcement、幂等、生产安全、性能或跨版本兼容。
+两框架得到相同 value/fingerprint 是这组固定输入下 canonical core 的预期不变量，不是质量榜或框架等价证明。
 
 ## LangChain / LlamaIndex framework Agent-loop control
 
@@ -256,7 +274,7 @@ python -m pytest tests/test_mcp_sdk_streamable_http.py -q
 
 准确证据边界：随机 token 只保护测试编排使用的私有 control endpoint，缺失 token 的真实负例为 401；它不是 MCP auth、OAuth、subject/tenant/scope 或业务授权。这个 control 没有执行 MCP endpoint 的 malformed body、Host/Origin failure、resumption、TLS 或 OAuth，也没有网络故障、取消/deadline、远程/跨厂商 server、conformance、审批、副作用、多 worker 或生产 supervisor 证据。先选 loopback port 再由子进程 bind 仍有竞争窗口；receipt/hash 不认证进程、来源或真实执行。
 
-## MCP 2025-11-25 authored strict stdio control
+## MCP 2025-11-25 手写 stdio parser
 
 ~~~powershell
 python projects/safe-agent/mcp_stdio_control.py

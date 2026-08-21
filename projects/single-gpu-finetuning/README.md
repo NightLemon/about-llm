@@ -2,7 +2,27 @@
 
 目标：在单张消费级 GPU 上完成可比较、可回归的领域 SFT/LoRA/QLoRA 与偏好优化，而不是只得到一个 adapter 文件。
 
-## 已完成的机制基线
+第一次学习不要从下面几十个机制实验逐项跑。先按这条主线：审计 `train.example.jsonl`，打印 assistant labels，
+运行 `smoke_trl_sft.py`，最后独立重载 adapter。输入是两条教学记录和本地 tiny model；输出应让你看清
+`messages → token IDs → labels → loss → adapter`。DDP、AMP、PPO、DPO 和精确恢复分别回答后续问题，
+完整学习顺序见[项目教学页](../../docs/practice/projects/single-gpu-finetuning.md)。
+
+## 第一次运行
+
+~~~powershell
+python -m about_llm.finetuning_cli audit `
+  --jsonl projects/single-gpu-finetuning/audit.example.jsonl `
+  --require-splits train,validation,test `
+  --output outputs/sft-split-audit.json
+python projects/single-gpu-finetuning/smoke_trl_sft.py
+~~~
+
+第一条命令检查 split、对话结构和重复数据；第二条使用本地随机 tiny GPT-2，真实执行 assistant-only labels、
+一个 optimizer step 和 adapter 保存。它们帮助你先看懂数据与训练的连接方式，不代表目标 Qwen 已完成微调。
+
+## 机制实验索引
+
+下面每个脚本只隔离一个问题。遇到对应问题时再运行，不要把所有绿色输出合并成一次“生产级训练”结论。
 
 src/about_llm/finetuning/lora.py 从零实现 LoRA Linear：
 
@@ -77,7 +97,12 @@ python -m about_llm.finetuning_cli near-audit --jsonl projects/single-gpu-finetu
 python projects/single-gpu-finetuning/minhash_lsh_toy.py
 ~~~
 
-它用稳定 SHA-256 shingle mapping、seeded affine MinHash 和 exact band tuple 生成候选，再逐候选复算精确 Jaccard。默认 64 hashes/16 bands×4 rows 的 authored fixture 将 10 个 pair 缩成 3 个候选；阈值 0.8 下 1 个 true positive、2 个 false positive，snapshot recall=1、precision=1/3。Exhaustive recall audit 为了得到 ground truth 又做了 10 次全对比较，因此不是可规模化验证；单独测试还证明 1-hash 配置会漏掉 Jaccard=2/3 的 pair。LSH 不保证召回、不发现语义/翻译重复，理想 `1-(1-s^r)^b` 只是 banding 调参曲线；当前 core 没有替代 fail-closed readiness gate。无密钥 hash/fingerprint 也不认证数据来源。
+它用稳定 SHA-256 shingle mapping、seeded affine MinHash 和 exact band tuple 生成候选，再逐候选复算精确 Jaccard。
+默认 64 hashes/16 bands×4 rows 的固定输入将 10 个 pair 缩成 3 个候选；阈值 0.8 下 1 个 true positive、
+2 个 false positive，snapshot recall=1、precision=1/3。Exhaustive recall audit 为了得到 ground truth 又做了 10 次
+全对比较，因此不是可规模化验证；单独测试还表明 1-hash 配置会漏掉 Jaccard=2/3 的 pair。LSH 不保证召回、
+也不发现语义/翻译重复，理想 `1-(1-s^r)^b` 只是 banding 调参曲线；当前 core 仍会在 readiness 不满足时停止。
+无密钥 hash/fingerprint 也不认证数据来源。
 
 ## 推荐递进
 
@@ -229,7 +254,15 @@ python projects/single-gpu-finetuning/smoke_peft.py --steps 8 --artifact-root ar
 
 `about-llm-export-manifest.json` 是 strict canonical manifest。默认目录共有 13 个被覆盖文件、payload 236,589 bytes、manifest 2,297 bytes；descriptor 按 POSIX relative path 排序并绑定每个文件的 size/SHA-256，再绑定整个 descriptor set。Verifier 在 published-artifact reload 前运行，要求三个 safetensors 均可解析、base/merged 的完整 config payload 与 tensor key/dtype/shape signature 一致，并确认每个 target module 同时存在 LoRA A/B tensor；它拒绝额外或缺失文件、symlink、路径穿越、duplicate/non-canonical manifest、资源上限、size/hash 漂移，以及协同重算 hash 后的 weight/config/adapter/tokenizer 漂移。已有输出目录和已有 manifest 均拒绝覆盖。
 
-这是标准 Transformers/PEFT artifact 加仓库 fail-closed verifier 的 CPU 控制，不是通用 checkpoint。adapter config 使用 immutable base identity string，manifest 另绑定 exact base 文件；但路径或 identity string 不是内容认证，PEFT 自身仍不会自动强制仓库 manifest，调用方必须先执行 verifier。可解析、同 key/dtype/shape 和 LoRA A/B tensor 覆盖都只是结构证据，不证明权重数值正确或确由声明的训练产生。目录没有 optimizer/scheduler/RNG/training-resume state；未执行量化基座 merge、目标 checkpoint 或 CUDA。随机 tiny loss 下降、hash 一致和数值等价不证明 license、runtime 兼容、任务质量、跨版本可移植性、来源认证或断电原子发布；unkeyed SHA-256 可被攻击者协同重算，单文件 exclusive-create+`fsync` 也不构成目录级原子发布。当前 verifier 也没有锁住随后由 Transformers 打开的文件，不能防止 verify 与 load 之间的并发替换（TOCTOU）；生产消费要配合不可变目录、访问控制、lease/content-addressed handle 或等价机制。
+这是标准 Transformers/PEFT artifact 加本仓库结构验证程序的 CPU 实验，不是通用 checkpoint。Adapter config
+使用 immutable base identity string，manifest 另绑定 exact base 文件；但路径或 identity string 不是内容认证，
+PEFT 自身仍不会自动强制仓库 manifest，调用方必须先执行 verifier。可解析、同 key/dtype/shape 和 LoRA A/B tensor
+覆盖都只是结构证据，不证明权重数值正确或确由声明的训练产生。目录没有 optimizer/scheduler/RNG/training-resume
+state，也未执行量化基座 merge、目标 checkpoint 或 CUDA。随机 tiny loss 下降、hash 一致和数值等价不说明
+license、runtime 兼容、任务质量、跨版本可移植性、来源认证或断电原子发布；unkeyed SHA-256 可被攻击者协同重算，
+单文件 exclusive-create+`fsync` 也不构成目录级原子发布。当前 verifier 还没有锁住随后由 Transformers 打开的文件，
+不能防止 verify 与 load 之间的并发替换（TOCTOU）；生产消费要配合不可变目录、访问控制、
+lease/content-addressed handle 或等价机制。
 
 ## 固定 Qwen 真实权重 LoRA 单步控制
 
@@ -420,7 +453,8 @@ python projects/single-gpu-finetuning/train_trl_sft.py --model-id <model> --revi
 
 先给第二条命令加 `--data-preflight-only`，可在不导入训练依赖、不下载模型时验证 train/readiness 边界。生产部署应让审计身份可读 combined，让训练身份只读 train 与经受控通道发布的 readiness；若攻击者能整体替换 readiness，它也能重算其中所有无密钥 hash，需用 ACL、签名或独立审计日志补足真实性。
 
-示例数据只验证 schema、exact/binding、未校准 lexical candidate 和 authored-fixture governance 控制流，不能训练出有用模型。真实实验仍必须人工校准/复核 near duplicate 与敏感检测器，由有权限的负责人核验许可、consent、隐私和目标分布。
+示例数据只用于检查 schema、exact/binding、未校准 lexical candidate 和 governance 控制流，不能训练出有用模型。
+真实实验仍必须人工校准/复核 near duplicate 与敏感检测器，由有权限的负责人核验许可、consent、隐私和目标分布。
 
 ## 容量与风险
 

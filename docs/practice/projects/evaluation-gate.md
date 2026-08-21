@@ -111,7 +111,8 @@ python -m about_llm.evaluation.cli verify-comparison `
   --input artifacts/evaluation/gate.json
 ```
 
-它会检查 strict Schema、内部算术、gate 判定和 fingerprint，却不会重开 cases/results，也不会重跑 bootstrap。
+它会严格检查 Schema、内部算术、gate 判定和 fingerprint，包括未知字段与非法数值；但不会重开
+cases/results，也不会重跑 bootstrap。
 回执会明确写 `verification_scope: artifact_only`。
 
 需要确认上游文件与当前实现仍能产生同一结论时，运行：
@@ -178,7 +179,7 @@ python -m about_llm.evaluation.cli score `
 观察五种差别：Object key order/whitespace、错误 value、duplicate key、`NaN` 和 array order。
 
 - `json_schema` 回答结构是否符合 closed contract；
-- `json_value_exact` 比较 strict parse 后的 canonical value；
+- `json_value_exact` 比较拒绝重复字段和非法数值后得到的 canonical value；
 - 两者都不验证数据库 ID、权限、事实或实时业务状态。
 
 Parser 拒绝 duplicate key 与 `NaN/Infinity`。Object key 顺序和空白可忽略，array order 与 scalar type 仍保留。
@@ -201,9 +202,9 @@ Metric 检查 source membership、zero-based/end-exclusive offsets 与 exact quo
 
 所以 span metric 证明的是 evidence identity，不是 entailment、claim correctness、source truth 或 ACL provenance。
 
-## 固定 Qwen control：证明真实执行，不证明代表性
+## 固定 Qwen 运行：观察真实模型，不把七条样例当成总体
 
-通用 CLI 只处理 recorded outputs。若本地已有固定 Qwen2.5-0.5B-Instruct snapshot，可运行七 case behavior control：
+通用 CLI 只处理 recorded outputs。若本地已有固定 Qwen2.5-0.5B-Instruct snapshot，可以让模型实际运行七个 case：
 
 ```powershell
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
@@ -217,10 +218,11 @@ python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
 EOS/length terminal。固定 cases 包含中英文算术/事实、空证据拒答、大小写复制和 JSON，故意展示 literal exact、
 normalized exact 与 token F1 会给出不同结论。
 
-这七条 authored cases 不是代表性 benchmark，也没有 baseline/candidate、统计功效、GPU/vLLM 或真实流量。
+这七条 case 由本仓库编写，用来观察固定模型路径；它们不是代表性 benchmark，也没有 baseline/candidate、
+统计功效、GPU/vLLM 或真实流量。
 精确 snapshot/hash、逐例结果和证据等级保留在[项目控制台账](../../evidence/project-controls.md)。
 
-## Measurement control：先确认自己测的是什么 { #measurement-control }
+## 先用反例确认自己测的是什么 { #measurement-control }
 
 ```powershell
 python projects/evaluation-gate/measurement_toy.py
@@ -260,7 +262,8 @@ python -m about_llm.evaluation.cli compare `
 `case` weighting 估计随机请求的平均差；`equal` 先算每个 cluster mean，估计随机用户/文档的平均差。
 它们是两个问题，不是看到哪个区间更好就选哪个。
 
-以下透明 oracles 分别处理 cluster bootstrap、paired/cluster randomization、Holm correction 和 sequential peeking：
+以下小例子给出可以手算或完整枚举的参考结果，分别检查 cluster bootstrap、paired/cluster randomization、
+Holm correction 和 sequential peeking：
 
 ```powershell
 python projects/evaluation-gate/clustered_bootstrap_toy.py
@@ -300,7 +303,7 @@ Ledger 用 HMAC-SHA256 绑定连续 sequence、artifact bytes、decision、key I
 | Rehashed artifacts | 当前引用 bytes 与 ledger identity 相同 |
 | External trusted head matched | 能发现合法前缀截断或历史回滚 |
 
-公开 fixture key 不是生产 secret。HMAC 也不提供公钥不可否认性、真实时间或 key custody；生产系统仍需 KMS/HSM、
+公开的样例 key 不是生产 secret。HMAC 也不提供公钥不可否认性、真实时间或 key custody；生产系统仍需 KMS/HSM、
 轮换/吊销、可信时间与外部 immutable anchor。
 
 ## 最终验收

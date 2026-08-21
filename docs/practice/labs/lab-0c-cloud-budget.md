@@ -17,7 +17,8 @@
 python projects/cloud-api-contracts/usage_budget_toy.py
 ~~~
 
-手算 60 input + 10 max output 在 `$1/M + $2/M` authored price 下为什么预留 80 micro-USD，以及 58+4 为什么结算 66 micro-USD。
+本实验假设价格为 input `$1/M`、output `$2/M`。手算 60 input + 10 max output 为什么预留 80 micro-USD，
+以及实际用量 58+4 为什么结算 66 micro-USD。
 
 依次替换 API key、Prompt、cap 与 billing scope，确认只有同 scope 的 key rotation 保持 fingerprint；再构造缺 cap、双 cap 与 bool cap，确认 transport 前失败。
 
@@ -79,4 +80,5 @@ trace 前为什么仍按 uncertain。还要指出当前 orchestrator 只覆盖 J
 挡在 transport 前的故意失败案例。对账输入至少保存 stable call ID、request fingerprint、attempt/request-ID trace、
 Provider usage/billing export 与人工处置结果。
 
-离线 HTTP/SQLite control 不执行真实 DNS、TLS、provider 请求或计费；authored usage 和价格只验证本地协议，不能证明供应商 usage、取消、账单或 exactly-once billing。
+这些离线 HTTP/SQLite 实验不会执行真实 DNS、TLS、provider 请求或计费。预设的 usage 和价格只用于检查
+本地预算协议；供应商 usage、取消、账单和 exactly-once billing 仍需结合真实服务核对。

@@ -33,7 +33,7 @@ flowchart LR
     S --> LIA["LlamaIndex adapter"]
     LCA --> LCR["BaseRetriever.invoke()"]
     LIA --> LIR["BaseRetriever.retrieve()"]
-    LCR --> V["Strict round-trip validator"]
+    LCR --> V["逐字段 round-trip validator"]
     LIR --> V
     V --> P["Identical Prompt / extractive answer / metrics"]
 ```
@@ -90,19 +90,19 @@ python projects/rag-framework-adapters/demo.py
 
 `demo.py` 只展示 canonical result 到两种对象的映射。它没有执行框架 Retriever API、Prompt、answer 或 metrics，因此适合检查字段，不是端到端证据。
 
-### 3. 运行真实双框架 Retriever parity control
+### 3. 让同一次检索真实经过两个框架
 
 ~~~powershell
 python projects/rag-framework-adapters/parity_control.py
 ~~~
 
-当前 control 固定四条 authored 文档、一个 tenant 和同一中文 query，真实调用：
+这个实验固定四条本仓库编写的文档、一个 tenant 和同一中文 query，并真实调用：
 
 - LangChain `BaseRetriever.invoke()`；
 - LlamaIndex `BaseRetriever.retrieve()`；
 - 两个框架各自的 `PromptTemplate`；
 - canonical BM25/ACL、严格 round trip、deterministic extractive answer；
-- authored qrels 上的 Recall@4 与 nDCG@4。
+- 固定 qrels 上的 Recall@4 与 nDCG@4。
 
 本次本地运行报告的 framework versions 为 `langchain-core==1.5.3`、`llama-index-core==0.14.23`。版本是运行环境事实，不是仓库对未来版本的保证。
 
@@ -124,7 +124,8 @@ python projects/rag-framework-adapters/parity_control.py
 | engineering | `acl-before-ranking, citation-binding` | 385 | `b9c8cb77…e1e8e19c` | `sha256:d1045446…48180cca` |
 | anonymous | `acl-before-ranking` | 277 | `1e33ed13…e396d8fd` | `sha256:ed8e3f45…8441e8c` |
 
-engineering 的 Recall@4 与 nDCG@4 都是 1.0，两例 extractive coverage 也都是 1.0。这里的满分来自四文档 authored fixture 与 authored qrels，只是协议回归；不能写成“框架检索质量 100%”或“RAG 已达到生产质量”。
+engineering 的 Recall@4 与 nDCG@4 都是 1.0，两例 extractive coverage 也都是 1.0。满分来自四份固定文档和
+本仓库准备的 qrels，只说明这组 adapter 输入没有回归；不能写成“框架检索质量 100%”或“RAG 已达到生产质量”。
 
 ### 5. 理解 round-trip gate 到底检查什么
 
@@ -150,7 +151,7 @@ python -m pytest tests/test_rag_framework_adapters.py -q
 专项测试覆盖：
 
 - 两种对象字段与 LlamaIndex exclusion keys；
-- 业务 metadata 伪造 `tenant_id` 时 fail closed；
+- 业务 metadata 伪造 `tenant_id` 时，adapter 在进入框架前停止并报错；
 - LangChain metadata rank 被改写时拒绝；
 - LlamaIndex node text 被改写时拒绝；
 - rank gap、duplicate ID、NaN/±Inf 与 bool score；
@@ -176,7 +177,7 @@ python -m pytest tests/test_rag_framework_adapters.py -q
 若要比较各自 native embedding/index/query engine，就不再是 adapter parity；需要分别记录 index/embedding identity、
 candidates、score semantics、filters、rerank、Prompt、raw output、usage、失败和 latency，并在同一 held-out cases 上比较。
 
-## 从教学 control 扩展到工程系统
+## 从教学对照扩展到工程系统
 
 ### 接入 learned retrieval
 
@@ -219,7 +220,7 @@ query/index/model/template 等会改变结果的字段。
 - [ ] canonical object、source/index/policy identity 在哪里定义？
 - [ ] ACL 是否在 scorer、reranker、cache 和 Prompt 之前执行？
 - [ ] adapter 是否拒绝保护字段覆盖、rank gap、duplicate ID 和 non-finite score？
-- [ ] LangChain/LlamaIndex round trip 是否逐字段 fail closed？
+- [ ] LangChain/LlamaIndex round trip 遇到字段漂移时是否停止并指出具体字段？
 - [ ] metadata 是否可能进入 embedding、Prompt、trace 或日志？
 - [ ] 两条框架路径是否绑定同一 Prompt bytes、answer cases 与 qrels？
 - [ ] native framework retrieval 与 canonical adapter parity 是否被明确区分？
@@ -230,10 +231,11 @@ query/index/model/template 等会改变结果的字段。
 
 ## 证据边界
 
-该 control 在当前环境真实执行 `langchain-core` 与 `llama-index-core` 的 Retriever/Prompt API、canonical BM25/ACL、
-strict round trip、deterministic extractive answer 与 Recall@k/nDCG。Learned embedding/vector index/reranker、
+这个实验在当前环境真实执行 `langchain-core` 与 `llama-index-core` 的 Retriever/Prompt API、canonical BM25/ACL、
+逐字段 round trip、deterministic extractive answer 与 Recall@k/nDCG。Learned embedding/vector index/reranker、
 Provider/local LLM、network、concurrency、persistence 与 load performance 尚未进入这条实验。
 
-因此它不证明框架默认 ACL、metadata 不泄漏、native retrieval 等价、模型生成质量、生产延迟/吞吐、规模扩展或生产安全。CPU 本地 authored fixture 也不得外推到目标向量库、模型、GPU 或线上流量。
+因此它不证明框架默认 ACL、metadata 不泄漏、native retrieval 等价、模型生成质量、生产延迟/吞吐、规模扩展或生产安全。
+这组 CPU 本地固定输入也不能代表目标向量库、模型、GPU 或线上流量。
 
 完整实现说明见 [projects/rag-framework-adapters](https://github.com/NightLemon/about-llm/tree/main/projects/rag-framework-adapters)。

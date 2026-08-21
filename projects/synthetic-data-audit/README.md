@@ -8,7 +8,9 @@
 4. exact content identity 与 eligible unique 分母；
 5. target mixture expectation 与实际训练 exposure。
 
-它不调用 teacher/student、judge API 或训练程序。当前交付是 `about-llm.synthetic-data-audit.v2` CPU/offline artifact control：strict-load 输入、执行确定性审计、绑定输入 bytes 与外部 policy、生成 self-fingerprint，并可从 caller-supplied 输入完整复算。
+它不调用 teacher/student、judge API 或训练程序。当前交付是 `about-llm.synthetic-data-audit.v2` CPU 离线审计器：
+解析时拒绝重复字段、非法数值和未知字段，随后执行确定性审计、绑定输入 bytes 与外部 policy、生成
+self-fingerprint，并可从 caller-supplied 输入完整复算。
 
 ## 最短运行
 
@@ -55,9 +57,9 @@ python -m about_llm.synthetic_data_cli `
 }
 ~~~
 
-Verifier 不是“检查 self-hash”：
+Verifier 不只是“检查 self-hash”，而是：
 
-- strict-load 现有 report；
+- 按同样规则解析现有 report；
 - 重新读取 caller 指定的 records/mixture；
 - 用 caller 指定的 required verifiers、known parents 和 fingerprint profile 重跑审计；
 - 重算输入 size/SHA-256、audit、mixture、scope 与 report fingerprint；
@@ -65,7 +67,7 @@ Verifier 不是“检查 self-hash”：
 
 所以攻击者即使同时篡改 `eligible_count` 并重算无密钥 self-hash，仍无法通过原输入与 policy 的 full-local-recomputation。反过来，如果 caller 也把输入/policy 换成攻击者版本，unkeyed hash 不能提供来源认证；可信 policy head、签名或受控发布渠道仍在项目范围外。
 
-## 固定 fixture
+## 本例使用的固定输入
 
 `records.example.jsonl` 有四条 candidates：
 
@@ -124,7 +126,7 @@ Verifier 不是“检查 self-hash”：
 }
 ~~~
 
-`human_reviewed` 可省略，默认 false；其他字段必需。Loader fail closed：
+`human_reviewed` 可省略，默认 false；其他字段必需。遇到下列输入时，Loader 会在审计开始前停止：
 
 - 拒绝 duplicate JSON keys、`NaN`/`Infinity`、invalid UTF-8；
 - 拒绝 missing/unknown record、verification、mixture/component fields；

@@ -29,7 +29,7 @@
 - [ ] 数据流图包含 Prompt、日志、缓存、向量库、工具结果、第三方 Provider 和离线评测工件。
 - [ ] 敏感字段按最小需要进入模型；传输、存储与访问权限符合数据等级。
 - [ ] Tenant 与 principal 来自可信身份层，不能由 request body、Prompt 或模型输出自报。
-- [ ] 公开日志、trajectory 和 fixture 由字段 allowlist 生成，而不是只对可见文本做字符串脱敏。
+- [ ] 公开日志、trajectory 和固定样例由字段 allowlist 生成，而不是只对可见文本做字符串脱敏。
 - [ ] Provider 返回的 opaque reasoning、signature 和未知 block 有单独策略：不静默丢弃，也不无条件回传。
 - [ ] 数据或 reasoning artifact 泄露后，团队能够隔离工件、撤销凭据并清理下游副本。
 
@@ -111,7 +111,7 @@
 - [ ] LLM judge 用人工样本校准，并报告与人工分歧最大的切片。
 - [ ] Prompt injection、越权、数据外传、滥用和供应链风险已经红队。
 - [ ] 安全漏拦和误拦一起进入回归，且每个门禁都有明确阻断阈值与 owner。
-- [ ] 报告区分真实线上观测、离线 fixture、模拟故障和作者声明，避免把局部实验外推到生产。
+- [ ] 报告区分真实线上观测、离线固定样例、模拟故障和作者声明，避免把局部实验外推到生产。
 
 评测设计见[评测方法论](../quality/evaluation-methodology.md)，风险分级与处置见
 [安全](../quality/safety.md)。
@@ -161,6 +161,6 @@
 | `limited-go` | 风险可通过范围或流量隔离 | 租户/用户 allowlist、上限、观察窗口、自动停止条件 |
 | `no-go` | 高风险证据缺失或门禁失败 | 阻断项、负责人、下一次复核所需证据 |
 
-专项测试的精确命令、fixture 与 evidence boundary 不适合继续堆在发布清单里。需要复核某个实现结论时，
-转到[项目控制台账](../evidence/project-controls.md)查对应 control；清单只负责确保风险没有被遗漏，
+专项测试的精确命令、固定输入与适用范围不适合继续堆在发布清单里。需要复核某个实现结论时，
+转到[项目控制台账](../evidence/project-controls.md)查对应验证记录；清单只负责确保风险没有被遗漏，
 以及发布决定确实由证据支撑。

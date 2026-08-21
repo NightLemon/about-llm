@@ -58,11 +58,13 @@
 
 先在纸上为少量 token 完成 top-k routing，再改变 capacity factor、drop/reroute 策略和 combine normalization。关注三个问题：离散 expert index 如何产生、selected probability 如何传梯度、容量溢出怎样改变输出。
 
-进阶时再比较单进程 sparse/dense oracle、跨 rank token dispatch 与 router/expert gradient。每一步都画出 token owner、expert owner 和 collective；同机 CPU/Gloo 对账不能外推为 NCCL 性能或目标 MoE checkpoint 复现。
+进阶时再用独立的 dense 参考实现核对 sparse 路径，然后学习跨 rank token dispatch 与 router/expert gradient。
+每一步都画出 token owner、expert owner 和 collective；同机 CPU/Gloo 对账不能外推为 NCCL 性能或目标 MoE checkpoint 复现。
 
 ### 实验 2B：配置与生成协议 { #lab-2b }
 
-用项目中的 config fixtures 手算标准 GQA 的 KV Cache，再让字段缺失、head 数不可整除或 attention 语义变成 MLA，观察何时必须拒绝估算。随后比较 tokenizer、model config 和 generation config 的 BOS/EOS/PAD、长度与停止规则。
+用项目中的固定配置样例手算标准 GQA 的 KV Cache，再让字段缺失、head 数不可整除或 attention 语义变成 MLA，
+观察何时已经无法可靠估算。随后比较 tokenizer、model config 和 generation config 的 BOS/EOS/PAD、长度与停止规则。
 
 交付物：一张“配置可推导 / 必须实测 / 信息不足”的表。扩大 `max_position_embeddings` 不能证明有效长上下文。
 
@@ -163,7 +165,7 @@
 
 先完成[实验 7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md)，用一条父子序列追踪真实 CPU K/V tensor；
 再完成[实验 7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md)，把相同概念放进固定模型、
-真实 scheduler 与 GPU runtime。然后用小型 oracle 理解 preemption 与量化，最后进入真实服务：
+真实 scheduler 与 GPU runtime。然后用可手算的小例子理解 preemption 与量化，最后进入真实服务：
 
 1. 固定模型、runtime、硬件和 prompt/output 长度分布。
 2. 先验证单请求 token/usage/finish，再做 open-loop 多档负载。
@@ -184,7 +186,8 @@ CPU toy 的离散 step、逻辑 bytes 或本地取消不能冒充 GPU 性能、�
 3. 引用 span 存在但不支持 claim 时，句法与语义评价如何分开？
 4. 多次查看结果、挑 slice 或比较多模型时，显著性怎样失真？
 
-再用独立 held-out 集评价自己的系统，报告逐例结果和错误 taxonomy。七个 authored case 或一个较高分数都不能代表通用能力；指标首先要匹配任务 construct。
+再用独立 held-out 集评价自己的系统，报告逐例结果和错误 taxonomy。七个人工编写的 case 或一个较高分数
+都不能代表通用能力；指标首先要匹配任务 construct。
 
 ## 综合项目验收
 

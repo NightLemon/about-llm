@@ -1,6 +1,6 @@
 # 单卡推理服务与压测
 
-本页是实现与运行参考，保存脚本参数、fixture 账本和证据边界。第一次学习时不要从这里顺序通读。
+本页是实现与运行参考，保存脚本参数、固定输入和每项结果的适用范围。第一次学习时不要从这里顺序通读。
 
 - 先读[一次请求如何穿过推理引擎](../../docs/systems/inference-request-lifecycle.md)，建立端到端心智模型。
 - 再做[Paged KV 引导实验](../../docs/practice/labs/lab-7a-paged-kv.md)，按预测、运行、负例的顺序学习。
@@ -8,9 +8,10 @@
 - 测试与 claim 对照见[推理服务证据页](../../docs/evidence/inference-serving-controls.md)。
 
 本目录的工程目标是用同一组 workload 比较 Transformers 与 vLLM，并正确区分 TTFT、TPOT、
-端到端延迟和系统吞吐。下面的 control/oracle 各自只证明标题所述的局部契约，不能相互借用证据等级。
+端到端延迟和系统吞吐。下面每个实验只回答标题所述的问题：CPU 公式对账、本地 HTTP 路径和目标 GPU 性能
+属于不同证据，不能把其中一个实验的结论直接搬给另一个。
 
-## 固定 Qwen 的真实 HTTP reference control
+## 固定 Qwen 的真实 HTTP 参考服务
 
 先用已录制报告做离线复核；这条命令不会加载模型或启动服务：
 
@@ -19,7 +20,7 @@ python projects/inference-serving/run_qwen_target_service.py `
   --verify projects/inference-serving/qwen2.5-0.5b-service.recorded-report.json
 ~~~
 
-需要重放真实 control 时，安装 `torch`、`transformers` 与 `api` 依赖，并使用本机已有的固定 checkpoint cache：
+需要重放真实服务时，安装 `torch`、`transformers` 与 `api` 依赖，并使用本机已有的固定 checkpoint cache：
 
 ~~~powershell
 python projects/inference-serving/run_qwen_target_service.py --local-files-only
@@ -29,9 +30,9 @@ python projects/inference-serving/run_qwen_target_service.py --local-files-only
 
 这是为教学与证据核验设计的 **Transformers CPU FP32 eager reference service**，不是 vLLM，也不声称完整 OpenAI API compatibility。它是单进程、单 admission slot、HTTP loopback，未使用 TLS、proxy、OAuth/JWT/IAM、CUDA、多 worker 或远程 client。SSE 在模型完成完整 generation 后才发出两个文本 delta，因此 `[DONE]`/usage 通过不证明 incremental decode streaming、client disconnect cancellation、KV 释放、容量、SLO 或性能。文件 hash 没有密钥，不认证发布者；verify 后 loader 重新打开路径仍有 TOCTOU。
 
-## 增量 SSE 与断连协作取消 control
+## 增量 SSE 与断连协作取消
 
-先离线复核录制报告，再按需重放轻量真实 TCP control：
+先离线复核录制报告，再按需重放轻量真实 TCP 实验：
 
 ~~~powershell
 python projects/inference-serving/incremental_streaming_control.py `
@@ -40,13 +41,20 @@ python projects/inference-serving/incremental_streaming_control.py `
 python projects/inference-serving/incremental_streaming_control.py
 ~~~
 
-这条独立 control 使用 authored async pseudo-token backend，不加载 tokenizer 或模型。完整 case 在 backend 完成前依次让 client 收到 `甲`、`🙂`、`终`，随后核对 finish、usage 与 `[DONE]`；取消 case 先发 `首`，client 在 server audit 仍显示 active=1/backend 未完成时显式关闭 response。真实 Uvicorn subprocess 随后记录 ASGI stream task 与 backend iterator 都观察到 `asyncio.CancelledError`、active 回到 0、cancelled 变为 1，且 emitted token IDs 仍只有 `[201]`。Uvicorn 0.52.1 重录 report fingerprint 为 `sha256:25846822…2b5d00`。
+这条独立实验使用本仓库实现的 async pseudo-token backend，不加载 tokenizer 或模型。完整 case 在 backend
+完成前依次让 client 收到 `甲`、`🙂`、`终`，随后核对 finish、usage 与 `[DONE]`；取消 case 先发 `首`，
+client 在 server audit 仍显示 active=1/backend 未完成时显式关闭 response。真实 Uvicorn subprocess 随后记录
+ASGI stream task 与 backend iterator 都观察到 `asyncio.CancelledError`、active 回到 0、cancelled 变为 1，
+且 emitted token IDs 仍只有 `[201]`。Uvicorn 0.52.1 重录 report fingerprint 为 `sha256:25846822…2b5d00`。
 
-它证明的只是当前协作式 async iterator 在单进程 IPv4 loopback HTTP 上能接收断连取消，并在后续 authored delta 前停止。它没有执行 Transformers blocking generation thread、模型 forward、vLLM、CUDA、KV/GPU 分配或释放，也没有 TLS/proxy/IAM、远程 client、多 worker、provider billing、质量、性能或 SLO 证据。不要把这个结果写成“任意模型 runtime 都会停算”或“云 API 取消后不计费”。
+这个结果说明当前协作式 async iterator 在单进程 IPv4 loopback HTTP 上能接收断连取消，并在后续模拟 delta
+前停止。实验没有执行 Transformers blocking generation thread、模型 forward、vLLM、CUDA、KV/GPU 分配或释放，
+也没有覆盖 TLS/proxy/IAM、远程 client、多 worker、provider billing、质量、性能或 SLO。不要把它写成
+“任意模型 runtime 都会停算”或“云 API 取消后不计费”。
 
 ### Tiny Transformers thread 的显式协作退出
 
-下一条 control 把证据推进到真实 Transformers generation loop，但仍保持模型极小且不下载 checkpoint：
+下一条实验进入真实 Transformers generation loop，但仍保持模型极小且不下载 checkpoint：
 
 ~~~powershell
 python projects/inference-serving/transformers_thread_cancellation_control.py `
@@ -84,7 +92,7 @@ eager/CUDA Graph 和 256/1024 prefill budget；每个 worker 再扫描 exact/one
 1/2/4/8。报告保存 warmup、五个 measurement、每步 sequence/KV trace、engine TTFT/TPOT/E2E、输出
 token throughput、峰值 allocated/reserved memory 和 typed failure terminal，不保存 raw prompt。
 
-`verify` 是 CPU-only：它检查 strict JSON、identity、时间顺序、指标算术、prefix hit、调度 token budget 和
+`verify` 是 CPU-only：它会拒绝重复字段、非法数值和未知字段，并检查 identity、时间顺序、指标算术、prefix hit、调度 token budget 和
 KV 账本。仓库当前不包含 3070 实测数字；只有用户回传的脱敏 JSON 通过 verifier 和人工边界审查后，
 才能新增 recorded evidence。上游 README 的 RTX 4070 Laptop 数字不能替代这项运行。
 
@@ -154,7 +162,7 @@ constant 的第 (i) 条请求在 (i/\lambda) 秒到达。Poisson 模式把第一
 
 ## 离线 attempt 与 SLO 分析
 
-仓库提供包含 3 个成功和 1 个 429 的**合成 client trace fixture**：
+仓库提供包含 3 个成功和 1 个 429 的**合成 client trace 样例**：
 
 ~~~powershell
 python -m about_llm.inference_analysis_cli `
@@ -186,7 +194,10 @@ python -m about_llm.inference_analysis_cli `
 }
 ```
 
-时间必须来自同一 monotonic clock/基准窗口；成功行必须有 first token、prompt token 和正 output token。失败行允许 token 未知。`offered_at` 要么每行都有、要么每行都没有；否则工具拒绝从不完整子集计算 queue percentile。Loader 也拒绝重复 JSON key、未知字段与 NaN/Infinity。Fixture 只验证聚合、错误口径和 exit code；client queue 不等于 gateway/vLLM server queue，也不识别 GPU 利用率、KV、网络分段或真实容量。
+时间必须来自同一 monotonic clock/基准窗口；成功行必须有 first token、prompt token 和正 output token。失败行允许
+token 未知。`offered_at` 要么每行都有、要么每行都没有；否则工具拒绝从不完整子集计算 queue percentile。
+Loader 也拒绝重复 JSON key、未知字段与 NaN/Infinity。这份固定输入用于检查聚合、错误口径和 exit code；
+client queue 不等于 gateway/vLLM server queue，也不识别 GPU 利用率、KV、网络分段或真实容量。
 
 `attempts.manifest.example.json` 固定输入 SHA-256、基准时间窗、合成时钟和证据边界，测试会验证 hash 与行数。真实 workload manifest 还必须记录 model/tokenizer/runtime/hardware、arrival process、长度联合分布、并发、warmup、网络位置和采集版本。
 

@@ -2,6 +2,10 @@
 
 目标：让 RAG、Agent、微调和模型升级使用同一组 case id、切片、统计与发布决策，而不是各自展示几个成功示例。
 
+第一次运行时，直接跳到[可运行 CLI](#可运行-cli)：先分别给 baseline 和 candidate 打分，再运行一次 paired
+comparison。输入是固定 case 与两组已保存答案；输出包括逐例结果、两份 run manifest 和一份发布判断。
+Qwen、统计反例、HTML 和认证发布链都是后续选修，不必在第一次运行中全部完成。
+
 ## 当前实现
 
 - Recall@k、MRR、graded nDCG、实际返回分母 Precision 与 all-evidence recall 共享原语；
@@ -22,14 +26,17 @@
 
 ## 固定 Qwen 真实权重的小型行为评测
 
-通用 Evaluation Gate 默认只处理已记录输出，不会自行调用模型。`run_qwen_target_behavior_evaluation.py` 是一条明确分开的 target runner：它复用 Transformers Basics 中固定的 Qwen2.5-0.5B-Instruct revision、7-file/999,586,347-byte snapshot 和 checkpoint manifest，加载前重哈希，然后以 CPU FP32/eager、batch 1、greedy、`max_new_tokens=12` 对七条 authored case 逐条调用真实 `GenerationMixin.generate()`。
+通用 Evaluation Gate 默认只处理已记录输出，不会自行调用模型。`run_qwen_target_behavior_evaluation.py` 是一条
+单独的 target runner：它复用 Transformers Basics 中固定的 Qwen2.5-0.5B-Instruct revision、
+7-file/999,586,347-byte snapshot 和 checkpoint manifest，加载前重哈希，然后以 CPU FP32/eager、batch 1、
+greedy、`max_new_tokens=12` 对七条本仓库编写的 case 逐条调用真实 `GenerationMixin.generate()`。
 
 ~~~powershell
 # 真实重哈希、加载权重并运行七条 case
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
   --local-files-only
 
-# 普通 CI：只复算 strict report，不加载约 1 GB snapshot
+# 普通 CI：完整复算报告，不加载约 1 GB snapshot
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
   --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
 ~~~
@@ -75,9 +82,9 @@ python -m about_llm.evaluation.cli score `
 
 默认计算 normalized exact match 与 token F1。若任务要求逐字保留大小写、标点或空格，显式传 `--metric literal_exact_match`；它的 revision 是 `about-llm.literal-exact-match.v1`，比较 decoded string equality，不声称原始 response bytes 相同。`--metric` 可重复传入，例如同时选择 literal/normalized exact，也可选择 `json_schema`、`json_value_exact`、`citation_syntax` 或 `citation_evidence_span`。Schema 指标要求 case metadata 提供 `output_schema`，引用语法指标要求 `valid_source_ids`；span 指标要求 `citation_sources`。三者都不证明 claim-evidence entailment。
 
-### Strict JSON Schema 与 expected-value equality 分账
+### 把 JSON 解析、Schema 与 expected value 分开
 
-五条 authored fixture 把“字符串像不像”“JSON 是否严格合法”“是否符合 schema”“parsed value 是否等于 gold”拆开：
+五条固定 case 把“字符串像不像”“JSON 是否能无歧义解析”“是否符合 schema”“parsed value 是否等于 gold”拆开：
 
 ~~~powershell
 python -m about_llm.evaluation.cli score `
@@ -102,9 +109,14 @@ python -m about_llm.evaluation.cli score `
 | `NaN` | 0 | 0 | 0.5 | 0 | 0 |
 | reversed array order | 0 | 0 | 1 | 1 | 0 |
 
-`about-llm.json-schema-metric.v2` 使用 strict JSON：拒绝 duplicate object key 与 `NaN/Infinity`；schema 只允许 local `$ref/$dynamicRef`，拒绝 `$id` 和 external resolution。无效 gold schema 是 case 配置错误，会中止评分，不会把所有输出悄悄记为 0。当前 `format` 仍是 annotation，未启用 `FormatChecker`；它也不做 coercion 或应用 `default`。
+`about-llm.json-schema-metric.v2` 解析时拒绝 duplicate object key 与 `NaN/Infinity`；schema 只允许 local
+`$ref/$dynamicRef`，拒绝 `$id` 和 external resolution。无效 gold schema 是 case 配置错误，会中止评分，
+不会把所有输出悄悄记为 0。当前 `format` 仍是 annotation，未启用 `FormatChecker`；它也不做 coercion 或应用 `default`。
 
-`about-llm.json-value-exact.v1` 忽略 JSON object key order 与不重要 whitespace，但保留 array order、string、scalar type 以及 parser 的 integer/float distinction。它不自动调用 schema，也不等于业务语义：单位、资源归属、数据库状态、权限和跨字段规则仍需独立 validator。Fixture 的 `latency_seconds=0.0` 是 authored 非性能占位值；五条 case 不证明真实模型、provider、代表性质量或生产安全。
+`about-llm.json-value-exact.v1` 忽略 JSON object key order 与不重要 whitespace，但保留 array order、string、
+scalar type 以及 parser 的 integer/float distinction。它不自动调用 schema，也不等于业务语义：单位、资源归属、
+数据库状态、权限和跨字段规则仍需独立 validator。固定输入中的 `latency_seconds=0.0` 只是非性能占位值；
+五条 case 不代表真实模型、provider、整体质量或生产安全。
 
 ### Citation ID、exact span 与 entailment 分账
 
@@ -129,7 +141,9 @@ python -m about_llm.evaluation.cli score `
 | duplicate JSON key | 0 | strict parser 在评分前拒绝 |
 | unrelated claim + exact quote | 1 | 故意证明 identity gate 不推断 entailment |
 
-Cases/answers 分别为 1,015/1,138 bytes，SHA-256 为 `ceb3ff9d…89e8` / `c61507ec…2661`。这五条 authored fixture 没有模型调用、人类判断或权限系统；最后一行的明显语义反例仍得 1 是协议设计，不是漏洞。生产评测应把 syntax、authorized source identity、span identity、semantic verdict、source quality 与 publication policy 分开保存。
+Cases/answers 分别为 1,015/1,138 bytes，SHA-256 为 `ceb3ff9d…89e8` / `c61507ec…2661`。
+这五条固定 case 没有模型调用、人类判断或权限系统；最后一行的明显语义反例仍得 1 是协议设计，不是漏洞。
+生产评测应把 syntax、authorized source identity、span identity、semantic verdict、source quality 与 publication policy 分开保存。
 
 对已经观测到 binary label 的历史预测做校准分析：
 
@@ -208,7 +222,9 @@ python -m about_llm.evaluation.cli render-comparison-html `
 
 这只是 `artifact_only_render` 派生视图：renderer 先严格加载 comparison，但不会调用 `verify-evidence`、验证 HMAC ledger 或重算统计。HTML 可被覆盖，也不是 canonical identity；发布判断必须回到 JSON artifact/verifier，不从页面颜色或四舍五入后的展示值反推。
 
-也可以直接用仓库中已经评分的 authored fixture 验证 compare 协议：`results.baseline/candidate.example.jsonl` 分别由 `run.baseline/candidate.manifest.example.json` 绑定。fixture 只用于回归 loader、fingerprint 和 gate 数学，不代表任何真实模型质量或延迟。
+也可以直接用仓库中已经评分的固定输入验证 compare 协议：`results.baseline/candidate.example.jsonl` 分别由
+`run.baseline/candidate.manifest.example.json` 绑定。这些文件只用于回归 loader、fingerprint 和 gate 数学，
+不代表任何真实模型质量或延迟。
 
 ### Measurement reliability、validity 与 power control
 

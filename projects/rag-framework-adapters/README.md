@@ -1,12 +1,16 @@
-# LangChain 与 LlamaIndex RAG Parity Control
+# LangChain 与 LlamaIndex：让同一次 RAG 检索跨框架保持一致
 
 这个项目回答一个容易被框架营销掩盖的问题：怎样接入 LangChain 和 LlamaIndex，同时不改变原有 RAG 的授权、排序、Prompt 与评测语义？
 
 答案是 **canonical-first**：领域对象和安全策略仍由应用核心掌握，框架对象只是可验证的运输值。项目不会把“换框架”包装成检索质量提升，也不会让框架 metadata 成为授权事实源。
 
+第一次运行 `python projects/rag-framework-adapters/parity_control.py`。输入是四份固定文档、一个中文 query 和
+两个授权主体；输出会并排展示 canonical、LangChain 与 LlamaIndex 的 document ID、正文、rank、score、Prompt
+和抽取答案。先看哪一项发生漂移，再阅读后面的字段映射与安全边界。
+
 ## 当前可证实的结论
 
-本仓库当前取得的是一个离线 L3 integration control：
+本仓库当前完成的是一个离线 L3 集成示例：
 
 - 真实执行 `langchain-core==1.5.3`；
 - 真实执行 `llama-index-core==0.14.23`；
@@ -100,7 +104,7 @@ retrieval_rank
 retriever
 ```
 
-业务 metadata 若已经占用任意保护键，adapter 直接 fail closed。不能让用户或旧索引中的 metadata 覆盖 canonical 安全字段。
+业务 metadata 若已经占用任意保护键，adapter 会在转换前报错。不能让用户或旧索引中的 metadata 覆盖 canonical 安全字段。
 
 ### 输入结果的 canonical gate
 
@@ -424,7 +428,7 @@ cache identity 至少应包含：
 - [ ] ACL 在 scorer/reranker/cache/Prompt 前；
 - [ ] tenant/principals 来自可信认证层；
 - [ ] rank、ID、score 经过严格 gate；
-- [ ] 两种 round trip 逐字段 fail closed；
+- [ ] 两种 round trip 在字段漂移时停止并指出具体字段；
 - [ ] metadata exclusion 的证明范围写清楚；
 - [ ] Prompt bytes/hash 与 answer artifact 可追溯；
 - [ ] qrels/cases 与代码路径隔离；
@@ -454,7 +458,8 @@ cache identity 至少应包含：
 
 > 以 canonical `Document/SearchResult` 和 authorization-first BM25 为权威核心，把同一检索结果接入 LangChain `BaseRetriever.invoke()` 与 LlamaIndex `BaseRetriever.retrieve()`；逐字段校验 ID、正文、保护 metadata、rank/finite score 与 metadata exclusion，并绑定两种 Prompt 和 deterministic extractive answer artifact。固定四文档 fixture 中 engineering/anonymous 分别得到 2/1 条授权证据，16 个测试覆盖保护字段、rank/ID/score、mutation 与 security context 漂移。
 
-同一句必须披露：这是 CPU 本地 authored fixture，未执行 native embedding/index/query engine、learned reranker、provider/local LLM、网络或性能负载。
+紧接着说明：这是 CPU 本地固定样例，未执行 native embedding/index/query engine、learned reranker、
+provider/local LLM、网络或性能负载。
 
 ## 不能写进简历的结论
 
@@ -482,6 +487,6 @@ cache identity 至少应包含：
 - 目标向量库、GPU 或 provider；
 - 生产安全。
 
-CPU 本地 authored fixture 也不得外推到目标向量库、模型、GPU 或线上流量。
+CPU 本地固定样例也不能代表目标向量库、模型、GPU 或线上流量。
 
 站点教材见 [`docs/practice/projects/rag-framework-adapters.md`](../../docs/practice/projects/rag-framework-adapters.md)。

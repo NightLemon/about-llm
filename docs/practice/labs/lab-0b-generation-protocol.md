@@ -51,6 +51,7 @@ python projects/inference-serving/stop_matching_toy.py
 
 最低交付物：三份原始输出、每部分一个手算或状态图、至少一个失败案例，以及一张“停止原因 → 是否已接受 → 是否继续计费”的对照表。
 
-这些 authored CPU control 验证有限状态和确定性搜索契约；它们不证明真实 tokenizer、JSON Schema、目标 runtime、provider finish reason、网络取消或账单语义。
+这些 CPU 小实验由本仓库准备输入，用来核对有限状态和确定性搜索契约。真实 tokenizer、JSON Schema、
+目标 runtime、provider finish reason、网络取消和账单语义需要在各自环境继续验证。
 
 下一步：使用云 API 的工程师继续[实验 0C](lab-0c-cloud-budget.md)；其他读者可回到[生成与解码](../../core/generation.md)完成自测。

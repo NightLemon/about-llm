@@ -34,8 +34,8 @@ raw text
 
 | 层级 | 例子 | 能证明什么 |
 |---|---|---|
-| 机制 oracle | NumPy BPE/attention | 给定输入下的数学与状态 |
-| 框架 control | 随机 tiny PyTorch model | API、autograd、cache 路径能执行 |
+| 手算与参考实现 | NumPy BPE/attention | 给定输入下的数学与状态 |
+| 框架小实验 | 随机 tiny PyTorch model | API、autograd、cache 路径能执行 |
 | 发布证据 | 固定 config/model card bytes | 指定 artifact 声明与静态字段 |
 | 目标 checkpoint | 固定 weights + forward | 特定环境和输入上的真实执行 |
 
@@ -115,7 +115,7 @@ full causal recompute at the same position
 
 要对齐 absolute position、mask、dtype 和 dropout。Past length 存在时，不能直接复用从零开始的方阵下三角 mask。
 
-运行 oracle：
+运行 NumPy 参考测试：
 
 ~~~powershell
 python -m pytest tests/test_attention_numpy.py -q
@@ -193,7 +193,7 @@ tokenizer special tokens
 + call-level overrides
 ~~~
 
-先检查两个离线 fixtures：
+先检查两个离线协议样例：
 
 ~~~powershell
 python projects/transformers-basics/inspect_generation_protocol.py projects/transformers-basics/protocols/aligned-superset-eos.example.json
@@ -202,7 +202,7 @@ python projects/transformers-basics/inspect_generation_protocol.py projects/tran
 
 你要找出 BOS/EOS/PAD 是否一致、是否越过 vocab，以及 generation EOS superset 是有意设计还是 drift。
 
-再运行真实框架 control：
+再运行真实框架小实验：
 
 ~~~powershell
 python projects/transformers-basics/generation_runtime_control.py
@@ -236,7 +236,7 @@ python projects/transformers-basics/inspect_config.py projects/transformers-basi
 python projects/transformers-basics/inspect_config.py projects/transformers-basics/configs/mla-moe.example.json --tokens 4096
 ~~~
 
-标准 GQA fixture 应给出 estimate；已知 MLA markers 应 fail closed。
+标准 GQA 样例应给出 estimate；出现已知 MLA markers 时，程序应停止套用 GQA 公式并说明原因。
 
 公式不含 weights、allocator、page alignment、quantization scales、workspace 和 temporary tensors，因此不是显存峰值。
 
@@ -261,7 +261,7 @@ python projects/transformers-basics/inspect_checkpoint.py <model-id> --revision 
 
 ## Phase 8：真实权重是选修
 
-仓库提供固定 Qwen 小模型 CPU control：
+仓库提供固定 Qwen 小模型 CPU 运行：
 
 ~~~powershell
 python projects/transformers-basics/run_target_checkpoint.py --local-files-only
@@ -368,7 +368,8 @@ Recorded artifact 只证明历史运行报告内部一致。比较 code、enviro
 
 更诚实的表述是：
 
-> 从 raw bytes 实现 BPE reference，以 NumPy 对账 causal/cache/online attention；用 tiny PyTorch control 验证训练与 generation，并为固定 checkpoint 建立 config、tokenizer、权重和 runtime 分层证据。
+> 从 raw bytes 实现 BPE reference，以 NumPy 对账 causal/cache/online attention；用 tiny PyTorch 模型验证训练与
+> generation 路径，并为固定 checkpoint 建立 config、tokenizer、权重和 runtime 分层证据。
 
 面试时应能回答：
 

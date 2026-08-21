@@ -11,8 +11,8 @@
 2. Provider 是否继续生成或计费？
 3. 客户端能否自动重试，还是会产生第二次生成和第二笔费用？
 
-这个项目不访问真实 Provider。它用 strict JSON、MockTransport、authored SSE 与 SQLite 把上述边界做成可运行控制。
-所有联网或付费行为都必须由调用者显式 opt-in。
+这个项目不会访问真实 Provider。它用本仓库准备的 JSON 与 SSE 样例、MockTransport 和 SQLite，
+让你在离线环境观察解析、重试、计费和恢复。只有调用者明确选择后，程序才允许联网或产生费用。
 
 ## 一次逻辑调用的状态账本
 
@@ -41,7 +41,7 @@ python -m about_llm.integrations.cloud_api_cli verify `
   --output artifacts/cloud-api/contracts.json
 ```
 
-Fixture 使用 `.invalid` 域名与假密钥，不会导入 HTTP client。它把三种协议映射到业务侧最小
+固定输入使用 `.invalid` 域名与假密钥，也不会导入 HTTP client。程序把三种协议映射到业务侧最小
 `ChatMessage/ChatResponse`：
 
 | Provider family | System 与 role | Response/usage/terminal 的主要位置 |
@@ -194,7 +194,7 @@ State machine 跟踪 response lifecycle、message text/refusal parts、function-
 terminal output 与 usage。Function arguments 即使 JSON 解析失败也会保留原字符串，但标记
 `arguments_is_strict_object=false`，后续 Runtime 不得执行。
 
-这条命令只消费 authored SDK-shaped JSONL；没有运行 OpenAI SDK、HTTP 或远程模型。精确 events、fingerprints 和
+这条命令只读取本仓库准备的 SDK-shaped JSONL，没有运行 OpenAI SDK、HTTP 或远程模型。精确 events、fingerprints 和
 reviewed subset 见[项目控制台账](../../evidence/project-controls.md)。
 
 ## Opaque reasoning artifact：密文也要绑定上下文
@@ -204,7 +204,7 @@ python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
   --output artifacts/cloud-api/reasoning-replay-matrix.json
 ```
 
-本地 control 先故意演示 content-only AEAD：密文没有被修改，却可以被跨 subject、tenant、session 或 model 重放。
+本地示例先故意演示 content-only AEAD 的缺陷：密文没有被修改，却可以被跨 subject、tenant、session 或 model 重放。
 随后 context-bound envelope 把 tenant、subject、session、branch、predecessor、model、policy、key 和 expiry 放进
 associated data，并用 single-use ledger 阻止 replay。
 
@@ -219,8 +219,8 @@ python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
   --output artifacts/cloud-api/trajectory-release-report.json
 ```
 
-发布 Schema 只允许 `text/tool_call/tool_result/citation`。Reasoning、thinking、signature、encrypted 或未知 block
-fail closed；嵌套禁用字段也会被拒绝。
+发布 Schema 只允许 `text/tool_call/tool_result/citation`。遇到 reasoning、thinking、signature、encrypted、
+未知 block 或嵌套禁用字段时，程序会停止发布并给出错误。
 
 报告不回显被拒绝值，并明确记录 `secret_pii_scan_performed: false`。因此通过 allowlist 只说明 block shape 可发布，
 不代表 text 已完成 secret/PII、版权、consent 或用途审查。
@@ -252,14 +252,14 @@ python -m pytest `
 - 2xx SSE 截断、超限和取消保持 terminal failure；
 - Cancel 后不伪造零 usage；
 - 每个 attempt 都有 reservation/tombstone；
-- SQLite config drift 与物理篡改 fail closed。
+- SQLite config 漂移或物理篡改会在继续处理前被拒绝。
 
 一次可审计运行至少保存 provider/API/model revision、脱敏 RequestSpec identity、attempt trace、retry/outcome decision、
 每 attempt reservation、Provider request ID 和 billing reconciliation。API key、reasoning plaintext/ciphertext、
 raw Provider body 与被拒绝输入值不进入普通 artifact 或异常日志。
 
-本项目证明的是离线 adapter、typed-event replay、MockTransport JSON/SSE、AES-GCM context-binding control、
-trajectory allowlist 和 SQLite budget 的本地行为。真实 DNS/TLS、SDK、模型、配额、取消传播、usage 与 invoice
-仍需要目标 Provider 环境验证。
+本项目可以说明离线 adapter、typed-event replay、MockTransport JSON/SSE、AES-GCM 上下文绑定、trajectory
+allowlist 和 SQLite budget 在这些固定输入上的行为。真实 DNS/TLS、SDK、模型、配额、取消传播、usage 与 invoice
+仍需要在目标 Provider 环境验证。
 
 完整代码位于 [projects/cloud-api-contracts](https://github.com/NightLemon/about-llm/tree/main/projects/cloud-api-contracts)。

@@ -1,6 +1,7 @@
 # 工程项目索引
 
-项目用于把一组知识变成可以运行、解释和改进的系统。本页只帮助你选项目、获得第一次成功并完成一次验收；精确版本、fixture、hash 和历史运行结果统一放在[项目实验与证据台账](../evidence/project-controls.md)。
+项目用于把一组知识变成可以运行、解释和改进的系统。本页帮助你选项目、获得第一次成功并完成一次验收。
+精确版本、固定输入、hash 和历史运行结果统一放在[项目实验与证据台账](../evidence/project-controls.md)。
 
 **项目导航**：[实验目录](labs.md) · [学习路径](../guide/learning-paths.md) · [环境配置](../guide/environment.md) · [生产检查表](production-checklist.md)
 { .doc-nav }
@@ -40,7 +41,8 @@
 
 ### 3. 工程验收
 
-最后才检查权限、恢复、并发、回滚和发布门禁。CPU fixture 可以验证控制流，但 GPU 性能、云端计费和真实组织权限必须在目标环境重新测量。
+最后再检查权限、恢复、并发、回滚和发布门禁。CPU 固定样例可以验证控制流；GPU 性能、云端计费和
+真实组织权限仍必须在目标环境重新测量。
 
 交付物：验收表、机器可读结果和清晰的证据边界。精确运行身份记录在项目 README 或[证据台账](../evidence/project-controls.md)，不塞回学习笔记。
 
@@ -78,7 +80,7 @@ python -m pytest tests/test_agent_refund_lifecycle.py -q
 
 沿 trace 标记 observation、proposal、schema、ACL、approval、execution、idempotency、verifier 和 recovery。
 重点解释为什么远端已受理而本地超时时，不能报告失败或直接重试。完成后再运行
-`model_planner_control.py`，把固定 proposal 换成 strict recorded model boundary。
+`model_planner_control.py`，把固定 proposal 换成带完整请求、响应与结构校验记录的模型边界。
 
 故意破坏：用旧审批批准新参数，或把远端 `completed` 直接当成本地成功。两种情况都必须被控制面拒绝。
 

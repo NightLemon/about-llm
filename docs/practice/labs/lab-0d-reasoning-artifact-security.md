@@ -128,4 +128,6 @@ python -m pytest tests/test_reasoning_artifact.py tests/test_trajectory_release.
 
 最低交付物：预测表、16 项 replay matrix、一次安全和一次拒绝的 trajectory gate 报告、三个故意失败的测试记录、一份旧格式迁移表，以及不超过五行的结论边界。
 
-合格结论应类似：本实验使用成熟 AES-GCM 实现和 authored bytes，证明“认证内容”与“绑定使用上下文”是不同协议属性；它不解析真实 provider artifact，不访问模型或网络，不能证明任何当前 API 有漏洞或已经实施相同修复。内存 nonce/replay ledger 也不能外推为生产 key custody、持久化、并发或多区域一致性。
+合格结论应类似：本实验使用成熟 AES-GCM 实现和本仓库准备的 bytes，说明“认证内容”与“绑定使用上下文”
+是不同协议属性。实验不解析真实 provider artifact，也不访问模型或网络，因此不能据此判断当前 API 是否存在
+同类漏洞或已实施相同修复。内存 nonce/replay ledger 也不能代表生产环境的 key custody、持久化、并发或多区域一致性。

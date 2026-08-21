@@ -177,7 +177,7 @@ internal_fragmentation_slots = 1
 
 ## 第三步：理解 attention parity 在证明什么
 
-Fixture 使用 2 个 KV heads 和 4 个 query heads。每两个 query heads 共享一个 K/V head，形成一个最小 GQA 场景。
+这个固定样例使用 2 个 KV heads 和 4 个 query heads。每两个 query heads 共享一个 K/V head，形成一个最小 GQA 场景。
 
 `PagedKVTensorStore.attention()` 先按 block table 收集 A 的完整 K/V，再计算 causal attention。
 测试中的独立 dense reference 则显式扩展 K/V heads、构造 causal mask 并计算 softmax。

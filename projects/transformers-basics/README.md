@@ -1,5 +1,20 @@
 # Transformers：离线机制与真实 checkpoint
 
+第一次学习只运行 BPE、online softmax、tiny model 和 generation protocol 四条 CPU 命令。每条命令前先写预测，
+运行后保留一个失败例。MoE、分布式通信、activation patching 和真实 Qwen checkpoint 都是独立选修；
+它们出现在同一个目录中，不表示必须一次做完。完整的引导顺序见
+[Transformers Basics 项目页](../../docs/practice/projects/transformers-basics.md)。
+
+~~~powershell
+python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
+python projects/transformers-basics/online_softmax_demo.py
+python projects/transformers-basics/smoke_tiny.py
+python projects/transformers-basics/generation_runtime_control.py
+~~~
+
+四条命令依次输出 BPE merge、dense/online attention 对账、tiny model 的 loss/gradient，以及 EOS/长度终止轨迹。
+如果某一步失败，先查看对应章节的输入和中间状态，不要直接跳到真实 checkpoint。
+
 ## 从零训练 byte-level BPE
 
 `train_byte_bpe.py` 不下载语料或模型，使用 `src/about_llm/from_scratch/tokenizer.py` 中的确定性 reference：基础词表为 256 个 raw byte；pair 频次只在每篇 document 内统计；同频时按 id pair 字典序打破平局；编码按已学习的 merge rank 执行。
@@ -10,9 +25,11 @@ python projects/transformers-basics/train_byte_bpe.py `
   --text "banana bandana" --text "banana" --sample "bandana"
 ~~~
 
-输出包含实际词表大小、每条 merge 的 byte expansion、样本 token 数与 UTF-8 round-trip。它用于验证 BPE 机制，不包含 normalization、pre-tokenizer、special token、offset map 或 checkpoint chat template，不能替代真实模型 tokenizer，也不能由小型 authored corpus 推断多语言压缩率。
+输出包含实际词表大小、每条 merge 的 byte expansion、样本 token 数与 UTF-8 round-trip。它用于理解 BPE 机制，
+不包含 normalization、pre-tokenizer、special token、offset map 或 checkpoint chat template，不能替代真实模型
+tokenizer，也不能由这份小型自编语料推断多语言压缩率。
 
-## 现代 attention correctness oracle
+## 用 NumPy 参考实现核对现代 attention
 
 NumPy reference 不依赖 PyTorch kernel，提供 stable softmax、past-aware causal mask、RMSNorm、interleaved RoPE、显式 K/V repeat 的 GQA，以及不物化完整 score/probability 的 blockwise online-softmax recurrence。测试验证：fully masked row 会失败；RoPE 保持向量范数及共同 position shift 下的 Q/K dot product；GQA 等于对应的显式 MHA 展开；逐 token cache attention 等于完整 causal attention；online path 在多种 block size、causal prefill、decode、稀疏 mask 与大 logits 下对齐 dense reference。
 
@@ -24,7 +41,7 @@ python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py -q
 
 固定 demo 的 query/key 长度为 5/7、block size 为 3：online path 分三块处理，最大 logical score tile 为 15 个元素，而 dense score 为 35 个元素；当前运行和 dense reference 的最大绝对误差应在 `1e-12` 内。Demo 为了比较会另外执行 dense reference，所以这不是整个进程的峰值内存实验。显式 K/V repeat 和 float64 累积用于解释数学，不是生产 kernel；这些小数组测试不证明 FlashAttention/CUDA/vLLM backend 已执行，也不证明目标 dtype、cache allocator、HBM traffic、GPU 性能或三套完整模型逐层等价。
 
-## MoE top-k、capacity 与 sparse combine oracle
+## 用可手算输入理解 MoE top-k、capacity 与 sparse combine
 
 ~~~powershell
 python projects/transformers-basics/moe_routing.py
@@ -35,7 +52,7 @@ NumPy reference 对 `[tokens, experts]` logits 做稳定 softmax 与 determinist
 
 固定 4-token/3-expert/top-2 fixture 的 capacity=2，count 从 `(3,4,1)` 变为 `(2,2,1)`，8 个 assignment 丢 3 个但没有整 token 全丢。脚本还真实执行 kept assignment 的 bias-free linear expert 与 weighted combine。它没有训练 router/MLP，不做 backward、all-to-all 或 GPU kernel，也不复现 DeepSeek/Qwen checkpoint；auxiliary loss、capacity group、drop/reroute 和归一化语义必须按目标实现重建。
 
-## Trainable MoE router/MLP gradient control
+## 让 MoE router 与 MLP 真正产生梯度
 
 ~~~powershell
 python projects/transformers-basics/moe_training_control.py
@@ -60,7 +77,10 @@ v3 再加入三个显式 overflow policy。固定 4-token/top-1 fixture 的完�
 
 若两 rank 各自独立按 2 个 local tokens 计算 capacity=1，它们都会保留本 rank 的最高分 token，合计 kept assignments=2。Collective global batch 的 capacity 仍为 1，但统一 score-priority competition 只保留全局最高分的 rank-1/token-0：global kept mask 为 `[F,F,T,F]`，counts `[4,0]→[1,0]`，drop 3 个，rank 0 相对 local-only 输出的最大差为 `tanh(2)=0.9640275800758169`，rank 1 为 0。两 rank 得到相同 global-route fingerprint `sha256:71a66eeb…`，去除原始 PID 后 strict report fingerprint 稳定为 `sha256:9e342b0b…`。
 
-这证明当前 authored fixture 中的真实 same-host Gloo `all_gather`/`all_reduce` 和 replicated global capacity competition；它不是 scalable MoE 实现。Router 与 experts 在两 rank 完全复制，没有 token-to-expert `all_to_all`/`reduce_scatter`、distributed autograd、DDP backward、shared/fine-grained experts、CUDA/NCCL、多节点、目标 checkpoint、性能、收敛或质量证据。Collective call count 是源码中当前三类调用的审计账本，不是网络抓包或框架级通信 profiler。
+这个固定输入真实执行了 same-host Gloo `all_gather`/`all_reduce` 和 replicated global capacity competition；
+它不是 scalable MoE 实现。Router 与 experts 在两 rank 完全复制，没有 token-to-expert `all_to_all`/`reduce_scatter`、
+distributed autograd、DDP backward、shared/fine-grained experts、CUDA/NCCL、多节点、目标 checkpoint、性能、收敛或质量证据。
+Collective call count 是源码中当前三类调用的审计账本，不是网络抓包或框架级通信 profiler。
 
 ## Two-process Gloo token-to-owner all-to-all control
 
@@ -167,13 +187,17 @@ python projects/transformers-basics/inspect_config.py `
   projects/transformers-basics/configs/mla-moe.example.json --tokens 4096
 ~~~
 
-三个 `configs/*.example.json` 的 `model_type` 和 `architectures` 都以 `authored` 开头，是本仓库自编的公式回归 fixture，不是 Llama、Qwen、DeepSeek 或任何发布 checkpoint 的配置快照。标准 GQA fixture 的 4096-token、batch 1、2-byte element 结果为 536,870,912 bytes；MoE-GQA fixture 同条件、batch 2 为 402,653,184 bytes。MoE marker 不改变标准 attention 的 K/V 公式，但也不能据此推断 total/active parameters。MLA fixture 必须拒绝标准公式；它只测试 fail-closed 分支，不能反推出某个 MLA runtime 的真实 cache layout。
+三个 `configs/*.example.json` 的 `model_type` 和 `architectures` 都以 `authored` 开头，表示它们是本仓库自编的
+公式回归样例，不是 Llama、Qwen、DeepSeek 或任何发布 checkpoint 的配置快照。标准 GQA 样例在 4096-token、
+batch 1、2-byte element 下得到 536,870,912 bytes；MoE-GQA 样例在相同 token 数和 batch 2 下得到
+402,653,184 bytes。MoE marker 不改变标准 attention 的 K/V 公式，但也不能据此推断 total/active parameters。
+出现 MLA marker 时，程序会停止套用标准公式；这个分支不能反推出某个 MLA runtime 的真实 cache layout。
 
 这些数字不含 allocator metadata、block 对齐、量化 scale、workspace、临时张量和权重，也不证明显存峰值或吞吐。`max_position_embeddings` 只是被记录的 config 字段，不是有效上下文或质量证据。
 
 ## 不可变发布证据：Llama、Qwen 与 DeepSeek
 
-通用 fixture 之外，`release-evidence/manifest.json` 把三种不同证据绑定在同一 strict verifier 下：
+固定配置样例之外，`release-evidence/manifest.json` 把三种不同证据绑定到同一个逐字段验证程序：
 
 - Meta Llama 3.2 text-only：固定官方 GitHub model card commit、原始 byte hash 与六段 exact fragments；输出只称 vendor-reported claims；
 - Qwen2.5-0.5B-Instruct：固定 Hugging Face 官方组织的 immutable config URL、原始 byte hash、本地完整 semantic snapshot 与标准 GQA 账本；
@@ -188,11 +212,15 @@ python projects/transformers-basics/verify_release_evidence.py
 python projects/transformers-basics/verify_release_evidence.py --verify-upstream
 ~~~
 
-离线报告 fingerprint 为 `sha256:40b3fe7b…e4638`；2026-08-13 联网报告 fingerprint 为 `sha256:6fffd665…587b`。后者证明当次下载 bytes 与 manifest 一致，不证明 DNS/HTTPS 之外的发布者身份、签名或未来可用性；上游仓库/组织被接管仍不由无密钥 hash 解决。Qwen 的 402,653,184-byte 结果只含 32,768 tokens、batch 1、2-byte element 的理想 K/V tensor payload。DeepSeek-V3 即使显式含 `num_key_value_heads`，也因 MLA markers fail closed。
+离线报告 fingerprint 为 `sha256:40b3fe7b…e4638`；2026-08-13 联网报告 fingerprint 为
+`sha256:6fffd665…587b`。后者说明当次下载 bytes 与 manifest 一致，但不认证 DNS/HTTPS 之外的发布者身份、签名
+或未来可用性；上游仓库/组织被接管仍不由无密钥 hash 解决。Qwen 的 402,653,184-byte 结果只含 32,768 tokens、
+batch 1、2-byte element 的理想 K/V tensor payload。DeepSeek-V3 即使显式含 `num_key_value_heads`，
+程序也会因 MLA markers 而拒绝套用标准 GQA 公式。
 
 Control 不下载模型权重/tokenizer，不执行 remote code、forward、MLA kernel 或长上下文任务；不证明 config 与权重匹配、有效上下文、参数量、质量、许可、runtime 支持、显存峰值、性能或生产安全。Meta 记录来自 model card 而不是 gated config，因此不能与 Qwen/DeepSeek 的 config-level deduction 混为一类证据。
 
-## 真实 Qwen 权重执行控制
+## 让固定 Qwen 权重真实执行一次
 
 发布证据 control 明确不加载权重；`run_target_checkpoint.py` 是下一层、范围更窄但确实执行目标 checkpoint 的控制。Manifest 固定 `Qwen/Qwen2.5-0.5B-Instruct` revision `7ae557604adf67be50417f59c2c2f167def9a775`、CPU/FP32/eager、固定 messages 和 7 个必需文件。7 个文件合计 999,586,347 bytes；其中 [immutable model.safetensors](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/model.safetensors) 为 988,097,824 bytes，SHA-256 是 `fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe`。
 
@@ -246,7 +274,7 @@ Control 在真实 31-token forward 中捕获 `[1,31,896]` 的 `o_proj` 输入/�
 
 ## 离线 generation protocol 对账
 
-`inspect_generation_protocol.py` 对一个明确的三方快照做 strict JSON 与 token-ID 对账：
+`inspect_generation_protocol.py` 先拒绝重复字段和非法数值，再对一个明确的三方快照做 token-ID 对账：
 
 ~~~powershell
 python projects/transformers-basics/inspect_generation_protocol.py `
@@ -255,7 +283,10 @@ python projects/transformers-basics/inspect_generation_protocol.py `
   projects/transformers-basics/protocols/drift-out-of-range.example.json
 ~~~
 
-第一份 authored fixture 中 tokenizer/model EOS 为 `{2}`，generation EOS 为 `{2,3}`，因此只报告 strict subset，不判错：额外停止 token 可能是 checkpoint 的有意协议。第二份把 generation BOS/EOS/PAD 改成与另外两方 disjoint 的 `{4}/{5}/{9}`，其中 9 超出 tokenizer/model 的 8-token 空间，检查器必须逐项暴露。两份文件都不是任何发布模型快照，也没有执行 `generate()`；`PAD=EOS` 只会得到“可能有意”的 observation。
+第一份固定样例中 tokenizer/model EOS 为 `{2}`，generation EOS 为 `{2,3}`，因此只报告 generation EOS 是
+tokenizer/model EOS 的严格超集，不判错：额外停止 token 可能是 checkpoint 的有意协议。第二份把 generation
+BOS/EOS/PAD 改成与另外两方 disjoint 的 `{4}/{5}/{9}`，其中 9 超出 tokenizer/model 的 8-token 空间，
+检查器必须逐项暴露。两份文件都不是任何发布模型快照，也没有执行 `generate()`；`PAD=EOS` 只会得到“可能有意”的 observation。
 
 检查器不裁决谁正确，不推断 `max_new_tokens` 与 `max_length` 在目标版本的优先级，也不把 `do_sample`、beam/contrastive search 或 stop strings 拼成所谓“有效配置”。最终部署仍应显式传参，并对 Transformers/vLLM/provider 分别保存请求、token trace、finish reason 与版本。
 
