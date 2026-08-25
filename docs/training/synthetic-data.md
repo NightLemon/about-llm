@@ -7,32 +7,40 @@
 
 - **适合读者**：合成数据、蒸馏和评测工程师。
 - **先修**：[训练数据工程](data.md)、基本采样和离线评测。
-- **首次阅读**：先跟四条候选走完审计，再理解 verifier、rejection sampling 和反馈环。
+- **首次阅读**：先看清 4 条候选为什么得到“2 条通过、1 份新内容”，再学习怎样把合成数据放进训练。
 - **完成信号**：能解释接受率如何改变分布，并保留来源和真实锚点。
 - **卡住时**：先运行[合成数据审计项目](../practice/projects/synthetic-data-audit.md#run)。
 
 </div>
 
-假设 teacher 为一条 RAG 知识生成了四个改写。流水线显示两条通过、两条未通过，看起来接受率是 50%。
-但继续查看会发现：两条通过记录的正文完全相同，其中一条还由同一 teacher revision 负责 grounding 验证。
+先看仓库里的四条固定记录。第一轮由 `teacher@v1` 生成 `syn-001`、`syn-002` 和 `syn-003`；第二轮再由
+`student@v2` 根据 `syn-001` 生成 `syn-004`。它们围绕同一条 RAG 陈述设计，用来演示数据记账，不是四条经过
+真实模型评测的高质量训练样本。
 
-这四条文本已经是模型输出，却还不是可以放心训练的数据。你仍要知道它们来自哪条真实记录、经过哪些检查、
-是否重复、落在哪个 split，以及会在训练中被重复看到多少次。
+流水线要求每条记录都通过 schema 与 grounding 两项检查：
 
-合成数据可以扩大任务覆盖、生成可验证轨迹，也可以复制 teacher 的错误、风格和隐私风险。本章要解决的不是
-“要不要用”，而是“哪一条为什么能进来，进入以后怎样改变训练分布”。
-
-| 候选 | 审计结果 | 还不能推出什么 |
+| 候选 | 实际发生了什么 | 这一步怎样处理 |
 |---|---|---|
-| `syn-001` | schema 与 grounding 通过，人工复核过 | 不能推出对所有 RAG 问题都正确 |
-| `syn-002` | verifier 通过，但与 `syn-001` 重复 | 不能把两条通过当成两份新信息 |
-| `syn-003` | 缺少 grounding 结果 | 不能把“没运行”记成失败或成功 |
-| `syn-004` | grounding 明确失败 | 不能进入当前 verifier-eligible 集合 |
+| `syn-001` | 两项检查通过，并经过人工复核 | 进入 verifier-eligible 集合 |
+| `syn-002` | 两项检查通过，但正文与 `syn-001` 完全相同 | 仍记为通过，同时单独报告重复 |
+| `syn-003` | 只有 schema 结果，grounding 没有运行 | 记为 missing，不能混入明确失败 |
+| `syn-004` | grounding 已运行且返回失败 | 记为 failed |
 
-这组固定数据可以在[合成数据审计项目](../practice/projects/synthetic-data-audit.md#run)中直接运行。后面的概念都可以
-回到这四条记录上理解。
+所以这批数据有四个候选、两个通过 gate 的记录，却只有一份 byte-exact（逐字节）唯一内容。通过率是 50%；按全部
+候选计算，去重后内容只占 25%。`syn-002` 还有一项相关性风险：生成器和 grounding verifier 都写着 `teacher@v1`。
 
-## 1. 先认清你在做哪一种合成
+这里先建立两个彼此独立的账本：
+
+1. **候选账本**回答“生成了什么、哪些检查通过、还剩多少唯一内容”；
+2. **训练账本**回答“更大的真实/合成数据集各有多少 token、训练计划读取多少次”。
+
+后文的 10 万 synthetic unique tokens 属于第二个示意账本，并不是把上面这一句短文本算成 10 万 token。分清这两个
+口径，才能继续讨论筛选、混合、蒸馏和多代反馈。
+
+四条记录可以在[合成数据审计项目](../practice/projects/synthetic-data-audit.md#run)中直接运行。后面的每个概念都会回到
+“4 个候选 → 2 个 eligible → 1 份唯一内容”这条主线上。
+
+## 先认清你在做哪一种合成
 
 | 机制 | 生成什么 | 主要价值 | 主要风险 |
 |---|---|---|---|
@@ -47,24 +55,19 @@
 这些术语不可互换。Teacher 生成最终答案再做 SFT，属于 sequence-level distillation；从多个候选中按规则筛选，
 属于 rejection sampling；没有伪标签迭代，就不应称为 self-training。
 
-## 2. 一条候选怎样成为训练数据
+## 一条候选怎样走到训练与评测
 
 ```mermaid
-flowchart LR
-  S["Real seed / task spec"] --> G["Versioned generator"]
-  G --> R["Raw candidates"]
-  R --> V["Rules / execution / verifier"]
-  V --> H["Human audit"]
-  H --> D["Dedup / contamination / split"]
-  D --> M["Real + synthetic mixture"]
-  M --> T["Train student"]
-  T --> E["Independent evaluation"]
-  E --> N["Next generation decision"]
+flowchart TD
+  S["定义真实缺口<br/>准备 seed 与任务规格"] --> G["生成候选<br/>保留模型、Prompt 与原始输出"]
+  G --> V["验证与整理<br/>gate、人工复核、去重与 split"]
+  V --> T["训练与独立评测<br/>记录真实消耗，再决定下一轮"]
 ```
 
-每条边保存输入/输出 artifact，不只保存最终 accepted JSONL。否则无法估计生成失败率、过滤选择偏差或 verifier 漏报。
+每个阶段都保存输入、输出和失败，而不是只留下最终通过的 JSONL。否则，团队无法区分“生成器没产出”“解析失败”
+“verifier 拒绝”和“去重后消失”，也无法估计过滤带来的选择偏差。
 
-## 3. 给候选留下可追溯的身份
+## 先保存“它怎么来的”
 
 一条 synthetic candidate 至少包含：
 
@@ -81,25 +84,42 @@ flowchart LR
 
 父节点可以是真实样本、知识条目、schema、测试、模拟器状态或人工任务规格。只写 `generated_by=gpt-x` 不能解释内容如何产生，也不能证明允许训练。
 
-## 4. 先设计缺口，再让模型生成
+仓库的固定记录只用一个 `content` 字段演示 lineage、gate 和去重。真实 SFT 数据还要说明：
 
-### 4.1 从 coverage matrix 采样
+- 哪一段是 Prompt，哪一段是 response；
+- role 与 message 的边界；
+- chat template 和 tokenizer revision；
+- 哪些 token 参与 loss。
 
-先定义轴：语言、领域、难度、输入长度、技能、工具、风险、输出格式和失败类型。按目标产品/课程分布与已知缺口采样，而不是让 generator 自由列出“多样问题”。模型自由生成往往集中在高概率、熟悉、易写的模式。
+这个审计 schema 因此不能直接作为 trainer 输入格式。
 
-对每个 cell 记录：目标数量、生成数量、解析成功、gate 通过、unique count 和人工错误率。最终 accepted count 高不表示 coverage 合理。
+样例中的外部父节点也由命令行参数 `--known-parent-id real-anchor-001` 声明。它让审计器把这个 ID 视为可解析，
+不表示程序已经读取父样本正文、验证来源或检查许可。
 
-### 4.2 Difficulty 不是长度
+## 先设计缺口，再让模型生成
+
+### 从 coverage matrix 采样
+
+先根据产品目标列出真正关心的轴，例如语言、领域、难度、输入长度、工具、风险和失败类型。然后找出覆盖不足的
+格子，从这些缺口中采样任务。
+
+如果只让 generator 自由列出“多样问题”，结果往往会集中在模型熟悉、容易生成的模式。
+
+每个 cell（组合格子）分别记录计划数量、实际生成数、解析成功数、gate 通过数、去重后数量和人工错误率。通过的记录
+很多，只说明产量高；是否覆盖了目标分布，还要看它们落在哪些格子。
+
+### Difficulty 不是长度
 
 用独立可观察量定义难度，例如：最短解题步骤、需要组合的证据数、程序执行深度、干扰项、稀有 schema、专家错误率或 baseline 成功率。让 teacher 自评“难度 9/10”需要校准，不能直接当标签。
 
-### 4.3 多 generator 与 decorrelation
+### 多 generator 不等于错误独立
 
-不同 prompt、checkpoint、采样或程序可增加候选差异，但多个同族模型不保证错误独立。记录 generator 族、训练关联和输出相似度；关键数据用规则、执行器、领域专家或独立来源交叉验证。
+改变 Prompt、checkpoint、采样参数或生成程序可以增加表面差异，但同族模型仍可能共享盲点。应记录 generator 的
+模型家族、已知训练关联和输出相似度。关键数据再用规则、执行器、领域专家或独立来源交叉验证。
 
-## 5. Verifier 只回答被问到的问题
+## Verifier 只回答被问到的问题
 
-按可证明性优先：
+验证方法越接近可重新执行的事实，结论通常越明确。可以按下面的顺序选择：
 
 1. schema/type/parser；
 2. deterministic rule、checksum、约束求解；
@@ -109,11 +129,16 @@ flowchart LR
 6. 专家人工复核；
 7. 真实环境/用户结果。
 
-低层验证不能替代高层语义，反之也不应让 LLM judge 重判可执行事实。测试通过只说明测试编码的性质；错误测试会稳定选择错误答案。
+低层检查无法回答高层语义问题，高层 judge 也不该重新猜测编译器或数据库已经能确定的事实。每个 verifier 都要写清
+它检查了什么。例如，`syn-003` 的 grounding 没有运行，和 `syn-004` 已运行但失败是两种不同状态。
 
-同一 revision 既生成又验证是需报告的相关性风险，不是自动失败：它们可能共享知识缺口、风格偏好和攻击面。即使不同模型，若由同一 teacher 蒸馏或同一公开 benchmark 调优，也不保证独立。
+`syn-002` 中，`teacher@v1` 同时出现在 generator 和 grounding verifier 字段里。审计会报告这项相关性风险，同时
+保留原来的 gate 结果。
 
-## 6. 为什么过滤会改写分布
+这个信号只说明记录中声明的 revision 重叠。真实运行是否使用同一模型实例、不同模型是否共享训练来源，还需要
+运行身份和模型谱系证据。
+
+## 筛选为什么会改写分布
 
 若 generator 分布为 \(q(x)\)，接受函数 \(A(x)\in[0,1]\)，被接受分布为：
 
@@ -121,7 +146,8 @@ flowchart LR
 q_{accept}(x)=\frac{q(x)A(x)}{\mathbb E_{x\sim q}[A(x)]}.
 \]
 
-因此 rejection sampling 不只是“删掉坏样本”，而是在重加权。若 verifier 偏好长答案、标准英语、特定措辞或可投机格式，accepted set 会放大偏差。至少报告：
+因此 rejection sampling 不只是删掉坏样本，它还会重新分配留下数据的概率。若 verifier 偏好长答案、标准英语、
+特定措辞或容易投机的格式，通过集合就会放大这些模式。实际项目至少比较：
 
 - 总体与各 slice acceptance rate；
 - 缺 verifier、执行失败、明确 reject 和 infra failure；
@@ -130,11 +156,13 @@ q_{accept}(x)=\frac{q(x)A(x)}{\mathbb E_{x\sim q}[A(x)]}.
 - 多候选数、采样预算和最终 unique count；
 - 能通过 verifier 但实际错误的 adversarial cases。
 
-通过率提高可能意味着 generator 变好，也可能是任务变简单、重复更多或 verifier 变松。
+开头的四条记录已经给出一个最小反例：通过率是 50%，但去重后只留下 25% 的新内容。更大数据集还要按语言、难度和
+来源切片，因为通过率提高也可能来自任务变简单、重复变多或 verifier 变松。
 
-## 7. Self-training 如何放大自己的偏见
+## Self-training 怎样放大自己的偏见
 
-典型循环：在无标签数据上预测 → 按 confidence/一致性/规则选择 → 与真实标签混合 → 更新模型。Confirmation bias 来自模型更愿意选择自己已会、且自信但可能系统性错误的样本。
+典型循环是：模型给无标签数据生成伪标签，系统按置信度、一致性或规则筛选，再与真实标签混合并更新模型。问题在于，
+模型更容易选择自己已经会做的样本，也可能对某类系统性错误非常自信。这会形成 confirmation bias（确认偏差）。
 
 保护措施：
 
@@ -145,15 +173,16 @@ q_{accept}(x)=\frac{q(x)A(x)}{\mathbb E_{x\sim q}[A(x)]}.
 - 每代固定 untouched real holdout；
 - 不把 test/线上反馈直接回灌后继续宣称同一 test 独立。
 
-一致性、低 entropy 或多数投票是选择信号，不等于标签正确。多个 sample 来自同一模型时也不独立。
+一致性、低 entropy（熵）或多数投票只是选择信号。多个 sample 来自同一模型时，错误也可能高度相关。
 
-## 8. Distillation 传递的是行为信号
+## 蒸馏传递的是行为信号
 
-### 8.1 Hard target
+### Hard target：直接学习生成结果
 
-Teacher 生成 token/答案，student 做普通 supervised next-token learning。它易部署，但只看到一个或少量序列，丢失 teacher 对其他 token 的相对概率。
+教师模型先生成完整答案，学生模型再把答案序列作为监督标签，学习预测下一个 token。这种做法只需保存文本，容易
+接入现有 SFT 流水线。它会丢掉一部分信息：学生模型看不到教师模型对其他候选 token 的相对偏好。
 
-### 8.2 Soft target
+### Soft target：学习概率分布
 
 当 teacher/student token space 对齐，可在有效 response token 上最小化：
 
@@ -166,27 +195,43 @@ p_T(\cdot\mid x,y_{<t};T)
 \right).
 \]
 
-\(T\) 是 distillation temperature，\(T^2\) 是常见的梯度尺度补偿约定，并非所有实现都必须相同。
-复现实验时还要明确 teacher-forcing 上下文、token mask、sum/mean、词表映射、top-k logits 截断，
-以及 hard-label loss 的混合权重。Tokenizer 不同，不能直接逐 token 计算 KL。
+\(T\) 是蒸馏温度。升高温度会让概率分布更平缓，使低概率 token 之间的关系更明显；公式中的 \(T^2\) 是常见的
+梯度尺度补偿约定，不是所有实现都必须采用。
 
-### 8.3 蒸馏不复制架构
+复现实验时至少记录：
 
-Student 学到行为信号，不会因此拥有 teacher 的 MoE、MLA、训练数据或参数规模。DeepSeek teacher 生成的数据可训练 Qwen/Llama student；部署、LoRA target module 和 KV 公式仍由 student checkpoint 决定。
+- teacher 与 student 分别看到了什么前缀；
+- 哪些 response token 参与 loss，以及 loss 怎样归约；
+- 是否只保存 top-k logits；
+- hard-label loss 与蒸馏 loss 各占多大权重。
 
-### 8.4 蒸馏错误
+逐 token KL 还要求两边的 token 位置和词表可以对应。分词器不同，两个 logits 向量的同一索引通常不再表示同一个
+token，不能直接比较。
 
-Teacher 的事实错误、拒答边界、长度、风格和 benchmark 记忆都可能被复制。只筛 teacher 正确样本会得到条件分布，不能证明 student 在真实失败区改善。保留 teacher-fail、student-fail 和 disagreement 集进行独立分析。
+### 蒸馏不会复制模型架构
 
-## 9. 推理轨迹与过程数据
+Student 学到的是输出行为，teacher 的 MoE、MLA、训练数据或参数规模不会随文本一起迁移。例如，DeepSeek 生成的
+文本可以用来训练 Qwen 或 Llama。
 
-Process supervision 可以提供中间状态、tool call、程序 trace、proof step 或 verifier feedback。自然语言 rationale
-未必是模型真实的因果过程，也可能包含无法验证的细节。更可靠的记录是可以重新执行或检查的状态，例如代码、
-方程、检索来源、工具 receipt 和环境 transition。
+训练完成后，部署方式、LoRA 目标层和 KV cache 公式仍由 student checkpoint 的架构决定。
+
+### Teacher 的错误也会一起迁移
+
+Teacher 的事实错误、拒答边界、长度偏好、写作风格和 benchmark 记忆都可能被复制。只用 teacher 答对的样本训练，
+得到的是“通过筛选条件下”的分布。
+
+要知道 student 是否改善了 teacher 原本会失败的区域，应单独保留 teacher 失败、student 失败和双方分歧的样本。
+
+## 过程数据最好能够重新执行
+
+Process supervision（过程监督）可以使用中间状态、工具调用、程序执行轨迹、证明步骤或 verifier 反馈。自然语言
+rationale 是模型生成的解释，其中可能包含无法验证的细节。
+
+更可靠的过程记录应能重新执行或检查，例如代码、方程、检索来源、工具回执和环境状态变化。
 
 不要默认保存或训练 provider 隐藏的 chain-of-thought。使用可公开的简要解释、结构化中间状态或 teacher 明确返回的训练 artifact，并遵守模型/API 条款和隐私策略。
 
-## 10. 代码、数学、RAG 与 Agent 数据
+## 不同任务需要不同的验证方法
 
 ### 代码
 
@@ -198,21 +243,29 @@ Process supervision 可以提供中间状态、tool call、程序 trace、proof 
 
 ### RAG
 
-问题、答案和引用从同一 corpus 自动生成时，容易产生过于直接的 lexical match。按文档/来源/time 分 split，加入无答案、冲突、跨文档和权限负例；生成器不能看到 test answer key 后再写问题。
+如果问题、答案和引用都从同一语料自动生成，问题往往会直接复述原文词语，使检索任务变得过于容易。应按文档、
+来源或时间切分数据，并加入无答案、证据冲突、跨文档推理和权限拒绝样本。测试集的问题生成器不能预先看到答案。
 
 ### Agent
 
-Simulator 提供 authoritative state 和 receipt。轨迹包含失败、超时、执行成功但响应丢失、approval、budget 和 reconciliation；只生成顺利轨迹会教 policy 忽略恢复。
+Simulator（模拟器）提供可信的环境状态与执行回执。训练轨迹既要包含成功，也要包含超时、执行成功但响应丢失、
+等待审批、预算耗尽和事后对账。只生成一路顺利的轨迹，会让 Agent policy 学不到恢复行为。
 
-## 11. Exact identity、近重复与污染
+## 先区分逐字节重复与语义重复
 
-Byte-exact hash 不把 Unicode/空白变体视为相同；NFC + whitespace normalization 会合并更多 prose，但可能破坏代码、表格和格式任务。Profile 必须显式，且保留 raw content。
+开头的 `syn-001` 与 `syn-002` 逐字节相同，因此 byte-exact fingerprint 会把它们放入同一组。若两段文字只在
+Unicode 组合形式或空白上不同，逐字节方法仍会视为不同。
 
-Exact unique count 不等于语义多样性。还要看 n-gram/MinHash candidate、embedding cluster、模板/父样本分布、答案模式、长度和人工 taxonomy。近似方法有 false positive/negative，按域校准。
+NFC 与空白归一化可以合并更多自然语言文本。对代码、表格或格式任务，空白本身可能有语义，这种规则反而会误合并。
+因此去重 profile 必须显式，并保留原始内容。
+
+Exact unique count 只回答“规范化后是否完全相同”，不等于语义多样性。更大的数据集可以先用 n-gram、MinHash 或
+向量聚类寻找相似候选，再按模板、父样本、答案模式、长度和人工分类检查分布。近似方法会有误报和漏报，需要按
+数据域校准。
 
 合成 benchmark 与训练数据共用 generator、prompt template、source 或 verifier 也会污染。即使文字不完全相同，任务生成规则泄漏仍可让评测过于容易。
 
-## 12. Mixture 与重复暴露
+## 混合比例最终要换算成重复暴露
 
 对 component \(i\)，目标权重 \(w_i\) 归一化为：
 
@@ -252,13 +305,25 @@ assert plan.synthetic_fraction == 0.25
 assert plan.exposures[1].expected_repetition_factor == 5
 ```
 
-这是目标 sampler 的期望值，不包含 packing、动态过滤、分布式 sampler skew 或实际读取失败。训练时还要记录 observed consumed tokens；不要把 target weight 当实际消耗。
+这个示意计划有 200 万个 consumed-token 预算。权重 3:1 先归一化为 75% 与 25%，再得到：
 
-### 12.1 真实锚点
+| 数据组件 | Unique token | 计划消费 token | 期望重复倍数 |
+|---|---:|---:|---:|
+| 真实锚点 | 800,000 | 1,500,000 | 1.875 |
+| 第一轮合成数据 | 100,000 | 500,000 | 5.0 |
 
-真实数据不是自动高质量，但能防止循环完全由模型自我定义。按语言、任务、风险和长尾保留 real anchor，追踪每代 synthetic fraction 与重复倍数。小而重要的 safety set 可设置最低配额，但频繁重复也会过拟合。
+这里的第一轮合成数据代表一个拥有 10 万 unique tokens 的数据组件，与开头四条审计记录不是同一规模。
 
-## 13. 多代反馈与 model collapse
+表中的数值是 sampler 根据目标权重算出的期望值，尚未包含 packing、动态过滤、分布式采样偏斜或读取失败。训练时
+还要记录实际消费 token，才能知道 25% 的目标比例是否真的实现。
+
+### 为什么仍然需要真实数据锚点
+
+真实数据不一定自动高质量，但它可以防止反馈循环完全由模型自己的输出定义。应按语言、任务、风险和长尾保留
+real anchor，并追踪每一代的合成比例与重复倍数。小而重要的安全数据可以设置最低配额，同时要监控频繁重复造成的
+过拟合。
+
+## 多代反馈会不会让数据越来越窄
 
 可把第 \(g+1\) 代训练分布抽象为：
 
@@ -277,13 +342,16 @@ D_{g+1}=\rho D_{real}+(1-\rho)S(M_g,D_g,V_g),
 - 数据重复增加但 unique 信息下降；
 - 少数语言、边界输入和拒答先退化。
 
-“使用合成数据必然 collapse”和“平均 benchmark 提高，所以没有 collapse”都过度概括。至少比较 real-only、
-real + 单代 synthetic，以及多代有/无 real anchor 的设置。每一代都在从未回灌的 real holdout 上检查平均表现、
-长尾、多样性、calibration、安全和 contamination。
+判断是否退化，需要做同预算对照：只用真实数据、加入一代合成数据，以及多代反馈且保留或移除真实锚点。每一代都
+在从未回灌的真实 holdout 上检查平均表现、长尾、多样性、校准、安全和污染。
 
-## 14. 隐私、版权与删除
+因此，“用了合成数据就一定 collapse”和“平均 benchmark 上升就没有 collapse”都缺少必要证据。结论应限定到具体
+数据比例、反馈代数、筛选方法和评测切片。
 
-Generator 可能复述训练记忆、seed 中的 PII/secret 或受限内容。Synthetic 不等于匿名或无版权：
+## 合成数据仍然有隐私与版权问题
+
+Generator 可能复述训练记忆、seed 中的个人信息、secret 或受限内容。合成数据应继承来源审查，并重新检查模型生成
+带来的隐私、版权和用途风险：
 
 - parent 的许可/consent/用途限制可能继续适用；
 - 生成器服务条款可能限制训练、保存或再分发；
@@ -292,7 +360,7 @@ Generator 可能复述训练记忆、seed 中的 PII/secret 或受限内容。Sy
 - 删除 seed 时定位派生候选、cache、shard 和 replay；
 - 无法证明参数影响删除时保持 unknown，不把输出过滤称 unlearning。
 
-## 15. 评测矩阵
+## 怎样判断合成数据真的有用
 
 | 层 | 指标 | 不能证明 |
 |---|---|---|
@@ -306,28 +374,10 @@ Generator 可能复述训练记忆、seed 中的 PII/secret 或受限内容。Sy
 
 所有比较固定 base model、训练 FLOPs/token budget、优化器、调参预算和评测集，或明确回答的是“同成本”还是“各自最优”。
 
-## 16. 亲手审计开头的四条候选
+## 亲手审计开头的四条候选
 
-仓库 reference core 只审计显式 artifact：
-
-```python
-from about_llm.synthetic_data import audit_synthetic_records
-
-report = audit_synthetic_records(
-    records,
-    required_verifiers=("schema", "grounding"),
-    known_parent_ids=("real-anchor-001",),
-)
-```
-
-报告会分别列出 verifier missing/fail、generator–verifier revision overlap、unresolved parent、round 非单调、
-lineage cycle、human review 和 exact duplicate。`eligible_record_ids` 只表示 required verifier 都存在并通过；
-重复和 lineage finding 仍然保留，不会被一个通过率隐藏。
-
-`self_verified_record_ids` 这个字段只检查 revision string 是否重叠。它不能证明同一个模型实例真的完成了生成和验证；
-反过来，没有重叠也不能证明 judge 独立。
-
-离线项目：
+正文先学习“为什么这样审计”，具体报告结构和故障实验放在[合成数据审计项目](../practice/projects/synthetic-data-audit.md)。
+先从仓库根目录生成一份报告：
 
 ~~~powershell
 python -m about_llm.synthetic_data_cli `
@@ -339,13 +389,24 @@ python -m about_llm.synthetic_data_cli `
   --output artifacts/synthetic-data/audit.json
 ~~~
 
-输出 schema 是 `about-llm.synthetic-data-audit.v2`。它绑定 records/mixture 的 exact byte size、SHA-256、
-required verifiers、known parents、fingerprint profile、完整 audit/mixture 和 scope。
-`--output` 默认 exclusive-create；只有显式传入 `--overwrite` 才会覆盖旧文件。
+第一次运行后，先预测再查看这些结果：
 
-这里执行 file `fsync`，但没有因此证明 directory entry 在断电后仍然持久，也没有解决 verify-use TOCTOU。
+| 字段 | 预期结果 | 应怎样解释 |
+|---|---|---|
+| `candidate_count` | 4 | 输入记录总数 |
+| `eligible_record_ids` | `syn-001`、`syn-002` | 两项 required verifier 都存在且通过 |
+| `duplicate_content_groups` | `syn-001` 与 `syn-002` | 两条通过记录只有一份逐字节唯一内容 |
+| `missing_verifier_record_ids` | `syn-003` | grounding 没有结果 |
+| `failed_verifier_record_ids` | `syn-004` | grounding 已运行并失败 |
+| `self_verified_record_ids` | `syn-002` | 声明的 generator/verifier revision 重叠 |
+| `synthetic_fraction` | 0.25 | 3:1 目标权重归一化后的比例 |
 
-不要只检查报告携带的 self-hash。用 caller-supplied 输入与 policy 完整复算固定 artifact：
+`eligible_record_ids` 只回答 required verifier 是否通过，去重与 lineage 问题仍会单独保留。`self_verified_record_ids`
+也只是 revision 字符串重叠信号，不能替代真实运行身份和模型谱系证据。
+
+如果目标文件已经存在，CLI 会先停止，避免无意覆盖；确认要替换自己的本地报告时再添加 `--overwrite`。
+
+仓库还保存了一份固定报告。下面的命令会重新读取记录、混合计划和命令行给出的 policy，重算完整结果后再比较：
 
 ~~~powershell
 python -m about_llm.synthetic_data_cli `
@@ -357,20 +418,15 @@ python -m about_llm.synthetic_data_cli `
   --verify-report projects/synthetic-data-audit/audit.example.json
 ~~~
 
-固定 records 为 1,457 bytes，mixture 为 341 bytes。验证成功时，工具会重读 caller 提供的输入、重跑审计，
-再比较完整 canonical JSON；这个范围称为 `full_local_recomputation`。Input drift、policy drift，以及同时篡改结果
-与无密钥 hash 的 cooperative rehash，都会相对这组可信输入失败。
+这能发现输入字节、policy 或报告结果发生漂移，比只检查报告自带的 hash 更强。不过 SHA-256 没有密钥，不能认证
+文件是谁发布的；验证与使用之间的文件替换、断电持久性也需要部署系统另外解决。
 
-固定 report fingerprint 记录在项目页中。它适合精确回归，不适合拿来解释算法。若 caller 连输入和 policy 都接受
-攻击者替换，无密钥 SHA-256 仍不能认证来源。
+严格 JSON 规则、固定字节数、schema 字段和故意篡改实验都在项目页集中说明。主线只需记住：这次运行审计的是四条
+仓库样例和一个混合预算，没有调用真实 teacher、student 或 verifier model，也没有执行训练。
 
-Loader 还会拒绝 duplicate JSON keys、non-finite number、invalid UTF-8、unknown/missing fields、
-boolean 冒充 integer、重复 ID 与超限输入。样例中的 duplicate、revision overlap、missing verifier 和 failed verifier
-用于验证审计约定；它没有运行真实 teacher、student、verifier model 或训练，因而不代表模型数据质量。
+## 送入训练前还要检查什么
 
-## 17. 发布门禁
-
-### Artifact
+### 先确认数据能追溯
 
 - generator/prompt/verifier/parent/round 可解析；
 - raw candidate 与所有失败保留在受控 artifact；
@@ -378,30 +434,34 @@ boolean 冒充 integer、重复 ID 与超限输入。样例中的 duplicate、re
 - fingerprint profile、dedup/split/mixture 明确；
 - candidate、eligible、unique 和 consumed 数分别报告。
 
-### Quality
+### 再确认筛选没有掩盖分布问题
 
 - required verifier 版本冻结，infra failure 不当 reject/pass；
 - verifier 在独立人工集按 slice 校准；
 - accepted set 的分布变化和 coverage 可解释；
 - real untouched holdout 与 baseline 对比。
 
-### Feedback
+### 最后确认下一代能够停止和回滚
 
 - 每代模型、数据和真实锚点有 immutable manifest；
 - 目标与实际 synthetic fraction/repetition 对账；
 - 长尾、少数语言、安全和 calibration 无不可接受退化；
 - 停止、回滚和删除路径已演练。
 
-## 18. 当前仓库证据边界
+## 当前仓库能证明什么
 
-仓库已经执行 JSON 结构检查、lineage/verifier/duplicate audit、mixture exposure 计算和 v2 artifact 的本地复算，
-并用 40 个专项测试锁定这些契约。它没有调用真实 teacher/verifier、训练 student、执行多代反馈、
-做近似去重 benchmark 或人工标注。
+| 仓库实际执行了什么 | 还需要在真实项目中完成什么 |
+|---|---|
+| 检查 JSON 结构与输入边界 | 调用真实 teacher 和 verifier |
+| 审计 lineage、verifier 结果和逐字节重复 | 运行并校准近重复检测 |
+| 计算目标混合比例与期望重复倍数 | 记录训练实际消费 token |
+| 从指定输入完整复算固定报告 | 训练 student 并做独立质量评测 |
+| 用专项测试覆盖这些离线契约 | 执行多代反馈、人工标注与法律审查 |
 
-因此，现有证据只支持离线数据契约与可信 caller 输入下的复算，不能支持“合成数据提高了目标模型”、
-“已经通过法律审查”或“长期分布不会退化”这些结论。
+这些证据可以支持离线数据契约和指定输入下的确定性复算。目标模型是否受益、法律审查是否通过、长期分布是否退化，
+仍要由表格右侧的真实实验回答。
 
-## 19. 常见错误结论
+## 八个常见误判
 
 - **“生成一百万条就有一百万条信息”**：先报 unique、cluster 和重复暴露。
 - **“Verifier 通过就是真实正确”**：它只验证编码的性质，并可能被投机。
