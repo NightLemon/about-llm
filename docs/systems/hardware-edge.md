@@ -13,7 +13,16 @@
 
 </div>
 
-“模型能运行”只证明容量可能足够，不证明延迟、吞吐、能耗或稳定性满足目标。硬件分析要把权重/KV 容量、计算、内存带宽、互联、kernel、调度和温控分别建模，再用真实 workload 验证。
+判断一个模型是否适合某台机器，要依次通过三道门：
+
+| 门槛 | 需要回答的问题 | 主要证据 |
+|---|---|---|
+| 能否加载 | 权重、KV、workspace 和运行时能否一起放进显存？ | 容量账本与峰值显存 |
+| 能否完成请求 | 目标长度和并发下是否会 OOM，TTFT/TPOT 是否可接受？ | 固定 workload 的请求报告 |
+| 能否持续运行 | 温度、功耗和时钟稳定后，吞吐与错误率是否仍达标？ | 长时间重复实验 |
+
+“成功生成一次”只通过了第二道门的一小部分。硬件分析还要分别检查计算、显存带宽、互联、kernel、调度和温控，
+再用真实工作负载验证。
 
 ## 1. 单位与口径
 
@@ -29,7 +38,8 @@
 | 吞吐 | tokens/s、requests/s | 输入/输出 token、并发和 batch |
 | 功率/能量 | W、J、Wh | 设备还是整机、采样方法和时间 |
 
-厂商 “TOPS” 可能指 INT8/INT4 稀疏峰值，与 BF16 dense Transformer 不可直接比较。GB 通常是 \(10^9\) bytes，GiB 是 \(2^{30}\) bytes。
+厂商标注的 TOPS 可能是 INT8 或 INT4 稀疏运算峰值，不能直接代表 BF16 稠密 Transformer 的速度。
+容量单位也要统一：GB 通常等于 \(10^9\) 字节，GiB 等于 \(2^{30}\) 字节。
 
 ## 2. 容量账本
 
@@ -52,7 +62,8 @@ M_{total}
 M_{weights}\approx N\cdot\frac{b}{8},
 \]
 
-其中 \(b\) 是每权重有效 bit。实际量化还包括 scale、zero point、group metadata、未量化层和 alignment。所谓“4-bit 7B = 3.5GB”只是裸权重下界。
+其中 \(b\) 是每个权重的有效位数。实际量化文件还要保存缩放因子、零点和分组信息；部分层可能保持高精度，
+内存布局也可能需要对齐。因此，“4-bit 7B = 3.5 GB”只是裸权重下界。
 
 ### 2.2 KV Cache
 
@@ -63,13 +74,20 @@ M_{KV}
 =2L\,B\,T\,H_{kv}\,d_h\,s,
 \]
 
-其中 2 表示 key/value，\(L\) 为层数，\(B\) 为 active sequences，\(T\) 为 cached tokens，\(H_{kv}\) 为 KV heads，\(d_h\) 为 head dimension，\(s\) 为每元素字节。
+其中 2 表示 K 和 V，\(L\) 是层数，\(B\) 是活动序列数，\(T\) 是已经缓存的 token 数，\(H_{kv}\) 是
+K/V head 数，\(d_h\) 是每个 head 的维度，\(s\) 是每个元素占用的字节数。
 
-GQA/MQA 通过减少 KV heads 降低该项。Paged/block allocator 还有 block metadata 和内部碎片；prefix cache 共享、sliding window、KV quantization 或 latent cache 需按具体 layout 另算。仓库 `estimate_kv_cache_bytes` 只计算上式理想存储，并明确排除 allocator metadata。
+GQA 和 MQA 通过减少 K/V head 数来降低这一项。分页分配器还会引入 block metadata 和内部碎片；前缀共享、
+滑动窗口、KV 量化和潜变量 cache 也会改变实际布局。
+
+仓库的 `estimate_kv_cache_bytes` 只计算上式中的理想 K/V 数组，不包含分配器 metadata。
 
 ### 2.3 Workspace 与 runtime
 
-Attention/quantization kernel、graph capture、CUDA context、通信 buffer 和临时 logits 都占空间。只根据 checkpoint 文件大小选择 GPU，常会在加载或高并发时 OOM。应保留 headroom 并测峰值 reserved/allocated memory。
+运行模型时，注意力与量化算子的临时空间、CUDA 图、CUDA 上下文、通信缓冲区和临时 logits 都会占用显存。
+因此，只根据 checkpoint 文件大小选 GPU，可能在加载或提高并发时 OOM。
+
+容量账本要保留安全余量，并分别记录框架报告的峰值 allocated memory 和 reserved memory。
 
 ## 3. Roofline 模型
 
@@ -104,17 +122,28 @@ assert bound.bottleneck == "memory"
 assert bound.lower_bound_seconds == 10
 ```
 
-该函数使用调用者提供的 **effective ceilings**，并明确排除 launch、依赖、同步、通信、调度、排队和 thermal throttling。因此结果是理想下界，不是 latency prediction。若计算与搬运不能完美重叠，实际时间可能更接近两项之和或更高。
+这个函数使用调用者提供的**有效上限**，只计算理想的算术与数据搬运时间。Kernel launch、同步、通信、调度、
+排队和温度降频都不在公式里。
+
+所以计算结果是延迟下界，不是延迟预测。若计算与数据搬运无法完美重叠，实际时间可能更接近两项之和，或者更高。
 
 ## 4. Prefill 与 Decode 的硬件行为
 
 ### 4.1 Prefill
 
-Prompt 的多个位置可并行，大矩阵乘通常有较高 arithmetic intensity。长序列 full attention 还包含二次项，可能受计算、HBM workspace 或 attention kernel 限制。FlashAttention 类算法减少 materialized score traffic，不是把 attention 数学复杂度在所有场景变成线性。
+Prompt 的多个位置可以并行计算，大矩阵乘通常具有较高的算术强度。长序列的完整 Attention 还包含随序列长度平方
+增长的部分，瓶颈可能来自计算、显存 workspace 或 Attention kernel。
+
+FlashAttention 类算法避免把完整 score 矩阵反复写入显存，从而减少数据搬运；它没有把一般 Attention 的算术复杂度
+改成线性。
 
 ### 4.2 Decode
 
-每个 active sequence 每步通常只产生一个 token。小 batch 时，需要为很少的新 token 读取大量权重，常受权重/缓存带宽和 kernel launch 限制。Continuous batching 增加同时处理的序列，让权重读取被更多 token 摊销，但会增加 KV 容量、排队和 tail latency。
+Decode 时，每条活动序列每步通常只产生一个 token。Batch 很小时，系统为了少量新 token 仍要读取大量权重，
+因此常受显存带宽和 kernel launch 限制。
+
+Continuous batching 让更多序列同时参与一步 decode，使一次权重读取服务更多 token。代价是更高的 KV 容量、
+更复杂的排队，以及可能恶化的尾延迟。
 
 不能只给一个 tokens/s：输入长度、输出长度、并发、batch、cache hit 与 finish reason 都会改变结果。
 
@@ -136,15 +165,20 @@ Prompt 的多个位置可并行，大矩阵乘通常有较高 arithmetic intensi
 
 ### 6.1 Kernel fusion
 
-融合 bias/activation/norm/quantization 可减少 launch 和 HBM round trip。收益依 shape 与编译器，不是“算子数量减少多少”即可推断。
+把 bias、激活、归一化或量化融合进同一个 kernel，可以减少启动次数和显存往返。实际收益取决于张量形状与编译器，
+不能只按“少了几个算子”来估计。
 
 ### 6.2 Tiling 与布局
 
-矩阵 tile 进入 register/shared memory/cache 后复用；维度不对齐可能降低 tensor core 使用率。Transpose、contiguous copy 和 dtype cast 会增加隐藏 traffic。
+矩阵分块进入寄存器、共享内存或 cache 后可以重复使用。维度不对齐时，Tensor Core 利用率可能下降；转置、连续化复制
+和数值类型转换还会增加不容易从模型公式中看到的数据搬运。
 
 ### 6.3 Graph/compile
 
-Graph capture、AOT/JIT compile 和 kernel autotune 能减少 Python/launch overhead，但 dynamic shape、control flow、custom op 或不同 batch 会触发重新编译/fallback。基准要区分 compile/cold start 和 steady state。
+CUDA Graph、提前编译（AOT）、即时编译（JIT）和 kernel 自动调优，可以减少 Python 与 kernel 启动开销。
+
+动态形状、数据相关控制流、自定义算子或新的 batch 形状，可能触发重新编译或回退路径。基准测试要把首次编译和冷启动
+时间，与预热后的稳态时间分开报告。
 
 ## 7. GPU、TPU、NPU 与 CPU
 
@@ -158,15 +192,40 @@ Graph capture、AOT/JIT compile 和 kernel autotune 能减少 Python/launch over
 
 ### 7.3 移动/桌面 NPU
 
-能效可能高，但支持的 op、dynamic shape、context length、量化 format 和 SDK 有限。一个 unsupported op 回退 CPU/GPU 会引入同步和内存复制，必须用 profiler 确认实际 placement。
+移动或桌面 NPU 的能效可能很高，但支持的算子、动态形状、上下文长度、量化格式和 SDK 往往更受限。
+一个不受支持的算子若回退到 CPU 或 GPU，会引入同步和内存复制；必须用 profiler 确认每个算子实际在哪个设备执行。
 
 ### 7.4 CPU
 
-优势是容量、普及、低启动门槛和 memory-mapped weights；瓶颈常为 DRAM bandwidth、SIMD kernel、NUMA 和线程调度。小 batch decode 可能接近权重流式读取。
+CPU 的优势是容量较大、设备普及、启动门槛低，并且容易使用内存映射权重。常见瓶颈是 DRAM 带宽、SIMD 优化算子、
+NUMA 和线程调度。低并发增量解码可能接近“每生成一个 token 都把权重流式读一遍”。
 
-CPU 基准固定：ISA/kernel build、physical/logical cores、thread affinity、NUMA node、memory channels、power mode 和其他负载。线程越多不一定越快；跨 NUMA 访问和 oversubscription 会恶化。
+运行 CPU 基准前，要固定：
+
+- 指令集与 kernel build；
+- 物理/逻辑核心数和线程绑定；
+- NUMA 节点与内存通道；
+- 电源模式与同机其他负载。
+
+线程越多不一定越快。跨 NUMA 访问和线程超额订阅都可能让性能变差。
 
 ## 8. 单张消费级 GPU 的规划
+
+### 8.1 用你的 3070 Laptop 做第一次判断
+
+不要只凭“RTX 3070 Laptop”这个名称推断容量；先以本机 `nvidia-smi` 显示的专用显存、功耗上限、驱动和温度为准。
+针对当前的 Qwen3-0.6B + nano-vLLM 学习实验，可以按以下顺序推进：
+
+1. 用模型参数量和加载 dtype 估算裸权重下界，再为量化 metadata、CUDA context 和 workspace 留空间；
+2. 先运行 eager、并发 1 和短输出，确认模型身份、一次 prefill/decode 与 KV 释放；
+3. 记录 `torch.cuda.max_memory_allocated()` 和 `max_memory_reserved()`，不要用模型文件大小代替运行峰值；
+4. 再启用 CUDA Graph，对比同一请求的结果、TTFT、TPOT 和额外显存；
+5. 最后按实验 7B 的并发 `1/2/4/8` 与 batch token budget `256/1024` 逐档增加负载；
+6. 每一档同时观察 OOM、排队、峰值显存、温度、时钟和持续吞吐。
+
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)固定了 Qwen3-0.6B、nano-vLLM、输入输出长度和对照组，
+但仓库还没有你的 3070 Laptop 实测报告。因此，本页现在能给出容量公式和实验顺序，具体“占多少显存、每秒多少 token”
+要以你回传并通过 verifier 的报告为准。
 
 先做账本：
 
@@ -176,7 +235,7 @@ CPU 基准固定：ISA/kernel build、physical/logical cores、thread affinity�
 4. 安全 headroom；
 5. context overflow 与 OOM 降级顺序。
 
-### 8.1 合理降级顺序
+### 8.2 合理降级顺序
 
 - 减少 concurrency/max_num_seqs；
 - 减少 context/output 上限；
@@ -187,9 +246,10 @@ CPU 基准固定：ISA/kernel build、physical/logical cores、thread affinity�
 
 不要在 OOM 后随机改十个参数；一次只改一个并记录峰值、TTFT、TPOT 和质量。
 
-### 8.2 电源与散热
+### 8.3 电源与散热
 
-消费设备长时间推理可能因 power/temperature throttle 使前一分钟与一小时后不同。报告 ambient、power limit、clock、temperature 和 sustained throughput。超频结果不代表稳定容量。
+消费设备长时间推理时，功耗或温度限制可能触发降频，导致第一分钟和一小时后的速度不同。报告中应记录环境温度、
+功耗上限、时钟频率、设备温度和持续吞吐。超频后的短时峰值不能代表稳定容量。
 
 ## 9. 多设备与拓扑
 
@@ -214,7 +274,8 @@ GPU↔CPU↔SSD offload 扩大容量，但每 token 若反复跨 PCIe/存储读�
 
 适合：低吞吐、离线任务、稀疏专家或偶尔访问模块。不适合：严格 TPOT 且每层都需 offload 的交互 decode。
 
-Memory mapping 降低启动复制并允许 OS page cache，但首次访问 page fault、文件格式、随机访问和内存压力会影响 cold run。
+内存映射可以减少启动时的复制，并利用操作系统 page cache。首次访问的缺页、文件格式、随机读取和系统内存压力，
+仍会影响冷启动时间。
 
 ## 11. 端侧部署目标
 
@@ -222,11 +283,13 @@ Memory mapping 降低启动复制并允许 OS page cache，但首次访问 page 
 
 ### 11.1 Artifact
 
-明确 model/tokenizer/chat template/quantization/runtime versions、hash/signature 和最低设备。格式名（如某种量化容器）不保证所有 runtime 解释一致。
+端侧工件要明确记录模型、tokenizer、chat template、量化和运行时版本，以及哈希、签名与最低设备要求。
+同一个格式名称在不同运行时中也可能存在支持差异，需要用目标运行时实际加载验证。
 
 ### 11.2 冷启动与更新
 
-测 app start、model map/load、first-token compile 和 first request。模型更新需要原子下载、签名验证、空间检查、失败回滚和旧版本清理；部分下载不能被当成可加载模型。
+冷启动要拆成应用启动、模型映射/加载、首 token 编译和第一次请求。模型更新还需要原子下载、签名验证、空间检查、
+失败回滚和旧版本清理。下载不完整的文件不能进入可加载目录。
 
 ### 11.3 Context 与内存压力
 
@@ -234,7 +297,8 @@ Memory mapping 降低启动复制并允许 OS page cache，但首次访问 page 
 
 ### 11.4 WebGPU/浏览器
 
-受浏览器实现、adapter、buffer 限制、shader compile、页面生命周期和来源隔离影响。下载大小与 cache policy 也是用户成本。跨站内容和模型 artifact 需要 CSP/integrity/permission 设计。
+WebGPU 会受到浏览器实现、GPU adapter、buffer 上限、shader 编译、页面生命周期和来源隔离的影响。模型下载大小和
+浏览器缓存策略也是用户成本。跨站内容与模型工件还要设计 CSP、完整性校验和权限策略。
 
 ## 12. Benchmark 协议
 
@@ -262,7 +326,8 @@ Memory mapping 降低启动复制并允许 OS page cache，但首次访问 page 
 
 ### 12.3 同步计时
 
-GPU kernel 通常异步。计时前后需要 framework/device synchronize 或正确 event；否则只测 enqueue。编译 warmup 与 steady-state 分开。Energy sampling 的时间窗口也必须覆盖真实执行。
+GPU kernel 通常异步执行。计时边界要调用框架/设备同步，或者使用正确的 GPU event；否则测到的可能只是提交任务所需
+时间。编译预热与稳态运行要分开，能耗采样窗口也必须覆盖完整执行过程。
 
 ## 13. 能源与环境测量
 
@@ -301,7 +366,11 @@ E=\int P(t)dt.
 
 ## 16. 当前仓库证据边界
 
-仓库已有精确的理想 KV 公式、roofline 下界实现和单测，以及 CPU 侧推理指标/SSE 协议检查。JAX MiniGPT 的当前实跑 device 是 CPU。没有在目标消费 GPU、移动 NPU、WebGPU 或多卡互联上完成硬件基准；因此本文的 GPU/端侧内容是性能模型与验收协议，不是实测性能声明。
+仓库已经验证了三类离线内容：理想 KV 容量公式、Roofline 下界计算，以及 CPU 上的推理指标和 SSE 协议检查。
+JAX MiniGPT 当前录制的运行设备也是 CPU。
+
+目标消费 GPU、移动 NPU、WebGPU 和多卡互联仍缺少仓库内的实测报告。因此，本页对这些设备提供的是性能模型和
+验收协议；具体性能结论要等目标硬件报告通过验证后再写入。
 
 ## 17. 常见错误结论
 
