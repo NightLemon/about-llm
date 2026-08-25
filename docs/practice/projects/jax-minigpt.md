@@ -67,10 +67,40 @@ S_t=(\theta_t, o_t, k_t, \pi_t, c_t, t),
 四个实验是递进关系，却不能互相替代。Overfit 成功仍可能掩盖公式差异；一步 SGD 对齐也没有检查
 AdamW moments；optimizer 对齐后，遗漏数据 cursor 仍会让恢复后的训练分叉。
 
+## 先跟一个 batch 走完一步 { #one-train-step }
+
+`train_tiny.py` 使用两条完全相同的训练样本：
+
+```text
+input_ids = [[0, 1, 2, 3],
+             [0, 1, 2, 3]]
+targets   = [[1, 2, 3, 4],
+             [1, 2, 3, 4]]
+
+batch = 2, sequence = 4, vocabulary = 8
+model parameters = 632
+```
+
+用 seed 11、学习率 0.02 只训练一步时，真实执行顺序是：
+
+1. 旧参数完成前向计算，得到 `[2, 4, 8]` 的 logits；
+2. 八个监督位置的平均交叉熵为 `2.1085913181`；
+3. `value_and_grad` 同时返回这份 loss 和形状与参数树一致的梯度树；
+4. 裁剪前的全局梯度范数为 `1.6481350660`，超过阈值 1.0，因此先缩放梯度；
+5. Optax 根据梯度与旧 optimizer state 产生 updates 和新 state；
+6. `apply_updates` 得到新参数，重新前向计算后的 loss 为 `1.9567849636`。
+
+第三步返回的 loss 属于**更新前**的参数。训练面板若把它标成 `post_step_loss`，就会把两个时间点混在一起。
+脚本为了报告一步后的结果，会用新参数再计算一次 `final_loss`。
+
+这个最小拟合实验不使用随机失活（dropout），每一步也读取同一批数据。PRNG key 只在初始化 632 个参数时
+使用，不属于这里的 `train_step` 参数。后面的恢复实验加入随机失活和数据洗牌后，随机键、样本排列与
+读取位置才会随步骤变化，并进入完整状态 \(S_t\)。
+
 ## JAX 训练心智模型
 
 ```mermaid
-flowchart LR
+flowchart TB
     K["PRNG key"] --> I["init_params → PyTree"]
     X["input_ids / targets"] --> F["pure forward(params, x, config)"]
     I --> F
@@ -91,9 +121,10 @@ flowchart LR
 PRNG key 同样是一份显式状态。调用方先 split key，把其中一份交给当前随机操作，再把另一份保存给未来。
 重复使用旧 key，会重复同一段随机流。
 
-Typed JAX key 的内部数据可以写进 checkpoint。不过，它只恢复 JAX 这一路随机状态。
-PyTorch、NumPy、data worker 和 accelerator 可能各自使用另一种算法与状态机。它们如果参与训练，
-也要单独保存。
+JAX 的类型化随机键（typed key）可以把底层数组写进检查点，但它只恢复 JAX 管理的随机流。
+
+如果训练还调用 PyTorch、NumPy、数据加载进程或加速器随机算子，就要分别保存那些组件的状态。
+一份 JAX 随机键不能替它们恢复。
 
 ## 从零实现的模型
 
@@ -109,8 +140,9 @@ PyTorch、NumPy、data worker 和 accelerator 可能各自使用另一种算法�
 
 这些数组按名称嵌套成 PyTree。`blocks` 最终使用 tuple，确保树的路径和叶子顺序保持稳定。
 
-当前模型的 Linear 与 RMSNorm 都不含 bias。LM head 直接使用 token embedding 的转置，因此两者共享权重。
-仓库中的 PyTorch MiniGPT 默认使用 LayerNorm。做 parity 前，需要把两边改成同一架构约定。
+当前 JAX 模型使用不带偏置的线性层和 RMSNorm。输出词表分数时，它直接转置 token embedding，
+因此输入嵌入与输出头共享权重。仓库中的 PyTorch MiniGPT 默认采用 LayerNorm；跨框架对账前，
+必须先把归一化、偏置和权重共享方式改成同一套约定。
 
 ### 纯函数前向
 
@@ -149,8 +181,8 @@ JAX 的 gather 仍会读取稍后被 mask 的位置。实现先把 `-100` target
 
 ### JIT train step
 
-`make_train_step(config, optimizer)` 把不随 step 改变的配置和 optimizer 放进闭包。
-每次调用传入四项动态值：params PyTree、Optax state、input IDs 与 targets。核心顺序是：
+`make_train_step(config, optimizer)` 把训练过程中不变的模型配置和 optimizer 放进闭包。
+每一步只传入四项会变化的值：参数树、Optax 状态、输入 token ID 和目标 token ID。核心顺序是：
 
 ~~~text
 loss, grads = value_and_grad(loss_fn)(params)
@@ -246,8 +278,8 @@ python projects/jax-minigpt/cross_framework_parity.py
 
 ### RMSNorm 反事实
 
-原生 JAX MiniGPT 使用 RMSNorm。它不减均值，也没有 bias，epsilon 为 `1e-6`。
-把相同主干权重直接送入这条路径后，logits 差异远远超过 parity tolerance。
+原生 JAX MiniGPT 使用 RMSNorm：只按均方根缩放，不减均值，也没有偏置，epsilon 为 `1e-6`。
+把 LayerNorm 实验中的主干权重直接送入这条路径后，两边 logits 的差异远远超过允许误差。
 
 这个反例说明，“都是 decoder-only Transformer”还不足以对账。至少要逐项核对：
 
@@ -263,8 +295,8 @@ python projects/jax-minigpt/cross_framework_parity.py
 python projects/jax-minigpt/cross_framework_training_parity.py
 ~~~
 
-一步 plain SGD 不维护 moments，也不使用随 step 变化的 schedule。第二个 parity 实验因此在已经对齐的
-LayerNorm 主干上连续更新三步，专门检查 optimizer state 是否同步。
+普通 SGD 的一步更新没有一阶、二阶矩，也不会暴露随步数变化的学习率问题。因此，第二个对账实验在
+已经对齐的 LayerNorm 主干上连续更新三步，专门检查 AdamW 状态能否保持同步。
 
 - 用 NumPy PCG64 seed `20260814` 预先生成三张 embedding inverted-dropout masks；
 - Dropout rate 为 `0.25`，三步分别保留 `54/50/45` 个元素；
@@ -279,8 +311,8 @@ LayerNorm 主干上连续更新三步，专门检查 optimizer state 是否同�
 g'_t=g_t\min\left(1,\frac{c}{\lVert g_t\rVert_2}\right),
 \]
 
-三步裁剪前的 gradient norm 都高于 `0.08`，所以实际走到了 clipping 分支。
-裁剪前后 gradient、AdamW moments、parameters 和更新后 logits 都通过录制的 Float32 tolerance。
+三步裁剪前的梯度范数都高于 `0.08`，所以每一步都实际执行了裁剪。两边逐项比较裁剪前后的梯度、
+AdamW 一阶与二阶矩、更新后的参数和 logits，误差均落在录制的 Float32 容差内。
 
 各项精确误差与报告 fingerprint 保存在脚本输出和[项目控制台账](../../evidence/project-controls.md)。
 
@@ -367,6 +399,18 @@ python -m pytest `
   tests/test_gpt_jax.py -q
 ~~~
 
+这组快速测试检查因果 mask、loss 边界和参数更新，进入日常 CPU 门禁。三个跨框架与跨进程控制更慢，
+放在 extended 层：
+
+~~~powershell
+python -m pytest `
+  tests/test_gpt_jax_controls.py -q
+~~~
+
+扩展测试会真正运行同权重的一步 SGD 对账、三步 AdamW 对账和跨进程恢复，并检查报告中的全部断言。
+它还执行四个反例：改用 RMSNorm、错位随机失活 mask、重置 PRNG key，以及重置数据读取位置。
+这些反例必须让相应轨迹出现分叉。
+
 | 现象 | 优先检查 | 不能据此下的结论 |
 |---|---|---|
 | loss 不下降 | target shift、mask 分母、gradient tree、optimizer state 是否回传 | 一次下降不等于泛化 |
@@ -382,8 +426,8 @@ python -m pytest `
 
 为每个 PyTree leaf 记录稳定的 path、type 和 shape，并显式定义 weight-decay mask。
 
-Schedule count、梯度累积位置、loss-scaling state 和 EMA 都会改变未来更新。
-训练使用其中任何一项时，都应写入 checkpoint，并纳入 parity test。
+学习率调度步数、梯度累积位置、动态 loss scaling 状态和指数移动平均（EMA）都会改变后续参数。
+训练使用其中任何一项时，都应写入 checkpoint，并加入恢复前后的对账。
 
 ### 数据与随机性
 
@@ -396,8 +440,8 @@ Schedule count、梯度累积位置、loss-scaling state 和 EMA 都会改变未
 
 ### JIT、shape 与性能
 
-性能报告应分别测量首次编译、预热后的稳定执行、host↔device 传输、collective 和 checkpoint I/O。
-每项结果都要记录输入 shape、dtype、sharding、mesh 和实际同步点。
+性能报告应分别测量首次编译、预热后的稳定执行、主机与设备间传输、集合通信和 checkpoint 读写。
+每项结果都要记录输入形状、数据类型、分片规则、设备 mesh 和实际同步点。
 
 一次 CPU `block_until_ready()` 计时只说明这个小实验等待了设备完成。它既不能预测 GPU/TPU 性能，
 也没有覆盖 shape 改变后触发的重新编译。

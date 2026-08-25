@@ -31,8 +31,8 @@ python projects/jax-minigpt/train_tiny.py `
 - `final_loss` 是否明显低于 `initial_loss`；
 - `compile_plus_first_step_seconds` 是否与后续 step 的平均时间分开记录。
 
-这个脚本只训练，不生成文本。Tiny-batch overfit 的意义是尽早发现 target shift、梯度断开或 optimizer 没有更新；
-它不能衡量泛化能力，也不能说明 GPU、TPU 或大模型的训练性能。
+这个脚本输出训练指标，不执行文本生成。Tiny-batch overfit 用来尽早发现 target shift、梯度断开或
+optimizer 未更新。泛化能力、生成质量和目标硬件性能需要另外设计实验。
 
 ## 四个实验分别回答什么
 
@@ -72,8 +72,8 @@ JAX 可能异步提交计算，所以脚本在计时前等待 `loss.block_until_
 python projects/jax-minigpt/cross_framework_parity.py
 ```
 
-这个实验不比较两个各自随机初始化的模型。它先生成一份确定性权重，再把 Linear 的布局、LayerNorm、GELU、
-causal mask、共享 embedding/head 和 loss reduction 全部对齐，然后比较：
+实验先生成一份确定性权重，让两个框架从同一组数值出发。随后逐项对齐线性层布局、LayerNorm、GELU、
+因果 mask、输入输出权重共享和 loss 求平均方式，然后比较：
 
 1. 初始 logits 与 loss；
 2. 20 组独立参数的 gradients；
@@ -109,8 +109,8 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 实验先完整训练 6 步作为基线。另一条路径训练 3 步后写出 checkpoint，再由新进程加载并完成第 4—6 步。
 如果恢复正确，两条路径后半程使用的样本、dropout mask、loss、gradient 和最终状态都应相同。
 
-本项目保存的不只是模型参数，还包括 Optax state、PRNG keys、数据排列、读取位置和 global step。报告中的两个
-负例会分别重置 dropout key 和 data cursor；文件仍能读取，但后续训练轨迹会发生变化。
+本项目同时保存模型参数、Optax 状态、随机键、数据排列、读取位置和全局步数。两个反例分别重置
+dropout key 和数据游标；文件依然可以读取，但下一步已经使用不同的随机 mask 或训练样本。
 
 `ALLMJAX1` 是仓库为了讲清状态恢复而实现的单文件格式，不是 Orbax 或 TensorStore 的替代品。它会检查字段、
 数组布局和哈希，但没有覆盖多设备分片、对象存储一致性或断电原子性。
@@ -124,6 +124,7 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 | `cross_framework_training_parity.py` | 比较 shared-mask 条件下的三步 AdamW 轨迹 |
 | `checkpoint_resume_control.py` | 验证跨进程 checkpoint 与 bit-exact resume |
 | [`gpt_jax.py`](../../src/about_llm/from_scratch/gpt_jax.py) | 从零实现的 JAX decoder、loss 与 train step |
+| [`test_gpt_jax_controls.py`](../../tests/test_gpt_jax_controls.py) | extended 层的跨框架与跨进程回归 |
 | [教学页](../../docs/practice/projects/jax-minigpt.md) | 解释纯函数状态、PRNG、parity 和 checkpoint 设计 |
 | [项目证据页](../../docs/evidence/project-controls.md) | 保存录制结果、版本与验证范围 |
 
@@ -146,12 +147,17 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 
 ```powershell
 python -m pytest tests/test_gpt_jax.py -q
+python -m pytest tests/test_gpt_jax_controls.py -q
 python scripts/check_docs.py
 python scripts/check_content_accuracy.py
 ```
 
-专项测试覆盖因果 mask、有限 loss、参数更新、跨框架误差、AdamW 状态、checkpoint 完整性和两个错误恢复负例。
-它们运行在 CPU tiny 配置上，不会替你验证 CUDA、TPU、多设备 sharding、混合精度或目标模型的收敛情况。
+第一条是日常快速测试，覆盖因果 mask、loss 边界和参数更新。
+
+第二条属于 extended 层，会运行三个较慢的控制：同权重 SGD 对账、三步 AdamW 对账和跨进程恢复。
+它检查数值误差、优化器状态、checkpoint 完整性，以及两个错误恢复反例。
+
+这些测试都使用 CPU tiny 配置。CUDA、TPU、多设备分片、混合精度和目标模型收敛需要另行验证。
 
 ## 下一步怎么扩展
 
