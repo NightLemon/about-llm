@@ -163,8 +163,10 @@ A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s).
 \(V^\pi(s)\) 表示从当前状态继续时通常能得到多少回报，\(Q^\pi(s,a)\) 表示先选动作 \(a\) 后通常能得到多少。
 二者之差 \(A^\pi(s,a)\) 是 advantage（优势）：这个 token 相对当前策略的平均选择好多少。
 
-最直接的做法是把终局分数作为整条回答中每个 token 的 Monte Carlo return。这种估计有效，但方差通常很大。
-加入 value model、逐步 reward 或逐 token KL 会改变 credit 的分配方式，同时也引入新的预测误差和可被利用的接口。
+最直接的做法是把终局分数作为整条回答中每个 token 的 Monte Carlo return（蒙特卡洛回报）。
+这种估计有效，但方差通常很大。
+
+加入价值模型、逐步奖励或逐 token KL 会改变信用的分配方式，同时也引入新的预测误差和攻击面。
 
 ## 5. Actor–critic、TD 与 GAE
 
@@ -180,8 +182,9 @@ Actor 是生成回答的策略，critic 负责估计 value。一步 TD residual�
 A_t=\delta_t+\gamma\lambda c_t A_{t+1},
 \]
 
-\(c_t\) 在轨迹边界和 padding 处为 0，防止 credit 穿过样本边界。较小的 \(\lambda\) 更依赖 critic，
-通常方差较低、偏差可能较大；较大的 \(\lambda\) 更接近使用完整回报的 Monte Carlo 估计。
+\(c_t\) 在轨迹边界和补齐位置为 0，防止信用穿过样本边界。
+较小的 \(\lambda\) 更依赖价值估计，通常方差较低、偏差可能较大。
+较大的 \(\lambda\) 更接近使用完整回报的蒙特卡洛估计。
 
 运行现有 NumPy 对照示例：
 
@@ -198,8 +201,16 @@ python -m pytest tests/test_ppo_objectives.py -q
 
 ## 6. 保存回答文本，还不等于保存了训练数据身份
 
-PPO 等 on-policy 方法使用当前策略或一个受控旧版本采集回答。每轮更新后，策略分布已经变化，旧回答也不再代表当前分布。
-因此采集候选 C 时还要保存：当时模型对每个有效 token 的 log probability、采样配置、Prompt 与模板、token IDs 和 mask。
+PPO 等 on-policy（同策略）方法使用当前策略或一个受控旧版本采集回答。
+每轮更新后，策略分布已经变化，旧回答也不再代表当前分布。
+
+采集候选 C 时，至少保存以下信息：
+
+| 数据 | 用途 |
+|---|---|
+| 每个有效 token 当时的 log probability | 计算新旧策略概率比 |
+| Prompt、模板和 token IDs | 重建模型实际看到的序列 |
+| 采样配置与 mask | 确认哪些动作来自模型并进入目标 |
 
 off-policy 方法可以复用其他行为策略产生的数据，但需要重要性权重、value learning 或相应校正假设。
 如果采集时没有保存行为策略和概率，事后重新 tokenize 一段文本无法恢复它当时被采样的概率。
@@ -229,8 +240,8 @@ L^{clip}=\mathbb E_t\left[
 \rho_t=\exp(\log\pi_\theta-\log\pi_{old}).
 \]
 
-\(\rho_t\) 比较 current policy 与 old policy 对这次采样 token 的概率。advantage 为正时，PPO 限制概率上升带来的收益；
-advantage 为负时，则限制概率过度下降带来的收益。
+\(\rho_t\) 比较当前策略与旧策略对这次采样 token 的概率。
+优势为正时，PPO 限制概率上升带来的收益；优势为负时，则限制概率过度下降带来的收益。
 
 仓库样例使用 ratios `[1.5, 0.5, 1.0]` 和 advantages `[1, -1, 1]`。当 \(\epsilon=0.2\) 时，
 参与目标的 ratios 变成 `[1.2, 0.8, 1.0]`，三个 token 中有两个触发 clipping。
@@ -260,8 +271,8 @@ A_i=\frac{r_i-\bar r}{\sqrt{\operatorname{Var}(r)}+\epsilon}.
 
 ## 9. RLVR：测试程序能评分什么，模型就会优化什么
 
-Reinforcement Learning with Verifiable Rewards（RLVR，可验证奖励强化学习）使用程序给出 reward，
-例如数学答案检查、代码测试、JSON schema 或模拟器终态。代码题正是一个典型场景。
+RLVR（可验证奖励强化学习）使用程序给出 reward，例如数学答案检查、代码测试或模拟器终态。
+代码题正是一个典型场景；JSON 任务也可以检查输出是否符合 schema。
 
 只检查最终答案的组件称为 outcome verifier；它容易自动化，但信号比较稀疏。
 若系统还评价推理或执行过程中的中间状态，就属于 process reward。信号更密并不等于更可靠，
@@ -308,9 +319,10 @@ Reinforcement Learning with Verifiable Rewards（RLVR，可验证奖励强化学
 策略会寻找最容易提高 reward 的行为，而不是自动理解设计者的真实意图。当代理指标成为优化目标后，
 它与真实目标原有的相关性可能失效，这是一类 Goodhart failure。
 
-采样或搜索越多，还越容易找到被 verifier 高估的异常答案，这称为 optimizer's curse（优化者诅咒）。
-发布报告因此要同时保存：候选集合中是否存在正确答案、实际选中答案是否正确、代理 reward、
-分布外与对抗切片，以及模型调用次数、token、费用和尾延迟。
+采样或搜索越多，越容易找到被 verifier 高估的异常答案，这称为 optimizer's curse（优化者诅咒）。
+
+发布报告要分别保存候选集合命中率、最终选择成功率和代理 reward。
+还要报告分布外与对抗切片，以及模型调用次数、token、费用和尾延迟。
 
 训练 reward 曲线适合诊断优化过程。最终能力仍要由未参与训练的题目、安全样本和独立验收程序决定。
 
@@ -328,7 +340,12 @@ Reinforcement Learning with Verifiable Rewards（RLVR，可验证奖励强化学
 分母同样会改变训练目标。按 token 平均会让长回答拥有更多项；按序列平均或按 Prompt 组平均则采用不同权重。
 无效回答、截断和 verifier 错误是否保留在“尝试过的任务”分母中，也要预先规定。
 
-在扩大 batch 前，先打印一条轨迹的 token IDs、各类 mask、三个策略的 log probabilities、reward、advantage 和 return。
+在扩大 batch 前，先把一条轨迹完整打印出来：
+
+- token IDs，以及每个位置属于哪一类 mask；
+- 当前、旧版和参考策略给出的 log probabilities；
+- reward、advantage 与 return。
+
 只看最终 loss 数字，很难发现错一位的 mask。
 
 ## 13. 方法选择
