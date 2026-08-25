@@ -166,7 +166,10 @@ nav:
           - 推理系统: frontier/reasoning-systems.md
           - 长上下文系统: frontier/long-context-systems.md
           - MoE 系统: frontier/moe-systems.md
-      - 具身、计算机使用与小模型: frontier/embodied-small-models.md
+      - 具身、计算机使用与本地智能:
+          - 总览: frontier/embodied-small-models.md
+          - 具身与 Computer-use: frontier/embodied-computer-use.md
+          - 端侧小模型与本地智能: frontier/on-device-small-models.md
   - 论文解读:
       - 板块说明: papers/index.md
       - 2026 年 8 月: papers/2026-08.md

@@ -1,336 +1,112 @@
-# 具身、计算机使用、小模型与本地智能
+# 从观察到行动：具身、计算机使用与本地智能
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：机器人、computer-use Agent 和端侧模型工程师。
-- **先修**：Agent 控制循环、服务安全和基本控制系统直觉。
-- **首次阅读**：闭环决策 → 系统分层 → GUI Agent → routing/cascade → 发布门禁。
-- **完成信号**：能定义动作确认、状态验证、降级和人工接管边界。
-- **卡住时**：先读[Agent Runtime](../applications/agent-runtime.md)和[产品状态设计](../applications/product-design.md)。
+- **适合读者**：想理解机器人、computer-use Agent 或端侧模型系统的开发者。
+- **先修**：Agent 控制循环、基本推理服务概念和安全边界。
+- **首次阅读**：先读本页的共享闭环，再从下方选择一条路线。
+- **完成信号**：能区分观察、动作提议、受控执行、状态验证和模型路由。
+- **卡住时**：先读 [Agent Runtime](../applications/agent-runtime.md) 的端到端任务主线。
 
 </div>
 
-想象一个运行在笔记本上的本地助手：它观察浏览器页面，判断应该点击哪个按钮，遇到复杂页面时再把有限上下文
-交给云模型。一次坐标偏移可能点中“确认付款”，一次过期 screenshot 可能让它对已经变化的页面继续操作，
-一次错误路由则可能把敏感画面发到云端。
+想象一个运行在笔记本上的助手。它读取浏览器页面，准备点击“确认付款”；简单页面由本地小模型处理，复杂页面可能
+升级给云端模型。这个任务同时包含三个问题：
 
-机器人、computer-use Agent 和端侧小模型看似是三个方向，却共享同一个闭环：**观察环境、提出动作、受控执行、
-重新观察、验证状态，再决定下一步**。评价重点也从“回答像不像”转为任务成功、状态估计、权限、恢复、延迟
-和现实副作用。
+1. 当前页面究竟处于什么状态；
+2. 哪个动作可以安全执行；
+3. 这一步应在本地完成，还是交给其他模型、工具或人工。
 
-## 1. 模型看到的从来不是完整世界
-
-可用 POMDP 直觉描述：真实状态 \(s_t\) 不完全可见，系统获得 observation \(o_t\)，根据历史/估计选择 action \(a_t\)，环境转移到 \(s_{t+1}\)。
-
-\[
-o_t\sim O(\cdot\mid s_t),
-\qquad
-a_t\sim\pi(\cdot\mid o_{\le t},a_{<t}).
-\]
-
-文本 Agent 常假设工具返回准确状态；物理/GUI 环境却有遮挡、延迟、丢帧、弹窗、执行失败和外部变化。系统需要 action receipt 与重新观察，不能把“模型输出了动作”当“动作已成功”。
-
-## 2. 让语言模型负责语义，不负责电机急停
-
-```mermaid
-flowchart TD
-  S["Sensors"] --> E["Perception / state estimation"]
-  E --> T["Task and semantic planning"]
-  T --> M["Motion planning / policy"]
-  M --> C["Low-level controller"]
-  C --> A["Actuators / environment"]
-  A --> S
-  G["Independent safety controller"] --> C
-  H["Human / emergency stop"] --> G
-```
-
-LLM/VLM 可参与语义感知、任务分解或高层 action proposal，不应直接绕过 joint limit、collision avoidance、force/velocity limit、control barrier、watchdog 和 emergency stop。
-
-### 2.1 时间尺度
-
-语言规划可能每秒或更慢，运动控制常需更高频率。若网络/模型延迟超过 control deadline，应由低层 controller 保持稳定、减速或停止；不能等待下一段自然语言。
-
-## 3. Vision-Language-Action（VLA）
-
-VLA 将图像/状态、语言目标和 action 联合建模。Action 表示可能是：
-
-- 离散 action tokens；
-- 连续 pose/joint/velocity；
-- trajectory chunk；
-- skill/API call；
-- diffusion/flow policy 生成的 action sequence。
-
-离散化简化序列建模但带 quantization error；连续 action 需要输出分布、约束和 control rate。Trajectory chunk 降低调用频率，却可能在环境突变时继续执行过期动作。
-
-### 3.1 数据来源
-
-- teleoperation/demonstration；
-- robot logs 与 recovery；
-- simulation；
-- human video（通常缺 robot action label）；
-- synthetic augmentation；
-- reinforcement learning/online interaction。
-
-记录 robot morphology、camera calibration、control frequency、action normalization、operator、场景和失败。把不同机器人 action 直接拼接而没有 embodiment token/映射会混淆语义。
-
-## 4. 模仿学习为什么会在自己的错误上越走越远
-
-Behavior cloning 在 demonstration state distribution 上学习。执行时一个小错误会把系统带进训练未覆盖的状态，
-随后误差继续累积；这就是 covariate shift。Corrective demonstration、DAgger 类交互、recovery data、
-noise augmentation 和 closed-loop training 都在尝试补足这些偏离后的状态。
-
-Offline RL/VLA 还面临 support mismatch：模型不应对数据外 action 过度乐观。仿真器 reward/成功条件也可能被 exploit。
-
-## 5. Sim-to-real
-
-仿真可安全生成大量失败和极端场景，但存在 reality gap：
-
-- dynamics、friction、mass、latency；
-- camera/lighting/material；
-- sensor noise/dropout；
-- actuator backlash/saturation；
-- 人和物体行为；
-- 仿真碰撞/成功判定漏洞。
-
-Domain randomization、system identification、real-data fine-tuning 和 residual control 可缩小差异。仿真成功只能证明在该 simulator/config 下成功，不能写成真实机器人验证。
-
-## 6. 安全测试要观察动作有没有真的停下
-
-逐级扩大：
-
-1. unit test action bounds；
-2. deterministic simulator；
-3. randomized/noisy simulation；
-4. hardware-in-the-loop；
-5. 空载/低速受控场地；
-6. 有安全员和物理隔离的真实任务；
-7. 限定 ODD（operational design domain）部署。
-
-指标：任务成功、collision/near miss、force/velocity violation、intervention、recovery、deadline miss、energy、最坏状态。平均成功率不能掩盖一次严重碰撞。
-
-## 7. World model
-
-World model 预测 observation/state/reward/termination 或 latent dynamics，可用于 planning、imagination 和 data generation。需要区分：
-
-- one-step predictive accuracy；
-- long rollout consistency；
-- action-conditioned controllability；
-- task-relevant state coverage；
-- uncertainty/OOD detection。
-
-像素预测清晰不等于物理正确，latent prediction loss 低也不保证规划所需变量被保留。规划器会利用 world model 偏差，应在 adversarial/planner-selected trajectories 上评估。
-
-## 8. 把同一个闭环搬到 GUI
-
-Observation 可以是 screenshot、DOM、accessibility tree、OCR、network/API state 的组合。Action 包括 click/type/scroll、semantic element action、browser/API call。
-
-### 8.1 Observation 选择
-
-- Screenshot 保留视觉布局，但坐标受缩放、滚动、动画影响；
-- DOM 结构丰富，但可能包含隐藏/不可信节点且不代表视觉可点击；
-- Accessibility tree 更语义化，但网站标注可能缺失；
-- API 稳定且可校验，但权限/覆盖有限。
-
-优先语义 action 与受限 API，坐标点击作为 fallback。执行后重新观察并验证 state change。
-
-### 8.2 动态页面
-
-Element 可能在观察和点击之间移动（TOCTOU），弹窗或网络响应改变页面。Action 应绑定 element identity、页面 origin/revision 与预期状态，而不只保存 `(x,y)`。
-
-### 8.3 安全
-
-- 隔离 browser profile 与 ephemeral session；
-- credential broker 代填，不把密码给模型；
-- domain/redirect/download allowlist；
-- 登录、发送、付款、删除、发布需要 bound approval；
-- 对网页文字做 indirect injection threat model；
-- 禁止绕过 CAPTCHA/anti-abuse；
-- 下载扫描、文件 quarantine 与 MIME/content validation；
-- 完整 action/receipt/reconciliation audit。
-
-## 9. GUI 评测不能只看最终截图
-
-在可 reset environment 中运行。报告：
-
-- task success 与 state-based verifier；
-- step count、token/tool calls、latency/cost；
-- invalid action、loop/no-progress；
-- recovery after popup/network/tool failure；
-- unauthorized/irreversible side effects；
-- injection attack success；
-- cross-site/domain escape；
-- human intervention。
-
-页面最终出现成功文案可能是模型读到文本后复述，verifier 应查询真实 state。真实个人账户不应作为可重复 benchmark。
-
-## 10. “小”是相对设备预算而言
-
-Small Language Model（SLM）没有统一参数阈值。它是否足够小，要看能否在目标单卡、CPU、移动端或延迟/成本
-预算内运行。报告时至少写明参数量、active parameters、weight/KV bytes、context、dtype、target hardware
-与 TTFT/TPOT；只说“0.8B 很小”无法回答在具体设备上是否可用。
-
-小模型优势：低延迟/成本、可本地、易隔离和专用；限制：长尾知识、复杂推理、instruction robustness、多语言与安全泛化可能更弱。
-
-## 11. 提升小模型
-
-### 11.1 Data 与 compute
-
-较小模型可用更多高质量 token、curriculum、dedup 和领域 mixture 提高效率。数据重复和 teacher synthetic bias 仍需控制。
-
-### 11.2 Distillation
-
-- logit distillation：匹配 teacher distribution；
-- response distillation：学习 teacher output；
-- reasoning/process distillation：学习验证过的轨迹；
-- feature distillation：匹配中间表示；
-- preference distillation：用 teacher/judge pair/ranking。
-
-Teacher 输出不是 ground truth。记录 teacher revision、prompt、sampling、verifier 和许可；学生可能复制 teacher 错误、安全盲点与冗长风格。
-
-### 11.3 PEFT 与专用化
-
-LoRA/adapter 可低成本学习领域格式。专用模型应保持 out-of-scope detection 和 escalation，不要因目标测试好就处理所有流量。
-
-### 11.4 Compression
-
-Quantization、pruning、low-rank、vocabulary/architecture 设计降低内存/计算。权重变小不保证速度等比例提高；目标硬件 kernel 决定收益。
-
-## 12. 本地先做，什么时候升级到云端
-
-令 router 给出是否由小模型处理，阈值 \(\tau\) 控制 coverage：
-
-- coverage：小模型直接处理比例；
-- risk/error：被直接处理请求中的失败；
-- escalation rate/cost；
-- high-risk miss：本应升级却未升级。
-
-画 risk–coverage/cost–quality 曲线。Router confidence 需要校准，并按语言、领域和攻击输入切片。高风险类别可 rule-based always escalate，不依赖小模型自报置信。
-
-### 12.1 Cascade
-
-小模型先答，verifier 通过则返回，否则升级大模型/工具/人工。总成本包括第一次生成、验证、重复 prompt 和升级；不是简单的 `small_cost × coverage + large_cost × escalation`，除非已计入共享/重复项。
-
-### 12.2 Feedback loop
-
-只对升级样本获得高质量标签，会产生 selection bias。Router 训练应抽样审计未升级请求，防止盲区永久不可见。
-
-## 13. Speculative decoding
-
-Draft model 提议多个 token，target model 并行验证。严格的 speculative sampling 使用接受/拒绝与 residual distribution，
-可以保持 target distribution；“target 逐 token 验证并取一致前缀”的 greedy 变体保持 target greedy output。
-
-概率级规则不能省略。Proposal \(x\sim q\) 以 \(\min(1,p(x)/q(x))\) 接受；拒绝时，从 normalized
-\((p-q)_+\) 采样。首次拒绝后丢弃剩余 draft，只有全部接受才发出 bonus target token。
-
-仓库已有一步边际概率和 block 控制流的参考实现，但输入概率是本仓库为讲解算法准备的，并非目标模型 logits；
-CPU 循环也不能代表目标 GPU 上的 verification kernel。
-
-并非任何“让小模型先写、大模型挑”都无损。若只接受 draft 高分 token 或改变采样逻辑，输出分布会变。Speedup 取决于 draft latency、acceptance rate、proposal length、target verification kernel 和 batch。
-
-## 14. 本地个性化
-
-On-device adapter/memory 可减少原始数据上传，但设备丢失、backup、debug log、恶意 app 和 model extraction 仍是风险。个性化应可查看、删除、禁用和回滚；base model 更新后验证 adapter compatibility。
-
-不要把敏感长期记忆直接拼入每个 prompt。使用本地加密 store、purpose/TTL、检索权限和用户控制。
-
-## 15. Federated learning
-
-Federated 让设备计算 update 而非上传 raw data，但不自动提供隐私：
-
-- update/gradient 可能泄露；
-- malicious client poisoning/backdoor；
-- server 可观察参与和更新；
-- secure aggregation、DP 与 authentication 各解决不同问题；
-- 设备 availability/网络造成参与偏差；
-- unlearning 与设备删除请求困难。
-
-报告 client sampling、local steps、aggregation、secure aggregation、DP adjacency/budget、robust aggregation 和 dropout handling。
-
-## 16. 去中心化与协作推理
-
-把模型分布在用户/边缘节点可能降低中心依赖，但引入：
-
-- 不可信节点返回错误/窃取 activation；
-- 网络延迟与 churn；
-- model/version consistency；
-- incentive/Sybil/availability；
-- 中间 activation 的隐私；
-- verification 成本。
-
-Cryptographic proof、replication 或 spot-check 也有成本和适用边界。不能因“权重不集中”就宣称数据私密。
-
-## 17. 模型合并与本地 adapter 生态
-
-多个 adapter/merge 可以组合专用能力，但必须共享 base revision、target modules、shape/scaling 和
-tokenizer/template。独立初始化的模型不能直接逐权重平均。Merge 后要重新测试每项能力、安全与量化；
-本地插件式 adapter 还需要签名、权限、来源和冲突管理。
-
-## 18. 生产架构示例
+机器人、浏览器 Agent 和端侧模型的具体技术不同，但都不能只靠一次模型输出结束任务。它们共享同一个闭环：
 
 ```mermaid
 flowchart LR
-  Q["Request"] --> P["Policy / risk classifier"]
-  P -->|simple + low risk| S["On-device / small model"]
-  P -->|complex / high risk| L["Large model or tool workflow"]
-  S --> V["Verifier"]
-  V -->|pass| R["Response"]
-  V -->|fail / uncertain| L
-  L --> H["Tool policy / human approval"]
-  H --> R
+    E["环境"] --> O["观察快照"]
+    O --> M["状态解释与任务模型"]
+    M --> P["动作提议"]
+    P --> G["策略、权限与审批"]
+    G --> X["受控执行器"]
+    X --> R["执行回执"]
+    R --> N["重新观察"]
+    N --> V["状态验证"]
+    V -->|"继续"| M
+    V -->|"完成"| D["任务终态"]
+    V -->|"失败或不确定"| H["恢复、降级或人工接管"]
 ```
 
-Router、verifier、tool policy 和 human approval 分别有独立版本与评测。大模型 fallback 不应继承小模型生成的恶意/错误上下文而不标 provenance。
+这张图里最重要的不是模型名称，而是几个不能省略的边界：观察只是对环境的一次采样，动作文本只是提议，执行器回执
+只说明调用发生过，最终还要重新读取环境来判断任务是否真的成功。
 
-## 19. 发布门禁
+## 三类系统怎样对应到同一个闭环
 
-### 机器人
+| 系统 | 观察 | 动作 | 独立验证 | 典型高风险失败 |
+|---|---|---|---|---|
+| 机器人 | Camera、力传感器、关节与位置状态 | 抓取、移动、速度或 skill call | 物体状态、碰撞、力和位置 | 过期感知导致碰撞或越过安全限制 |
+| Computer-use Agent | Screenshot、DOM、accessibility tree、API state | Click、type、scroll、浏览器/API call | 页面后端状态、订单或资源 receipt | 坐标漂移、间接提示注入、误付款或误删除 |
+| 端侧小模型系统 | Prompt、本地文档、设备与网络状态 | 本地回答、工具调用、云端升级 | 质量 verifier、策略和任务结果 | 敏感内容误上传、低置信错误未升级 |
 
-- ODD、action bounds、deadline 和 independent safety controller；
-- sim/noise/hardware-in-loop/real staged evidence；
-- collision/near-miss/force 与 recovery；
-- emergency stop 在模型不可用时仍工作。
+三者也有不能混用的部分。机器人需要毫秒级低层控制与物理安全；GUI 依赖网页身份、权限和可撤销副作用；端侧模型
+更关注内存、延迟、能耗、路由质量和隐私。把它们塞进一套统一 API，并不会自动解决这些领域约束。
 
-### GUI Agent
+## 选择学习路线
 
-- resettable environment、state verifier；
-- credential broker、origin/domain policy；
-- bound approval、idempotency、receipt；
-- injection、popup、download、network failure 与 no-progress。
+### 路线 A：系统真的会改变环境
 
-### 小模型与路由
+[具身与 Computer-use：让一次动作安全落地](embodied-computer-use.md)沿两次具体动作展开：机器人抓取物体，以及浏览器
+提交付款。你会学习：
 
-- target hardware quality/latency/memory/energy；
-- risk–coverage 与 protected slices；
-- escalation/verifier 的总成本和失败；
-- teacher/data lineage 与 out-of-scope behavior；
-- offline/edge privacy 和 update rollback。
+- 部分可观测环境为什么要求重新观察；
+- 语言规划、运动规划和低层控制为何必须分层；
+- VLA、模仿学习、world model 和 sim-to-real 各解决哪一段；
+- Screenshot、DOM 与 accessibility tree 的取舍；
+- TOCTOU、绑定审批、执行回执与 state-based verifier；
+- 怎样从仿真逐级走到真实设备和真实账户。
 
-## 20. 当前仓库证据边界
+### 路线 B：同一个任务在哪个模型上运行
 
-仓库已经实现 Safe Agent 的审批、幂等和 reconciliation，也提供 Roofline/KV、LoRA、speculative sampling
-的公式对照和评测门禁。这些组件可以帮助检查 GUI/小模型系统中的局部机制。
+[端侧小模型与本地智能：从一次路由决定开始](on-device-small-models.md)跟随一次本地助手请求，解释：
 
-仓库没有机器人 simulator/硬件、真实 GUI benchmark、移动设备 SLM、federated round 或 speculative decoding
-kernel 实跑。因此，本章提供的是架构设计与验收思路；具身或端侧系统仍需在真实设备上验证。
+- “小模型”为什么必须相对硬件和工作负载定义；
+- Processor、模型、runtime、kernel、router 和 verifier 各做什么；
+- 数据、蒸馏、PEFT 与量化怎样改善端侧方案；
+- 怎样读 risk–coverage、cost–quality 和升级率；
+- Speculative decoding 在什么条件下保持目标分布；
+- 本地个性化、联邦学习和 adapter 生态还会引入哪些风险。
 
-## 21. 常见错误结论
+## 学习时始终追问五件事
 
-- **“VLA 输出动作，所以可以直接控制电机”**：低层安全和实时 controller 必须独立。
-- **“仿真成功就是现实成功”**：reality gap 与 simulator exploit 仍在。
-- **“GUI 显示成功就任务成功”**：需要真实 state verifier/receipt。
-- **“小模型参数少就一定更快”**：kernel、memory、context 和硬件决定。
-- **“Router 平均准确高就安全”**：高风险 false-negative 可能集中在少数切片。
-- **“Speculative decoding 都保持 target 分布”**：只有满足特定接受/残差算法的实现才保持。
-- **“Federated 等于隐私”**：更新、参与和 malicious client 仍有风险。
+1. **观察来自哪里？** 它是否可能过期、缺失、被攻击者控制或只覆盖部分状态？
+2. **模型输出是什么？** 是自然语言、结构化动作、连续控制量，还是一个路由决定？
+3. **谁可以执行？** 哪一层检查权限、物理限制、预算和用户审批？
+4. **怎样确认成功？** Verifier 查询的是现实状态，还是只看模型自己生成的成功文本？
+5. **失败后怎么办？** 系统会停止、回滚、重新规划、换模型，还是交给人工？
 
-## 自测与实践
+这五个问题比记住某个 VLA、Agent framework 或端侧模型名称更稳定。模型和依赖库会更新，但观察、执行与验证之间的
+因果关系不会因此消失。
 
-1. 为机器人任务拆分语言规划频率与低层控制频率，并定义 deadline miss 行为。
-2. 设计一个 simulator exploit，说明为什么 reward success 不等于真实任务。
-3. 为 GUI 付款动作写 observation→approval→execution→receipt 契约。
-4. 画小模型 router 的 risk–coverage 曲线，怎样处理高风险类别？
-5. 区分 greedy speculative decoding 与保持 target sampling distribution 的算法。
-6. 列出 federated learning 中 secure aggregation 与 differential privacy 分别保护什么。
+## 共同的错误直觉
+
+- **“模型输出了动作，所以动作已经完成”**：执行可能被拒绝、超时、部分成功或作用于错误目标。
+- **“页面或机器人返回成功文本，所以任务成功”**：验证应读取独立状态，而不是复述提示内容。
+- **“本地运行就天然隐私”**：设备备份、日志、恶意应用、模型抽取和云端升级仍可能泄露数据。
+- **“模型更小就一定更快”**：Context、KV Cache、数据搬运、kernel 和目标硬件共同决定延迟。
+- **“平均成功率够高就可以发布”**：一次不可逆付款或严重碰撞不能被大量简单成功样本抵消。
+
+## 当前仓库能提供哪些实践
+
+仓库已经实现 Agent 的动作提议、审批、幂等、执行回执、结果对账与恢复，也提供 Paged KV、量化、LoRA 和
+speculative sampling 的可执行实验。这些实验可以验证上述系统中的局部机制。
+
+机器人模拟器与硬件、真实 GUI benchmark、移动设备端侧模型、联邦学习 round 和目标 GPU kernel 尚未在仓库中运行。
+因此，两条路线主要建立架构和验收方法；设备性能、现实副作用与真实任务成功仍需在目标环境中测量。
+
+## 自测
+
+1. 为浏览器付款动作分别写出 observation、proposal、approval、execution、receipt 和 verifier。
+2. 为什么机器人语言规划超时后，应由低层控制器保持稳定或停止，而不是等待模型回复？
+3. 本地模型把复杂请求升级到云端前，需要检查哪些数据和权限？
+4. 举一个“最终界面相同，但实际业务状态不同”的例子。
+5. 为一次失败任务设计停止、重试、降级和人工接管的优先顺序。

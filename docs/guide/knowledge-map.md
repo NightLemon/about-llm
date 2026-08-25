@@ -83,7 +83,9 @@ flowchart TD
 - [规模化规律](../core/scaling.md)
 - [多模态](../frontier/multimodal.md)
 - [推理、长上下文与 MoE](../frontier/reasoning-long-context-moe.md)
-- [具身与小模型](../frontier/embodied-small-models.md)
+- [具身、计算机使用与本地智能总览](../frontier/embodied-small-models.md)
+  - [具身与 Computer-use](../frontier/embodied-computer-use.md)
+  - [端侧小模型与本地智能](../frontier/on-device-small-models.md)
 - [近期论文解读](../papers/index.md)
 
 出口成果：一个可证伪问题、明确基线、至少一项消融、重复实验和诚实的负结果。
