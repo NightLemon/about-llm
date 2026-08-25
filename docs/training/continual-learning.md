@@ -7,31 +7,46 @@
 
 - **适合读者**：模型持续维护、合并、编辑和删除需求负责人。
 - **先修**：训练评测、数据切分、checkpoint 和分布偏移基础。
-- **首次阅读**：更新类型 → 评测矩阵 → replay/正则 → 合并 → unlearning。
-- **完成信号**：能同时报告新任务收益、旧任务保持、成本和删除证据。
+- **首次阅读**：跟随一次 Task B 更新，判断是否改权重、怎样发现 Task A 退化、如何保护与发布。
+- **完成信号**：能为一次更新同时报告新任务收益、旧任务保持、额外成本和删除证据。
 - **卡住时**：回到[训练数据工程](data.md)和[评测](../quality/evaluation.md)。
 
 </div>
 
-先看本章的两任务实验。一个小模型先把 Task A 学到 100% accuracy，再训练规则相反的 Task B。没有 replay 时，
-Task A 最终只剩约 2.7%；把旧样本与新样本一起训练，两项任务都能保持 100%。
+先看本章贯穿始终的两任务实验。一个小模型先把 Task A 学到 100% accuracy，再学习规则相反的 Task B。
+直接训练 B 后，A 的正确率只剩约 2.7%；把全部旧样本和新样本一起训练时，两项任务都保持 100%。
 
-这组数字不是为了证明 replay 总有效，而是让“更新后旧能力消失”变成可观察的状态变化。真实模型发布后还会遇到
-新事实、新术语、新工具、新用户分布和新政策。第一步不是立刻继续训练，而是判断变化究竟应该进入参数、
-外部知识库、Prompt，还是确定性业务代码。
+这组数字只用来展示一次可观察的遗忘事故。它不会证明 replay 在真实模型上总有效。
+
+真实系统会持续接收新事实和新政策，也会面对工具与用户分布的变化。并非每次变化都需要重新训练模型。
+
+先决定由哪个组件承载变化：时效知识通常进入外部知识库，交互约束可以写入 Prompt，确定性规则适合放在业务代码中。
+只有模型自身的能力或长期行为确实需要改变时，才更新参数并设计防遗忘机制。
 
 把可删除的时效事实写入参数，或用 RAG 修复基础推理能力，都会让系统更难维护。
+
+本章先沿下面的参数更新链路展开。删除请求需要另一套威胁模型，第 14 节会单独处理。
+
+```mermaid
+flowchart TD
+  C["出现新的模型需求"] --> W["先判断：需要修改参数吗？<br/>否 → RAG / Prompt / 业务代码<br/>是 → 进入更新流程"]
+  W --> B["保存更新前基线"]
+  B --> U["训练 Task B"]
+  U --> M["同时评测 Task A 与 B"]
+  M --> P["选择 replay / 约束 / 隔离"]
+  P --> R["打包、灰度、回滚"]
+```
 
 ## 1. 先判断这件事该不该改权重
 
 | 变化 | 首选候选 | 为什么 |
 | --- | --- | --- |
 | 频繁变化、需来源的事实 | RAG/数据库/API | 可更新、可删除、可引用 |
-| Prompt/格式/工作流 | Prompt、schema、deterministic code | 便于回滚和验证 |
-| 新领域语言分布 | DAPT/continued pretraining | 学习术语、风格和分布 |
+| Prompt、格式或工作流 | Prompt、schema、确定性业务代码 | 便于回滚和验证 |
+| 新领域语言分布 | 领域继续预训练（DAPT） | 学习术语、风格和分布 |
 | 新任务行为 | SFT 或 adapter | 监督清晰、部署可隔离 |
-| 偏好/安全边界 | preference training + system policy | 同时需要行为与外部约束 |
-| 单点参数事实实验 | model editing | 快速但需严格 locality 测试 |
+| 偏好或安全边界 | 偏好训练 + 系统策略 | 同时需要行为与外部约束 |
+| 单点参数事实实验 | 模型编辑（model editing） | 快速，但要检查是否误伤邻近知识 |
 | 大范围能力/数据变化 | 联合重训 | 成本高但控制最完整 |
 
 这些不是互斥选项。例如先用 RAG 提供最新法规，再用 SFT 教模型怎样引用和拒答；事实仍由外部系统提供。
@@ -39,7 +54,7 @@ Task A 最终只剩约 2.7%；把旧样本与新样本一起训练，两项任�
 ## 2. 只看新任务，会把遗忘藏起来
 
 假设模型依次学习 \(T\) 个任务或时间段。采用从 0 开始的索引，\(R_{i,j}\) 表示完成任务 \(i\) 的训练后，
-模型在任务 \(j\) 上的 accuracy；\(b_j\) 是任何顺序训练前的同一模型基线。
+模型在任务 \(j\) 上的正确率（accuracy）；\(b_j\) 是任何顺序训练前的同一模型基线。
 
 要计算 forward transfer，每个阶段还要评测尚未训练的未来任务，而不只是“所有已学任务”。
 
@@ -97,7 +112,7 @@ Forward transfer（FWT）比较学习任务 \(j\) 之前的表现与独立的 pr
 - 原有工具 schema 不再稳定；
 - 事实表面保留但推论关系失效。
 
-目标域性能提高与旧域下降是 trade-off，不应只通过降低训练 loss 判断。
+新任务提高、旧任务下降，反映的是两者之间的权衡，不能只根据训练 loss 下降判断更新成功。
 
 ## 4. Replay：训练新任务时别完全丢掉旧分布
 
@@ -105,13 +120,14 @@ Forward transfer（FWT）比较学习任务 \(j\) 之前的表现与独立的 pr
 
 ### 4.1 Buffer 设计
 
-- uniform reservoir 保留历史代表样本；
-- 按任务/语言/风险分层；
-- 选择 boundary/hard examples；
-- 使用原始数据、摘要、特征或 synthetic replay；
-- 给安全/契约回归样本设置最低配额。
+- 均匀 reservoir sampling：让历史记录拥有相同的入选概率；
+- 分层采样：分别保证任务、语言或风险切片的覆盖；
+- 困难样本采样：优先保留决策边界附近和曾经答错的样本；
+- 合成 replay：保存摘要、特征或模型生成的旧任务样本；
+- 最低配额：确保安全与接口契约样本不会被普通流量挤掉。
 
-Replay ratio 越高通常越有利于保留，但会减少新域预算。应画 new-quality–retention Pareto，而不是固定一个经验比例。
+Replay 比例越高，通常越有利于保留旧任务，但也会占用新任务的训练预算。
+实际选择应比较“新任务质量—旧任务保持率”的 Pareto 曲线，而不是固定一个经验比例。
 
 容量为 \(m\) 的 uniform reservoir 可以单遍处理未知长度的 stream。先放入前 \(m\) 项；看到从 0 开始编号的
 第 \(t\) 项时，从 \([0,t]\) 均匀抽一个整数 \(r\)，仅当 \(r<m\) 时替换槽位 \(r\)。
@@ -121,7 +137,10 @@ Replay ratio 越高通常越有利于保留，但会减少新域预算。应画 
 
 ### 4.2 合规边界
 
-Replay buffer 复制用户数据会延长保留周期。删除请求必须覆盖 buffer、cache、shard 和训练 lineage。Synthetic replay 减少直接存储，但可能遗漏长尾、泄露教师记忆或固化旧模型错误。
+Replay buffer 会复制旧数据，也会延长这些副本的保留周期。删除请求要追踪到训练缓冲区、缓存、数据分片和派生数据记录。
+
+使用模型合成旧样本可以减少原文存储，但会带来新的偏差：长尾样本可能消失，教师模型可能复述敏感记忆，
+旧模型的错误也可能被反复训练。
 
 ### 4.3 可运行的两任务控制实验
 
@@ -131,59 +150,85 @@ Replay buffer 复制用户数据会延长保留周期。删除请求必须覆盖
 python projects/single-gpu-finetuning/continual_replay_toy.py
 ~~~
 
-脚本实际执行两阶段 PyTorch SGD，并输出完整 \(R\) 矩阵、ACC、BWT、FWT 与逐任务 forgetting。Task A 与
-Task B 的标签规则相反，但输入包含显式 task-id feature，因此同一个 2→16→2 MLP 可以同时解出两项任务。
-这样可以避免把“模型容量上不可能同时满足”误称为遗忘。
+脚本使用 PyTorch，在 CPU 上完成两阶段 SGD 训练。它会输出正确率矩阵 \(R\)，并据此计算三类指标：
 
-在固定 seed 的 CPU 样例中，无 replay 在学完 B 后把 A accuracy 从 1.0 降到约 0.027，旧任务 forgetting
-约为 0.973；把**全部**旧样本与新样本按 1:1 联合 replay 后，两项 accuracy 都是 1.0，旧任务 forgetting 为 0。
+- 最终平均正确率（ACC）；
+- 旧任务变化量（BWT）；
+- 学习前对新任务的影响（FWT）。
 
-两条路径的 FWT 都约为 -0.418，因为它由训练 B 以前的状态决定，B 阶段是否 replay 无法追溯改变它。
-这个负值只说明：在当前样例中，模型学完 A、尚未学习 B 时，B accuracy 低于随机初始化基线。它不是
-“replay 产生负迁移”的证据。
+Task A 和 B 的标签规则相反，但输入中带有明确的任务编号。因此，同一个 2→16→2 MLP 有能力同时解出两项任务。
+这个设计把模型容量不足与训练造成的遗忘区分开来。
 
-这是 task-incremental、单 seed、full-batch、全量旧数据的 CPU synthetic toy。它没有覆盖有限 buffer、
-class/domain-incremental 的未知路由、真实 LLM/语料、安全 retention、隐私删除、计算开销或置信区间，
-也不支持“replay 总能消除遗忘”的结论。
+固定随机种子后，结果是：
+
+| B 阶段训练方式 | A 最终正确率 | B 最终正确率 | A 的遗忘量 |
+|---|---:|---:|---:|
+| 只训练 B | 约 0.027 | 1.000 | 约 0.973 |
+| 旧样本与新样本 1:1 全量 replay | 1.000 | 1.000 | 0.000 |
+
+两条路径的 FWT 都约为 -0.418，因为 FWT 使用的是训练 B 之前的状态。B 阶段后来是否 replay，无法追溯改变它。
+这个负值只表示：学完 A、尚未学习 B 时，模型在 B 上低于随机初始化基线；它不是 replay 造成负迁移的证据。
+
+这个实验的范围很窄：
+
+- task-incremental，输入明确告诉模型当前任务；
+- 单个随机种子、full-batch、全量旧数据；
+- CPU 上的合成二分类任务。
+
+它没有覆盖有限缓冲区、未知任务路由、真实 LLM、安全回归、隐私删除或计算成本。
+因此结论是“这套设置下全量 replay 消除了观察到的遗忘”，而不是“replay 总能消除遗忘”。
 
 ### 4.4 有限 Reservoir 与 20-seed 配对比较
 
-运行正式 benchmark：
+运行 20-seed 对照：
 
 ~~~powershell
 python projects/single-gpu-finetuning/continual_replay_toy.py --benchmark
 ~~~
 
-Benchmark 默认使用训练 seed 0–19。每个 seed 的 Task A checkpoint 都复制给 no replay、64/256 uniform reservoir
-和 256/256 full replay 三条路径，因此 strategy difference 以 seed 为配对单位。
+这组对照使用随机种子 0–19。每个 seed 训练出的 Task A checkpoint 都复制成三份，再分别执行：
 
-三条路径在 Task B 都更新 100 步，但每步分别呈现 256、320 和 512 个样本。所以它是
-**optimizer-step matched，而不是 example/compute matched**。新样本呈现量都是 25,600，旧样本呈现量分别为
-0、6,400 和 25,600。
+| 路径 | 每步新样本 | 每步旧样本 | B 阶段总步数 |
+|---|---:|---:|---:|
+| 不 replay | 256 | 0 | 100 |
+| 容量 64 的均匀 reservoir | 256 | 64 | 100 |
+| 全量 replay | 256 | 256 | 100 |
 
-当前 CPU/PyTorch 样例的聚合结果如下。区间是 5,000 次 percentile bootstrap 得到的 95% paired
-seed-level difference interval：
+三条路径共享同一个起点，因此差值以 seed 为配对单位。它们匹配了优化器步数，却没有匹配样本数或计算量。
+三条路径都看到 25,600 个新样本；看到的旧样本分别是 0、6,400 和 25,600 个。
 
-| Strategy | mean old-task final acc | mean new-task final acc | mean final ACC | old-task acc gain vs no replay（95% CI） |
+下表汇总 20 个 seed。最后一列的 95% 区间来自 5,000 次百分位 bootstrap，
+每次都以 seed 为单位重采样配对差值：
+
+| 策略 | 旧任务最终正确率（均值） | 新任务最终正确率（均值） | 最终 ACC（均值） | 相对不 replay 的旧任务增益（95% CI） |
 | --- | ---: | ---: | ---: | ---: |
-| no replay | 0.1135 | 0.9994 | 0.5564 | — |
-| 64-example reservoir | 0.5893 | 0.9922 | 0.7907 | +0.4758 [0.3389, 0.6104] |
-| full replay | 0.9824 | 0.9854 | 0.9839 | +0.8689 [0.8340, 0.9025] |
+| 不 replay | 0.1135 | 0.9994 | 0.5564 | — |
+| 容量 64 的 reservoir | 0.5893 | 0.9922 | 0.7907 | +0.4758 [0.3389, 0.6104] |
+| 全量 replay | 0.9824 | 0.9854 | 0.9839 | +0.8689 [0.8340, 0.9025] |
 
-有限 reservoir 的 new-task accuracy difference 为 -0.0072，区间为 [-0.0102, -0.0045]；full replay 为
--0.0141，区间为 [-0.0223, -0.0074]。这里确实出现 retention 提升与轻微 plasticity trade-off，
-但 effect 只对固定 task、data 和优化配置成立。
+有限 reservoir 让新任务正确率平均下降 0.0072，95% 区间为 [-0.0102, -0.0045]。
+全量 replay 的平均差值为 -0.0141，区间为 [-0.0223, -0.0074]。
+
+在这套任务、数据与优化配置中，保留旧任务伴随轻微的新任务损失。换任务或改变计算匹配方式后，权衡可能不同。
 
 任务数据在 seed 间完全相同，变化只来自初始化与 reservoir 选择。因此这个区间**不覆盖**新任务、数据采样、
 超参数、硬件或真实部署不确定性。20 个连续 seed 也不是任意目标总体的概率样本。
 
-每个 run 内部的 `confidence_intervals_computed=false` 表示单个 \(R\) 矩阵没有区间；顶层
-`paired_vs_no_replay` 才是跨 seed 比较。Artifact 还逐 seed 保存有限 reservoir 的实际索引和完整矩阵，
-但没有测 wall time、energy 或隐私/删除成本。
+每个 run 内部的 `confidence_intervals_computed=false` 表示单个 \(R\) 矩阵没有统计区间。
+跨 seed 的配对区间保存在顶层 `paired_vs_no_replay`。报告还逐 seed 保存 reservoir 实际选择的索引和完整矩阵。
+
+实验没有测量墙钟时间、能源或隐私与删除成本，所以不能据此宣称三条路径拥有相同成本。
 
 因此，不能据此断言 64 是最佳容量，也不能忽略额外样本呈现量后宣称“同成本获益”。
 
 ## 5. 正则化与蒸馏
+
+Replay 通过再次展示旧样本来保护旧行为。旧数据难以大量保存时，还有两类约束可选：
+
+- 参数正则保护模型的参数坐标；
+- 锚点蒸馏保护模型在选定输入上的输出分布。
+
+两者保护的对象不同，后面的两节分别展开。
 
 ### 5.1 参数距离
 
@@ -196,7 +241,7 @@ seed-level difference interval：
 +\lambda\|\theta-\theta_{old}\|_2^2.
 \]
 
-它假设所有参数偏移同样重要。EWC 类方法用重要性 \(F_i\) 加权：
+普通 L2 距离把所有参数偏移视为同样重要。EWC 类方法改用重要性 \(F_i\) 加权：
 
 \[
 \mathcal L
@@ -206,11 +251,12 @@ seed-level difference interval：
 \sum_iF_i(\theta_i-\theta_{old,i})^2.
 \]
 
-Fisher/重要性是数据与近似相关的；大型模型上存储和估计成本高，参数对称性也使“坐标距离”不完全等于函数距离。
+重要性估计依赖所选数据和近似方式。在大型模型上，保存与计算这些权重也有成本。
+此外，参数坐标很近不保证函数行为很近，参数坐标变远也不一定意味着能力丢失。
 
 ### 5.2 Logit distillation
 
-在 replay/anchor prompts 上约束新旧模型输出分布：
+在少量 replay 样本或固定锚点 Prompt 上，约束新旧模型的输出分布：
 
 \[
 \mathcal L_{distill}
@@ -218,71 +264,82 @@ Fisher/重要性是数据与近似相关的；大型模型上存储和估计成�
 D_{KL}(p_{old}(\cdot\mid x)\|p_{new}(\cdot\mid x)).
 \]
 
-它保留旧模型行为，也会保留旧错误与偏见。Top-k logits、temperature、tokenizer 和 mask 口径必须一致；只蒸馏最终答案无法保护中间 token distribution。
+蒸馏会保留旧模型行为，也可能把旧错误与偏见一起保留下来。
+比较时要统一 tokenizer、temperature、mask，以及保存全部 logits 还是只保存 top-k。
+只约束最终答案，无法保护中间 token 的条件分布。
 
-## 6. 参数隔离与 Adapter
+## 6. 用 adapter 隔离更新
 
-冻结底座，只训练 LoRA/adapter/prefix，可减少底座参数遗忘并支持按域切换。但系统仍有边界：
+另一种选择是冻结底座，只训练 LoRA、adapter 或 prefix。这样底座权重保持不变，还可以按领域切换增量参数。
+不过，最终系统行为仍可能变化：
 
-- adapter 可能覆盖底座输出行为；
-- 多 adapter 组合会干扰；
-- base model 升级后 adapter 不保证兼容；
+- adapter 可能压过底座原有行为；
+- 多个 adapter 组合时可能互相干扰；
+- base model 升级后，旧 adapter 可能不兼容；
 - tokenizer、chat template 和 target module 必须匹配；
-- 冻结底座不代表旧任务质量绝对不变，因为 inference routing/prompt 也可能变化。
+- 底座冻结后，路由与 Prompt 仍会改变旧任务结果。
 
-高隔离场景可按 tenant/domain 选择 adapter；路由错误则成为新的系统风险。
+高隔离场景可以按租户或领域选择 adapter，此时路由错误会成为新的系统风险。
 
-## 7. DAPT、TAPT 与继续预训练
+## 7. 新需求是语言分布变化时，再考虑继续预训练 {#7-dapttapt}
 
-- **DAPT**：在领域语料继续 pretraining，适应术语、风格和统计分布；
+如果 Task B 的主要变化是新领域术语和文本分布，而不是明确的问答行为，继续预训练可能比 SFT 更合适：
+
+- **DAPT**：在领域语料继续预训练，适应术语、风格和统计分布；
 - **TAPT**：在更接近目标任务的未标注语料继续训练；
 - **continued pretraining**：泛指从 checkpoint 延续自监督目标。
 
 ### 7.1 主要变量
 
-- 新旧数据 mixture 与 replay；
-- unique/consumed tokens 和重复 epoch；
-- 较小学习率、warmup 与训练步数；
+- 新旧数据的混合比例与 replay 策略；
+- 去重后的 token 数、实际训练看到的 token 数和重复轮数；
+- 学习率、warmup 和训练步数；
 - tokenizer 是否覆盖新语言/符号；
-- optimizer state 是恢复还是重置；
+- 优化器状态是恢复还是重置；
 - checkpoint 是否保存原训练数据游标；
-- 通用/领域 validation loss 与下游回归。
+- 通用与领域验证集的 loss，以及下游任务回归。
 
-更换 tokenizer 会改变 embedding/output matrix 和 ID 契约，不是普通数据更新。扩词表需要初始化新 token、训练策略和旧文本回归。
+更换 tokenizer 会同时改变 embedding、输出矩阵和 token ID 契约，已经不是普通的数据更新。
+扩充词表还要定义新 token 怎样初始化、哪些参数参与训练，以及旧文本能否得到兼容编码。
 
 ### 7.2 何时停止
 
-领域 loss 继续下降时，通用能力可能已经恶化。定期保存 checkpoint，联合观察：领域 loss/任务、通用 benchmark、安全、语言切片与 calibration。停止点是多目标选择，不是只取最后一步。
+领域 loss 继续下降时，通用能力可能已经恶化。训练过程中定期保存 checkpoint，
+同时观察领域任务、通用任务、安全行为、语言切片和校准。
+停止点来自这些目标的权衡，而不是默认选择最后一步。
 
 ## 8. 持续 SFT 与偏好更新
 
-新 SFT 可能造成 response style collapse、过度模板化和 refusal shift。偏好更新还会受新旧 rubric、标注者和 judge 漂移影响。
+新的 SFT 数据可能让回答风格变得单一、过度模板化，也可能改变拒答边界。
+偏好更新还会受评价规则版本、标注者群体和 judge 漂移影响。
 
 维护：
 
-- 固定 anchor prompts 与历史 preference pairs；
-- rubric/version lineage；
-- 新旧 policy 的盲测 paired evaluation；
-- response length、KL/log-ratio 与 benign refusal；
-- current-policy rollouts，避免只在旧候选上评估。
+- 固定锚点 Prompt 与历史偏好对；
+- 保存评价规则及其版本来源；
+- 对新旧策略做盲化、配对评测；
+- 同时观察回答长度、KL、概率比和正常问题误拒答；
+- 使用当前策略生成新候选，而不是只评旧模型留下的答案。
 
 政策发生实质变化时，应明确版本边界，不能把前后冲突标签混成“更多数据”而不记录时间。
 
 ## 9. 模型编辑：改一个事实，别顺手改坏邻居
 
-模型编辑试图对少量事实/行为做局部更新。无论使用梯度、closed-form、low-rank update 或 learned editor，都应测：
+模型编辑试图只修改少量事实或行为。无论使用梯度、闭式解、低秩更新还是学习得到的编辑器，都要检查：
 
-- efficacy：目标输入更新；
-- paraphrase：改写和多语言；
-- portability：相关推论；
-- locality：无关事实保持；
-- specificity：相似实体不误改；
-- persistence：保存、量化、继续训练后保持；
-- conflict：RAG/旧参数/新编辑冲突处理。
+- **目标生效**：目标输入是否按预期改变；
+- **表达泛化**：改写、多语言问法是否同步改变；
+- **相关推论**：依赖该事实的结论是否一致；
+- **局部性**：无关事实与相似实体是否保持；
+- **持久性**：保存、量化或继续训练后是否仍然生效；
+- **冲突处理**：RAG、旧参数与新编辑冲突时采用哪一个。
 
 单个 prompt 改对不代表知识全局一致。若事实经常变化或必须引用来源，外部知识存储通常更可控。
 
 ## 10. 权重合并不是把能力做加法
+
+假设团队分别为 Task A 和 Task B 训练了 checkpoint 或 adapter，现在想合成一个发布工件。
+合并解决的是“怎样组合参数”，不会自动解决遗忘、数据冲突或任务选择。
 
 ### 10.1 线性插值
 
@@ -292,11 +349,12 @@ D_{KL}(p_{old}(\cdot\mid x)\|p_{new}(\cdot\mid x)).
 \theta_{merge}=(1-\alpha)\theta_A+\alpha\theta_B.
 \]
 
-只有当权重位于可兼容的表示 basin/坐标系时，插值才可能工作。相同架构但独立随机初始化的神经网络存在 hidden-unit permutation 和其他对称性，逐坐标平均通常没有语义对齐保证。
+只有当两组权重处于兼容的表示区域和坐标系时，插值才可能工作。
+相同架构但独立初始化的神经网络存在隐藏单元置换等对称性，逐坐标平均没有天然的语义对齐保证。
 
 ### 10.2 Task arithmetic
 
-若多个 finetuned model 都从同一 base \(\theta_0\) 出发，定义 task vector：
+若多个微调模型都从同一底座 \(\theta_0\) 出发，可以定义任务向量（task vector）：
 
 \[
 \Delta_i=\theta_i-\theta_0,
@@ -304,7 +362,8 @@ D_{KL}(p_{old}(\cdot\mid x)\|p_{new}(\cdot\mid x)).
 \theta_{merge}=\theta_0+\sum_i\lambda_i\Delta_i.
 \]
 
-共享初始化提高坐标兼容性，但 task vectors 仍会冲突；线性相加不是能力线性组合定理。需要调系数、处理符号/幅度冲突并做完整评测。
+共享初始化提高了坐标兼容性，但 task vector 仍可能在同一参数上方向相反或幅度冲突。
+线性相加不是“能力也会线性相加”的定理，仍要调节系数并执行完整评测。
 
 ### 10.3 LoRA 合并
 
@@ -314,47 +373,53 @@ LoRA update 为 \(\Delta W=sBA\)。把多个 adapter 的 dense updates 相加可
 W'=W+\sum_i\lambda_i\Delta W_i,
 \]
 
-但要求相同 base revision、target modules、shape、fan-in/out 和 scaling 约定。若要把和重新压成固定 rank，需要 SVD/近似，会产生误差。多个 adapter 顺序激活、并行加和和先 merge 再量化也可能不同。
+合并前要确认它们使用相同的 base revision、目标层、张量形状、矩阵方向和缩放约定。
+若把多个更新重新压缩到固定 rank，需要 SVD 或其他近似，因此会产生误差。
+
+多个 adapter 依次启用、并行相加，以及先合并再量化，也可能得到不同结果。
 
 ## 11. 合并后要重新加载再验收
 
-对每个候选至少比较：
+对每个合并候选至少比较：
 
 - 每个单任务 checkpoint；
 - base model；
-- 简单 interpolation/average；
-- joint training 或 multi-task baseline（若可行）；
-- 不同 merge coefficients 与随机顺序。
+- 简单插值或平均；
+- 联合训练或多任务基线（若可行）；
+- 不同合并系数与不同顺序。
 
-测试每项能力、通用回归、安全、校准、生成长度和量化后表现。只展示合并后几个“成功样例”无法发现 destructive interference。
+保存合并工件后，用目标运行时重新加载，再测试每项能力、通用回归、安全、校准、生成长度和量化后表现。
+几个成功样例无法暴露任务之间的破坏性干扰。
 
 ## 12. 每次更新都要能回答从哪里来
 
-每个模型 artifact 记录：
+Task B 更新不是一份孤立的 `model.safetensors`。每个模型工件至少记录：
 
-- immutable parent model revision；
-- 数据 manifest、过滤/删除状态和时间范围；
-- tokenizer/chat template；
-- code、dependency、precision 和 hardware；
-- optimizer/scheduler 与随机状态；
-- adapters/merge recipe；
-- evaluation artifact 与 approval；
-- compatible RAG index、prompt、tool schema 和 policy version。
+- 不可变的父模型 revision；
+- 数据 manifest、过滤与删除状态、时间范围；
+- tokenizer 与对话模板；
+- 代码、依赖、精度和硬件；
+- 优化器、学习率调度器与随机状态；
+- adapter 或合并配方；
+- 评测报告与发布审批；
+- 兼容的 RAG 索引、Prompt、工具 schema 和策略版本。
 
-回滚权重时也要回滚兼容 tokenizer、adapter、prompt、index 和 tool contract。只回滚 `model.safetensors` 可能产生新的接口错误。
+回滚权重时也要恢复兼容的 tokenizer、adapter、Prompt、索引和工具契约。
+只回滚模型权重，可能制造新的接口错误。
 
 ## 13. 部署中的持续更新
 
-推荐阶段：
+部署一次更新可以依次经过：
 
-1. offline replay：固定输入对比新旧 artifact；
-2. shadow：新模型不影响用户，只记录差异；
-3. canary：小流量、严格 guardrail；
-4. gradual rollout：按 tenant/region 扩大；
-5. post-deploy monitoring：质量、拒答、工具失败、延迟和成本；
-6. rollback/reconciliation：处理模型动作产生的外部状态。
+1. **离线重放**：用固定输入比较新旧工件；
+2. **影子流量**：新模型只记录差异，不影响用户结果；
+3. **小流量 canary**：限制用户范围并设置严格门禁；
+4. **逐步放量**：按租户或区域扩大；
+5. **上线后监控**：持续观察质量、拒答、工具失败、延迟和成本；
+6. **回滚与对账**：恢复模型组件，并处理已经产生的外部状态。
 
-模型更新与 embedding/RAG index 更新可能不同步。Schema、embedding dimension、tokenizer 与 citation contract 都需要兼容检查。
+模型、embedding 和 RAG 索引可能在不同时间更新。上线前要核对 schema、向量维度、tokenizer 和引用契约，
+并设计混合版本短暂共存时的行为。
 
 ## 14. Machine unlearning 不是删除数据库行
 
@@ -362,33 +427,36 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 
 ### 14.1 Gold-standard 对照
 
-若可行，从未包含目标数据的 checkpoint/数据集重新训练（retrain-from-scratch 或 retrain-from-safe-checkpoint）是最清晰的对照，但成本高且随机训练差异使逐参数比较没有意义。应比较行为、攻击成功率和任务质量分布。
+条件允许时，从未包含目标数据的数据集重新训练，是最清晰的对照。可以从头训练，也可以从目标数据进入前的安全 checkpoint 恢复。
+这种方法成本很高，而且随机训练会产生不同参数，因此应比较行为、攻击成功率和任务质量分布，而不是逐参数相等。
 
-### 14.2 Approximate unlearning
+### 14.2 近似 unlearning {#142-approximate-unlearning}
 
-方法包括 gradient ascent/negative training、scrubbing、influence approximation、adapter removal、model editing 和 distillation。它们可能让常见 prompt 不再复述，却未消除变体提取、membership signal 或内部表示影响。
+近似方法包括反向优化目标、数据影响近似、移除 adapter、模型编辑和蒸馏等。
+这些方法可能让常见 Prompt 停止复述目标内容，却仍留下其他可观察影响：改写后可以提取、
+membership inference（成员推断）仍有信号，或相关内部表示仍然变化。
 
 ### 14.3 威胁模型
 
 声明攻击者：
 
-- 只有黑盒 API，还是拥有 logits/weights/gradients；
+- 只有黑盒 API，还是拥有 logits、权重或梯度；
 - 是否知道目标样本和训练算法；
 - 可查询次数和 prompt 变体；
-- 目标是 verbatim extraction、membership inference、属性推断还是功能影响。
+- 目标是逐字提取、成员推断、属性推断，还是检测功能影响。
 
 “我们测试的十个 prompt 不再输出”只支持这十个行为，不支持数学意义上的完全删除。
 
 ## 15. Unlearning 评价
 
-- forget set 上的 extraction/membership attack；
-- paraphrase、翻译、上下文诱导和相邻样本；
-- retain set 与通用能力；
-- 与从未训练目标数据的 retrained model 比较；
-- 多 seed、attack strength 和 confidence interval；
-- 训练/部署 artifact、cache、RAG index 与日志是否同步删除。
+- 在删除集上执行提取与成员推断攻击；
+- 改写、翻译、上下文诱导和相邻样本；
+- 保留集（retain set）与通用能力；
+- 与从未训练目标数据的重训模型比较；
+- 使用多个随机种子、不同攻击强度和置信区间；
+- 检查训练与部署工件、缓存、RAG 索引和日志是否同步处置。
 
-若只是输出过滤，应明确称为 mitigation，不称为参数遗忘证明。
+若系统只增加了输出过滤，应称为风险缓解，不能写成参数影响已经消除。
 
 ## 16. 更新决策表
 
@@ -410,12 +478,12 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 - 安全、语言、工具和 calibration anchor 无回归；
 - 对 replay ratio/regularization 做 Pareto 分析。
 
-### Artifact
+### 发布工件 {#artifact}
 
-- parent、data、tokenizer、code 与 merge lineage 完整；
+- 父模型、数据、tokenizer、代码与合并来源完整；
 - adapter/base/quantization 兼容性检查；
 - checkpoint 恢复后数据 sampler 与 mixture 一致；
-- 回滚包包含 prompt/index/tool schema。
+- 回滚包包含 Prompt、索引与工具 schema。
 
 ### 删除与合规
 
@@ -426,12 +494,11 @@ W'=W+\sum_i\lambda_i\Delta W_i,
 
 ## 18. 当前仓库证据边界
 
-仓库已有 LoRA merge equivalence、QLoRA memory estimate、SFT 入口、模型 lineage 指引和评测门禁，
-还实际运行了两任务 task-incremental 的 no/finite/full replay 对照与 20-seed 配对区间。
+仓库已经验证 LoRA 合并前后的数值等价，提供 QLoRA 内存估算、SFT 入口、模型来源记录和评测门禁。
+持续学习部分还真实运行了两任务的无 replay、有限 replay 和全量 replay 对照，并计算 20 个 seed 的配对区间。
 
-仓库没有在目标 LLM、真实时间序列、多任务/数据采样、compute-matched 配置或安全集上执行完整 benchmark，
-也没有目标模型 unlearning 攻击实验。因此，当前结果只展示了几种方法在这些样例上的行为；灾难性遗忘和
-机器遗忘是否得到解决，还需要目标模型与目标数据上的验证。
+这些证据没有覆盖目标 LLM、真实时间序列、多任务采样、计算量匹配或安全集，也没有执行目标模型的 unlearning 攻击。
+当前结果只能说明这些小实验里的行为。灾难性遗忘和机器遗忘是否得到解决，仍需目标模型与目标数据上的验证。
 
 ## 19. 常见错误结论
 
