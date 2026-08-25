@@ -34,18 +34,22 @@ raw text
 
 | 层级 | 例子 | 能证明什么 |
 |---|---|---|
-| 手算与参考实现 | NumPy BPE/attention | 给定输入下的数学与状态 |
-| 框架小实验 | 随机 tiny PyTorch model | API、autograd、cache 路径能执行 |
-| 发布证据 | 固定 config/model card bytes | 指定 artifact 声明与静态字段 |
-| 目标 checkpoint | 固定 weights + forward | 特定环境和输入上的真实执行 |
+| 手算与参考实现 | NumPy 实现的 BPE 和注意力 | 给定输入下的数学与状态 |
+| 框架小实验 | 随机初始化的微型 PyTorch 模型 | 框架接口、自动求导和缓存路径能执行 |
+| 发布材料 | 固定版本的配置和模型卡 | 指定发布物声明了哪些静态字段 |
+| 目标 checkpoint | 固定权重和一次前向计算 | 特定环境和输入上的真实执行 |
 
-一个 tiny model loss 下降，不能证明公开 checkpoint 可训练；config 的 head 数也不能证明 weights 已加载；一条真实 generation 不能证明总体质量。
+这四级证据回答不同问题。例如，微型模型的损失下降，说明训练代码可以更新参数；
+它没有运行公开模型的权重。配置文件中的注意力头数量只是静态声明；只有实际加载权重并完成前向计算，
+才能继续检查目标 checkpoint 的执行路径。即便如此，单条生成结果也只代表这次输入，不是总体质量评测。
 
 项目报告中，每个观察都标明属于哪一级。
 
 ## Phase 1：从零训练 byte-level BPE
 
-Unicode 字符、UTF-8 bytes 和 model tokens 是三个层次。Byte-level tokenizer 先把任意字符串表示成 0–255 的 bytes，再学习常见相邻 pair 的 merge。
+一段文本会经过三个层次：人看到的是 Unicode 字符，文件中保存的是 UTF-8 字节，模型接收的是 token ID。
+字节级分词器（byte-level tokenizer）先把字符串转换成 0–255 的字节，再学习哪些相邻字节经常一起出现，
+并把这些字节对合并成新的 token。
 
 若当前序列集合为 \(\mathcal D\)，一次训练选择：
 
@@ -57,14 +61,14 @@ Unicode 字符、UTF-8 bytes 和 model tokens 是三个层次。Byte-level token
 
 关键不是公式，而是四个实现决定：
 
-1. 是否跨 document 统计 pair；
-2. 频数相同怎样 tie-break；
-3. 同一 pair 的相邻出现怎样做非重叠 merge；
-4. 编码时是否按已学习的 merge rank 重放。
+1. 是否允许相邻字节对跨越文档边界；
+2. 多个字节对频数相同时，怎样确定唯一顺序；
+3. 同一个字节对连续出现时，怎样执行不重叠合并；
+4. 编码新文本时，是否严格按训练得到的合并优先级重放。
 
 ### 先预测
 
-对 banana bandana 手算第一次最常见 pair。再预测加入一个新 document 后，tie-break 是否改变。
+对 `banana bandana` 手算第一次最常见的相邻字节对。再加入一篇新文档，预测频数相同时的选择是否改变。
 
 ### 再运行
 
@@ -72,17 +76,18 @@ Unicode 字符、UTF-8 bytes 和 model tokens 是三个层次。Byte-level token
 python projects/transformers-basics/train_byte_bpe.py --text "banana bandana" --text "banana" --sample "bandana"
 ~~~
 
-检查输出中的 merges、token IDs、byte expansion 和 round trip。
+检查输出中的合并顺序、token ID、每个 token 展开后的字节，以及编码后再解码能否还原原文。
 
 ### 故意破坏
 
-把 encoder 改成每次选择当前最高频 pair，而不是按训练得到的 rank。寻找一个输入，使两种结果不同。
+把编码器改成每次重新选择当前最高频的字节对，而不是按照训练阶段固定的优先级合并。寻找一个输入，使两种结果不同。
 
-你应能解释：round trip 只证明本 tokenizer 自洽，不证明它兼容任何现有 checkpoint，也不能据此推断中文 token 成本。
+编码后能够还原原文，只说明这个分词器内部自洽。它是否兼容某个现有 checkpoint，要继续核对词表和合并规则；
+中文文本的 token 成本也必须用目标分词器实测。
 
 ## Phase 2：手算 causal attention
 
-单头 scaled dot-product attention：
+先看单头缩放点积注意力（scaled dot-product attention）：
 
 \[
 S=\frac{QK^\top}{\sqrt{d_h}}+M,\qquad
@@ -90,30 +95,33 @@ P=\operatorname{softmax}(S),\qquad
 O=PV.
 \]
 
-Causal mask \(M\) 让位置 \(t\) 只能看见 \(0\ldots t\)。稳定 softmax 先减去每行最大值。
+因果掩码（causal mask）\(M\) 让位置 \(t\) 只能看见 \(0\ldots t\)。为了避免指数溢出，
+计算 softmax 前先让每行分数减去该行最大值。
 
 ### 先用两个 token
 
 为形状 \([T,d_h]\) 的 Q/K/V 取 \(T=2\)：
 
-1. 手算 score matrix；
-2. 写出 causal mask 后的矩阵；
-3. 算每行 probability；
-4. 验证第一位置不依赖第二个 value。
+1. 手算分数矩阵；
+2. 写出加入因果掩码后的矩阵；
+3. 算出每一行的注意力概率；
+4. 验证第一个位置的输出不依赖第二个位置的 value 向量。
 
 ### 再验证 cache
 
-Autoregressive decode 不需要每步重算所有历史 K/V。Prefill 保存历史 cache，下一步只计算新 token 的 Q/K/V。
+自回归解码不需要每一步都重新计算所有历史 K/V。Prefill 阶段处理完整输入，并把历史 K/V 保存到缓存中；
+之后每生成一个 token，只计算这个新位置的 Q/K/V。
 
 正确性对照是：
 
 ~~~text
-prefill + cached next-token logits
+prefill + 使用缓存得到的下一 token logits
 ≈
-full causal recompute at the same position
+在相同位置完整重算得到的 logits
 ~~~
 
-要对齐 absolute position、mask、dtype 和 dropout。Past length 存在时，不能直接复用从零开始的方阵下三角 mask。
+两条路径必须使用相同的绝对位置、掩码、数据类型和 dropout 设置。
+缓存中已有历史 token 时，新查询只有一行，却要看到全部历史键；这时不能直接复用从位置 0 开始的方形下三角掩码。
 
 运行 NumPy 参考测试：
 
@@ -123,17 +131,19 @@ python -m pytest tests/test_attention_numpy.py -q
 
 ### 故意破坏
 
-让下一 token 使用错误 position，或忘记把 past length 加入 mask。测试应在 cached/full comparison 中失败。
+故意让下一个 token 使用错误的位置编号，或者让掩码忘记已有缓存长度。
+比较“使用缓存”和“完整重算”两条路径时，测试应该失败。
 
-这一步证明 NumPy 语义，不证明 FlashAttention、GPU 内存或吞吐。
+这一步检查的是 NumPy 参考实现中的数学语义。FlashAttention 的内核行为、GPU 显存和吞吐需要另外测量。
 
 ## Phase 3：理解在线 softmax
 
-完整 attention 会物化 \(QK^\top\)。Blockwise online softmax 按 key blocks 处理，并为每个 query row 维护：
+普通注意力会完整保存 \(QK^\top\) 分数矩阵。分块在线 softmax（blockwise online softmax）改为逐块读取 key，
+并为每一行 query 保存三个中间量：
 
-- running maximum \(m\)；
-- normalizer \(\ell\)；
-- value accumulator \(o\)。
+- 当前已经见过的最大分数 \(m\)；
+- 指数和，也就是归一化因子 \(\ell\)；
+- 加权 value 的累加值 \(o\)。
 
 新 block 最大值为 \(m_b\) 时：
 
@@ -149,7 +159,7 @@ m'=\max(m,m_b),
 o'=e^{m-m'}o+\sum_j e^{s_j-m'}v_j.
 \]
 
-旧 accumulator 必须按新的 row maximum 重新缩放。
+新分块可能出现更大的分数。此时旧的累加值必须按照新的行最大值重新缩放，否则前后两个分块不在同一数值基准上。
 
 运行：
 
@@ -157,9 +167,11 @@ o'=e^{m-m'}o+\sum_j e^{s_j-m'}v_j.
 python projects/transformers-basics/online_softmax_demo.py
 ~~~
 
-先预测把 block size 改为 1 后，数值结果和最大 score tile 怎样变化。然后故意删除旧 accumulator rescale，观察误差。
+先预测把分块大小改为 1 后，最终结果是否变化，以及一次需要保存的最大分数块会变成多大。
+然后故意删除旧累加值的重新缩放，观察输出误差。
 
-这个 demo 为对照仍会计算 dense reference；它不是 FlashAttention kernel 或进程峰值显存测量。
+这个演示仍会计算完整注意力作为参考答案，所以进程本身并不节省全部内存。
+它解释在线 softmax 的数学过程，不是在测量 FlashAttention 内核或进程峰值显存。
 
 ## Phase 4：用 tiny model 验证框架接线
 
@@ -167,31 +179,36 @@ python projects/transformers-basics/online_softmax_demo.py
 python projects/transformers-basics/smoke_tiny.py
 ~~~
 
-脚本从 config 创建随机 tiny causal LM，不下载权重。你要检查：
+脚本只读取配置，创建一个随机初始化的微型因果语言模型，不下载预训练权重。运行时逐项检查：
 
-1. config 是否构造出预期 class；
-2. input/labels shape 是否一致；
-3. causal shift 后哪些 token 产生 loss；
-4. backward 后哪些 parameters 有 gradient；
-5. optimizer step 是否真的改变参数；
-6. eval/generate 路径是否可执行。
+1. 配置是否构造出预期的模型类；
+2. 输入和标签的形状是否一致；
+3. 标签向左错一位后，哪些 token 会产生损失；
+4. 反向传播后，哪些参数获得了梯度；
+5. 优化器更新是否真的改变参数；
+6. 评测和生成路径是否都能执行。
 
 ### 不要只看 loss 下降
 
-固定小 batch 可以被记住。Loss 下降证明 training plumbing 工作，不证明泛化、语言能力或真实 checkpoint 微调成功。
+一个固定的小 batch 很容易被模型记住。损失下降的意义，是确认标签、反向传播和参数更新这条训练接线能够工作。
+泛化能力、语言能力和真实 checkpoint 的微调效果，需要新的数据和目标模型实验。
 
-故意把 labels 全部 mask 为 ignore index，或在 optimizer 前清掉 gradient。脚本应暴露 zero supervised tokens 或参数未更新，而不是只输出一个数字。
+可以制造两个反例：把所有标签都设成不参与损失的 `ignore index`，或者在优化器更新前清空梯度。
+脚本应该明确报告“有效监督 token 为零”或“参数没有更新”，而不是只打印一个看似正常的损失数字。
 
 ## Phase 5：Generation 是多方协议
 
-最终停止由至少四个来源共同决定：
+一次生成何时停止，至少涉及四层设置：
 
 ~~~text
-tokenizer special tokens
-+ model config
-+ generation config
-+ call-level overrides
+分词器中特殊 token 的 ID
++ 模型配置引用的默认 ID
++ 生成配置中的停止设置
++ 本次调用传入的覆盖参数
 ~~~
+
+分词器决定某个 ID 对应什么 token；模型配置和生成配置再引用这些 ID。
+如果当前调用显式传入了停止参数，框架还会按自己的优先级规则合并或覆盖默认值。
 
 先检查两个离线协议样例：
 
@@ -200,7 +217,8 @@ python projects/transformers-basics/inspect_generation_protocol.py projects/tran
 python projects/transformers-basics/inspect_generation_protocol.py projects/transformers-basics/protocols/drift-out-of-range.example.json
 ~~~
 
-你要找出 BOS/EOS/PAD 是否一致、是否越过 vocab，以及 generation EOS superset 是有意设计还是 drift。
+你要找出开头、结尾和填充 token 的 ID 是否一致，是否超出词表范围。
+如果生成配置允许多个结束 token，还要判断这是有意扩充，还是不同配置已经发生漂移。
 
 再运行真实框架小实验：
 
@@ -208,19 +226,21 @@ python projects/transformers-basics/inspect_generation_protocol.py projects/tran
 python projects/transformers-basics/generation_runtime_control.py
 ~~~
 
-它用受控 token plan 隔离 EOS 与 length cap。先预测 call-level EOS override 后，原 EOS token 是否还会停止。
+脚本使用预先安排好的 token 序列，把“遇到结束 token”和“达到长度上限”分开。
+运行前先预测：本次调用覆盖结束 token 后，配置中原来的结束 token 是否还会触发停止？
 
-框架 generate 返回 token sequence，不等于云 API provider 的 finish reason。Application stop string、token EOS、长度上限和 transport cancellation 也必须分开。
+框架的 `generate` 返回一串 token，云 API 则可能另外返回结束原因。应用设置的停止字符串、模型生成的结束 token、
+长度上限和网络传输被取消，是四种不同事件。只有分别记录，才能解释一次生成为什么结束。
 
 ## Phase 6：从 config 建立容量假设
 
-Config-only 检查适合回答：
+只读取配置文件时，可以回答下面这些静态问题：
 
-- hidden/layer/head/intermediate/vocab 等静态字段；
-- standard MHA/GQA 下的候选 head dimension；
-- 理想 KV payload；
-- 是否出现 MoE、MLA 或 custom code markers；
-- 哪些公式必须拒绝。
+- 隐藏维度、层数、注意力头数、中间层宽度和词表大小；
+- 标准多头注意力（MHA）或分组查询注意力（GQA）下，每个头可能有多宽；
+- 理想情况下 KV cache 需要保存多少数据；
+- 配置是否声明了 MoE、MLA 或自定义模型代码；
+- 现有信息不足时，哪些公式不应继续套用。
 
 标准 dense K/V 的理想 payload 为：
 
@@ -236,28 +256,30 @@ python projects/transformers-basics/inspect_config.py projects/transformers-basi
 python projects/transformers-basics/inspect_config.py projects/transformers-basics/configs/mla-moe.example.json --tokens 4096
 ~~~
 
-标准 GQA 样例应给出 estimate；出现已知 MLA markers 时，程序应停止套用 GQA 公式并说明原因。
+标准 GQA 样例会给出容量估算。遇到已知的 MLA 配置字段时，程序会停止套用 GQA 公式，并说明缺少哪些信息。
 
-公式不含 weights、allocator、page alignment、quantization scales、workspace 和 temporary tensors，因此不是显存峰值。
+这个公式只计算理想的 KV 数据量。模型权重、内存分配器开销、分页对齐、量化缩放因子、内核工作区和临时张量，
+都会继续占用显存，因此计算结果不是运行时的显存峰值。
 
 ## Phase 7：检查真实 checkpoint，不先加载权重
 
-选择具体 model ID 和 immutable revision：
+选择具体的模型 ID，并使用完整提交哈希固定版本：
 
 ~~~powershell
 python projects/transformers-basics/inspect_checkpoint.py <model-id> --revision <full-commit-hash>
 ~~~
 
-先保存：
+检查程序会先保存：
 
-- requested 与 resolved revision；
-- config、tokenizer、template、generation config；
-- special-token IDs 和 rendered prompt；
-- weight shard inventory；
-- runtime 与 trust_remote_code policy；
-- license/model-card review。
+- 请求的版本和仓库实际解析到的版本；
+- 模型配置、分词器、对话模板和生成配置；
+- 特殊 token ID 和模板渲染后的 Prompt；
+- 权重分片清单；
+- 运行环境，以及是否允许执行远端自定义代码；
+- 许可证和模型卡的人工检查结果。
 
-这一步可以发现 Base 模型没有 chat template、special tokens 漂移或自定义 attention。它不能证明权重完整、forward 正确或模型质量。
+这一步可以发现 Base 模型没有对话模板、特殊 token 配置漂移，或者模型依赖自定义注意力实现。
+此时还没有加载全部权重，所以权重是否完整、前向计算是否正确和模型质量都需要下一阶段验证。
 
 ## Phase 8：真实权重是选修
 
@@ -267,17 +289,19 @@ python projects/transformers-basics/inspect_checkpoint.py <model-id> --revision 
 python projects/transformers-basics/run_target_checkpoint.py --local-files-only
 ~~~
 
-只有 snapshot 已经完整缓存时使用 local-files-only；首次下载、文件总量和精确 revision 见[证据台账](../../evidence/transformers-controls.md)。
+只有模型快照已经完整缓存时，才能使用 `--local-files-only`。首次下载方式、文件总量和固定版本见
+[证据台账](../../evidence/transformers-controls.md)。
 
 运行前先预检磁盘、内存、网络和许可。运行后核对：
 
-1. Loader 实际读取的文件与 hash。
-2. Parameter/dtype/device inventory。
-3. Prefill logits shape 和 finite values。
-4. Cached/full next-token logits。
-5. Fixed greedy continuation 与 stop。
+1. 加载器实际读取了哪些文件，它们的哈希是否匹配；
+2. 参数分别使用什么数据类型，位于哪个设备；
+3. Prefill 输出的 logits 形状是否正确，数值是否有限；
+4. 使用 KV cache 与完整重算得到的下一 token logits 是否接近；
+5. 固定的贪心生成结果，以及它为什么停止。
 
-一次英文算术 prompt 只证明这个 input 的执行路径，不证明中文、长上下文、GPU/vLLM、总体质量或生产安全。
+仓库使用一条英文算术 Prompt 作为冒烟输入。通过后，可以确认这条输入在当前环境中走通了加载和生成路径。
+中文、长上下文、GPU 或 vLLM 路径需要各自的测试；总体质量和生产安全则需要系统评测。
 
 ## 推荐运行顺序 { #run }
 
@@ -299,20 +323,20 @@ python projects/transformers-basics/verify_release_evidence.py
 python projects/transformers-basics/inspect_config.py projects/transformers-basics/configs/standard-gqa.example.json --tokens 4096
 ~~~
 
-离线 release verification 只核对固定本地 manifest/snapshot；显式 upstream 下载与精确 hash 在证据页说明。
+离线发布检查只读取仓库中固定的清单和快照。它不会重新下载上游文件；上游地址、固定版本和文件哈希记录在证据页。
 
 ### 第三次：机制选修
 
 在[实验目录](../labs.md#lab-2)中选择一个：
 
-- activation patching：设计 clean/corrupt pair 和正负对照；
-- MoE routing：从 top-k/capacity 到 all-to-all；
-- 局部 INT4：区分 selected weight error 与整模型质量；
-- 真实 checkpoint：对账 cache、generation 和资源。
+- 激活修补（activation patching）：设计干净输入、受扰动输入和正负对照；
+- MoE 路由：观察 top-k 专家选择、容量限制和跨设备 all-to-all 通信；
+- 局部 INT4：区分被量化权重的局部误差与整模型质量；
+- 真实 checkpoint：对账 KV cache、生成结果和资源用量。
 
 不要在第一次学习同时做四项。
 
-## 你应保存哪些 artifact
+## 你应保存哪些实验记录 { #artifact }
 
 ~~~text
 experiment manifest
@@ -326,40 +350,45 @@ experiment manifest
 └── claims not supported
 ~~~
 
-截图可以辅助展示，但机器可读输出和失败样例才便于复核。
+截图可以辅助展示，但机器可读输出和失败样例更便于别人复核。
 
 ## 故障定位
 
 ### Loss 不下降
 
-检查 supervised token 数、shift、padding mask、optimizer 参数集合、gradient finite 和 learning rate。先尝试让一个 batch 过拟合。
+先打印真正参与监督的 token 数，并逐位置检查标签是否正确左移、填充位置是否被掩码。
+然后确认优化器拿到了目标参数、梯度中没有 `NaN` 或无穷值，学习率也不是零。最后尝试让单个 batch 过拟合。
 
 ### Cached/full logits 不一致
 
-检查 eval mode、dropout、position IDs、attention mask、past length、dtype 与比较位置。
+先切换到评测模式并关闭 dropout，再核对位置 ID 和注意力掩码是否包含已有缓存长度。
+最后确认两条路径的数据类型相同，而且比较的是同一个序列位置。
 
 ### Generation 提前或不停止
 
-打印最终 input IDs、EOS set、PAD、max new tokens、call overrides 和生成 token trace。
+打印模板处理后的完整输入 ID、所有结束 token、填充 token 和最大新增 token 数。
+同时保存本次调用覆盖了哪些默认参数，以及模型逐步生成的 token 轨迹。
 
 ### Config 数字看起来不合理
 
-确认字段语义属于标准 architecture。遇到 custom code、MLA 或 unknown layout 时停止公式推导。
+先确认每个配置字段是否采用标准架构的语义。遇到自定义模型代码、MLA 或无法识别的张量布局时，
+停止套用标准公式，转而阅读目标模型实现。
 
-### Recorded report 通过但新运行不同
+### 保存的报告通过，但新运行结果不同 { #recorded-report }
 
-Recorded artifact 只证明历史运行报告内部一致。比较 code、environment、files、input 和 tolerance，不能把 verifier pass 当成重新执行。
+保存的报告只记录历史运行。先比较两次运行使用的代码版本、环境、输入文件、具体输入和数值容差。
+验证程序通过表示旧报告内部一致，不等于当前环境已经重新执行并得到同样结果。
 
 ## 项目完成标准
 
 你能提交：
 
-- BPE merge 与 round-trip 对账；
-- dense/cached attention 的正负对照；
-- tiny model 的 labels、gradient 与 parameter update；
-- generation protocol 的 EOS/length override 实验；
-- 一份 config 可推导/必须拒绝表；
-- 可选的真实 checkpoint manifest 与 smoke；
+- BPE 合并顺序和“编码—解码”还原结果；
+- 完整重算与缓存注意力的正负对照；
+- 微型模型的标签、梯度和参数更新记录；
+- 生成协议中结束 token 与长度覆盖实验；
+- 一份配置字段“可以推导 / 信息不足”的对照表；
+- 可选的真实 checkpoint 文件清单与冒烟结果；
 - 每项结论的证据等级和不可外推边界。
 
 ## 面试与作品集
@@ -368,17 +397,17 @@ Recorded artifact 只证明历史运行报告内部一致。比较 code、enviro
 
 更诚实的表述是：
 
-> 从 raw bytes 实现 BPE reference，以 NumPy 对账 causal/cache/online attention；用 tiny PyTorch 模型验证训练与
-> generation 路径，并为固定 checkpoint 建立 config、tokenizer、权重和 runtime 分层证据。
+> 从原始字节实现 BPE 参考版本，并用 NumPy 对账因果注意力、KV cache 和在线 softmax；
+> 使用微型 PyTorch 模型验证训练与生成路径，再为固定 checkpoint 分别保存配置、分词器、权重和运行结果证据。
 
 面试时应能回答：
 
 1. Byte、Unicode 字符与 token 有什么区别？
-2. Cached decode 为什么需要 absolute position？
-3. Online softmax 为什么要 rescale 旧 accumulator？
-4. Generation 的 EOS 与 application stop 有什么差别？
-5. Config estimate 与 GPU peak memory 之间缺哪些项？
-6. Recorded report 为什么不等于本轮真实运行？
+2. 使用 KV cache 解码时，为什么仍需要正确的绝对位置？
+3. 在线 softmax 为什么要按照新的最大值重新缩放旧累加值？
+4. 模型生成结束 token 与应用命中停止字符串有什么差别？
+5. 根据配置估算的 KV 数据量与 GPU 峰值显存之间还缺哪些项？
+6. 保存的历史报告为什么不等于本轮已经真实运行？
 
 ## 下一步
 
