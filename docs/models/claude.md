@@ -7,8 +7,8 @@
 
 - **适合读者**：要通过 Claude API 构建对话、长上下文、RAG 或 Agent 系统的开发者。
 - **先修**：理解 HTTP/JSON、SSE、工具调用和基础模型评测。
-- **首次阅读**：产品边界 → Messages blocks → streaming → tool loop → 预算与迁移。
-- **完成信号**：能保真处理 typed response，并区分模型提议、业务授权、真实副作用和最终任务成功。
+- **首次阅读**：先跟一次工单查询走完全程，再理解 Messages、流式事件、工具、预算与迁移。
+- **完成信号**：能从一个请求追到最终结算，并指出哪些步骤属于 Claude API、适配器、业务权限和外部工具。
 - **卡住时**：先读[云 API 契约](cloud-api-contracts.md)，用一个非流式 text request 建立最小基线。
 
 </div>
@@ -16,7 +16,7 @@
 **模型导航**：[云 API 契约](cloud-api-contracts.md) · [Agent 总览](../applications/agents.md) · [评测项目](../practice/projects/evaluation-gate.md) · [Claude 证据台账](../evidence/claude-controls.md)
 { .doc-nav }
 
-学习 Claude 的难点不在记忆某一代模型的参数，而在接受一个事实：你面对的是持续变化的闭源产品和 API 契约。
+学习 Claude 的重点不是记忆某一代模型的参数，而是学会连接一个持续变化的闭源产品和 API 契约。
 
 你可以观察请求、响应、usage、错误和任务效果，却不能查看服务端权重。可靠工程因此依赖“保留类型、固定版本、逐层验证”，而不是猜测内部架构。
 
@@ -45,9 +45,62 @@ RLAIF 用 AI feedback 扩展部分偏好标注。人仍需选择原则、审计 
 
 因此研究方法能解释一种训练思路，不能替代应用侧的 ACL、数据隔离、工具审批、审计和人工升级。
 
+## 先跟一次工单查询走完全程 {#ticket-request}
+
+假设用户提出一个具体任务：
+
+> 查询工单 `T-1042` 的当前状态，并告诉我下一步该做什么。
+
+应用允许 Claude 使用只读工具 `get_ticket`，但模型本身没有数据库权限。一次完整任务可以经过两轮 Messages 调用：
+
+```text
+用户请求
+→ 应用固定租户、用户、模型版本、预算和可用工具
+→ Anthropic adapter 生成顶层 system + messages + tools
+→ Claude 返回 tool_use：get_ticket({"ticket_id":"T-1042"})
+→ 应用等待 block 完整闭合
+→ Schema 校验 + 租户 ACL + 预算检查
+→ 应用执行只读查询，得到受控 tool_result
+→ 第二轮 Messages 调用携带工具结果
+→ Claude 返回面向用户的文字说明
+→ 检查 message terminal、usage 和任务结果
+→ 结算两次网络 attempt
+```
+
+假设工具返回“状态：等待用户补充凭证；下一步：上传付款截图”。第二轮回答就应忠实说明这两个字段。
+任务验收程序还要确认回答没有混入其他租户的工单，也没有声称工单已经处理完成。
+
+这条链路里有三个容易混淆的“成功”：
+
+| 阶段 | 成功表示什么 | 还没有证明什么 |
+|---|---|---|
+| Claude 返回 `tool_use` block | 模型给出了结构完整的工具提议 | 用户有权限、参数真实、工具已经执行 |
+| `get_ticket` 返回结果 | 外部查询已经完成 | 最终说明准确、请求整体成功 |
+| 第二轮正常结束 | 收到了完整 Messages 响应和 usage | 业务验收、安全检查和引用核验已通过 |
+
+### 模型、适配器和依赖库各做什么 {#dependency-stack}
+
+把一次请求拆开后，各层职责会清楚很多：
+
+| 层 | 主要职责 | 不应交给它的职责 |
+|---|---|---|
+| 业务应用 | 身份、租户、任务、权限、预算和成功标准 | 猜测 Provider 的 JSON 细节 |
+| Anthropic SDK 或 HTTP 客户端 | 认证、连接、超时和字节传输 | 决定业务授权或工具副作用是否可重放 |
+| Provider adapter | 顶层 `system`、Messages blocks、headers、stop 和 usage 映射 | 把未知 block 静默压成字符串 |
+| SSE decoder | 把任意 byte chunk 还原成完整事件 | 判断某个工具是否获权 |
+| Messages 状态机 | 校验 message、block、delta 和 terminal 的次序 | 执行工具或判断业务任务成功 |
+| Schema、ACL 与审批层 | 校验参数并决定能否执行 | 相信模型提议天然安全 |
+| 工具运行时与账本 | 幂等执行、记录副作用、费用和待对账结果 | 用本地成功替代供应商账单证据 |
+
+仓库目前可以离线运行文本 request/response adapter、文本流状态机、通用 HTTP 重试和预算账本。
+上面完整的 `tool_use → tool_result` Claude 链路仍是接入设计：仓库没有用真实 Anthropic 账号执行它，
+现有 `AnthropicTextStream` 也会明确拒绝非文本 block。
+
 ## Messages 不是一问一答字符串
 
-一个 Messages request 可以包含顶层 system、user/assistant 历史和 typed content blocks；response 也可能包含多个不同类型的 block。
+在工单例子里，系统指令位于请求顶层，对话历史放在 `messages` 中。每条消息的内容又可以由多个有类型的 block 组成。
+
+响应也不是单个字符串。它可以同时带有说明文字、工具提议、停止原因和用量。
 
 ~~~text
 Message request
@@ -63,27 +116,62 @@ Message response
 └── usage
 ~~~
 
-最小 text request 的形状可以是：
+第一轮请求的形状可以是：
 
 ~~~json
 {
   "model": "<reviewed-model-id>",
-  "max_tokens": 512,
-  "system": "你是受约束的工单分析助手。",
+  "max_tokens": 256,
+  "system": "你是工单助手。只能使用授权工具读取当前租户的数据。",
   "messages": [
     {
       "role": "user",
-      "content": [{"type": "text", "text": "归纳这份工单"}]
+      "content": [
+        {"type": "text", "text": "查询工单 T-1042 的状态，并说明下一步。"}
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_ticket",
+      "description": "读取一张工单的状态",
+      "input_schema": {
+        "type": "object",
+        "properties": {"ticket_id": {"type": "string"}},
+        "required": ["ticket_id"],
+        "additionalProperties": false
+      }
     }
   ]
 }
 ~~~
 
-这只是对象关系示例，不承诺任意模型和版本支持相同的可选字段。system 位于请求顶层；content 也不能假设永远是纯文本。
+这个示例用占位 model ID，运行前仍要按目标 API 版本核对字段。它要表达的稳定关系是：`system` 位于顶层，
+`messages` 保存对话历史，`content` 和工具结果都应保留类型。
+
+Claude 可能在第一轮返回文字和工具提议。下面只截取 `content` 与停止原因，省略响应 ID、model 和 usage：
+
+~~~json
+{
+  "content": [
+    {"type": "text", "text": "我先读取工单状态。"},
+    {
+      "type": "tool_use",
+      "id": "toolu_example",
+      "name": "get_ticket",
+      "input": {"ticket_id": "T-1042"}
+    }
+  ],
+  "stop_reason": "tool_use"
+}
+~~~
+
+生产代码需要保留完整响应，并使用其中实际返回的 usage。应用完成授权和查询后，第二轮消息要带回与
+`toolu_example` 对应的工具结果，模型才有证据生成最终说明。
 
 ### 为什么要保留 typed blocks
 
-如果代码只读取第一个 block 的 text，遇到多个文本块、工具提议、引用、拒答或未知 block 时就会静默丢数据。
+如果代码只读取第一个文本 block，工单例子中的 `tool_use` 就会消失。多个文本块、引用、拒答和未知 block 也会遇到同样问题。
 
 更稳的内部对象是：
 
@@ -125,16 +213,20 @@ Canonical task request
 → policy and quality gates
 ~~~
 
-Canonical 层表达用户、租户、任务、预算和工具候选；provider adapter 负责顶层 system、blocks、headers、usage 和 stop。
+业务层表达用户、租户、任务、预算和候选工具。Provider adapter 只负责把这些信息映射成顶层 `system`、
+内容 block、请求头、用量和停止原因。
 
-这能让你更换模型或供应商时只替换协议映射，而不是让业务逻辑依赖某个 wire field。provider 特有能力仍要保留，不能为了统一 schema 把所有东西压成字符串。
+这样更换模型或供应商时，主要变化集中在协议映射，领域代码不必到处读取某个供应商的 JSON 字段。
+供应商特有能力仍应作为有类型的扩展保留，不能为了统一 schema 把所有对象压成字符串。
 
 ## Streaming 是两层状态机
 
-网络每次读到的是 arbitrary bytes，不是一个完整 token、JSON 或 SSE event。流式处理至少分两层：
+网络每次读到的只是任意长度的字节片段。一个片段不保证恰好对应模型 token、JSON 对象或 SSE 事件。
 
-1. **Byte/SSE framing**：处理 UTF-8、换行、event/data fields、空行终止与资源上限。
-2. **Provider state**：处理 message、block、delta、usage、stop 与 error 的合法次序。
+因此，流式处理至少分两层：
+
+1. **字节与 SSE 分帧**：处理 UTF-8、换行、事件字段、空行终止与资源上限。
+2. **Messages 状态机**：检查消息、block、增量、用量、停止和错误事件的合法次序。
 
 ~~~mermaid
 flowchart LR
@@ -147,7 +239,8 @@ flowchart LR
     G --> H["task projection"]
 ~~~
 
-工具参数分多个 delta 到达时，JSON prefix 即使能解析，也不表示参数已经完整。只有 block 正常闭合、schema 和语义都通过后，才可以进入授权流程。
+工单工具参数可能分成多个增量到达。即使某个 JSON 前缀碰巧能解析，也不能把它当作完整参数。
+只有 block 正常闭合，并且 schema 与业务语义都通过检查后，提议才可以进入授权流程。
 
 ### 四种结束不能混在一起
 
@@ -158,13 +251,15 @@ flowchart LR
 | provider message terminal | 消息协议正常结束 |
 | transport EOF/close | 字节流结束 |
 
-只有 EOF 而没有 provider terminal 是截断，不是成功。看到文本 block 结束也不能提前结算 usage 或执行仍未闭合的工具。
+如果连接到达 EOF 时仍未出现 Provider 的消息终态，这次流就是截断。文本 block 结束只代表该 block 闭合；
+程序仍要等待消息终态和完整 usage，再进行结算。
 
-断流后自动 reconnect 可能重复文本、tool proposal、usage 和费用。除非 provider 提供经过验证的 resume contract，否则把失败标为新的终态或发起新的、有新 identity 的调用。
+断流后自动重连可能重复文字、工具提议和费用。只有目标 Provider 给出并经过验证的恢复协议时，客户端才能续接原调用。
+其他情况应结束当前 attempt；若策略允许重新调用，也要创建新的请求身份和预算记录。
 
 ## Tool use：模型只提出动作
 
-模型返回 tool proposal，不代表它拥有调用权限。正确链路是：
+模型返回 `get_ticket` 提议，只表示“建议查询这张工单”。权限仍由应用判断。正确链路是：
 
 ~~~text
 proposal
@@ -188,7 +283,8 @@ proposal
 
 ### 超时后仍要确认远端发生了什么
 
-客户端 timeout、cancel 或 read failure 无法证明 provider 或外部工具没有收到请求。对于写操作，应先持久化 intent/outbox，再用业务幂等键执行。
+客户端超时、取消或读取失败后，远端是否收到请求可能仍属未知。对于写操作，应先持久化执行意图或 outbox，
+再使用业务幂等键执行。
 
 若远端可能成功但本地没有确认，状态应是 outcome uncertain，并进入 reconciliation。把它当作普通失败自动重试，可能造成重复扣款、重复发信或重复删除。
 
@@ -206,7 +302,7 @@ proposal
 
 ## Usage 与预算要按 attempt 记账
 
-请求中的 max_tokens 是输出上限，不是实际 usage。发送前可以按保守上界做 reservation：
+请求中的 `max_tokens` 是输出上限，不是实际用量。发送前可以按保守上界预留预算：
 
 \[
 R=C_{in}(\widehat T_{in})+C_{out}(T_{out,max})+C_{other,max}.
@@ -225,7 +321,9 @@ preflight origin/model/version
 → reconcile with billing export
 ~~~
 
-一次 logical call 内的每个网络 attempt 都可能生成和计费，因此不能只 reserve 一次。客户端 ledger 也无法与远端 provider billing 建立原子事务。
+一次逻辑调用可能包含多个网络 attempt，每次发送都可能生成和计费。因此，每个 attempt 都需要自己的预算预留和终态。
+
+客户端账本只能保证本地状态一致，无法与远端生成和供应商账单组成同一个原子事务。
 
 ## 长上下文不是“全部塞进去”
 
@@ -243,13 +341,17 @@ preflight origin/model/version
 
 ### Prompt caching 也有 identity
 
-Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至少要考虑 model/version、ordered blocks、tool schemas、预处理、租户、数据等级和 lifecycle。
+Prompt caching 可能降低重复前缀的成本或首 token 延迟。判断两次请求能否复用缓存时，至少要考虑模型版本、
+block 顺序、工具 schema、预处理方式、租户、数据等级和缓存生命周期。
 
-只按可见 prompt 字符串共享 cache，可能跨租户或跨 policy 错用。评测时同时报告 cold/warm latency、eligible/hit/miss 分母、usage、质量漂移和失效行为，不能只报 hit rate。
+只按可见 Prompt 字符串共享缓存，可能把一个租户或权限策略下的前缀用于另一个上下文。
+
+评测时应同时报告冷启动与缓存命中的延迟、可缓存请求数、命中与未命中数、用量、质量变化和失效行为。
+单独一个命中率无法说明缓存是否安全、有效。
 
 ## 模型选型靠 workload，不靠代际名
 
-先固定代表性 cases，再比较候选 model ID：
+先固定代表性样例，再比较候选 model ID：
 
 - 任务质量：抽取、代码、综合、规划和工具参数；
 - 协议完整性：typed blocks、unknown fields 和 terminal；
@@ -259,7 +361,10 @@ Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至�
 - 成本：每 attempted 与 successful task 的真实 usage；
 - 治理：区域、保留、日志、密钥和供应商要求。
 
-使用同一 case 集做 paired comparison，保存逐 case 输出、错误和分母。升级时 model、API headers、prompt、tool schema、parser、retry 与 pricing 任一变化，都应视为候选系统变化。
+基线与候选版本使用同一组样例，并保存逐例输出、错误和统计分母。
+
+模型、API headers、Prompt、工具 schema、解析器、重试策略或价格快照发生变化时，改变的都是整个候选系统，
+不能把差异全部归因于模型本身。
 
 先 shadow，再 canary，并保留完整旧 bundle。回滚不是只改回一个 model alias。
 
@@ -267,24 +372,48 @@ Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至�
 
 不要从自动工具循环开始。按四级增加能力：
 
-### Level 1：非流式 text
+### Level 1：非流式文本 {#level-1-text}
 
-固定一个 model ID 和 API/version headers，发送最短 text request。保存脱敏 request、typed blocks、stop、usage、request ID 和 latency。
+固定 model ID 与 API 版本请求头，发送最短文本请求。保存脱敏后的请求、所有响应 block、停止原因、用量、request ID 和延迟。
 
 验收目标是“协议对象完整”，不是“回答看起来不错”。
 
+先用仓库的固定 Anthropic 样例检查顶层 `system`、文本 block、usage 和停止原因映射：
+
+```powershell
+python -m about_llm.integrations.cloud_api_cli verify `
+  --contracts projects/cloud-api-contracts/contracts.example.jsonl `
+  --output artifacts/cloud-api/contracts.json
+```
+
+命令会同时验证三种 Provider 的文本子集；其中 Anthropic case 使用 `.invalid` 域名和虚构密钥，不访问网络。
+
 ### Level 2：多 block 与失败回放
 
-准备一组离线样例，分别包含多个 text blocks、tool-only、unknown block、max-token stop、provider error 和
-缺失 terminal。逐项确认 parser 会保留或明确报告这些情况，而不是静默丢失数据。
+准备一组离线样例，分别包含多个文本 block、只有工具提议、未知 block、达到输出上限、Provider 错误和缺失消息终态。
+
+逐项确认解析器会保留这些情况，或者返回明确错误。任何分支都不能静默丢失数据后伪装成普通文本成功。
 
 ### Level 3：流式状态机
 
-测试 byte 任意切分、重复/错序 event、Unicode 边界、断流和未知 delta。分别记录首 block、首 text、model terminal 与 transport close。
+测试字节任意切分、事件重复或错序、Unicode 边界、断流和未知增量。分别记录首个 block、首段文本、
+模型停止原因、消息终态与连接关闭时间。
+
+仓库现有的 Anthropic 文本子集可以这样回放：
+
+```powershell
+python -m pytest tests/test_cloud_api.py tests/test_cloud_stream.py `
+  -k anthropic -q
+```
+
+这些测试覆盖文本 block 和事件次序；遇到 `tool_use`、thinking 或其他非文本 block 时会停止，而不是假装已经支持。
 
 ### Level 4：受控工具
 
 准备只读、幂等写入和高风险写入三类工具，测参数正确率、权限拒绝、审批、重复副作用、outcome uncertain 与 prompt injection。
+
+本仓库尚未提供一条真实 Anthropic 工具调用 runner。练习这一层时，可以先复用
+[Agent Runtime](../applications/agent-runtime.md) 的授权、幂等和恢复状态机，再为目标 Messages 版本实现并验证完整 block adapter。
 
 本仓库提供了 adapter、stream、retry 和预算的离线验证程序，入口见
 [Claude 证据台账](../evidence/claude-controls.md)。这些程序不访问真实账号；当前 provider 的实际行为仍要用
@@ -306,13 +435,14 @@ Prompt caching 可能降低重复前缀成本或 TTFT，但 cache identity 至�
 
 面对“如何生产接入 Claude”，可以按五层回答：
 
-1. 固定 model、API headers、schema 与 checked_at。
-2. 保留 Messages typed blocks、stop、usage 和 raw identity。
-3. 用 byte framing + provider state machine 处理 streaming。
-4. 把 tool proposal、authorization、effect 和 reconciliation 分开。
-5. 用 workload cases 验证质量、安全、延迟、成本和迁移。
+1. 固定 model ID、API 版本请求头、schema 与核对日期。
+2. 保留所有 Messages block、停止原因、usage 和原始响应身份。
+3. 先完成字节分帧，再用 Messages 状态机处理流式事件。
+4. 把工具提议、授权、真实副作用和待对账结果分开。
+5. 用代表性任务验证质量、安全、延迟、成本和迁移。
 
-继续追问时，应能解释为什么 unknown block 不能静默丢弃、partial stream 默认不能透明 replay，以及 client cancel 为什么不证明 server 停止生成和计费。
+继续追问时，可以回到工单例子解释三件事：未知 block 必须保留或明确报错；截断的流需要独立终态；
+客户端取消以后，供应商是否停止生成和计费仍需外部证据。
 
 ## 自测
 
