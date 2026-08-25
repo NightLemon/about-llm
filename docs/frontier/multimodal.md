@@ -16,25 +16,31 @@
 用户上传一张手机拍摄的票据，问：“商户、日期和总金额是多少？请在原图上标出证据。”
 图片是 3024×4032 JPEG，略有倾斜，金额位于右下角，背景还拍到了桌面和另一张小票。
 
-模型最后回答“总金额 89.00 元”，只是这条任务的终点。在此之前，系统要解码图片、修正方向、调整尺寸，
-再完成视觉编码、图文融合和文字生成。
+“总金额 89.00 元”只是模型生成的一项声明。要把它交给业务，系统还要回答：模型读到的是哪一版图片，
+金额来自原图哪个区域，这个区域能否支持答案，以及当前用户是否有权查看它。
 
-回答出来以后，系统还要核对金额、坐标、权限和证据。
+先跟住这条请求，不必急着记库名：
 
-先把整条链放在一张图里：
+```text
+JPEG 文件
+  -> 解码后的原始像素
+  -> 缩放、补边后的模型输入
+  -> 视觉表示
+  -> 语言模型生成的字段与证据框
+  -> 映射回原图的证据区域
+  -> 通过验证的业务结果
+```
 
-| 层 | 它接收什么，又产出什么 | 常见依赖 | 票据可能怎样失败 |
-|---|---|---|---|
-| 媒体解码 | JPEG bytes → 像素 | Pillow、OpenCV 或服务端 codec | 图片损坏、方向错误、解压炸弹 |
-| Processor | 像素 → 归一化 tensor、tile 和位置 metadata | 模型配套 image processor / `AutoProcessor` | 尺寸、crop、模板或坐标版本不一致 |
-| Vision encoder | 像素 tensor → patch features | Transformers、timm 或模型自带实现 | 小字和局部细节在压缩中丢失 |
-| Projector / resampler | 视觉特征 → LLM 可读取的 hidden states | Checkpoint 对应的 connector 模块 | Shape 对上，但语义没有正确对齐 |
-| LLM decoder | 视觉状态 + 文本 → 输出 token | 模型类、tokenizer、chat template | 幻觉金额、忽略图片、输出不完整 |
-| Serving runtime | 组织 batching、cache、流式输出和取消 | Transformers、vLLM、SGLang 等 | 新视觉路径未注册，或 batch/cost 语义错误 |
-| Verifier | 字段与 box → 业务结果 | Schema、OCR、规则、数据库或人工 | JSON 合法，但金额、权限或证据错误 |
+每一步都由不同组件负责。Pillow、OpenCV 或服务端 codec 把文件解码成像素。
 
-`safetensors` 只有权重，不能替代这条链中的 processor、模型计算图和 runtime 支持。某个库能加载 config，
-也不表示它已经实现媒体 batching、视觉位置编码和完整服务路径。
+模型配套的 processor 再完成缩放、归一化和切块，同时留下坐标变换记录。视觉编码器与连接器把图片
+变成语言模型能读取的表示。
+
+推理 runtime 负责批处理、缓存、流式输出和取消。最后，schema、OCR、业务规则或人工流程共同核对答案。
+
+模型权重文件（通常是 `safetensors`）只是其中一部分。能够读取配置和权重，也不等于运行库已经支持该模型的
+图片预处理、视觉位置编码、批处理和服务接口。排查“模型能下载却不能推理”时，应逐层确认缺的是 processor、
+模型实现、底层算子，还是服务 runtime 的多模态接入。
 
 这条票据任务会贯穿本章。音频与视频的信号形式不同，但仍要回答同一组问题：原始信号怎样采样，
 模型实际看到了什么，输出怎样映射回现实坐标，以及如何证明它使用了目标模态。
@@ -85,6 +91,64 @@ N=\frac{H}{P}\frac{W}{P}.
 因此，不能只用图片尺寸和 patch size 推断上下文成本。应读取目标模型的 processor 与架构，
 并记录实际生成了多少视觉 token。
 
+### 用票据算一次缩放、patch 和坐标
+
+下面是一组为了方便复算而构造的数字，不代表某个具体模型的默认设置。假设系统已经按 EXIF 修正方向，
+暂不做倾斜校正；processor 将长边缩放到 448 像素，再把短边两侧补到 448 像素：
+
+1. 原图是 3024×4032，缩放比例为 \(448/4032=1/9\)；
+2. 缩放后得到 336×448，左右各补 56 像素，模型输入变成 448×448；
+3. 若视觉编码器使用 14×14 patch，输入网格有 \(32\times32=1024\) 个 patch 位置；
+4. 原图中的金额框 `(2304, 3492, 2880, 3690)` 会映射为模型坐标 `(312, 388, 376, 410)`。
+
+第四步只用了缩放与补边：
+
+\[
+x_{model}=x_{original}/9+56.
+\]
+
+\[
+y_{model}=y_{original}/9.
+\]
+
+模型或后处理程序若返回 `(312, 388, 376, 410)`，逆变换就是：
+
+\[
+x_{original}=9(x_{model}-56).
+\]
+
+\[
+y_{original}=9y_{model}.
+\]
+
+把这段代码复制到 Python 中，可以同时检查正向和逆向计算：
+
+```python
+scale = 1 / 9
+pad_x = 56
+
+
+def to_model(box: tuple[float, float, float, float]):
+    x0, y0, x1, y1 = box
+    return (x0 * scale + pad_x, y0 * scale, x1 * scale + pad_x, y1 * scale)
+
+
+def to_original(box: tuple[float, float, float, float]):
+    x0, y0, x1, y1 = box
+    return ((x0 - pad_x) / scale, y0 / scale,
+            (x1 - pad_x) / scale, y1 / scale)
+
+
+original = (2304, 3492, 2880, 3690)
+model = to_model(original)
+assert model == (312, 388, 376, 410)
+assert to_original(model) == original
+```
+
+它应当还原成原来的金额区域。真实系统若加入旋转、倾斜校正、裁剪或多个 tile，就要保存完整的变换链，
+不能只记一个缩放比例。1024 也只是这组输入的原始 patch 数；经过 resampler、合并或池化后，语言模型实际
+收到的视觉 token 可能更少。
+
 ### Resize、crop 和 tiling 会改变证据坐标
 
 票据可能先经过方向修正，再用 letterbox 缩放到模型尺寸。如果模型返回的是模型坐标系中的 box，
@@ -110,12 +174,14 @@ original pixels
 
 常见架构可以按“视觉信息在什么地方与文本相遇”理解。
 
-| 结构 | 视觉信息怎样进入任务 | Runtime 需要额外支持什么 | 更适合什么 |
-|---|---|---|---|
-| Dual encoder | 图像和文本各压成向量，再比较相似度 | 两个 encoder、向量索引或相似度计算 | 检索、匹配、zero-shot 分类 |
-| Visual prefix | Projector 把 patch features 变成 LLM 前缀 | Processor、connector、视觉位置与联合 batching | VQA、文档问答、图文对话 |
-| Cross-attention | 文本层读取独立视觉 memory | Encoder state 与每层 cross-attention 路径 | 保留独立视觉状态的生成任务 |
-| Unified tokens | 图像和文本进入共享序列或共享主干 | 模态 tokenizer、位置规则和输出 decoder | 跨模态理解或联合生成 |
+- **双编码器（dual encoder）**把图像和文本各压成一个向量，最后比较相似度。运行时要执行两个编码器和
+  相似度计算，常用于检索、匹配和零样本分类。
+- **视觉前缀（visual prefix）**先把图片特征变成语言模型的输入前缀。运行时要补齐 processor、连接器、
+  视觉位置和联合批处理，常用于文档问答与图文对话。
+- **交叉注意力（cross-attention）**让语言层读取一份独立的视觉记忆。运行时要保存编码器状态，并执行
+  语言层中的交叉注意力路径。
+- **统一 token（unified tokens）**让图像和文本进入共享序列或共享主干。运行时仍要知道每种模态如何
+  编码、使用什么位置规则，以及由哪个解码器还原输出。
 
 ### Dual encoder：两边各压成一个向量
 
@@ -132,8 +198,9 @@ s(I,T)=
 
 ### Vision encoder + projector + LLM：把视觉前缀交给 decoder
 
-视觉 encoder 先产生 patch features。Linear 或 MLP projector 再把特征映射到 LLM 的 hidden dimension。
-完成映射后，视觉特征才能与文本 token 一起进入 decoder。
+视觉编码器先把每个图片块变成特征向量。连接器通常是一层线性映射或小型多层感知机（MLP），
+负责把这些向量改成语言模型能够接收的宽度。完成映射后，视觉表示才能和问题中的文本 token 一起进入
+语言模型。
 
 Projector 的 shape 对上，只证明张量能够进入计算图。模型是否把票据区域与“总金额”语义对应起来，
 还取决于配对数据、训练目标和 checkpoint 权重。
@@ -145,11 +212,25 @@ Cross-attention 采用另一种连接方式：语言层读取独立的视觉 mem
 
 ### Unified tokens：共享序列，不代表共享语义
 
-图像也可以先经过离散 codec 变成 token，再与文本一起做 autoregressive modeling。
-另一类模型共享 Transformer 主干，但保留各模态自己的 encoder 或 decoder。
+图像也可以先由离散编码器变成 token，再与文本放进同一条自回归序列。另一类模型共享 Transformer 主干，
+但仍为图片、文字或音频保留各自的输入编码器或输出解码器。
 
-即使都叫 token，图像与文本也可能使用不同 quantizer、loss、采样率和输出 decoder。
-服务商定义的 image token 也有自己的计数规则，不能直接与文本 token 或另一个模型的 image token 等价比较。
+“共享 token 序列”不表示不同模态使用相同词表或具有相同成本。图像可能经过自己的量化器，音频有自己的
+采样率，生成图片还需要像素解码器。服务商给出的 image token 也有单独的计数规则，不能直接换算成文本
+token，更不能拿两个模型的 image token 数直接比较。
+
+### 架构决定运行库必须补齐什么
+
+模型仓库里的配置告诉运行库“这是什么结构”，但真正执行还需要对应实现：
+
+- Transformers 一类模型库要认识 processor、视觉编码器、连接器、语言模型和生成接口，并按 checkpoint
+  约定装载每一组权重；
+- `timm` 可以提供常见视觉骨干，却通常不负责多模态 chat template、视觉 token 插入位置或文本生成；
+- vLLM、SGLang 等服务 runtime 还要实现图片请求解析、不同尺寸的批处理、视觉特征缓存、调度和显存估算；
+- FlashAttention、Triton 或厂商算子可以加速某段计算，但不会自动补出缺失的 processor 或模型结构。
+
+因此，判断“某个运行库是否支持这个模型”时，至少要检查三件事：能否生成正确的模型输入，能否执行完整计算图，
+以及服务接口能否正确批处理和计量多模态请求。只看到模型名称出现在配置表中，还不足以回答这三个问题。
 
 ## 模型通过哪些目标学会图文关系
 
@@ -196,6 +277,15 @@ text detection -> recognition -> reading order / layout
 
 金额、日期或药物剂量等字段，再由确定性 parser、checksum、范围规则或人工流程验证。
 
+回到开头的票据，混合路径可以这样结束一次请求：
+
+1. OCR 给出两个金额候选；
+2. 视觉模型选择右下角的“89.00”，同时返回模型坐标中的证据框；
+3. 系统把框逆变换到原图，再裁出该区域，确认数字旁边写的是“合计”而不是“优惠”；
+4. OCR、视觉答案和业务规则若互相冲突，请求进入 `conflict`，交给更强模型或人工复核。
+
+这里的关键不是让三个组件投票，而是让最终字段回到原始证据，并为冲突保留明确终态。
+
 图表任务也适合分层处理。可以分别抽取标题、图例、坐标轴、刻度、数据序列和数据点，
 再检查它们之间的关系。否则模型可能把对数轴当成线性轴、把颜色映射到错误序列，
 或从趋势图中报出并不存在的精确数字。
@@ -215,9 +305,11 @@ text detection -> recognition -> reading order / layout
 输出随图片中的目标金额稳定变化，说明视觉模态影响了行为，但这还没有定位内部神经机制。
 极端遮蔽也可能制造训练分布之外的输入。因此，自然反事实应与多种 ablation 配合使用。
 
-对象幻觉（object hallucination）可能来自语言先验、低分辨率、视觉压缩、caption 噪声或问题暗示。
-不要用一个总分混合所有错误。可以把“对象是否存在”、对象关系、计数、属性、OCR、无答案和
-不确定性表达拆成不同切片。
+对象幻觉（object hallucination）可能来自语言先验，也可能来自图片没有被看清。低分辨率、视觉压缩、
+错误的图片描述和带暗示的问题都可能改变答案。
+
+评测时把对象存在性、关系、计数、属性、文字识别和无答案分别报告，再单独检查模型是否表达了不确定性。
+这样才能区分“没有看清”和“看清后仍然编造”。
 
 ## 三个指标先把坐标口径固定
 
@@ -227,9 +319,9 @@ text detection -> recognition -> reading order / layout
 CER=\frac{S+D+I}{N_{reference}}.
 \]
 
-插入错误很多时，\(S+D+I\) 可以大于 reference 长度，所以 CER 也可以大于 1。
-评测前要固定 Unicode normalization、空白、大小写和标点规则。还要说明 reference 按 code point、
-grapheme 还是词计数。
+插入错误很多时，\(S+D+I\) 可以大于参考文本长度，所以 CER 也可以大于 1。
+评测前要先统一 Unicode、空白、大小写和标点的处理方式，再说明分母按 Unicode 码点、用户感知字符
+还是词来计数。采用不同文本单位得到的数字不能放在同一张表中直接比较。
 
 空 reference 的分母未定义，应作为单独 case 处理。
 
@@ -271,8 +363,8 @@ LLM judge 自身也受视觉能力和长度偏好影响。
 - **RNN-T / Transducer**：结合 acoustic encoder 与 label-history predictor，适合 streaming；
 - **Encoder-decoder**：audio encoder 加 autoregressive text decoder，能利用更强语言上下文。
 
-WER/CER 会随 normalization、分词和标点规则变化。中文 CER 可以按 Unicode code point 计算，
-也可以采用 grapheme 或词级单位；不同单位的结果不能直接比较。
+词错误率（WER）和字符错误率（CER）都会随文本清洗、分词和标点规则变化。中文 CER 常按 Unicode
+码点计算；若采用用户感知字符或词作为单位，应在结果中明确标注。
 
 流式语音要同时观察首个部分结果、最终结果延迟、endpointing、real-time factor、修订率和打断响应。
 Endpoint 过早会截断话语，过晚会增加等待时间。
@@ -314,8 +406,9 @@ Watermark 可能被重编码、裁剪或变速破坏，所以还需要授权、�
 
 ## Serving 成本从媒体解码就开始了
 
-一次票据请求的成本从媒体解码就开始了。随后还有 resize/tiling、vision encoder、projector、
-LLM prefill/decode、验证和缓存读写。优化时应分阶段测量，不能把全部时间归到“模型推理”。
+一次票据请求从媒体解码起就开始消耗资源。之后的缩放与切块、视觉编码、特征连接、语言模型首轮计算、
+逐 token 生成、答案验证和缓存读写都有各自的耗时与显存。分阶段记录这些数据，才能知道优化是否真的
+作用在瓶颈上。
 
 服务商定义的“image token”是一项计费与容量契约。它可能已经包含 resize、tiling 或特征压缩，
 所以既不等于原始 patch 数，也不能跨模型直接比较。
@@ -329,8 +422,8 @@ LLM prefill/decode、验证和缓存读写。优化时应分阶段测量，不�
 - 版本化 OCR / ASR cache；
 - 长视频先检索后精看。
 
-Cache key 至少要绑定 tenant/ACL、预处理版本、encoder/model revision 和媒体 identity。
-缓存还要设置 TTL 与删除机制。
+缓存键至少要区分租户和可见权限，还要包含预处理版本、编码器与模型版本，以及媒体内容身份。
+缓存条目同时需要过期时间和删除机制，避免权限变化或用户删除原图后仍返回旧特征。
 
 图片、文档、人脸和声音本身可能是敏感数据。提高命中率时，仍要遵守访问权限和数据保留边界。
 
@@ -350,8 +443,8 @@ OCR/ASR 输出仍然是不可信外部数据。系统应把它作为待处理内
 
 Deepfake detection 和 watermark 都会误报或漏报，也可能在媒体变换后失效。它们只能作为分层控制的一部分。
 
-训练数据应记录媒体 hash、来源与许可、采集时间和 caption 来源。OCR/ASR revision、crop/frame 选择方式
-与 synthetic generator 也会影响样本身份，应一并保存。
+训练数据应记录媒体内容哈希、来源与许可、采集时间，以及图片描述来自哪里。文字或语音识别版本、
+裁剪与抽帧方式、合成数据生成器版本都会改变实际样本，也应一起保存。
 
 同一视频的多个 clips、同一文档的多页和同一人物的多张图片高度相关。数据切分应以这些 group 为单位，
 避免身份或内容跨越 train/test。
