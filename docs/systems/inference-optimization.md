@@ -30,6 +30,31 @@
 
 平均 tokens/s 会把这些现象混在一起。优化前先按输入长度、输出长度、并发和终态切片。
 
+## 先诊断开头这组症状 { #worked-diagnosis }
+
+现在只使用已经知道的四个现象，不急着改参数：
+
+| 观察 | 当前能作出的判断 | 还不能确定什么 |
+|---|---|---|
+| TTFT 变高 | 请求在排队或 prefill 阶段等待更久 | 是到达过载、长 Prompt，还是调度偏向 decode |
+| TPOT 略好 | 更大的 decode batch 可能提高了权重复用 | 是否还有更快的注意力或矩阵乘内核 |
+| 总吞吐增加 | 批处理确实让 GPU 完成了更多 token | 增长是否满足尾延迟与失败率目标 |
+| 偶尔 OOM | 某些长度与并发组合超过峰值容量 | 峰值来自 KV、工作区、CUDA Graph 还是其他进程 |
+
+第一轮实验固定模型、输入与输出长度分布、采样参数和请求到达方式，只改变并发 `1/2/4/8`。
+每个请求至少保存四段时间：进入服务、开始 prefill、产生第一个 token 和完成；同时记录 KV block 高水位和显存峰值。
+
+结果出来后再选择分支：
+
+1. **服务队列先增长**：降低准入上限，或调整每轮 sequence/token 预算；
+2. **长 prefill 挡住 decode**：比较分块 prefill 的不同 token 预算；
+3. **KV block 先耗尽**：降低并发或长度上限，再检查分页、抢占和释放是否正确；
+4. **队列正常但 TPOT 仍高**：再查看 decode batch、权重与 KV 带宽、内核启动和量化路径；
+5. **显存仍有余量却 OOM**：按权重、KV、工作区、CUDA Graph 预留和其他进程重新做峰值账本。
+
+这组症状已经说明批处理带来吞吐收益，也暴露了延迟和容量代价。它还不足以证明应该打开 CUDA Graph、量化，
+或直接换更大的 batch；后面的每项技术都对应上面某个具体分支。
+
 ## Prefill 和 decode 为什么常有不同瓶颈
 
 Prefill 一次处理许多 prompt positions，矩阵通常更大，并行度更高。
@@ -60,8 +85,8 @@ I=\frac{\text{FLOPs}}{\text{bytes moved}}.
 
 ## Attention：先区分计算量与数据搬运
 
-朴素 causal self-attention 在 prefill 中会形成随长度约 (O(L^2)) 增长的 score 区域。
-FlashAttention 通过 tiling 和 online softmax，避免把完整 score/probability 反复写入 HBM。
+朴素因果自注意力在 prefill 中会形成随长度约 (O(L^2)) 增长的分数区域。
+FlashAttention 使用分块计算和在线 softmax，减少完整分数与概率矩阵在 GPU 高带宽显存中的反复读写。
 
 它优化的是 IO 路径，不是把精确 attention 的一般计算量变成线性，也不会减少长期保存的标准 KV 容量。
 
@@ -71,8 +96,8 @@ FlashAttention 通过 tiling 和 online softmax，避免把完整 score/probabil
 python projects/transformers-basics/online_softmax_demo.py
 ~~~
 
-这个实验能说明 running max、normalizer 和 value accumulator 为什么足够重建结果。
-它没有运行 FlashAttention 或 CUDA kernel，也不能用 Python 内存和时间推断 GPU 收益。
+这个实验会逐块维护当前最大值、归一化因子和加权 value 累加值，并用它们重建最终结果。
+它只验证在线 softmax 的数学过程。FlashAttention 的 CUDA 内核、GPU 显存和性能需要在目标设备上测量。
 
 ## KV 容量：先算理想 payload
 
@@ -82,8 +107,8 @@ python projects/transformers-basics/online_softmax_demo.py
 M_{KV/token}=2\times L\times H_{kv}\times D\times bytes(dtype).
 \]
 
-32 层、8 KV heads、head dimension 128、BF16 的结果为 128 KiB/token。
-单序列 8192 个缓存位置的理想化 payload 为 1 GiB。
+以 32 层、8 个 KV 头、每头 128 维和 BF16 为例，理想 KV 数据量是每 token 128 KiB。
+单条序列缓存 8192 个位置时，理想数据量是 1 GiB。
 
 容量规划还要加：
 
@@ -137,11 +162,11 @@ block table: [5, 1]
 
 ### “Paged KV”与“PagedAttention kernel”不是同一份证据
 
-Block allocator 可以只管理 id、occupancy 和 refcount；tensor store 可以进一步保存真实 K/V；
-GPU PagedAttention kernel 还要根据 block table 直接完成高效 attention。
+块分配器可以只管理块 ID、已使用位置和引用计数。张量存储层继续保存真实 K/V 数值。
+GPU PagedAttention 内核则读取 block table，直接在不连续的物理块上完成注意力计算。
 
-本仓库当前实验覆盖前两层，并用 dense causal GQA reference 对账数值。
-它的 attention 仍先收集完整序列并物化 dense score，不是 CUDA PagedAttention kernel。
+本仓库当前实验覆盖前两层，并使用稠密因果 GQA 参考实现核对数值。
+实验中的注意力仍会收集完整序列并生成稠密分数矩阵，因此没有执行 CUDA PagedAttention 内核。
 
 ## Batching：GPU 忙不等于每个请求都快
 
@@ -159,8 +184,8 @@ Scheduler 仍需明确：
 
 ### Chunked prefill
 
-一个很长的 prompt 若在单轮完成，可能让所有 decode 请求等待。Chunked prefill 把它分段，
-给 decode 留出调度机会。Chunk 太小又会增加 scheduling 和 kernel launch 开销。
+一个很长的 Prompt 若在单轮完成，可能让所有 decode 请求等待。分块 prefill 把输入拆成多轮，
+让 decode 在中间获得调度机会。分块太小，则会增加调度次数和内核启动开销。
 
 因此必须用混合长短输入的真实 workload 测量 p95/p99，而不是只跑固定长度的满 batch。
 
@@ -172,8 +197,8 @@ KV 不足时，recompute preemption 会释放某条序列的 cache。它重新 a
 W_{executed}=W_{logical}+W_{recomputed}.
 \]
 
-被抢占请求不应重复向用户发出已经返回的 token，但 GPU 工作量会增加。
-因此 API usage、logical positions 和 executed positions 是不同账本。
+被抢占请求恢复后，不应再次向用户发送已经返回的 token，但 GPU 确实会重复部分计算。
+因此要分开记录 API 用量、用户序列中的逻辑位置和 GPU 实际执行的位置。
 
 端到端的 A/B 请求时间线见[请求生命周期](inference-request-lifecycle.md#request-b)。
 
@@ -198,13 +223,13 @@ Prefix cache 只减少可复用的 prefill。它不会减少后续 decode 的权
 
 ### Weight-only quantization
 
-若 (N) 个权重从 FP32 变为 4-bit，裸 code payload 的理论比值是 8 倍。
-真实格式还包含每组 scale、可选 zero point、alignment、容器、索引和未量化层。
+若 (N) 个权重从 FP32 变为 4-bit，单看量化编码，理论存储可以缩小 8 倍。
+真实格式还要保存每组缩放因子、可选零点、对齐填充、容器和索引，并保留未量化层。
 
 Group 越小，量化尺度越能适应局部范围，但 metadata 和 kernel 处理开销更高。
 最终速度取决于硬件是否有匹配的低位 kernel，以及瓶颈是否原本就在权重带宽。
 
-仓库的 CPU weight-only 实验真实执行 code、scale、bit packing、artifact reload 和反量化 matmul：
+仓库的 CPU 权重量化实验会实际执行整数编码、缩放、位打包、文件重载和反量化矩阵乘：
 
 ~~~powershell
 python projects/inference-serving/quantization_toy.py `
@@ -212,8 +237,8 @@ python projects/inference-serving/quantization_toy.py `
   --output-features 16 --input-features 33 --batch-size 8
 ~~~
 
-它最终仍用 FP32 NumPy matmul，所以适合检查文件格式和量化误差。Low-bit GPU 是否加速、resident VRAM
-是否降低，需要匹配的 GPU kernel 与显存测量。
+它最终仍使用 FP32 NumPy 矩阵乘，因此适合检查文件格式和量化误差。
+低位 GPU 是否加速、常驻显存是否下降，要使用匹配的 GPU 内核和显存测量回答。
 
 ### Activation 与 KV quantization
 
@@ -241,11 +266,11 @@ Draft 模型先提出若干 token，target 模型并行验证。Sampling 版本�
 P(accept)=\min(1,p/q).
 \]
 
-第一次拒绝时，从 normalized positive residual ((p-q)_+) 采样，并丢弃其后的 draft token。
-若整段 proposal 全部接受，再从额外 target position 采一个 bonus token。
+第一次拒绝时，要从归一化后的正残差 ((p-q)_+) 中采样，并丢弃草稿中位于它后面的 token。
+如果整段草稿全部接受，再从目标模型多计算出的下一个位置采样一个额外 token。
 
-这里要求 (p,q) 对应相同 tokenizer、vocabulary、已接受前缀和实际 sampling transform。
-Greedy speculative decoding 是另一份契约，不需要套用 sampling residual 规则。
+这里要求 (p) 和 (q) 使用相同的分词器、词表、已接受前缀和实际采样变换。
+贪心投机解码采用另一套接受规则，不套用随机采样的残差分布。
 
 是否加速取决于接受率、draft 成本、验证长度、batch 和 kernel。分布正确不等于 wall-clock 更快。
 
@@ -261,11 +286,29 @@ Tensor parallelism 把一层矩阵或 attention heads 分到多个设备，并�
 
 ### Kernel fusion 与 CUDA Graph
 
-Kernel fusion 减少中间读写和 launch 次数，但会增加 shape、dtype 与硬件专用性。
-CUDA Graph 适合重复、shape 较稳定的执行路径，常用于 decode；动态控制流和频繁变化的 shape 会降低适用性。
+内核融合减少中间数据读写和内核启动次数，但通常只支持特定形状、数据类型和硬件。
+CUDA Graph 适合重复且形状较稳定的执行路径，因此常用于 decode；动态控制流和频繁变化的形状会降低适用性。
 
 `torch.compile`、Triton、FlashAttention 和 CUDA Graph 解决的问题不同。
 看到某个开关可用，不代表它位于当前瓶颈路径。
+
+## 把诊断带回 Qwen3 与 nano-vLLM { #nano-vllm }
+
+你当前的 [实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md) 正好把上面的分支变成四组消融：
+
+| 实验对照 | 主要回答什么 | 应一起观察什么 |
+|---|---|---|
+| Eager / CUDA Graph | 符合条件的 decode 路径能否减少内核启动开销 | TPOT、执行路径、显存预留；prefill 仍走 eager |
+| 精确共享前缀 / 一处 token 漂移 | 前缀身份怎样决定缓存命中 | cached tokens、物理 block、TTFT |
+| 每轮 token 预算 256 / 1024 | 分块 prefill 怎样与 decode 分享调度轮次 | scheduled tokens、phase、TTFT 与 TPOT |
+| 并发 1 / 2 / 4 / 8 | 批处理收益何时被排队和 KV 容量抵消 | 吞吐、队列、KV block 高水位、失败终态 |
+
+这四组数据不要合成一个“哪个配置最快”的总排名。先回答源码机制是否按预期触发，
+再判断它对当前工作负载的延迟、吞吐和显存产生了什么影响。
+
+RTX 3070 Laptop 的功耗模式、显存、驱动、CUDA 和 Torch 版本都要写入报告。
+桌面显卡或别人的 4070 结果只能作为问题线索，不能替代本机测量。实验生成的 JSON 先通过离线验证器，
+再把具体数字写回教材。
 
 ## 单卡优化的推荐顺序
 
@@ -287,8 +330,8 @@ CUDA Graph 适合重复、shape 较稳定的执行路径，常用于 decode；�
 - 吞吐低：看 GPU 是否有调度空洞、CPU/tokenizer 是否供不上、失败是否被排除在分母外。
 - OOM：按权重、KV、workspace、graph 和其他进程拆显存，不从单一利用率猜测。
 
-再用 PyTorch profiler 或 Nsight 检查 kernel、HBM 和 collective。Profiler 截图本身不是结论；
-必须绑定 model、版本、shape、warmup、功耗和 workload。
+再用 PyTorch Profiler 或 Nsight 检查具体内核、GPU 显存流量和集合通信。
+保存分析结果时，要同时记录模型、软件版本、张量形状、预热方式、功耗和工作负载；单独一张截图无法支持结论。
 
 每次实验至少保存：
 
@@ -329,7 +372,7 @@ CUDA Graph 适合重复、shape 较稳定的执行路径，常用于 decode；�
 
 面试中不要只列技术名词。更有说服力的结构是：
 
-> 我先按 queue、prefill、decode 和容量拆指标；确认瓶颈后只改变一个变量；
-> 同时回归质量、尾延迟和失败率；最后说明结论绑定的模型、硬件、版本和 workload。
+> 我先把指标拆成排队、prefill、decode 和容量四部分。确认瓶颈后，每次只改变一个变量，
+> 同时回归质量、尾延迟和失败率。最终结论会绑定具体模型、硬件、软件版本和工作负载。
 
 下一步进入[vLLM 与单卡服务](vllm-serving.md)，把这些机制放进一个真实部署和验收流程。
