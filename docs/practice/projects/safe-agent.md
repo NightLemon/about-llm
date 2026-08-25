@@ -280,6 +280,9 @@ python -m about_llm.agents.cli evaluate `
   --traces projects/safe-agent/trajectory.example.jsonl
 ```
 
+这个文件保存了三条退款轨迹：正常退款并命中幂等缓存、跨租户退款被执行前拦截，以及远端已退款但本地超时后通过对账确认。
+把三条轨迹放在一起，是为了比较“模型提出了动作”“Handler 尝试执行”和“业务效果已经发生”这三个不同事件。
+
 报告保留每个比例的分子和分母；没有样本时写 `null`。任务成功率与安全检查分别统计，因为一次越权 handler、未审批
 effect、重复 effect 或长期 pending，都不应被其他成功任务平均掉。
 

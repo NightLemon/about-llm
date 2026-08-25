@@ -139,7 +139,7 @@ python -m pip install -c constraints/ci.txt -e ".[agents]"
 |---|---|
 | `scenario.example.jsonl` | ACL、审批、cache、跨租户与 pending 的离线场景 |
 | `loop.example.jsonl` | Planner 完成、循环、预算和审批暂停场景 |
-| `trajectory.example.jsonl` | Task success、policy、effect 与 pending 分开记录的轨迹样例 |
+| `trajectory.example.jsonl` | 三条退款轨迹：正常并命中缓存、跨租户拦截、超时后对账；用于分开统计任务结果、权限、业务效果与 pending |
 | `artifacts/agent/*.db` | SQLite 调用账本；保留 claim、attempt、pending 和 resolution |
 | `artifacts/agent/*.checkpoint.json` | Planner 暂停时的预算、事件和 pending decision |
 
