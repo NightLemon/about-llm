@@ -1,6 +1,30 @@
 # 实验与项目
 
-实验的目的不是把命令跑绿，而是隔离一个机制：先写预测，只改变一个变量，保留失败样例，再说明结果不能推出什么。固定 hash、录制报告和完整参数位于对应项目目录，不在本页展开。
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：希望把教材概念变成可运行观察，并逐步进入微调、RAG、Agent 或推理服务的开发者。
+- **先修**：实验 0–2 只要求基本 Python；GPU、云 API 和模型下载都有本地或 CPU 前置实验。
+- **首次阅读**：先找到与你当前目标对应的路线，再对每个实验执行“预测—运行—解释—写边界”。
+- **完成信号**：能保存一次失败，并说明它来自公式、数据、模型、运行时还是实验设计。
+- **卡住时**：把变量缩减到一个 CPU 样例，先手算预期结果，再查看程序输出。
+
+</div>
+
+实验不是命令清单，而是用观察修正理解的过程。每次都沿同一个循环进行：
+
+```mermaid
+flowchart TD
+  Q["写下要回答的问题"] --> P["运行前预测"]
+  P --> R["只改变一个变量"]
+  R --> O["保存原始结果与失败"]
+  O --> E["解释机制与适用边界"]
+  E --> Q
+```
+
+对应项目目录会保存固定版本、完整参数和机器报告；本页只负责告诉你为什么做、先观察什么、完成后进入哪里。
 
 **实践导航**：[选择学习路径](../guide/learning-paths.md) · [配置环境](../guide/environment.md) · [工程项目索引](project-index.md) · [生产检查表](production-checklist.md)
 { .doc-nav }
@@ -15,7 +39,25 @@
 | 构建 RAG 或 Agent | [RAG 实验 5](labs/lab-5-rag-request.md)、[Agent 实验 6](labs/lab-6-agent-lifecycle.md) | 1–3 天 |
 | 学习服务与评测 | [实验 7](#lab-7)、[实验 8](#lab-8) | 1–3 天 |
 
-每次实验至少提交四项：运行配置、原始观察、一个负例、自己的解释。模型下载、GPU 和网络实验都是选修；先用 CPU 基线建立正确性分母。
+每次实验至少留下四样东西：运行配置、原始观察、一个失败样例和自己的解释。
+模型下载、GPU 与网络路径可以稍后再做；CPU 基线先回答“逻辑是否正确”，目标设备再回答“实际资源与性能怎样”。
+
+## 你正在学习 Qwen3 + nano-vLLM 时，从这里走
+
+如果当前环境是 `Qwen3-0.6B + nano-vLLM + RTX 3070 Laptop`，不必先完成所有训练实验。
+下面这条路线会把你已经能运行的模型，与教材概念逐步对齐：
+
+| 顺序 | 实验 | 这一步把什么看清楚 |
+|---:|---|---|
+| 1 | [0A：从 logits 到采样](labs/lab-0a-sampling.md) | 最后一个 token 是怎样从概率分布中选出的 |
+| 2 | [实验 1：tokenizer](#lab-1) | 中文字符串怎样变成 Qwen3 接收的 token IDs |
+| 3 | [实验 2](#lab-2) 与 [2B](#lab-2b) | attention、GQA、KV Cache 和停止协议怎样连接 |
+| 4 | [7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md) | 不加载 GPU 模型，先看 block 分配、共享和写时复制 |
+| 5 | [7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md) | 一次真实请求怎样经过调度、prefill、decode 与 sampling |
+| 6 | [实验 7：服务基准](#lab-7) | 在 3070 上测显存、延迟、并发和失败终态 |
+
+完成第 5 步时，你已经走通一条推理系统主线。实验 3–4 负责“模型怎样训练与微调”，
+实验 5–6 负责“模型怎样进入 RAG 与 Agent”；它们可以按你的下一个目标插入，而不是作为 nano-vLLM 的前置条件。
 
 ## 实验 0：观察语言模型，而不是只和它聊天 { #lab-0 }
 
@@ -52,25 +94,40 @@
 4. 关闭 dropout，比较逐 token cache 与完整 causal forward。
 5. 让序列长度翻倍，分别记录理论中间元素数和实际运行时间。
 
-`projects/transformers-basics/online_softmax_demo.py` 可用来理解 running max、normalizer 和 value accumulator。NumPy 结果用于验证代数，不代表 FlashAttention、GPU 内存或性能。
+`projects/transformers-basics/online_softmax_demo.py` 会逐块打印当前最大值、归一化因子和值累加器，
+帮助你看懂 online softmax 怎样保持数值稳定。它用 NumPy 核对代数关系，不运行 FlashAttention，
+也不测 GPU 内存或性能。
 
 ### 实验 2A：MoE routing 与 capacity { #lab-2a }
 
-先在纸上为少量 token 完成 top-k routing，再改变 capacity factor、drop/reroute 策略和 combine normalization。关注三个问题：离散 expert index 如何产生、selected probability 如何传梯度、容量溢出怎样改变输出。
+先在纸上为少量 token 计算 top-k 路由，再逐个改变专家容量、溢出时丢弃或改派的规则，以及输出合并方式。
+每次只回答一个问题：
 
-进阶时再用独立的 dense 参考实现核对 sparse 路径，然后学习跨 rank token dispatch 与 router/expert gradient。
-每一步都画出 token owner、expert owner 和 collective；同机 CPU/Gloo 对账不能外推为 NCCL 性能或目标 MoE checkpoint 复现。
+1. router 怎样把连续分数变成离散专家编号？
+2. 被选专家的概率怎样把梯度传回 router？
+3. 专家容量不足时，哪些 token 的输出会改变？
+
+进阶实验先用一个执行全部专家的参考实现，核对稀疏路径的前向与梯度。
+两者对上后，再加入跨设备 token 分发。
+
+画图时标出 token 属于哪台设备、专家位于哪里，以及哪次集合通信负责发送和返回。
+同机 CPU/Gloo 只能核对控制流。NCCL 性能和真实 MoE checkpoint 需要目标硬件与模型实测。
 
 ### 实验 2B：配置与生成协议 { #lab-2b }
 
-用项目中的固定配置样例手算标准 GQA 的 KV Cache，再让字段缺失、head 数不可整除或 attention 语义变成 MLA，
-观察何时已经无法可靠估算。随后比较 tokenizer、model config 和 generation config 的 BOS/EOS/PAD、长度与停止规则。
+先用固定配置手算标准 GQA 的 KV Cache。然后分别制造三种情况：关键字段缺失、head 数无法整除、
+attention 结构改为 MLA。目标是找出标准公式在哪一步失去适用条件。
+
+容量算清后，再对照 tokenizer、模型配置和生成配置中的 BOS、EOS、PAD、长度上限与停止规则。
 
 交付物：一张“配置可推导 / 必须实测 / 信息不足”的表。扩大 `max_position_embeddings` 不能证明有效长上下文。
 
 ### 实验 2C：真实 checkpoint 选修 { #lab-2c }
 
-本地已有固定小模型 snapshot 时，可比较 prefill、cached decode、full recompute 和 `generate()` 的 token trace；也可只量化一层矩阵，观察局部误差如何传播到 logits。
+本地已有固定小模型 snapshot 时，可以比较四条路径：首次 prefill、使用缓存的 decode、
+每步重算完整序列，以及 `generate()`。保存每一步 token 和 logits，确认这些路径何时应当一致。
+
+另一个选修是只量化一层矩阵，再观察局部数值误差怎样传播到最终 logits。
 
 交付物：模型 revision、tokenizer/template、输入 token IDs、数值容差和资源记录。单个 prompt、单层量化或 argmax 不变都不能证明整体质量、显存收益或加速。
 
@@ -84,11 +141,15 @@
 4. 只改变层数、宽度或上下文中的一个变量。
 5. 保存最差生成样例，并判断问题来自数据、优化还是解码。
 
-选修 activation patching：预先固定 clean/corrupt pair、连续 metric 和 hook 位置，加入未来位置与随机来源负对照。热图或单样本高 recovery 不足以定位“事实存储层”。
+选修 activation patching（激活替换）时，先固定一对正常/扰动输入、连续评价指标和 hook 位置。
+再加入未来位置与随机来源作为负对照。单张热图或单个样本的高恢复率只能说明这次干预改变了输出，
+不足以定位普遍意义上的“事实存储层”。
 
 ## 实验 4：LoRA 领域适配 { #lab-4 }
 
-第一次做微调时，先完成[实验 4A：追踪一个 SFT 样本](labs/lab-4a-sft-sample.md)。它在 CPU 上把 template、shifted labels、LoRA backward、adapter-only reload 和 held-out comparison 串成一条可观察路径。
+第一次做微调时，先完成[实验 4A：追踪一个 SFT 样本](labs/lab-4a-sft-sample.md)。
+它在 CPU 上追踪同一条样本：渲染对话模板、右移标签、完成 LoRA 反向传播、只保存并重载 adapter，
+最后与留出样本比较。
 
 选择一个可以自动评价的任务，例如分类、结构抽取或受限 SQL。比较同一评测集上的 base + Prompt、RAG（若适用）和 LoRA；固定 template 与 decoding。
 
@@ -121,7 +182,8 @@
 ## 实验 5：可诊断的 RAG { #lab-5 }
 
 先完成[独立实验页：追踪一次 RAG 问答](labs/lab-5-rag-request.md)。
-它用请求 A/B 串起授权、BM25、重排、packing、exact span、citation 与 non-empty retrieval 拒答。
+请求 A 拥有可用证据，依次经过授权、BM25 召回、重排、上下文组装、逐字抽取和引用检查。
+请求 B 能检索到相关文字，却缺少答案证据，因此必须拒答。
 
 完成 walkthrough 后，再把固定小语料替换成自己的 corpus：
 
@@ -137,35 +199,47 @@
 
 ### 实验 5A：框架公平对照 { #lab-5a }
 
-在同一 corpus、query、授权主体和 top-k 下比较 canonical 实现、LangChain 与 LlamaIndex adapter。先预测每个主体能看到的文档，再检查无权正文是否曾进入 scorer、cache 或 callback，而不只比较最终 ID。
+让本仓库实现、LangChain 和 LlamaIndex 使用同一份语料、问题、授权主体与候选数量。
+运行前先写下每个主体允许看到哪些文档；运行后检查无权正文是否曾进入打分器、缓存或回调，
+不能只比较最终返回的文档 ID。
 
-交付物：框架前后的 canonical request/result、排序差异和一个故意把 ACL 后移的安全负例。Adapter API 对齐不证明框架默认安全，也不证明 learned retrieval 质量。
+交付物包括框架转换前后的统一请求与结果、排序差异，以及一个故意把 ACL 放到检索后的安全负例。
+接口能够接通，只证明数据结构完成了转换；框架默认安全性和检索质量仍需分别验证。
 
 ### 实验 5B：服务与真实模型选修 { #lab-5b }
 
 为 RAG API 增加 readiness、认证主体、schema、queue deadline 和后台工作取消。然后用一个固定小模型检查“有证据需引用、无证据需拒答”。保留第一次失败，不要调好 Prompt 后只展示成功版本。
 
-交付物：typed terminal、generator 调用次数、public/audit 两种投影和失败样例。Loopback API 不等于 TLS/IAM；策略重放也不等于当时线上真实省掉了模型调用。
+交付物包括结构化终态、生成器调用次数、面向用户与审计的两种结果，以及失败样例。
+本机回环 API 只验证本地请求路径；TLS、IAM 和远端网络仍需目标环境测试。
+重放策略日志也只能说明规则会怎样判断，不能反推历史线上请求一定省掉了模型调用。
 
 ## 实验 6：安全的工具 Agent { #lab-6 }
 
-先完成[独立实验页：追踪一次 Agent 退款](labs/lab-6-agent-lifecycle.md)。它用一笔“远端已受理、
-本地响应超时”的退款，串起 proposal、closed schema、资源 ACL、审批、pending fence、provider verifier
-和 reconciliation。完成后再把固定 Planner 换成模型或框架，不要先把控制状态藏进一个 `invoke()`。
+先完成[独立实验页：追踪一次 Agent 退款](labs/lab-6-agent-lifecycle.md)。
+同一笔退款会经历动作提议、严格参数解析、资源 ACL、人工审批和远端执行。
+
+最关键的分支是：远端已经受理，本地响应却超时。实验会继续追踪 `pending` 状态、远端结果核验与恢复对账。
+先用固定 Planner 看清这些控制状态，再换成模型或框架；不要一开始就把整条链路藏进一个 `invoke()`。
 
 交付物：九阶段状态图、字段信任边界、授权负例、effect receipt、恢复时间线和证据边界。
 
 ### 实验 6A：MCP 与 A2A 互操作 { #lab-6a }
 
-按 memory transport → stdio → loopback HTTP 的顺序学习 MCP，再观察 A2A 的 discovery、message 和 task 状态。每种协议都先画消息序列，并分别记录 schema validation、应用 allowlist、transport、认证与业务授权发生在哪里。
+MCP 实验先使用进程内传输，再切换到 stdio，最后进入本机回环 HTTP。每次只改变传输层，观察消息内容是否保持一致。
+A2A 实验再加入 Agent 发现、消息和任务状态。
+
+每种协议都先画消息序列，并标出五个检查点：schema 校验、应用允许列表、传输、身份认证和业务授权。
 
 交付物：请求/响应序列、生命周期错误、未知工具、取消和来源边界。官方 SDK + loopback 只能证明当前路径真实执行，不等于通过 conformance、TLS/OAuth、远程或跨厂商测试。
 
 ## 实验 7：量化与服务基准 { #lab-7 }
 
-先完成[实验 7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md)，用一条父子序列追踪真实 CPU K/V tensor；
-再完成[实验 7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md)，把相同概念放进固定模型、
-真实 scheduler 与 GPU runtime。然后用可手算的小例子理解 preemption 与量化，最后进入真实服务：
+先完成[实验 7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md)。它用一条父子序列追踪真实 CPU K/V tensor，
+让你先看清 block 分配、共享与写时复制。
+
+再完成[实验 7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md)。同样的概念会进入固定模型、
+真实调度器和 GPU 运行时。理解抢占与量化的小例子后，再开始服务基准：
 
 1. 固定模型、runtime、硬件和 prompt/output 长度分布。
 2. 先验证单请求 token/usage/finish，再做 open-loop 多档负载。
@@ -173,13 +247,19 @@
 4. 断开流式客户端，分别观察请求终止、底层停算和 KV 释放。
 5. 比较 BF16/FP16、8-bit、4-bit 时联合检查质量与性能。
 
-交付物：Paged KV 预测表、nano-vLLM 逐步 trace、workload contract、原始终态、容量曲线和故障记录。
-CPU toy 的离散 step、逻辑 bytes 或本地取消不能冒充 GPU 性能、显存或远端计费证据。
-详细入口见 [Inference Serving](projects/inference-serving.md)。
+交付物包括：
+
+- Paged KV 预测表与 nano-vLLM 逐步轨迹；
+- 负载说明、原始终态和容量曲线；
+- 至少一条故障记录。
+
+CPU 小实验中的离散步骤和逻辑字节只用于解释控制流。GPU 性能与显存必须来自目标设备实测，
+本地取消也不能代表远端供应商的停算或计费行为。详细入口见 [Inference Serving](projects/inference-serving.md)。
 
 ## 实验 8：评测与指标冲突 { #lab-8 }
 
-构造少量能手算的反例，比较 literal exact、normalized exact、token F1、JSON schema/value 和 citation span：
+构造少量能手算的反例，依次比较原文完全相等、规范化后相等和 token F1。
+结构化任务再分别检查 JSON schema 与字段值，RAG 任务则检查引用位置与证据支持：
 
 1. 大小写 ID、JSON 空格和数组顺序是否应该视为等价？
 2. schema 合法但字段值错误时，哪个指标必须失败？
