@@ -404,7 +404,7 @@ v3 又把 overflow policy 做成可执行反事实。4 个相同 token 的 top-1
 
 Expert weights 分布在设备上时，token 按 routing 做 all-to-all dispatch，再返回原设备。成本取决于 token 数、hidden size、top-k、dtype、网络、负载不均和消息大小。
 
-### 15.1 真实 token-to-owner all-to-all control
+### 15.1 真实 token-to-owner all-to-all control {#moe-all-to-all-control}
 
 仓库的独立 CPU/Gloo fixture 让 expert 0/1 只驻留在 rank 0/1，并用 variable splits 完成 count exchange、token/gate 与 metadata dispatch、owner forward、output/gate 与 metadata return。Source→owner counts 是 `[[1,2],[1,0]]`；每 rank 共执行五次 `all_to_all_single`。Rank 0 的 return arrival 的 global token 顺序为 `[1,0,2]`，不是 source-local `[0,1,2]`，所以必须用 source rank/local index metadata scatter 后再乘 gate。正确输出与单进程 oracle 精确对账；按 arrival row 直接合并的最大差为 `0.8958737432590591`。
 
