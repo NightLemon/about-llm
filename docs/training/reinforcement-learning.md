@@ -7,36 +7,67 @@
 
 - **适合读者**：需要理解或评审 LLM post-training、online RL 和 verifiable reward 的开发者与算法工程师。
 - **先修**：[数学基础](../foundations/math.md)中的概率与梯度、[生成](../core/generation.md)和[对齐入门](alignment-basics.md)。
-- **首次阅读**：contextual bandit → policy gradient → MDP/advantage → PPO → GRPO/RLVR → 方法选择。
-- **完成信号**：能从采样分布推导 REINFORCE，区分 old/current/reference policy，并为 reward loophole 写出独立评测。
+- **首次阅读**：跟随一道代码题，观察候选回答怎样被采样、评分、分配 credit，再进入 PPO、GRPO 与 RLVR。
+- **完成信号**：能解释一个 verifier 分数怎样改变回答概率，并指出采样策略、优势估计和独立验收各自解决什么问题。
 - **卡住时**：先运行本章的三动作 bandit，再回到[对齐完整章节](alignment.md)看 SFT、RM 和 DPO 数据流。
 
 </div>
 
-强化学习（Reinforcement Learning, RL）不是“给模型一个分数再反向传播”这么简单。它处理的是：动作由当前 policy 采样、reward 可能延迟、动作改变后续状态，而训练数据分布又随 policy 改变。
+强化学习（Reinforcement Learning，RL）不会直接告诉模型“正确答案应该写什么”。它先让当前策略生成回答，
+再根据结果调整这些回答被再次生成的概率。采样、评分和更新因此形成一个循环，训练数据也会随模型改变。
 
-对 LLM 来说，一个 response 可以视为 token actions 的 trajectory。数学题答案、代码测试或工具执行结果可以提供 reward，但 verifier 只是任务代理；把它优化得更高不自动意味着帮助性、事实性或安全性提高。
+本章用一道代码题贯穿这个循环。假设 Prompt 要求实现一个带边界条件的函数，模型可能给出三种完整回答：
 
-## 1. 先从 contextual bandit 开始
+| 候选回答 | 测试现象 | 教学 reward |
+|---|---|---:|
+| A | 接口或语法错误 | 0 |
+| B | 普通样例通过，边界条件失败 | 1 |
+| C | 当前测试全部通过 | 4 |
 
-Bandit 只有一次决策，没有状态转移。给定上下文 \(x\)，policy 在动作集合中采样 \(a\)，环境返回 reward \(r(x,a)\)：
+这里的 0、1、4 是为了讲公式而设定的分数。仓库脚本只枚举三个抽象动作，并没有真的调用语言模型或运行代码测试。
+后文会专门讨论：即使 C 通过当前测试，也不代表代码已经满足所有真实需求。
+
+一次训练迭代可以先画成：
+
+```mermaid
+flowchart LR
+  P["代码题 Prompt"] --> O["旧策略采样回答"]
+  O --> V["测试或 verifier 评分"]
+  V --> A["估计 advantage"]
+  A --> N["更新当前策略"]
+  R["参考策略"] --> N
+  N --> H["独立留出题与安全评测"]
+```
+
+接下来先把完整回答看成一个动作，手算概率怎样变化；然后再把回答展开成 token 序列，加入延迟 reward、
+value、PPO 和组内相对优势。这样每个术语都会对应到上图中的一个具体问题。
+
+## 1. 先把一个完整回答当成一次选择
+
+最简单的版本只选择一次：看到代码题 \(x\) 后，策略从 A、B、C 中选一个完整回答 \(a\)，
+测试程序返回分数 \(r(x,a)\)。这种没有后续状态转移的问题叫 contextual bandit（带上下文老虎机）：
 
 \[
 J(\theta)=\mathbb E_{a\sim\pi_\theta(\cdot\mid x)}[r(x,a)].
 \]
 
-若 policy 是 logits \(z\) 上的 categorical softmax，动作概率为 \(p_i\)，且每个动作 reward \(r_i\) 已知，则可以枚举：
+仓库样例使用 logits `[-0.4, 0.1, 0.3]`。经过 softmax 后，三个回答的概率约为 0.214、0.354 和 0.432。
+因为这里只存在三个动作，可以直接枚举期望 reward：
 
 \[
-J=\sum_i p_i r_i,
-\qquad
+J=\sum_i p_i r_i.
+\]
+
+代入 0、1、4 后，当前期望 reward 约为 2.081。对每个 logit 的导数是：
+
+\[
 \frac{\partial J}{\partial z_j}=p_j(r_j-J).
 \]
 
-这个有限问题很重要：所有 action 都能枚举，所以 policy gradient 可以手算。真实 LLM 无法枚举所有 response，
-但采样估计器至少应先在这个小问题上与手算结果对上。
+C 的 reward 高于当前期望，因此它的梯度为正；A 和 B 低于期望，梯度为负。沿梯度上升一步，
+策略会提高 C 的相对概率。这个有限问题让我们先核对方向和数值，再处理无法枚举全部回答的真实 LLM。
 
-## 2. Score-function / REINFORCE 梯度
+## 2. 真实训练只能看到采样到的回答
 
 利用恒等式 \(\nabla_\theta \pi=\pi\nabla_\theta\log\pi\)：
 
@@ -46,11 +77,13 @@ J=\sum_i p_i r_i,
 \left[r(x,a)\nabla_\theta\log\pi_\theta(a\mid x)\right].
 \]
 
-用采样动作近似期望就是 score-function estimator，经典序列版本常称 REINFORCE。Reward 本身不需要可微；梯度通过 sampled action 的 log probability 进入 policy。
+真实 LLM 的完整回答太多，无法像上面那样全部枚举。训练只能采样若干回答，用
+\(r\nabla\log\pi(a\mid x)\) 估计梯度。这个写法称为 score-function estimator，序列任务中的经典形式常称 REINFORCE。
 
-这不表示离散采样被“直接求导”。对动作取样仍不可微，恒等式把目标梯度改写成可用样本估计的期望。
+测试分数本身可以来自不可微的编译器、单元测试或模拟器。梯度作用在“模型给采样回答分配了多少概率”上，
+并没有穿过测试程序，也没有对离散采样直接求导。
 
-### 2.1 Baseline 不改变期望的条件
+### 2.1 为什么要减去 baseline
 
 可减去不依赖当前 sampled action 的 baseline \(b(x)\)：
 
@@ -61,11 +94,13 @@ J=\sum_i p_i r_i,
 =\nabla J.
 \]
 
-Baseline 可以依赖 state/context，但不能偷看本次 action 后再任意变化。Action-dependent baseline 若没有对应修正，通常会引入 bias。
+baseline 可以理解成“这道题通常能拿多少分”。若采样到 C，reward 高于 baseline，就提高它的概率；
+若采样到 A，则降低它的概率。baseline 可以依赖题目或当前状态，但不能根据本次选中的回答随意改值。
 
-常用 \(b=V(s)\) 近似预期 return。它往往降低方差，但 expected reward baseline 不一定是整个梯度向量总方差下的最优常数；最优值还与各动作 score-gradient norm 有关。
+只要 baseline 与当前采样动作无关，上式最后一项为零，因此梯度期望保持不变。合适的 baseline 会降低采样方差。
+常用的 \(V(s)\) 估计预期 return，但它未必是梯度向量总方差意义下的最优常数；最优值还取决于各动作的 score-gradient 范数。
 
-### 2.2 精确可运行对照
+### 2.2 先在三个动作上把公式对准
 
 运行：
 
@@ -74,39 +109,48 @@ python projects/single-gpu-finetuning/policy_gradient_toy.py
 python -m pytest tests/test_policy_gradient.py -q
 ~~~
 
-脚本枚举三动作 policy，而不是依赖 Monte Carlo 恰好接近答案。固定 logits [-0.4, 0.1, 0.3]、rewards [0, 1, 4] 时：
+脚本枚举全部三个动作，因此结果不会受有限次随机采样影响。使用上面的 logits 和 rewards 时：
 
 - exact expected reward 约为 2.081241；
 - exact gradient 约为 [-0.446381, -0.382343, 0.828724]；
-- baseline 为 0、expected reward 或最小方差常数时，估计器期望相同；
-- 三者 total variance 约为 2.609983、0.884520、0.784108。
+- baseline 为 0、期望 reward 或最小方差常数时，估计器的期望相同；
+- 三种设置的总方差约为 2.609983、0.884520 和 0.784108。
 
-测试还用 central finite difference 独立核对 exact gradient。这个公式实验没有执行环境、模型或 Monte Carlo
-sampling，因此只回答梯度实现是否符合当前定义；RL 训练稳定性和 reward 有效性需要另外评测。
+测试还用中心有限差分独立核对精确梯度。这个 CPU 实验只证明公式实现与当前定义一致。
+它没有运行语言模型、代码环境或随机采样，因此无法说明训练是否稳定，也无法说明这套 reward 是否代表真实代码质量。
 
-## 3. 从 bandit 到 MDP
+## 3. 把完整回答展开成 token 序列
 
-Markov Decision Process（MDP）包含：
+上面的 bandit 一次选完整回答。语言模型实际是逐 token 生成：当前前缀决定下一步分布，新 token 又成为下一步状态的一部分。
+这时问题可以写成 Markov Decision Process（MDP，马尔可夫决策过程）：
 
-- state \(s_t\)：当前决策所需的信息；
-- action \(a_t\sim\pi_\theta(\cdot\mid s_t)\)；
-- transition \(P(s_{t+1}\mid s_t,a_t)\)；
-- reward \(r_t\)；
-- discount \(\gamma\) 与 return \(G_t=\sum_{k\ge0}\gamma^k r_{t+k}\)。
+- 状态 \(s_t\)：代码题、已经生成的前缀和当前可见环境信息；
+- 动作 \(a_t\)：从 \(\pi_\theta(\cdot\mid s_t)\) 采样的下一个 token；
+- 转移：把新 token 加入前缀，或执行工具后取得新的环境状态；
+- reward \(r_t\)：当前步骤收到的反馈；
+- return \(G_t=\sum_{k\ge0}\gamma^k r_{t+k}\)：从当前步骤开始的折扣回报。
 
-在一个纯文本 response 中，可把 prompt 与已生成 prefix 视为 state，下一个 token 视为 action。调用工具后，state 还包括可信观察、权限状态、预算和外部环境结果，已经不只是 token prefix。
+对于代码题，测试分数通常到回答结束后才出现。前面许多 token 的即时 reward 都是 0，最后执行测试才得到 0、1 或 4。
+如果模型还会调用编译器或工具，状态就要包括可信工具结果、权限和剩余预算，不能只保存文本前缀。
 
-“Markov”表示当前 state 对未来足够，不表示现实世界天然可观测。若模型只能看到部分环境信息，更接近 POMDP；此时 history、belief 或外部 memory 是 state estimator 的一部分。
+“Markov”要求当前状态包含预测未来所需的信息。现实系统经常只能观察到一部分环境，因而更接近 POMDP（部分可观测 MDP）。
+历史记录、belief state（信念状态）或外部记忆可以帮助估计状态，却不会让缺失的业务事实自动出现。
 
 ### 3.1 Terminated 与 truncated
 
-**terminated** 表示环境进入真正终态，后续 value 为 0。**truncated** 表示因长度、超时或采集预算停止，是否 bootstrap next value 取决于任务语义。
+代码已经提交并完成判定时，轨迹真正结束，称为 **terminated**，后续 value 为 0。
+如果回答只是因为最大长度、超时或采集预算而停止，则称为 **truncated**。此时任务也许仍有后续价值，
+是否使用下一状态的 value 需要由采集协议明确决定。
 
-两者都不应让 GAE recursion 穿过 trajectory 边界。把长度截断当成功终止会系统性扭曲长回答、工具任务和超时行为的 value target。
+无论是哪种停止方式，下一条样本都不能接到这条轨迹的 GAE 递推中。把“长度用完”误写成“任务成功结束”，
+会扭曲长回答和工具任务的 value 目标。
 
-## 4. Credit assignment
+## 4. 最后的测试分数应该归给哪些 token
 
-终局 reward 要回答“哪些动作贡献了结果”。核心函数是：
+候选 C 最后得到 4 分，但这 4 分由哪些 token 贡献？函数签名、边界判断和返回值显然比空格更重要，
+终局 reward 本身却没有提供这种解释。这就是 credit assignment（信用分配）问题。
+
+先定义三个量：
 
 \[
 V^\pi(s)=\mathbb E[G_t\mid s_t=s],
@@ -116,25 +160,28 @@ Q^\pi(s,a)=\mathbb E[G_t\mid s_t=s,a_t=a],
 A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s).
 \]
 
-Advantage 比较一个动作相对当前 state 平均行为好多少。它既是 credit signal，也充当 state-dependent baseline。
+\(V^\pi(s)\) 表示从当前状态继续时通常能得到多少回报，\(Q^\pi(s,a)\) 表示先选动作 \(a\) 后通常能得到多少。
+二者之差 \(A^\pi(s,a)\) 是 advantage（优势）：这个 token 相对当前策略的平均选择好多少。
 
-LLM 常只有 response-level reward。把同一个终局 reward 复制给所有 token 是合法但高方差的 Monte Carlo 估计；引入 token-level KL、value model 或 process reward 会改变 credit 分配，也会增加新的模型误差和攻击面。
+最直接的做法是把终局分数作为整条回答中每个 token 的 Monte Carlo return。这种估计有效，但方差通常很大。
+加入 value model、逐步 reward 或逐 token KL 会改变 credit 的分配方式，同时也引入新的预测误差和可被利用的接口。
 
 ## 5. Actor–critic、TD 与 GAE
 
-Actor 是 policy，critic 估计 value。一步 TD residual 为：
+Actor 是生成回答的策略，critic 负责估计 value。一步 TD residual（时序差分残差）为：
 
 \[
 \delta_t=r_t+\gamma b_tV(s_{t+1})-V(s_t),
 \]
 
-其中 \(b_t\) 明确控制是否 bootstrap。Generalized Advantage Estimation（GAE）递推为：
+其中 \(b_t\) 控制当前步骤是否使用下一状态的 value。Generalized Advantage Estimation（GAE，广义优势估计）继续递推：
 
 \[
 A_t=\delta_t+\gamma\lambda c_t A_{t+1},
 \]
 
-\(c_t\) 在 episode boundary 和 padding 处为 0。较小 \(\lambda\) 更依赖 value、方差低而 bias 可能更大；较大 \(\lambda\) 更接近 Monte Carlo return。
+\(c_t\) 在轨迹边界和 padding 处为 0，防止 credit 穿过样本边界。较小的 \(\lambda\) 更依赖 critic，
+通常方差较低、偏差可能较大；较大的 \(\lambda\) 更接近使用完整回报的 Monte Carlo 估计。
 
 运行现有 NumPy 对照示例：
 
@@ -143,25 +190,34 @@ python projects/single-gpu-finetuning/ppo_objective_toy.py
 python -m pytest tests/test_ppo_objectives.py -q
 ~~~
 
-它分别验证 terminal、truncated bootstrap、padding gap、GAE recursion 和 PPO clipping，不运行 rollout engine 或语言模型。
+样例中的两步轨迹得到 TD residual `[-0.275, 0.75]`，GAE advantage 为 `[0.265, 0.75]`；
+第三个 padding 位置始终为 0。另一个截断样例在启用 bootstrap 时 advantage 为 2.3，关闭时为 0.5，
+而递推都不会跨进下一条轨迹。
 
-## 6. On-policy、off-policy 与数据身份
+这些数字验证 GAE、终止/截断和 padding 的实现。脚本没有运行 rollout engine 或语言模型，也没有验证 critic 是否准确。
 
-On-policy 方法要求数据由当前 policy 或可控的旧版本生成；policy 改变后，旧数据的分布身份也改变。PPO 保存 old log probability，在有限轮更新内使用 probability ratio 修正。
+## 6. 保存回答文本，还不等于保存了训练数据身份
 
-Off-policy 方法允许复用其他 behavior policy 的数据，但需要重要性权重、value learning 或其他校正假设。没有保存 behavior policy、sampling config、prompt/template 和 mask，就不能事后可靠恢复 ratio。
+PPO 等 on-policy 方法使用当前策略或一个受控旧版本采集回答。每轮更新后，策略分布已经变化，旧回答也不再代表当前分布。
+因此采集候选 C 时还要保存：当时模型对每个有效 token 的 log probability、采样配置、Prompt 与模板、token IDs 和 mask。
 
-SFT 数据和固定 preference pairs 是 offline 数据；PPO rollouts 是 online-policy 数据。把旧 response 文本重新 tokenize 后假设它来自当前 policy，不等于拥有原始 behavior log probabilities。
+off-policy 方法可以复用其他行为策略产生的数据，但需要重要性权重、value learning 或相应校正假设。
+如果采集时没有保存行为策略和概率，事后重新 tokenize 一段文本无法恢复它当时被采样的概率。
 
-## 7. PPO 中的三个 policy
+SFT 样本和固定偏好对属于离线数据；PPO rollout 则来自不断更新的在线策略。两者的数据身份和可用公式不同。
 
-LLM PPO 常同时出现：
+## 7. PPO 为什么同时保留三个策略
 
-1. **current policy** \(\pi_\theta\)：正在更新；
-2. **old policy** \(\pi_{old}\)：生成本轮 rollout，用于 ratio；
-3. **reference policy** \(\pi_{ref}\)：通常冻结，用于 KL regularization。
+候选 C 被采样后，PPO 会同时用到三个不同角色：
 
-三者不能用一个 base model 名称代替。Old policy 会周期性刷新；reference 的用途是限制相对初始行为漂移。
+| 角色 | 在代码题中的作用 | 是否随这一小轮梯度更新 |
+|---|---|---:|
+| old policy \(\pi_{old}\) | 记录候选 C 是由什么分布采样出来的 | 否，下一轮采集时刷新 |
+| current policy \(\pi_\theta\) | 正在提高或降低各 token 概率 | 是 |
+| reference policy \(\pi_{ref}\) | 衡量当前行为偏离初始模型多远 | 通常冻结 |
+
+三者即使源自同一个基础模型，也不是同一份训练状态。old policy 用于修正“数据由旧分布采集”这一事实，
+reference policy 通常用于 KL 正则，限制模型远离初始行为。
 
 Clipped surrogate 为：
 
@@ -173,124 +229,154 @@ L^{clip}=\mathbb E_t\left[
 \rho_t=\exp(\log\pi_\theta-\log\pi_{old}).
 \]
 
-正 advantage 在 ratio 过大时截上界；负 advantage 在 ratio 过小时截下界。Clip 不是 full-distribution KL 的硬约束：未采样动作的概率可以剧烈变化，而 sampled ratio 仍等于 1。
+\(\rho_t\) 比较 current policy 与 old policy 对这次采样 token 的概率。advantage 为正时，PPO 限制概率上升带来的收益；
+advantage 为负时，则限制概率过度下降带来的收益。
 
-## 8. GRPO-style group-relative advantage
+仓库样例使用 ratios `[1.5, 0.5, 1.0]` 和 advantages `[1, -1, 1]`。当 \(\epsilon=0.2\) 时，
+参与目标的 ratios 变成 `[1.2, 0.8, 1.0]`，三个 token 中有两个触发 clipping。
 
-Group Relative Policy Optimization 类方法对同一个 prompt 采样一组 responses，计算 reward 后在组内构造相对 advantage。一个常见教学形式是：
+clipping 只作用在采样到的动作上。反例中，一个采样动作的 ratio 仍为 1、近似 KL 为 0，
+完整三动作分布的 forward KL 却约为 11.76。因此 PPO clip 不是对整个输出分布的硬性 KL 约束。
+
+## 8. GRPO：让同一道题的候选彼此比较
+
+另一种做法是对同一道代码题一次采样多份回答，再比较组内分数。Group Relative Policy Optimization（GRPO）
+类方法常用下面的教学形式构造相对 advantage：
 
 \[
 A_i=\frac{r_i-\bar r}{\sqrt{\operatorname{Var}(r)}+\epsilon}.
 \]
 
-这样可以不训练独立 value model，但没有消除 baseline、方差或 credit assignment 问题：
+在仓库样例中，四个候选的 rewards 是 `[0, 1, 4, 4]`。组内均值为 2.25，标准差约为 1.785，
+对应 advantages 约为 `[-1.260, -0.700, 0.980, 0.980]`。高于组内平均的两个候选得到正信号。
 
-- 同组 rewards 全相等时 advantage 为 0，当前 group 没有相对学习信号；
-- group 太小会让 mean/std 噪声很大；
-- response 相关、重复或由同一错误模式产生时，有效样本量更低；
-- reward scale、standard-deviation convention、token reduction 和 KL 处理会改变目标；
-- 只有 response reward 时，同一 advantage 仍会作用于一串 token log probabilities。
+如果四个候选都是 2 分，组内没有优劣信息，advantage 就应全为 0。给分母加 \(\epsilon\) 是为了数值稳定，
+不应凭空制造训练信号。
 
-policy gradient toy 对 [0,1,4,4] 得到零均值、单位标准差 advantages；对 [2,2,2,2] 明确返回 degenerate zero vector，而不是用 epsilon 制造伪信号。
+组内比较省去了独立 value model，却仍要面对几个问题：样本少时均值与标准差噪声大；候选重复时有效样本量下降；
+只有终局分数时，同一个 advantage 仍会作用在一长串 token 上。reward 的尺度、标准差定义、长度归一化、KL 和多轮更新方式也都会改变目标。
 
-“GRPO”在论文和库中并不唯一决定 clipping、reference KL、长度归一化、group std、old policy 或 multi-epoch 更新。复现时必须写出实际公式、mask 和代码版本。
+因此“使用 GRPO”还不是可复现描述。实验记录必须给出实际公式、mask、采样组构造和代码版本。
 
-## 9. RLVR、ORM 与 PRM
+## 9. RLVR：测试程序能评分什么，模型就会优化什么
 
-Reinforcement Learning with Verifiable Rewards（RLVR）使用可程序核验的结果信号，例如数学答案、代码测试、schema 或模拟器状态。它降低部分人工标注成本，但只优化 verifier 可见的目标。
+Reinforcement Learning with Verifiable Rewards（RLVR，可验证奖励强化学习）使用程序给出 reward，
+例如数学答案检查、代码测试、JSON schema 或模拟器终态。代码题正是一个典型场景。
 
-- Outcome Reward Model（ORM）或 outcome verifier 评价最终答案；信号便宜但稀疏。
-- Process Reward Model（PRM）评价中间 step/state；信号更密，但必须处理多条合法路径和局部标签可靠性。
+只检查最终答案的组件称为 outcome verifier；它容易自动化，但信号比较稀疏。
+若系统还评价推理或执行过程中的中间状态，就属于 process reward。信号更密并不等于更可靠，
+因为同一道题可能存在多条合法路径，中间步骤的标签本身也可能出错。
 
-“Verifiable”不等于“不可利用”。常见 loophole 包括答案 parser 容错、测试覆盖不足、超时被算作通过、环境状态没有清理，以及模型把 hidden test 信息带入上下文。
+再看候选 C。“当前测试全部通过”仍可能来自以下捷径：
 
-必须把 verifier score 与独立 task success 分开。Best-of-N 中 oracle success 上升、proxy score 上升而 verifier-selected success 下降是完全可能的。
+- 只为公开样例硬编码返回值；
+- 利用答案解析器的宽松规则；
+- 让测试超时被误记为通过；
+- 读取残留环境状态或意外泄漏的隐藏测试信息。
 
-## 10. Preference optimization 方法谱系
+所以训练 reward 要与独立任务成功率分开报告。采样 \(N\) 个候选时，至少区分三件事：
 
-先按数据和分布分类，再看算法名：
+| 指标 | 它实际回答什么 |
+|---|---|
+| Oracle@N | \(N\) 个候选里是否至少存在一个真正正确的答案，是理想选择器的上限 |
+| verifier-selected@N | 验证器实际挑中的答案是否通过独立验收 |
+| proxy reward | 训练时使用的测试或模型给了多少分 |
 
-| 方法族 | 数据 | 是否在线采样 | 核心问题 |
-|---|---|---:|---|
-| SFT | 单个理想 response | 否 | 拟合 demonstration likelihood |
-| RM + PPO | rollout + reward/value | 是 | 在受约束策略更新中最大化 reward |
-| DPO/IPO 类 | chosen/rejected pairs + reference 语义 | 否 | 学 reference-relative preference gap |
-| ORPO 类 | SFT target + preference pair | 否 | 联合 likelihood 与 pairwise preference term |
-| KTO 类 | desirable/undesirable unary feedback | 否 | 从非成对反馈构造 reference-relative utility |
-| SimPO 类 | chosen/rejected pairs | 否 | 用长度归一化 policy score 和 margin，避免显式 reference forward |
-| GRPO/RLVR | 同 prompt 的 sampled group + reward | 是 | 用组内相对信号更新生成 policy |
+候选集合里出现正确答案的概率可能随 \(N\) 上升，而实际选择质量反而下降：样本越多，越容易遇到一个专门利用 verifier 漏洞的高分答案。
 
-这些名称不能替代目标公式。是否有 reference、loss 是 sum 还是 mean、chosen/rejected 是否同源、长度怎样归一化、KL 在 reward 还是 loss 中，都必须从固定实现核对。
+## 10. 不是所有后训练方法都需要在线 RL
 
-## 11. Reward hacking 与 optimizer's curse
+先看反馈以什么形式存在，再选算法：
 
-Policy 会寻找 reward 中最容易提高的方向，而不是理解设计者真正意图。这是 Goodhart-type failure：代理指标成为优化目标后，原有相关性可能失效。
+| 已有反馈 | 常见起点 | 是否需要当前策略在线采样 |
+|---|---|---:|
+| 每道题有一份理想回答 | SFT，直接学习示范 | 否 |
+| 每道题有 chosen/rejected 偏好对 | DPO、IPO、SimPO 等离线偏好目标 | 否 |
+| 同时有理想回答和偏好对 | ORPO 等联合目标 | 否 |
+| 只有 desirable/undesirable 单条反馈 | KTO 等非成对目标 | 否 |
+| 有可复用 reward model 和交互环境 | RM + PPO | 是 |
+| 当前回答可以由测试或模拟器评分 | RLVR、GRPO 类路线 | 是 |
 
-增加采样或搜索还会产生 optimizer's curse。候选越多，越容易找到 verifier 高估的异常项；因此同时报告：
+例如，若代码题已经有人写好高质量参考实现，SFT 就能学习基本形式；若只有 A 优于 B 的固定标注，
+离线偏好优化可以直接使用这些数据。只有当测试结果取决于当前策略实际生成了什么，在线采样才提供新的训练信息。
 
-- oracle@N 与 verifier-selected@N；
-- proxy score 与真实 success；
-- verifier calibration、OOD 和 adversarial slices；
-- calls、tokens、费用、wall-clock 和 tail latency。
+算法名仍不足以复现实验。还要核对是否使用 reference policy、loss 怎样归一化、偏好数据怎样产生、
+长度怎样计权，以及 KL 放在 reward 还是 loss 中。
 
-训练 reward curve 只能用于诊断训练过程，不能替代 held-out outcome evaluation。
+## 11. 为什么 reward 越高，真实结果反而可能越差
 
-## 12. LLM RL 的 mask 与分母
+策略会寻找最容易提高 reward 的行为，而不是自动理解设计者的真实意图。当代理指标成为优化目标后，
+它与真实目标原有的相关性可能失效，这是一类 Goodhart failure。
 
-一个 batch 中至少有 prompt tokens、response tokens、padding、EOS 和可能的 tool/environment tokens。必须明确：
+采样或搜索越多，还越容易找到被 verifier 高估的异常答案，这称为 optimizer's curse（优化者诅咒）。
+发布报告因此要同时保存：候选集合中是否存在正确答案、实际选中答案是否正确、代理 reward、
+分布外与对抗切片，以及模型调用次数、token、费用和尾延迟。
 
-- 哪些 token 计入 policy log probability；
-- 哪些 token 拥有 advantage；
-- value loss 和 entropy 的分母；
-- per-token、per-sequence 或 per-prompt group 的权重；
-- response 长度增加是否获得更多 loss weight；
-- truncated、invalid 和 verifier error 是否留在 attempted 分母。
+训练 reward 曲线适合诊断优化过程。最终能力仍要由未参与训练的题目、安全样本和独立验收程序决定。
 
-先对一条 trajectory 打印 token IDs、mask、old/current/ref log probabilities、reward、advantage 和 return，再扩大 batch。
+## 12. 一条回答进入 loss 前，先把 mask 打印出来
+
+一条训练样本可能包含 Prompt、模型回答、padding、EOS，以及工具或环境返回的 token。它们的用途不同：
+
+| 位置 | 通常怎样处理 | 必须确认什么 |
+|---|---|---|
+| Prompt | 提供上下文，不更新其采样动作 | policy mask 是否为 0 |
+| 模型回答 | 计算策略概率和 advantage | EOS 与截断位置是否一致 |
+| padding | 只用于对齐 batch | 所有 loss 与统计是否排除 |
+| 工具/环境返回 | 作为观察，而非模型动作 | 是否被误计入 policy loss |
+
+分母同样会改变训练目标。按 token 平均会让长回答拥有更多项；按序列平均或按 Prompt 组平均则采用不同权重。
+无效回答、截断和 verifier 错误是否保留在“尝试过的任务”分母中，也要预先规定。
+
+在扩大 batch 前，先打印一条轨迹的 token IDs、各类 mask、三个策略的 log probabilities、reward、advantage 和 return。
+只看最终 loss 数字，很难发现错一位的 mask。
 
 ## 13. 方法选择
 
 | 现有证据 | 推荐起点 |
 |---|---|
-| 有可靠 demonstrations，基础行为还不稳定 | SFT |
-| 有固定 pairwise preferences，不需要在线探索 | DPO 类 offline objective |
-| 有可复用 preference scorer | 先训练并审计 RM，再决定是否上线 RL |
-| 环境反馈依赖 policy 行为 | PPO/其他 online RL |
-| 有高精度程序 verifier 和足够多可解题目 | RLVR/GRPO-style 路线，同时保留人工与安全切片 |
-| 问题是权限、实时事实或副作用可靠性 | RAG、工具和 runtime policy，不先靠 RL |
+| 有可靠示范，基础行为还不稳定 | 先做 SFT，让模型学会基本输出形式 |
+| 有固定偏好对，不需要在线探索 | 使用 DPO 类离线目标 |
+| 有可复用的偏好评分器 | 先训练并审计 reward model，再决定是否上线 RL |
+| 环境反馈取决于策略实际行为 | 考虑 PPO 或其他在线 RL |
+| 有高精度程序 verifier 和足够多可解题目 | 考虑 RLVR/GRPO 路线，同时保留人工与安全切片 |
+| 问题来自权限、实时事实或副作用可靠性 | 优先修复 RAG、工具和运行时策略 |
 
-复杂算法应回答一个具体 baseline failure。若 SFT 已达到上限的原因是数据错误或 evaluator 泄漏，增加 online RL 只会更快优化错误目标。
+回到代码题：如果模型连函数签名都无法稳定生成，先补 SFT 数据；如果它已经会写代码，
+但必须通过实际执行才能发现边界错误，在线环境反馈才可能带来额外价值。
+若瓶颈来自错误测试或答案泄漏，引入更复杂的 RL 只会更快地优化错误目标。
 
-## 14. 证据阶梯
+## 14. 怎样一步步证明实现可信
 
-1. **公式检查**：有限 action 枚举、finite difference、mask 和边界测试；
-2. **toy optimization**：真实更新小 policy，确认 objective 与行为同向；
-3. **small model**：固定 tokenizer/checkpoint，记录 rollout 与完整训练状态；
-4. **held-out evaluation**：任务、安全、长度、reward shortcut 和 verifier OOD；
-5. **system evaluation**：吞吐、失败、取消、费用、回滚与事件响应；
-6. **目标环境**：真实用户 outcome 和独立安全审阅。
+1. **核对公式**：枚举有限动作，用有限差分和手算检查梯度、mask 与边界；
+2. **更新小策略**：确认优化目标提高时，策略行为确实朝预期方向变化；
+3. **运行小模型**：固定 tokenizer 和 checkpoint，保存采样、概率与完整训练状态；
+4. **留出评测**：检查真实任务、安全、长度、reward 捷径和 verifier 分布外行为；
+5. **系统评测**：测量吞吐、失败、取消、费用、回滚和事件响应；
+6. **目标环境**：观察真实用户结果，并接受独立安全审阅。
 
-本仓库已覆盖前两层中的 categorical gradient、GAE/PPO objective，以及若干 tiny text/Transformer policy 更新；没有完成目标大模型 RLVR、真实 PRM、分布式 rollout 或线上用户实验。
+本仓库已经执行了前三步中的部分内容：三动作精确梯度、GAE/PPO 目标，以及小型文本或 Transformer 策略更新。
+它尚未运行目标大模型 RLVR、真实 PRM、分布式 rollout 或线上用户实验，所以这些生产结论仍需目标环境证据。
 
-## 15. 常见错误结论
+## 15. 把常见误解放回代码题
 
-- “Reward 不可微，所以不能训练”：score-function 对 policy log probability 求梯度，不要求 reward 可微。
-- “减 baseline 会改变最优 policy”：action-independent baseline 不改变 estimator expectation，但会改变方差。
-- “PPO clip 等于 KL trust region”：clip 只约束 sampled surrogate 的局部形状。
-- “GRPO 不用 critic，所以没有 value/baseline 问题”：组内均值就是一种随机 baseline，组构造决定信号质量。
-- “测试通过就是 verifiable truth”：测试只证明实现覆盖的条件，parser 和环境也可能被利用。
-- “更多采样一定更好”：selection proxy 失校准时，Best-of-N 可以越选越差。
-- “RL 后 reward 上升就是能力提升”：还需独立任务、安全和分布外评测。
+- **“测试不可微，所以无法训练”**：梯度来自模型对采样回答的 log probability，测试程序只需要返回分数。
+- **“减去 baseline 会改变优化方向”**：与当前动作无关的 baseline 保持梯度期望不变，主要改变方差。
+- **“PPO clip 已经限制整个模型分布”**：它只裁剪采样动作在代理目标中的贡献。
+- **“GRPO 没有 critic，所以没有 baseline 问题”**：组内均值本身就是随机 baseline，组的构成决定信号质量。
+- **“候选 C 通过测试，所以实现一定正确”**：结论只覆盖当前测试、解析器和执行环境检查到的条件。
+- **“多采样总会选到更好的答案”**：选择器失准时，更多候选也带来更多利用漏洞的机会。
+- **“训练 reward 上升就是能力提升”**：还要查看留出任务、安全切片和分布外表现。
 
 ## 自测与实践
 
-1. 从 softmax Jacobian 推导 \(\nabla_{z_j}J=p_j(r_j-J)\)。
-2. 为什么 baseline 可以依赖 prompt，却不能未经修正依赖 sampled response？
-3. 给定 terminal 与 truncated trajectory，分别写出 bootstrap 和 continuation mask。
-4. 解释 old policy 与 reference policy 在 PPO 中为何不是同一个角色。
-5. 组内四个 reward 全相同时，GRPO-style advantage 为什么应该为 0？
-6. 为代码 RLVR 写出三个可能被利用的 test/verifier loopholes。
-7. 设计一个同时报告 reward、真实 success、长度、KL 和成本的发布表。
+1. 从 softmax Jacobian 推导 \(\nabla_{z_j}J=p_j(r_j-J)\)，并解释为什么 C 的 logit 梯度为正。
+2. baseline 为什么可以依赖代码题，却不能未经修正地依赖这次选中的回答？
+3. 对真正完成和长度截断的回答，分别写出 bootstrap mask 与 GAE continuation mask。
+4. 用候选 C 解释 old policy 与 reference policy 在 PPO 中为什么承担不同角色。
+5. 同一道题的四个 reward 全为 2 时，组内相对 advantage 为什么应该为 0？
+6. 为代码题设计三个能发现 verifier 捷径的独立测试。
+7. 设计一张同时报告训练 reward、独立成功率、回答长度、KL 和成本的发布表。
 
 ## 一手资料
 
