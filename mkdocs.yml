@@ -148,7 +148,11 @@ nav:
           - 决策理论与安全终止: applications/agent-decision-theory.md
           - 工具协议与故障恢复: applications/agent-runtime.md
           - MCP、A2A 与互操作: applications/agent-interoperability.md
-      - 代码、对话与 LLMOps: applications/code-conversation-llmops.md
+      - 代码 Agent、记忆与 LLMOps:
+          - 一次退款修复怎样走到上线: applications/code-conversation-llmops.md
+          - 从失败证据到最小补丁: applications/code-agent-workflow.md
+          - 对话状态与长期记忆: applications/conversation-state-memory.md
+          - 发布、观测与回滚: applications/llmops-release.md
       - AI 产品设计与人机协作: applications/product-design.md
   - 质量与责任:
       - 评测:
