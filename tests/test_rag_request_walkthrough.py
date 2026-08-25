@@ -22,7 +22,7 @@ def test_walkthrough_connects_answerable_and_no_answer_requests() -> None:
     )
     payload = json.loads(completed.stdout.decode("utf-8"))
 
-    assert payload["walkthrough_version"] == "about-llm.rag-request-walkthrough.v1"
+    assert payload["walkthrough_version"] == "about-llm.rag-request-walkthrough.v2"
     answerable, no_answer = payload["requests"]
 
     assert answerable["final"] == {
@@ -30,7 +30,9 @@ def test_walkthrough_connects_answerable_and_no_answer_requests() -> None:
         "reason": "exact_span_and_citation_syntax_passed",
     }
     assert answerable["answer"]["coverage"] == 1.0
-    assert answerable["citation"]["syntactically_valid"] is True
+    assert answerable["citation"]["required_for_action"] is True
+    assert answerable["citation"]["syntax_status"] == "passed"
+    assert answerable["citation"]["semantic_entailment_status"] == "not_checked"
     assert answerable["packing"]["source_map"] == {
         "S1": "rag-security",
         "S2": "rag-security",
@@ -47,6 +49,9 @@ def test_walkthrough_connects_answerable_and_no_answer_requests() -> None:
     }
     assert no_answer["answer"]["coverage"] == pytest.approx(2 / 9)
     assert no_answer["citation"]["cited_source_ids"] == []
+    assert no_answer["citation"]["required_for_action"] is False
+    assert no_answer["citation"]["syntax_status"] == "not_applicable"
+    assert no_answer["citation"]["semantic_entailment_status"] == "not_applicable"
 
     assert payload["scope"]["authorization_rechecked_before_reranker"] is True
     assert payload["scope"]["learned_reranker_executed"] is False

@@ -89,11 +89,26 @@ def _request_row(
     source_ids = tuple(artifact.packed_context.context.sources)
     citation_audit = audit_citations(artifact.answer_text, source_ids)
     if artifact.action.value == "answer":
-        final_action = "answer"
-        final_reason = "exact_span_and_citation_syntax_passed"
-    else:
+        citation_required = True
+        citation_passed = bool(citation_audit.cited_source_ids) and (
+            citation_audit.syntactically_valid
+        )
+        citation_syntax_status = "passed" if citation_passed else "failed"
+        entailment_status = "not_checked"
+        final_action = "answer" if citation_passed else "reject"
+        final_reason = (
+            "exact_span_and_citation_syntax_passed"
+            if citation_passed
+            else "citation_syntax_failed"
+        )
+    elif artifact.action.value == "abstain":
+        citation_required = False
+        citation_syntax_status = "not_applicable"
+        entailment_status = "not_applicable"
         final_action = "abstain"
         final_reason = "insufficient_lexical_evidence"
+    else:
+        raise AssertionError(f"unexpected extractive action {artifact.action.value!r}")
     return {
         "query_id": query_id,
         "query": query,
@@ -126,10 +141,11 @@ def _request_row(
             "coverage": artifact.coverage,
         },
         "citation": {
+            "required_for_action": citation_required,
             "known_source_ids": list(source_ids),
             "cited_source_ids": list(citation_audit.cited_source_ids),
-            "syntactically_valid": citation_audit.syntactically_valid,
-            "semantic_entailment_verified": False,
+            "syntax_status": citation_syntax_status,
+            "semantic_entailment_status": entailment_status,
         },
         "final": {
             "action": final_action,
@@ -180,7 +196,7 @@ def build_walkthrough() -> dict[str, Any]:
     )
 
     return {
-        "walkthrough_version": "about-llm.rag-request-walkthrough.v1",
+        "walkthrough_version": "about-llm.rag-request-walkthrough.v2",
         "requests": [
             _request_row(
                 query_id="request-a-answerable",

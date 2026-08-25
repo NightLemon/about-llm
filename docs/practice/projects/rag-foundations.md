@@ -79,6 +79,9 @@ final                  answer
 请求 B 问 Kubernetes 灾备步骤。它仍有三个主题相关结果，但有效 query token 覆盖只有 `2/9`，
 所以 final action 是 `abstain`。
 
+它的 `citation.syntax_status` 是 `not_applicable`，表示拒答不进入引用门禁。引用门禁只处理回答动作：
+答案必须至少带一个已知 source ID 并通过语法检查；缺少引用时，最终动作会变成 `reject`。
+
 这条路径没有执行 Embedding、learned reranker 或 LLM。
 它先证明固定小语料上的控制流和 exact-span provenance。
 
@@ -103,9 +106,14 @@ python projects/rag-foundations/retriever_learning_toy.py
 python -m pytest tests/test_retriever_learning.py -q
 ~~~
 
-它对 supplied embedding 精确计算单/多正例 InfoNCE、解析梯度、hard/false negative、
-ColBERT-style MaxSim 与 SPLADE-style pooling。这个例子没有执行 encoder、ANN 或 GPU；
-本仓库准备的 vectors 也不代表真实检索质量。推导见
+这个小实验使用仓库提供的向量，分别演示：
+
+- 单正例与多正例 InfoNCE 怎样计算；
+- 损失对 query 向量的解析梯度；
+- hard negative 和 false negative 为什么不能混为一谈；
+- ColBERT 的 MaxSim 与 SPLADE pooling 怎样聚合 token 分数。
+
+脚本不执行 encoder、ANN 检索或 GPU kernel，准备好的向量也不代表真实检索质量。完整推导见
 [检索表示学习](../../applications/retrieval-learning.md)。
 
 ## 路径一：拆开观察一次请求
@@ -121,7 +129,7 @@ python -m about_llm.rag.cli retrieve `
   --top-k 3
 ~~~
 
-输出同时给出 chunk rank、stable source、version、heading path 和 canonical `S1..Sn` context。
+输出会列出每个 chunk 的排名、稳定来源 ID、文档版本和标题路径，并把最终上下文编号为 `S1..Sn`。
 
 去掉 `--principal engineering` 再运行。Query 没变，`rag-security` 应消失；
 不要把安全上下文变化误诊为相关性变化。
@@ -139,8 +147,8 @@ python -m about_llm.rag.cli rerank-recorded `
   --top-k 2
 ~~~
 
-Reranker 前会再次授权。Recorded score 精确绑定 query、chunk bytes 与 scorer identity；
-改 query、改内容、缺分、多分或返回非有限数都会失败。
+进入 reranker 前会再次检查权限。样例分数同时绑定查询文本、chunk 字节和评分器身份。
+查询或内容发生变化、某个候选缺分或多分、分数出现 `NaN/Infinity` 时，命令都会失败。
 
 这个固定样例用于检查 query、chunk 和 score 的绑定能否正常工作。要声称质量提升，必须在 held-out qrels 上
 比较排序与延迟。
@@ -180,8 +188,8 @@ python -m about_llm.rag.cli answer-extractive `
   --principal engineering
 ~~~
 
-Artifact 保存 exact offset、source/hash、coverage、packing decision 和 answer/abstain action。
-API 不接收 qrels 或 `answerable` 标签，避免 gold 直接控制在线答案。
+输出工件保存原文字符位置、来源与哈希、query 覆盖率、上下文装包决定，以及最终是回答还是拒答。
+在线 API 不接收 qrels 或 `answerable` 标签，防止参考答案直接控制系统行为。
 
 ## 路径二：分别评价召回与回答 { #retrieval-reranking-metrics }
 
@@ -198,7 +206,7 @@ python -m about_llm.rag.cli evaluate `
 
 - Answerable：Recall、MRR、nDCG、Precision 与 all-evidence recall。
 - No-answer：zero-result 只是检索信号，不等于最终拒答正确。
-- Gold source：区分 visible、ACL blocked 与 missing from tenant corpus。
+- 参考来源状态：区分当前用户可见、被 ACL 阻止，以及租户语料中本来就不存在。
 - 未标注结果：称为 unjudged，不自动视为 false positive。
 
 ### End-to-end extractive evaluation
@@ -221,8 +229,10 @@ python -m about_llm.rag.cli evaluate-answers `
   --answers projects/rag-foundations/sample_answers.jsonl
 ~~~
 
-这条 gate 检查 case/output exact join、授权 context、claim citation 与 supplied judgment provenance。
-`supported` verdict 由样例文件提供，不是评测器自动执行 entailment 得出的结论。
+这条门禁先按 ID 精确连接样例与输出，再检查回答使用的是已授权上下文、每条 claim 带有合法引用，
+以及人工判断来自哪份记录。
+
+`supported` 结论由样例文件提供。评测器会验证它的绑定关系，但不会自动做语义蕴含判断。
 
 ## 路径三：把 Prompt identity 也纳入 packing
 
@@ -244,8 +254,8 @@ python -m about_llm.rag.cli pack-tokenized `
   --user-prompt-template-file projects/rag-foundations/user-prompt-template.example.txt
 ~~~
 
-它为每个 prospective context 重新渲染完整 chat，保存 tokenizer/template identity、
-最终 token IDs 与输出预留。
+每尝试加入一个候选 chunk，程序都会重新渲染完整对话。报告保存 tokenizer 和模板身份、最终 token ID，
+以及为模型回答预留的空间。
 
 Caller 提供的 revision 与无密钥 hash 不认证实际模型来源；最大 context 也不能从 tokenizer 自动猜出。
 
@@ -307,8 +317,8 @@ python -m about_llm.rag.cli store-restore `
   --database artifacts/rag/rag-restored.db
 ~~~
 
-Manifest 绑定文件 bytes、schema、row count 和 ordered logical fingerprint。
-它无签名、未加密，也不包含远端 index、cache 和流量切换，所以不能声称完成灾备。
+备份清单绑定文件字节、数据库结构、行数和按固定顺序计算的逻辑指纹。它用于发现备份内容漂移。
+这份清单没有签名和加密，也没有覆盖远端索引、缓存或流量切换；完整灾备还需要另外演练这些组件。
 
 ## 路径六：本地 Persistent ASGI service
 
@@ -323,10 +333,14 @@ python projects/rag-foundations/serve_extractive.py `
   --principal engineering
 ~~~
 
-Request body 不能自报 tenant/principal；`/health/live` 与 `/health/ready` 含义不同。
-认证作为受保护 route 的 dependency 执行；Host 使用显式 allowlist，实际 ASGI body 默认限制为 64 KiB，
-Response 使用 server request ID、`Cache-Control: no-store`、安全响应头和 public allowlist。
-生产部署仍需在反向代理设置 body/rate limit、TLS 与真实 IAM；应用内上限不能替代 edge admission control。
+这个服务把身份信任边界放在请求正文之外：客户端不能自行声明 tenant 或 principal。`/health/live` 只回答进程是否存活，
+`/health/ready` 才回答依赖是否已经准备好。
+
+受保护路由会先执行认证依赖。服务还会检查 Host 允许列表，把 ASGI 请求正文限制在 64 KiB，并在响应中加入服务端
+request ID、`Cache-Control: no-store` 和安全响应头。只有允许公开的字段才会进入响应。
+
+生产环境仍要由反向代理提供 TLS、真实 IAM、请求大小和速率限制。应用内部上限只能保护应用自身，
+不能替代边缘入口的流量准入。
 
 运行一个不打开 TCP socket 的固定验证程序：
 
@@ -334,8 +348,10 @@ Response 使用 server request ID、`Cache-Control: no-store`、安全响应头�
 python projects/rag-foundations/rag_service_control.py
 ~~~
 
-它真实执行 FastAPI/Starlette/HTTPX ASGI dispatch 与 SQLite reopen。
-它没有 TLS、JWT/OAuth、多 worker 全局容量或远端取消证据。
+这个验证程序真实走过 FastAPI、Starlette 和 HTTPX 的内存 ASGI 调用链。它还会关闭并重新打开 SQLite，
+检查本地持久化是否仍能读取。
+
+这个过程不创建 TCP/TLS 服务。JWT/OAuth、多 worker 全局容量和远端取消也需要单独验证。
 
 ## 路径七：保留真实模型的第一次失败
 
@@ -379,8 +395,8 @@ python -m about_llm.rag.cli audit `
   --source-id S2
 ~~~
 
-Trace 绑定 query/security、chunk/version/content、rendered context、Prompt 和 raw output identity。
-这里使用手写协议样例。Unsigned hash 可以发现内容变化，但不能认证模型执行者，也不会执行语义蕴含判断。
+Trace 把查询与安全上下文、chunk 内容与版本、渲染后的上下文、Prompt 和原始输出身份绑定起来。
+本节使用仓库手写的协议样例。无签名哈希可以发现内容变化，模型执行者仍需独立认证；语义蕴含也要由另一层评测完成。
 
 ## 代码阅读顺序
 
@@ -412,8 +428,8 @@ python -m pytest `
   -q
 ~~~
 
-完整专项还包括 ingestion、SQLite、backup、service、trace 与 fixed-Qwen controls。
-测试按 claim 解释，不以总用例数代表教材或系统完全正确。
+完整专项还覆盖摄取、SQLite、备份、服务、Trace 和固定 Qwen 实验。阅读测试时要问它验证了哪个具体结论，
+不要用测试总数代替对结论范围的理解。
 
 ## 项目交付物
 
@@ -431,8 +447,7 @@ python -m pytest `
 
 可以写进简历的是具体证据，例如：
 
-> 构建 authorization-first RAG reference，串联 versioned corpus、BM25、rerank、
-> token-aware packing、exact-span citation 与 typed refusal；用跨 tenant、non-empty no-answer
-> 和 stale-score 负例验证控制边界。
+> 构建一条先授权再检索的 RAG 参考链路：语料有版本，BM25 候选经过重排和 token 预算装包，回答绑定原文位置，
+> 证据不足时返回明确拒答。通过跨租户访问、有检索结果但无答案、以及过期评分三个负例验证控制边界。
 
 不要写“彻底解决幻觉”或“生产级零泄漏”。这些本地固定样例无法支持这类结论。
