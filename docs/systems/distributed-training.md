@@ -13,8 +13,8 @@
 
 </div>
 
-一张 24 GB GPU 放不下 7B 模型的全参数 Adam 训练。团队拿到一台 8 卡机器后，
-第一反应是打开 FSDP、gradient checkpointing 和 mixed precision。训练终于启动，loss 却和单卡小规模 baseline 不同。
+一张 24 GB GPU 放不下 7B 模型的全参数 Adam 训练。团队拿到一台 8 卡机器后，打开 FSDP、activation checkpointing
+和混合精度，训练终于能够启动，但 loss 与单卡小规模 baseline 不同。
 
 这时问题已经不是“哪个框架参数能省显存”，而是四件事混在了一起：
 
@@ -40,20 +40,29 @@ temporary workspaces / communication buckets
 allocator fragmentation / runtime context
 ```
 
-一个常见 mixed-precision Adam 配置可能包含 BF16 weights 2 B、FP32 master weights 4 B、
-FP32 gradients 4 B 和两份 FP32 moments 8 B，总计约 18 bytes/parameter，尚未包含 activation 与临时 buffer。
+一个常见的混合精度 Adam 配置可以这样逐项记账：
+
+| 状态 | 常见格式 | 每参数字节数 |
+|---|---:|---:|
+| Forward weights | BF16 | 2 B |
+| Master weights | FP32 | 4 B |
+| Gradients | FP32 | 4 B |
+| 两份 Adam moments | FP32 | 8 B |
+| 合计 |  | 18 B |
+
+18 B/P 尚未包含 activation、通信 buffer 和临时 workspace，也只是某一种实现的账本。
 
 18 B/P 只是某一配置的账本。实现可能没有 master weights，gradient 可以是 BF16，moments 也可能量化或分片。
 真实报告应列出每项 dtype、复制数和分片组，不能把一个经验常数当成框架规范。
 
 ### Activation 为什么单独列
 
-Activation 受 micro-batch \(B\)、sequence length \(T\)、hidden size \(H\)、layers \(L\)、
-attention/MLP kernel、保存边界和 dtype 共同影响。朴素 attention 还可能物化
-\(B\times heads\times T\times T\) 的 score 或 probability。
+Activation 的主要驱动因素是 micro-batch \(B\)、序列长度 \(T\)、隐藏维度 \(H\)、层数 \(L\)、数值格式和算子实现。
 
-FlashAttention 类算法避免保存完整 attention matrix，但仍要保存或重算 Q/K/V、MLP 和残差相关状态。
-OOM 排查要同时观察 allocated、reserved、runtime/driver 读数和 memory timeline；这些不是同一个指标。
+朴素 attention 还可能显式保存形状为 \(B\times heads\times T\times T\) 的分数或概率，因此长序列尤其昂贵。
+
+FlashAttention 类算法避免保存完整注意力矩阵，但 Q/K/V、MLP 和残差相关状态仍要保存或重算。排查 OOM 时，
+应同时查看框架已分配显存、allocator 预留显存、driver 读数和显存时间线；这些读数描述的不是同一个量。
 
 ## 多卡之前先固定 global batch 与 loss { #global-batch-loss-normalization }
 
@@ -73,7 +82,7 @@ N_{tokens}=\sum_{rank,microbatch,t}m_{rank,microbatch,t}.
 
 ### Mean 还是 sum { #mean-or-sum }
 
-如果第 \(i\) 个 shard 的 loss sum 是 \(S_i\)，有效 token 数是 \(n_i\)，global token mean 是：
+如果第 \(i\) 个 rank 的 loss 总和是 \(S_i\)，有效 token 数是 \(n_i\)，全局平均 loss 是：
 
 \[
 L=\frac{\sum_i S_i}{N},
@@ -81,35 +90,48 @@ L=\frac{\sum_i S_i}{N},
 N=\sum_i n_i.
 \]
 
-先计算各 shard 的 \(S_i/n_i\) 再等权平均，会让短 batch 或高 padding rank 权重过大。
-稳妥做法是聚合 numerator 与 count，或使用数学等价的 gradient scaling。
+先计算每个 rank 的 \(S_i/n_i\) 再等权平均，会让有效 token 较少的 rank 权重过大。正确做法是聚合 loss 总和
+与 token 数，或者使用数学等价的梯度缩放。
 
 ### DDP 默认 gradient mean 为什么多一个 world size
 
 假设 DistributedDataParallel（DDP）对 \(D\) 个 rank 的 gradient 求平均。
 若每个 rank 直接 backward `local_loss_sum / global_N`，reducer 又除一次 \(D\)，结果会少 \(D\) 倍。
 
-一种等价写法是每个 rank 对 local loss sum 乘 \(D/N\) 后 backward；
-也可以使用明确得到 global sum 的 reducer 路径。关键是先写清目标公式，再核对框架当前 reducer 语义。
+一种等价写法是：每个 rank 在反向传播前，把本地 loss 总和乘以 \(D/N\)。也可以选择明确产生全局总和的 reducer。
+先写清目标公式，再核对当前框架究竟求总和还是平均值。
 
-在 gradient accumulation 中，窗口内先累计 sums，直到末尾才归一化、unscale、clip 和 optimizer step。
-AMP 的 scale/unscale、`no_sync`、gradient clipping 与 scheduler step 顺序也要进入训练契约。
+进行梯度累积时，窗口内先累加 loss sums，直到窗口末尾才统一归一化、unscale、clip 并执行参数更新。
+AMP、`no_sync`、梯度裁剪和 scheduler 的先后顺序也要写入训练契约。
+
+## 先用一张表选择并行维度
+
+| 并行方式 | 切分对象 | 主要通信 | 首先解决什么 |
+|---|---|---|---|
+| Data Parallel（DP） | 样本 | Gradient all-reduce | 增加数据吞吐 |
+| ZeRO/FSDP | 参数、梯度、optimizer state | Gather / reduce-scatter | 持久训练状态放不下 |
+| Tensor Parallel（TP） | 单层矩阵与特征维 | 层内 all-reduce/all-gather | 单层放不下或算不动 |
+| Pipeline Parallel（PP） | 连续层 | Stage 间 activation/gradient | 整个模型层数放不下 |
+| Context Parallel（CP） | 长序列位置 | K/V 或 attention 统计量 | 单卡序列 activation 过大 |
+| Expert Parallel（EP） | MoE experts | Token all-to-all | 专家参数与计算分布到多卡 |
+
+实际系统常常组合多种并行。选择顺序应从“哪一项资源先超限、哪条链路最昂贵”开始，而不是先决定缩写。
 
 ## 第一层扩展：Data Parallel
 
-Data Parallel（DP）让每个 rank 保存完整模型，处理不同数据，反向后 collective 聚合 gradients。
-在相同初始参数、global batch 和数学归一化下，一次更新应与单设备大 batch 在约定浮点容差内一致。
+Data Parallel（DP）让每个 rank 保存完整模型并处理不同样本，反向传播后再用 collective 聚合梯度。
+只要初始参数、全局 batch 和 loss 归一化相同，一次更新就应与单设备大 batch 在约定浮点容差内一致。
 
 它最容易理解，也最先遇到两个上限：
 
 - 每张卡仍保存完整 weights、gradients 和 optimizer state；
 - 每步需要通信与参数规模相当的 gradients，最慢 rank 决定同步时间。
 
-Sampler 要保证一个 global step 的 sample IDs 不重不漏。Gradient buckets 可以让已经完成反向的层提前通信；
-bucket 太大启动晚，太小则增加 latency 和 launch overhead。
+Sampler 要保证一个全局 step 中的样本 ID 不重不漏。Gradient bucket 可以让已经完成反向的层提前通信：
+bucket 太大，通信启动得晚；bucket 太小，启动开销又会增加。
 
-`no_sync` 只减少累积窗口中的中间 gradient synchronization。对于 DDP，forward 和 backward 都应处于目标 context，
-因为 reducer 常在 forward 阶段准备同步状态。这个经验不能未经验证地照搬到 FSDP 或 ZeRO。
+`no_sync` 只减少累积窗口中的中间梯度同步。对于 DDP，forward 和 backward 都应位于这个上下文中，因为 reducer
+常在 forward 阶段准备同步状态。FSDP 与 ZeRO 的协议不同，迁移时要重新核对。
 
 ## 第二层扩展：ZeRO 与 FSDP 分片持久状态
 
@@ -121,8 +143,8 @@ bucket 太大启动晚，太小则增加 latency 和 launch overhead。
 | 2 | Optimizer state + gradients |
 | 3 | Optimizer state + gradients + parameters |
 
-Fully Sharded Data Parallel（FSDP）和 ZeRO-3 目标相近，但 wrapping、prefetch、reshard、
-mixed precision、state dict 和通信调度并不完全相同。Stage 名称不能代替目标版本的实现文档和实测。
+Fully Sharded Data Parallel（FSDP）和 ZeRO-3 的目标相近，但参数包裹粒度、预取、重分片、混合精度、状态字典
+和通信调度并不完全相同。Stage 名称不能代替目标版本的实现文档和实测。
 
 若分片组大小为 \(D\)，持久状态理想上可以接近原来的 \(1/D\)。峰值不会严格除以 \(D\)，因为计算当前 layer 时还可能出现：
 
@@ -135,8 +157,8 @@ checkpoint staging
 allocator fragmentation
 ```
 
-Wrap 太粗会一次 gather 大块参数，太细则产生大量小 collective。通常从 Transformer block 等重复结构起步，
-再用 memory timeline 与通信 trace 调整，而不是只看 `sharding_strategy` 配置。
+Wrap 太粗会一次 gather 大块参数；太细又会产生大量小 collective。通常先按 Transformer block 等重复结构切分，
+再根据显存时间线和通信 trace 调整，不能只看 `sharding_strategy` 配置是否生效。
 
 ## 第三层扩展：Tensor Parallel 切一层矩阵
 
@@ -165,15 +187,15 @@ Y=\sum_i X_iW_i.
 
 各 rank 的部分结果需要 reduce-sum。Transformer 实现常把 column 与 row parallel 成对安排，减少中间 gather。
 
-TP 在几乎每层都有 latency-sensitive collective，通常放在 NVLink、NVSwitch 或节点内最快互联域。
-TP degree 太大时，每个 rank 的 GEMM 变小，通信 latency 反而会压过计算收益。
+TP 几乎每层都有对延迟敏感的 collective，因此通常放在 NVLink、NVSwitch 或节点内最快的互联域。
+TP degree 过大时，每个 rank 的 GEMM 变小，通信延迟反而可能压过计算收益。
 
-Embedding、vocabulary 和 LM head 也可以分片。Vocab-parallel cross entropy 要联合计算 global log-sum-exp
-和 target shard，不能先 gather 全 vocab logits 后再声称节省了这部分内存。
+Embedding、词表和 LM head 也可以分片。词表并行的交叉熵需要联合计算全局 log-sum-exp，并找到目标 token 所在分片。
+若先 gather 全词表 logits，就没有真正省下这部分峰值内存。
 
 ## 第四层扩展：Pipeline Parallel 切连续层
 
-Pipeline Parallel（PP）把连续 layers 分给 \(p\) 个 stages，micro-batches 在 stage 间传 activation 和 gradient。
+Pipeline Parallel（PP）把连续层分给 \(p\) 个 stages，小批次在 stage 之间传递 activation 和 gradient。
 
 对简化、均衡、无 interleaving 的 pipeline，bubble fraction 可用下面的近似建立直觉：
 
@@ -181,15 +203,15 @@ Pipeline Parallel（PP）把连续 layers 分给 \(p\) 个 stages，micro-batche
 \frac{p-1}{m+p-1},
 \]
 
-其中 \(m\) 是 micro-batches 数。Micro-batches 增多会摊薄 fill/drain，stage 增多则加重 bubble。
-它不是所有 1F1B 和 interleaved schedules 的精确公式。
+其中 \(m\) 是小批次数。增加小批次可以摊薄流水线填充与排空成本，增加 stage 则会加重 bubble。
+这个式子只提供直觉，不是所有 1F1B 和 interleaved schedule 的精确模型。
 
 - GPipe 风格先执行多组 forward 再 backward，调度直观但保存更多 activations；
 - 1F1B 进入稳态后交替 forward/backward，通常降低峰值；
 - Interleaving 让设备持有多个 virtual stages，减少 bubble 但增加通信和调度复杂度。
 
-按层数平均切分不等于按时间均衡。Embedding、LM head、不同 block 和跨 stage 通信都可能形成瓶颈，
-最终用每 stage forward/backward time 与 idle time 调整划分。
+按层数平均切分不等于按时间均衡。Embedding、LM head、不同 block 和跨 stage 通信都可能成为瓶颈。
+最终应根据每个 stage 的 forward/backward 时间和空闲时间调整划分。
 
 ## 长上下文还会引入 sequence / context parallel
 
@@ -199,14 +221,15 @@ Pipeline Parallel（PP）把连续 layers 分给 \(p\) 个 stages，micro-batche
 - Context parallel 把超长 attention 的 tokens 分给多个设备，并交换 K/V 或统计量；
 - Ring / blockwise attention 通过分块通信和 online softmax 组合全局 attention。
 
-只切 input tensor 而不取得远端 K/V，会把 global attention 变成局部函数。
-设计必须说明 attention 是否 exact，mask、position 和 packed sample boundary 怎样跨 rank 对齐，
-以及通信怎样随 \(T\) 增长。
+如果只切分输入 tensor，却不取得其他 rank 的 K/V，全局 attention 就会悄悄变成局部 attention。
+
+设计文档应回答三个问题：结果是否与全局 attention 等价；mask、position 和样本边界怎样跨 rank 对齐；
+通信量怎样随序列长度 \(T\) 增长。
 
 ## MoE 再增加 expert parallel
 
-Mixture-of-Experts（MoE）用 router 为每个 token 选择 top-k experts。
-Expert Parallel（EP）把 experts 放到不同设备，token 经 all-to-all 到 owner，计算后再回到 source order。
+Mixture-of-Experts（MoE）用路由器为每个 token 选择 top-k 专家。Expert Parallel（EP）把专家放到不同设备；
+token 通过 all-to-all 到达负责它的设备，完成计算后再恢复原始顺序。
 
 资源与性能报告至少包含：
 
@@ -219,13 +242,14 @@ dispatch + combine all-to-all time
 router / auxiliary loss and precision
 ```
 
-平均负载看起来平衡时，一个 tail expert 仍可能让同步 step 等待。Small batch 还会让每个 expert GEMM 太小。
-EP 对 all-to-all、metadata order 和拓扑非常敏感。
+平均负载看起来平衡时，一个特别慢的 expert 仍可能让整个同步 step 等待。Batch 太小还会让每个 expert GEMM
+失去效率。EP 因此对 all-to-all、元数据顺序和物理拓扑都很敏感。
 
-仓库提供四个逐层推进的 CPU/Gloo 小实验，分别检查 global capacity competition、owner-only all-to-all
-dispatch、reverse-split backward，以及 capacity drop 与训练图组合。输入张量由本仓库准备，进程都运行在
-同一台机器上。NCCL、多节点、target MoE checkpoint、GPU throughput 和可扩展 runtime 仍需另行验证。
-精确 split、gradient 与 fixed values 见[准确性台账](../evidence/accuracy-ledger.md)。
+仓库提供四个逐层推进的 CPU/Gloo 小实验：全局 capacity 竞争、只在负责设备上执行的 all-to-all 分发、
+反向传播时的逆向 split，以及 capacity drop 与训练图的组合。
+
+输入张量由仓库准备，所有进程都运行在同一台机器上。NCCL、多节点、目标 MoE checkpoint、GPU 吞吐
+和可扩展 runtime 仍需另行验证。精确 split、gradient 与固定数值见[准确性台账](../evidence/accuracy-ledger.md)。
 
 ## 组合并行要映射到物理拓扑
 
@@ -245,8 +269,8 @@ Sequence/context parallel 有时与 TP 共享 group，有时另建 group，不�
 4. DP gradient reduce 常扩到更多节点，并通过 buckets 和 overlap 摊销；
 5. Rank mapping、NUMA、NIC 和物理 topology 写入 run manifest。
 
-“8 卡节点”不代表任意 GPU pair 带宽相同。PCIe switch、NVLink/NVSwitch、NIC affinity、
-GPU Direct 和 oversubscription 都会改变路径。
+“8 卡节点”不代表任意两张 GPU 之间的带宽相同。PCIe switch、NVLink/NVSwitch、网卡亲和性、GPU Direct
+和网络超卖都会改变实际路径。
 
 一次传输 \(n\) bytes 的粗略延迟模型是：
 
@@ -267,18 +291,19 @@ T\approx\alpha+\frac{n}{\beta},
 
 ## 用计算换显存时，账本要同时记时间
 
-Activation checkpointing 只保存边界，backward 时重做 forward。它减少 saved activations，
-同时增加 FLOPs 和 wall time。Selective recomputation 可以优先选择占内存大、重算相对便宜的区域。
+Activation checkpointing 只保存选定边界，并在 backward 时重新执行部分 forward。它用额外计算和训练时间换取
+较少的 activation 存储。Selective recomputation 可以优先选择占内存大、重算相对便宜的区域。
 
 FlashAttention 减少 HBM traffic 和 materialized score，与 activation checkpointing 是两种不同优化。
 它们可以组合，收益不会简单相加。
 
-CPU 或 NVMe offload 用 host/IO capacity 换 GPU capacity，可能把 compute-bound 训练变成 PCIe 或 IO-bound。
-报告 GPU 峰值下降时，也要给传输时间、host memory 与 step-time 变化。
+CPU 或 NVMe offload 用主机内存与 IO 换 GPU 容量，可能把计算受限的训练变成 PCIe 或 IO 受限。
+报告 GPU 峰值下降时，也要给出传输时间、主机内存和每步耗时的变化。
 
 ## Mixed precision 是一套分布式状态机
 
-需要分别声明 parameter storage、forward compute、gradient、collective、master weights、optimizer state 和 loss 的 dtype。
+参数存储、forward 计算、梯度、collective、master weights、optimizer state 和 loss 可能使用不同数值格式。
+实验报告需要逐项声明。
 
 | 格式 | 训练时要注意什么 |
 |---|---|
@@ -288,11 +313,21 @@ CPU 或 NVMe offload 用 host/IO capacity 换 GPU capacity，可能把 compute-b
 | BF16 | 指数范围接近 FP32，尾数较少 |
 | FP8 | 依赖硬件、格式、scale / amax history 和 kernel |
 
-AMP 的常见顺序是 scaled backward → gradient synchronization → unscale → non-finite consensus → clip → optimizer step。
-具体位置受框架协议影响，但所有 rank 必须对“这一步执行还是 skip”形成一致决定。
+AMP 的常见顺序是：
 
-若一个 rank skip、另一个 rank step，parameters、moments、scheduler、LR 和 scaler state 都会分叉。
-Finite check 必须放在所有可能产生 non-finite 的 gradient transforms 之后、任何 optimizer mutation 之前。
+```text
+scaled backward
+→ gradient synchronization
+→ unscale
+→ 跨 rank 汇总 non-finite 状态
+→ gradient clipping
+→ optimizer step
+```
+
+具体位置受框架协议影响，但所有 rank 必须共同决定“执行这一步”还是“跳过这一步”。若一个 rank 跳过更新、另一个
+rank 执行更新，参数、Adam moments、scheduler、学习率和 scaler state 都会立即分叉。
+
+有限性检查应位于所有可能产生非有限值的梯度变换之后，并且早于任何 optimizer state 修改。
 
 ## Checkpoint 要代表一个真实全局时刻
 
@@ -312,19 +347,19 @@ complete marker
 如果部分 ranks 保存 step \(t\)，另一些保存 \(t+1\)，拼出的状态没有对应真实训练时刻。
 先写 payloads，最后原子发布 manifest；恢复只读取 complete generation。
 
-Rank 0 聚合 full model 可能再次 OOM，抵消分片训练的内存收益。若需要 full state dict，
-明确在哪个设备或 host、用多少内存完成 gather，以及 world size 改变时怎样 reshard。
+Rank 0 聚合完整模型时可能再次 OOM，抵消分片训练的内存收益。若需要完整 state dict，应明确在哪个设备或主机上
+完成聚合、需要多少内存，以及 world size 改变时怎样重新分片。
 
-Data cursor 还要区分 sampler-emitted、main-loop-consumed 与 optimizer-committed。
-DataLoader prefetch 可能已经发出尚未消费的 IDs；gradient accumulation 崩溃时还可能存在未提交 gradients。
+Data cursor 要区分三个位置：sampler 已发出、主循环已消费，以及 optimizer 已提交。DataLoader prefetch 可能已经
+发出尚未消费的样本；梯度累积窗口崩溃时，还可能留下尚未提交的梯度。
 
-仓库的恢复实验展示两条策略：一是回到 committed cursor 重放，二是保存 pending samples、gradients 与
-crash RNG sidecar 后继续。在当前 CPU 样例中，两条路径都能 bit-exact 恢复；故意漏掉 gradients 或使用
-错误 RNG 时，参数会出现可观察的漂移。
+仓库的恢复实验展示两种策略：回到已提交 cursor 重放，或者保存待处理样本、梯度与崩溃时的 RNG sidecar 后继续。
+
+在当前 CPU 样例中，两种路径都能精确恢复。故意漏掉梯度或使用错误 RNG 后，参数会产生可观察漂移。
 精确 checkpoint schema、fault snapshots 和数值见[单 GPU 微调项目](../practice/projects/single-gpu-finetuning.md)。
 
-这些本地实验并没有让多 rank data、collective 和 optimizer 变成一个原子事务。
-分布式实现仍要定义 global commit receipt、失败 rank 的共同回滚/重放和可接受的重复样本策略。
+这些本地实验没有把多 rank 数据、collective 和 optimizer 变成一个原子事务。分布式实现仍要定义全局 commit receipt、
+失败 rank 的共同回滚或重放方式，以及可接受的重复样本策略。
 
 ## 正确性验收从单步开始
 
@@ -344,18 +379,18 @@ crash RNG sidecar 后继续。在当前 CPU 样例中，两条路径都能 bit-e
 
 ### 2. 数据等价
 
-记录每 rank 的 sample/source IDs，检查一个 global step 不重不漏。
-Resume 后重新核对 emitted、consumed、committed 与 replay policy，保存 shuffle RNG 和 sampler epoch。
+记录每个 rank 的样本与来源 ID，检查一个全局 step 内不重不漏。恢复后重新核对已发出、已消费、已提交三个 cursor
+和重放策略，并保存 shuffle RNG 与 sampler epoch。
 
 ### 3. 随机性与 step 共识
 
-Dropout RNG 需要 rank/device-aware 且可重放。TP 区域的某些 mask 需要一致，另一些可以独立。
-同时监控 optimizer step、scheduler、loss scale 和参数 checksum，发现一个 rank 静默跳步。
+Dropout RNG 需要感知 rank 和设备，并且可以重放。TP 区域的某些 mask 需要一致，另一些可以独立。
+同时监控 optimizer step、scheduler、loss scale 和参数校验值，及时发现某个 rank 静默跳步。
 
 ### 4. 长运行与故障恢复
 
-注入 rank crash、checkpoint 中断、worker 重启、collective timeout 和非有限 gradient。
-恢复后比较 data ledger、训练状态与下一个若干 step，而不只看模型文件能否加载。
+主动注入 rank 崩溃、checkpoint 中断、worker 重启、collective 超时和非有限梯度。
+恢复后比较数据账本、训练状态和接下来的若干 step；模型文件能够加载只是最低要求。
 
 ## 用 CPU 小实验逐层排查
 
@@ -377,8 +412,9 @@ python projects/single-gpu-finetuning/ddp_amp_overflow_consensus_control.py
 | AMP scaler | unscale-before-clip、overflow skip 与 scaler resume |
 | DDP + AMP | Reduction 前 non-finite、reduction 后单-rank fault 与共同 skip |
 
-这些实验使用 PyTorch CPU、Gloo、小参数和本仓库准备的输入，可以检查公式、collective 路径和故障状态。
-FSDP/ZeRO/TP/PP/EP、CUDA、多节点、目标 Trainer、收敛、吞吐和模型质量都需要更高一层的实际运行。
+这些实验使用 PyTorch CPU、Gloo、小参数和仓库准备的输入，能够检查公式、collective 路径和故障状态。
+
+FSDP/ZeRO/TP/PP/EP、CUDA、多节点、目标 Trainer、收敛、吞吐和模型质量需要更高一层的实际运行。
 
 ## 性能报告要让两个 run 真能比较
 
@@ -398,12 +434,13 @@ compute / collective / data / idle breakdown
 compile / warmup / measurement window
 ```
 
-Model FLOPs Utilization（MFU）通常把模型理论 FLOPs × token throughput 除以硬件峰值 FLOPs。
-理论 FLOPs 是否包含 attention、embedding、MoE 和 recomputation，硬件峰值使用哪个 dtype，都会改变结果。
-不同框架的 MFU 在口径不同时不能直接排名。
+模型 FLOPs 利用率（Model FLOPs Utilization，MFU）通常用“模型理论 FLOPs × token throughput”除以硬件峰值 FLOPs。
 
-高 GPU utilization 可能来自无效重算，tokens/s 也可能把 padding 算进分子。
-同时报告 valid objective tokens、loss/quality 和实际工作分解。
+计算理论 FLOPs 时是否包含 attention、embedding、MoE 和 recomputation，以及硬件峰值使用哪个 dtype，都会改变结果。
+只有口径相同的 MFU 才能直接比较。
+
+高 GPU utilization 可能来自无效重算，tokens/s 也可能把 padding 算进分子。应同时报告有效监督 token、
+loss/quality 和实际工作分解。
 
 性能诊断按这个顺序进行：
 
@@ -436,19 +473,18 @@ N_{devices}=8\times4\times16=512,
 B_{global}=2\times8\times16=256.
 \]
 
-TP 和 PP 共同处理一批样本，所以 global batch 不是 2048 或 8192。
-若每样本平均 1800 个有效 target tokens，每 update 约消费 460,800 tokens；
-只有 max length 2048 时，还无法推导真实 token/update。
+TP 和 PP 共同处理同一批样本，所以全局 batch 不是 2048 或 8192。若每个样本平均有 1800 个有效目标 token，
+每次参数更新约消费 460,800 个 token。只知道最大长度为 2048，无法推出真实的 token/update。
 
-方案还要验证 stage balance、TP group 是否在高速域、DP collective 跨多少节点、
-activation/gathered-parameter 峰值，以及大规模故障率下 checkpoint interval 是否合适。
+方案还要验证 stage 是否均衡、TP group 是否位于高速互联域、DP collective 跨越多少节点，
+以及 activation/gathered-parameter 峰值。Checkpoint 间隔还要结合大规模运行的实际故障率选择。
 
 ## 从本地走向目标集群
 
 1. 在单进程小例子上写清 loss numerator、denominator 和预期 update；
-2. 用两个 CPU/GPU processes 检查 DDP reduction、data IDs 与 failure consensus；
+2. 用两个 CPU/GPU 进程检查 DDP reduction、样本 ID 与失败共识；
 3. 在单节点多 GPU 逐个启用 DP、sharding、TP，不同时改变多个维度；
-4. 固定 global workload 做 strong scaling，固定 per-device workload 做 weak scaling；
+4. 固定全局 workload 做 strong scaling，固定每设备 workload 做 weak scaling；
 5. 注入 rank crash、checkpoint 中断、worker restart 和 non-finite gradient；
 6. 扩到多节点后保存 topology、collective trace 和每 rank timeline；
 7. 每一级都与上一级做数值、data lineage 和 checkpoint 对照。

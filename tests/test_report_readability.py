@@ -54,6 +54,21 @@ def test_analyzer_reports_prose_without_turning_findings_into_failures() -> None
     assert all(finding.path == "docs/page.md" for finding in findings)
 
 
+def test_heading_anchor_metadata_is_not_treated_as_reader_prose() -> None:
+    text = (
+        "# 页面\n\n"
+        "## 用固定模型核对最终 labels { #target-label-control }\n\n"
+        "自然语言正文。\n"
+    )
+
+    blocks = list(prose_blocks(text))
+    combined = "\n".join(block.text for block in blocks)
+    findings = analyze_text(text, display_path="docs/page.md")
+
+    assert "target-label-control" not in combined
+    assert all(finding.kind != "internal-jargon" for finding in findings)
+
+
 def test_scope_includes_reader_pages_and_only_primary_project_readmes(
     tmp_path: Path,
 ) -> None:
