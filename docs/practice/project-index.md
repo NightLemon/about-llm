@@ -12,6 +12,7 @@
 
 | 想完成的成果 | 建议项目 | 第一次成功 | 做深一层 |
 |---|---|---|---|
+| 从训练数据反查来源与 checkpoint | [Training Data Lineage](../training/data.md#training-data-lineage-run) | 追踪 `thread-8841` 的两个 token 区间 | 计算删除影响并判断镜像能否成为新代表项 |
 | 理解 Transformer 内部 | [Transformers Basics](projects/transformers-basics.md) | 跑通 BPE、attention 和 generation toy | 比较 cache、量化或 MoE 的正反例 |
 | 理解函数式训练 | [JAX MiniGPT](projects/jax-minigpt.md) | 在 CPU 上让 tiny model 过拟合小数据 | 对账 PyTorch/JAX 梯度并验证恢复 |
 | 构建可诊断 RAG | [RAG Foundations](projects/rag-foundations.md) | 跑通一次 answer 与一次 abstain | 加入持久化、模型、服务与分层评测 |

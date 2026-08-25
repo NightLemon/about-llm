@@ -1,0 +1,189 @@
+{
+  "report_version": "about-llm.training-data-lineage-report.v1",
+  "case_id": "thread-8841",
+  "trace": {
+    "stable_source_id": "forum-cn/thread-8841",
+    "known_revisions": [
+      {
+        "snapshot_id": "forum-cn/thread-8841@r2",
+        "revision": "r2",
+        "content_sha256": "sha256:256bb393fe0bb08c887f75800bddbfc3213699342cf4fe28ecb062e84257bf6e"
+      },
+      {
+        "snapshot_id": "forum-cn/thread-8841@r3",
+        "revision": "r3",
+        "content_sha256": "sha256:489a90300a1191902f8fbc6de204bccafb996765800cd4b061f34327163d02a5"
+      }
+    ],
+    "traced_snapshot_id": "forum-cn/thread-8841@r3",
+    "parsed_artifact_ids": [
+      "parsed/forum-cn/thread-8841/r3/main",
+      "parsed/forum-cn/thread-8841/r3/reply-17"
+    ],
+    "normalized_artifact_ids": [
+      "normalized/forum-cn/thread-8841/r3/main",
+      "normalized/forum-cn/thread-8841/r3/reply-17"
+    ],
+    "dedup_clusters": [
+      {
+        "cluster_id": "thread-8841-main-r3",
+        "canonical_id": "normalized/forum-cn/thread-8841/r3/main",
+        "member_ids": [
+          "normalized/forum-cn/thread-8841/r3/main",
+          "normalized/mirror-tech/thread-8841-copy/r1/main"
+        ],
+        "traced_source_is_canonical": true
+      },
+      {
+        "cluster_id": "thread-8841-reply-17-r3",
+        "canonical_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+        "member_ids": [
+          "normalized/forum-cn/thread-8841/r3/reply-17"
+        ],
+        "traced_source_is_canonical": true
+      }
+    ],
+    "placements": [
+      {
+        "item_id": "normalized/forum-cn/thread-8841/r3/main",
+        "dataset_version": "pretrain-cn-2026-08-v3",
+        "split": "train",
+        "mixture_component": "technical-forum-cn",
+        "sampling_weight": 1.0
+      },
+      {
+        "item_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+        "dataset_version": "pretrain-cn-2026-08-v3",
+        "split": "train",
+        "mixture_component": "technical-forum-cn",
+        "sampling_weight": 1.0
+      }
+    ],
+    "shard_spans": [
+      {
+        "item_id": "normalized/forum-cn/thread-8841/r3/main",
+        "dataset_version": "pretrain-cn-2026-08-v3",
+        "shard_id": "train-00031.bin",
+        "start_token": 4096,
+        "end_token": 4192,
+        "objective_token_count": 96
+      },
+      {
+        "item_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+        "dataset_version": "pretrain-cn-2026-08-v3",
+        "shard_id": "train-00031.bin",
+        "start_token": 4192,
+        "end_token": 4256,
+        "objective_token_count": 64
+      }
+    ],
+    "consumers": [
+      {
+        "run_id": "pretrain-cn-run-42",
+        "dataset_version": "pretrain-cn-2026-08-v3",
+        "shard_ids": [
+          "train-00031.bin"
+        ],
+        "checkpoint_ids": [
+          "pretrain-cn-run-42/step-12000",
+          "pretrain-cn-run-42/step-18000"
+        ]
+      }
+    ]
+  },
+  "deletion_impact": {
+    "request_id": "delete-forum-cn-thread-8841-2026-08-25",
+    "source_id": "forum-cn/thread-8841",
+    "scope": "all_revisions",
+    "requested_at": "2026-08-25T09:00:00Z",
+    "reason": "source-owner-request",
+    "future_build_tombstone_required": true,
+    "affected_snapshot_ids": [
+      "forum-cn/thread-8841@r2",
+      "forum-cn/thread-8841@r3"
+    ],
+    "affected_artifact_ids": [
+      "normalized/forum-cn/thread-8841/r2/main",
+      "normalized/forum-cn/thread-8841/r2/reply-17",
+      "normalized/forum-cn/thread-8841/r3/main",
+      "normalized/forum-cn/thread-8841/r3/reply-17",
+      "parsed/forum-cn/thread-8841/r2/main",
+      "parsed/forum-cn/thread-8841/r2/reply-17",
+      "parsed/forum-cn/thread-8841/r3/main",
+      "parsed/forum-cn/thread-8841/r3/reply-17"
+    ],
+    "cluster_actions": [
+      {
+        "cluster_id": "thread-8841-main-r2",
+        "removed_member_ids": [
+          "normalized/forum-cn/thread-8841/r2/main"
+        ],
+        "removed_canonical_id": "normalized/forum-cn/thread-8841/r2/main",
+        "surviving_member_ids": [],
+        "next_action": "remove-empty-cluster",
+        "automatic_canonical_replacement_allowed": false
+      },
+      {
+        "cluster_id": "thread-8841-reply-17-r2",
+        "removed_member_ids": [
+          "normalized/forum-cn/thread-8841/r2/reply-17"
+        ],
+        "removed_canonical_id": "normalized/forum-cn/thread-8841/r2/reply-17",
+        "surviving_member_ids": [],
+        "next_action": "remove-empty-cluster",
+        "automatic_canonical_replacement_allowed": false
+      },
+      {
+        "cluster_id": "thread-8841-main-r3",
+        "removed_member_ids": [
+          "normalized/forum-cn/thread-8841/r3/main"
+        ],
+        "removed_canonical_id": "normalized/forum-cn/thread-8841/r3/main",
+        "surviving_member_ids": [
+          "normalized/mirror-tech/thread-8841-copy/r1/main"
+        ],
+        "next_action": "review-surviving-members",
+        "automatic_canonical_replacement_allowed": false
+      },
+      {
+        "cluster_id": "thread-8841-reply-17-r3",
+        "removed_member_ids": [
+          "normalized/forum-cn/thread-8841/r3/reply-17"
+        ],
+        "removed_canonical_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+        "surviving_member_ids": [],
+        "next_action": "remove-empty-cluster",
+        "automatic_canonical_replacement_allowed": false
+      }
+    ],
+    "removed_dataset_items": [
+      "normalized/forum-cn/thread-8841/r3/main",
+      "normalized/forum-cn/thread-8841/r3/reply-17"
+    ],
+    "dataset_versions_requiring_rebuild": [
+      "pretrain-cn-2026-08-v3"
+    ],
+    "shards_requiring_rebuild": [
+      "train-00031.bin"
+    ],
+    "impacted_runs": [
+      "pretrain-cn-run-42"
+    ],
+    "impacted_checkpoints": [
+      "pretrain-cn-run-42/step-12000",
+      "pretrain-cn-run-42/step-18000"
+    ],
+    "stored_data_deleted_by_this_analysis": false,
+    "trained_weight_effect_removed_by_shard_rebuild": false
+  },
+  "invariants": {
+    "stable_source_id_can_have_multiple_revisions": true,
+    "source_revision_pairs_are_unique": true,
+    "normalized_items_have_one_dedup_cluster": true,
+    "placed_items_are_cluster_canonicals": true,
+    "shard_spans_do_not_overlap": true,
+    "consumed_shards_are_declared": true
+  },
+  "evidence_boundary": "This deterministic example validates one declared lineage graph and computes which manifests, shards, runs, and checkpoints are linked to one source-level deletion request. It does not execute deletion, authenticate source records, decide whether a mirror may be reused, remove information from trained weights, or establish legal compliance.",
+  "report_fingerprint": "sha256:acaf7c1ce7b599352c697c74c42a1bc3252f0e011ff98ed0171f46536f33d5a7"
+}

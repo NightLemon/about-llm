@@ -1,0 +1,193 @@
+{
+  "schema_version": "about-llm.training-data-lineage.v1",
+  "case_id": "thread-8841",
+  "trace_snapshot_id": "forum-cn/thread-8841@r3",
+  "source_snapshots": [
+    {
+      "snapshot_id": "forum-cn/thread-8841@r2",
+      "source_id": "forum-cn/thread-8841",
+      "revision": "r2",
+      "content_sha256": "sha256:256bb393fe0bb08c887f75800bddbfc3213699342cf4fe28ecb062e84257bf6e",
+      "captured_at": "2026-05-10T08:30:00Z",
+      "registry_decision_id": "forum-cn-terms@2026-04",
+      "use_allowed": true
+    },
+    {
+      "snapshot_id": "forum-cn/thread-8841@r3",
+      "source_id": "forum-cn/thread-8841",
+      "revision": "r3",
+      "content_sha256": "sha256:489a90300a1191902f8fbc6de204bccafb996765800cd4b061f34327163d02a5",
+      "captured_at": "2026-08-12T10:15:00Z",
+      "registry_decision_id": "forum-cn-terms@2026-04",
+      "use_allowed": true
+    },
+    {
+      "snapshot_id": "mirror-tech/thread-8841-copy@r1",
+      "source_id": "mirror-tech/thread-8841-copy",
+      "revision": "r1",
+      "content_sha256": "sha256:38ef8463e5a7457db9264f3aa5631ba5ce3e5e9f660734d92f881d24826eb175",
+      "captured_at": "2026-08-13T06:40:00Z",
+      "registry_decision_id": "mirror-tech-terms@2026-06",
+      "use_allowed": true
+    }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "parsed/forum-cn/thread-8841/r2/main",
+      "stage": "parsed",
+      "parent_id": "forum-cn/thread-8841@r2",
+      "transform_revision": "forum-parser@v4",
+      "content_sha256": "sha256:7830716f24dc507b31cb1f43e74d20d9ebd569cb08d83bb4753817c0ba93eccb"
+    },
+    {
+      "artifact_id": "parsed/forum-cn/thread-8841/r2/reply-17",
+      "stage": "parsed",
+      "parent_id": "forum-cn/thread-8841@r2",
+      "transform_revision": "forum-parser@v4",
+      "content_sha256": "sha256:1506f9e0acdc1decbad32637b9b759d1ee3756baee424506af737befa0c48f0a"
+    },
+    {
+      "artifact_id": "parsed/forum-cn/thread-8841/r3/main",
+      "stage": "parsed",
+      "parent_id": "forum-cn/thread-8841@r3",
+      "transform_revision": "forum-parser@v4",
+      "content_sha256": "sha256:e1328452e15fd87860a06345fd5d309a43923a749ca4fe0621e2668141c20f28"
+    },
+    {
+      "artifact_id": "parsed/forum-cn/thread-8841/r3/reply-17",
+      "stage": "parsed",
+      "parent_id": "forum-cn/thread-8841@r3",
+      "transform_revision": "forum-parser@v4",
+      "content_sha256": "sha256:756f6d048927084d8cd22c4157118d059fb65219d447a1c70ba9fb99c519a4c9"
+    },
+    {
+      "artifact_id": "parsed/mirror-tech/thread-8841-copy/r1/main",
+      "stage": "parsed",
+      "parent_id": "mirror-tech/thread-8841-copy@r1",
+      "transform_revision": "mirror-parser@v2",
+      "content_sha256": "sha256:cdfa33309d7377ef9235a0aa4277f944025c698ec6c9296c2cf0068c3f386fd0"
+    },
+    {
+      "artifact_id": "normalized/forum-cn/thread-8841/r2/main",
+      "stage": "normalized",
+      "parent_id": "parsed/forum-cn/thread-8841/r2/main",
+      "transform_revision": "forum-text@v3",
+      "content_sha256": "sha256:e1f91312f3c14720809e774a782964e1bc7fed086f6c3d8eff1c564a54fa15ed"
+    },
+    {
+      "artifact_id": "normalized/forum-cn/thread-8841/r2/reply-17",
+      "stage": "normalized",
+      "parent_id": "parsed/forum-cn/thread-8841/r2/reply-17",
+      "transform_revision": "forum-text@v3",
+      "content_sha256": "sha256:ffa220f04c91f02bfcfd5462dd3531f3bff2050bf343b8733f370c49049b5955"
+    },
+    {
+      "artifact_id": "normalized/forum-cn/thread-8841/r3/main",
+      "stage": "normalized",
+      "parent_id": "parsed/forum-cn/thread-8841/r3/main",
+      "transform_revision": "forum-text@v3",
+      "content_sha256": "sha256:c7de5cca3730e41746851edd90175650cd2094f20e65e7a29b735c803a651d22"
+    },
+    {
+      "artifact_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+      "stage": "normalized",
+      "parent_id": "parsed/forum-cn/thread-8841/r3/reply-17",
+      "transform_revision": "forum-text@v3",
+      "content_sha256": "sha256:4ae4a5ef08f1852f44b1ad7d1003523fc862161d0f71935347f5ad0521c6ecee"
+    },
+    {
+      "artifact_id": "normalized/mirror-tech/thread-8841-copy/r1/main",
+      "stage": "normalized",
+      "parent_id": "parsed/mirror-tech/thread-8841-copy/r1/main",
+      "transform_revision": "forum-text@v3",
+      "content_sha256": "sha256:c7de5cca3730e41746851edd90175650cd2094f20e65e7a29b735c803a651d22"
+    }
+  ],
+  "dedup_clusters": [
+    {
+      "cluster_id": "thread-8841-main-r2",
+      "canonical_id": "normalized/forum-cn/thread-8841/r2/main",
+      "member_ids": [
+        "normalized/forum-cn/thread-8841/r2/main"
+      ],
+      "policy_revision": "license-quality-time@v2"
+    },
+    {
+      "cluster_id": "thread-8841-reply-17-r2",
+      "canonical_id": "normalized/forum-cn/thread-8841/r2/reply-17",
+      "member_ids": [
+        "normalized/forum-cn/thread-8841/r2/reply-17"
+      ],
+      "policy_revision": "license-quality-time@v2"
+    },
+    {
+      "cluster_id": "thread-8841-main-r3",
+      "canonical_id": "normalized/forum-cn/thread-8841/r3/main",
+      "member_ids": [
+        "normalized/forum-cn/thread-8841/r3/main",
+        "normalized/mirror-tech/thread-8841-copy/r1/main"
+      ],
+      "policy_revision": "license-quality-time@v2"
+    },
+    {
+      "cluster_id": "thread-8841-reply-17-r3",
+      "canonical_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+      "member_ids": [
+        "normalized/forum-cn/thread-8841/r3/reply-17"
+      ],
+      "policy_revision": "license-quality-time@v2"
+    }
+  ],
+  "placements": [
+    {
+      "item_id": "normalized/forum-cn/thread-8841/r3/main",
+      "dataset_version": "pretrain-cn-2026-08-v3",
+      "split": "train",
+      "mixture_component": "technical-forum-cn",
+      "sampling_weight": 1.0
+    },
+    {
+      "item_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+      "dataset_version": "pretrain-cn-2026-08-v3",
+      "split": "train",
+      "mixture_component": "technical-forum-cn",
+      "sampling_weight": 1.0
+    }
+  ],
+  "shard_spans": [
+    {
+      "item_id": "normalized/forum-cn/thread-8841/r3/main",
+      "dataset_version": "pretrain-cn-2026-08-v3",
+      "shard_id": "train-00031.bin",
+      "start_token": 4096,
+      "end_token": 4192
+    },
+    {
+      "item_id": "normalized/forum-cn/thread-8841/r3/reply-17",
+      "dataset_version": "pretrain-cn-2026-08-v3",
+      "shard_id": "train-00031.bin",
+      "start_token": 4192,
+      "end_token": 4256
+    }
+  ],
+  "consumptions": [
+    {
+      "run_id": "pretrain-cn-run-42",
+      "dataset_version": "pretrain-cn-2026-08-v3",
+      "shard_ids": [
+        "train-00031.bin"
+      ],
+      "checkpoint_ids": [
+        "pretrain-cn-run-42/step-12000",
+        "pretrain-cn-run-42/step-18000"
+      ]
+    }
+  ],
+  "deletion_request": {
+    "request_id": "delete-forum-cn-thread-8841-2026-08-25",
+    "source_id": "forum-cn/thread-8841",
+    "scope": "all_revisions",
+    "requested_at": "2026-08-25T09:00:00Z",
+    "reason": "source-owner-request"
+  }
+}

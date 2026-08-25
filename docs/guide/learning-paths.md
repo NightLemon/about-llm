@@ -52,7 +52,7 @@
 模型工程路线围绕一次权重更新展开：数据从哪里来，哪些 token 产生 loss，参数怎样改变，以及 held-out 行为
 是否真的改善。开始前需要 PyTorch、反向传播和基本优化算法。
 
-1. 从[数据工程](../training/data.md)建立 schema、切分、去重和污染检查。
+1. 从[数据工程](../training/data.md)追踪 `thread-8841`，亲手把来源版本、去重簇、token 区间和 checkpoint 连起来。
 2. 用[预训练](../training/pretraining.md)理解 token budget、优化器状态和 checkpoint 为什么必须一起保存。
 3. 阅读[微调总览](../training/finetuning.md)，先确认问题是否需要改权重，还是 Prompt 或 RAG 已经足够。
 4. 在 [SFT 数据流水线](../training/sft-data-pipeline.md)中打印最终 token、mask、截断和 held-out identity。

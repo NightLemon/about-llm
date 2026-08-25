@@ -8,6 +8,7 @@
 
 | 项目 | 学习主线 | 当前证据 | 详情 |
 |---|---|---|---|
+| [Training Data Lineage](../training/data.md#training-data-lineage-run) | 帖子版本→解析与规范化→选择去重代表项→定位 shard token 区间→反查训练与 checkpoint→计算删除影响 | L2：CPU 离线关系图可以完整复算，12 个测试覆盖关键关系和输入错误；没有执行真实抓取、构建、删除或 unlearning | [运行与解释](../training/data.md#training-data-lineage-run) |
 | [RAG Foundations](../practice/projects/rag-foundations.md) | 版本化摄取/备份、ACL、检索/重排、packing/trace、ASGI、Qwen failure/replay/guard | L2+：CPU/SQLite/ASGI + 固定 Qwen 三层 controls；远端向量库/GPU 待实测 | [运行与验收](../practice/projects/rag-foundations.md#run) |
 | [RAG Framework Adapters](../practice/projects/rag-framework-adapters.md) | canonical ACL/rank→两框架 Retriever/Prompt→round-trip/artifact parity | L2：真实 LangChain/LlamaIndex core API + 16 个字段/安全/漂移测试；native index、LLM 与性能未执行 | [运行与验收](../practice/projects/rag-framework-adapters.md#run) |
 | [Safe Agent](../practice/projects/safe-agent.md) | 一笔退款的九阶段生命周期、LangChain/LlamaIndex tool/Agent-loop controls、pending/resume、outbox、MCP/A2A | L2：closed schema/ACL/approval + SQLite recovery + 真实 framework 控制流 + scripted model + official/authored loopback；真实模型、生产 IAM/副作用待实测 | [退款生命周期](../practice/projects/safe-agent.md#refund-lifecycle) |
