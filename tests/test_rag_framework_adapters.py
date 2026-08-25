@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import math
+import sys
+from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -15,6 +19,29 @@ from about_llm.integrations.rag_frameworks import (
 from about_llm.rag import BM25Index, Document, SearchResult
 
 pytestmark = [pytest.mark.contract, pytest.mark.security, pytest.mark.integration]
+
+ROOT = Path(__file__).resolve().parents[1]
+PARITY_SCRIPT = ROOT / "projects" / "rag-framework-adapters" / "parity_control.py"
+
+
+def _load_parity_script() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "rag_framework_adapter_parity_control",
+        PARITY_SCRIPT,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {PARITY_SCRIPT}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def parity_report() -> dict[str, object]:
+    pytest.importorskip("langchain_core")
+    pytest.importorskip("llama_index.core")
+    return _load_parity_script().run_control()
 
 
 @pytest.fixture
@@ -204,3 +231,72 @@ def test_framework_retriever_rejects_ambiguous_security_context(
 
     with pytest.raises(ValueError, match=message):
         build_langchain_retriever(index, **kwargs)  # type: ignore[arg-type]
+
+
+def test_parity_control_runs_both_framework_paths(
+    parity_report: dict[str, object],
+) -> None:
+    cases = parity_report["cases"]
+    assert isinstance(cases, dict)
+    engineering = cases["engineering"]
+    anonymous = cases["anonymous"]
+    assert isinstance(engineering, dict)
+    assert isinstance(anonymous, dict)
+
+    for key in (
+        "canonical_document_ids",
+        "langchain_document_ids",
+        "llamaindex_document_ids",
+    ):
+        assert engineering[key] == ["acl-before-ranking", "citation-binding"]
+        assert anonymous[key] == ["acl-before-ranking"]
+
+    assertions = parity_report["assertions"]
+    assert isinstance(assertions, dict)
+    assert all(assertions.values())
+
+
+def test_parity_control_recorded_prompt_answer_and_metrics(
+    parity_report: dict[str, object],
+) -> None:
+    cases = parity_report["cases"]
+    metrics = parity_report["metrics"]
+    assert isinstance(cases, dict)
+    assert isinstance(metrics, dict)
+    engineering = cases["engineering"]
+    anonymous = cases["anonymous"]
+    assert isinstance(engineering, dict)
+    assert isinstance(anonymous, dict)
+
+    assert engineering["prompt_utf8_bytes"] == 385
+    assert engineering["prompt_sha256"] == (
+        "b9c8cb77ec15536c4ff38fcdcb397596d23b278aee04423aa99d705ee1e8e19c"
+    )
+    assert engineering["answer_artifact_fingerprint"] == (
+        "sha256:142d3249f63d4a10a86504292d602237406f499c94ded97df9d24887b7bfce7a"
+    )
+    assert anonymous["prompt_utf8_bytes"] == 277
+    assert anonymous["prompt_sha256"] == (
+        "1e33ed1346c4a8f7da9cd26b7a9b1e5e46b5d85ca01fee4d26a1b5f0e396d8fd"
+    )
+    assert anonymous["answer_artifact_fingerprint"] == (
+        "sha256:08bcbc502496079e229bdfc6b8191c346246a6fcec51a3d0a98c17dfd5468871"
+    )
+    assert metrics == {
+        "engineering_recall_at_4": 1.0,
+        "engineering_ndcg_at_4": 1.0,
+    }
+
+
+def test_parity_control_does_not_overstate_its_scope(
+    parity_report: dict[str, object],
+) -> None:
+    scope = parity_report["scope"]
+    assert isinstance(scope, dict)
+    assert scope["real_langchain_and_llamaindex_core_executed"] is True
+    assert scope["canonical_bm25_authorization_and_ranking_used"] is True
+    assert scope["deterministic_extractive_non_llm_answer_used"] is True
+    assert scope["learned_embedding_vector_index_or_reranker_executed"] is False
+    assert scope["provider_or_local_llm_generation_executed"] is False
+    assert scope["framework_default_acl_or_security_proved"] is False
+    assert scope["model_quality_latency_scalability_or_production_safety_proved"] is False

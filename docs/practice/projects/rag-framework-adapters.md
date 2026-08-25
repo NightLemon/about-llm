@@ -121,8 +121,8 @@ python projects/rag-framework-adapters/parity_control.py
 
 | case | canonical / LangChain / LlamaIndex | Prompt bytes | Prompt SHA-256 | answer artifact |
 |---|---|---:|---|---|
-| engineering | `acl-before-ranking, citation-binding` | 385 | `b9c8cb77…e1e8e19c` | `sha256:d1045446…48180cca` |
-| anonymous | `acl-before-ranking` | 277 | `1e33ed13…e396d8fd` | `sha256:ed8e3f45…8441e8c` |
+| engineering | `acl-before-ranking, citation-binding` | 385 | `b9c8cb77…e1e8e19c` | `sha256:142d3249…b7bfce7a` |
+| anonymous | `acl-before-ranking` | 277 | `1e33ed13…e396d8fd` | `sha256:08bcbc50…d5468871` |
 
 engineering 的 Recall@4 与 nDCG@4 都是 1.0，两例 extractive coverage 也都是 1.0。满分来自四份固定文档和
 本仓库准备的 qrels，只说明这组 adapter 输入没有回归；不能写成“框架检索质量 100%”或“RAG 已达到生产质量”。
