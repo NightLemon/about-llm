@@ -7,7 +7,11 @@ from about_llm.evaluation.calibration import (
     binary_calibration,
     risk_coverage_curve,
 )
-from about_llm.evaluation.code import pass_at_k
+from about_llm.evaluation.code import (
+    CandidateSelectionSummary,
+    pass_at_k,
+    summarize_candidate_selection,
+)
 from about_llm.evaluation.comparison_artifact import (
     EVALUATION_COMPARISON_EVIDENCE_BOUNDARY,
     EVALUATION_COMPARISON_VERSION,
@@ -125,6 +129,7 @@ __all__ = [
     "TARGET_QWEN_EVALUATION_RECORDED_REPORT_FINGERPRINT",
     "BinaryCalibrationResult",
     "CalibrationBin",
+    "CandidateSelectionSummary",
     "ClusteredPairedBootstrapResult",
     "ClusteredPairedRandomizationResult",
     "CohenKappaResult",
@@ -194,6 +199,7 @@ __all__ = [
     "run_evaluation",
     "run_target_qwen_evaluation_control",
     "summarize_by_slice",
+    "summarize_candidate_selection",
     "temporal_iou",
     "two_sided_sign_test_p_value",
     "validate_evaluation_run_manifest",
