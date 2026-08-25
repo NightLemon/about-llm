@@ -1,5 +1,22 @@
 # LLM 系统设计题：从一句需求到可辩护方案
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：准备 LLM 应用、平台、推理或算法工程岗位系统设计面试的开发者。
+- **先修**：理解 RAG 请求链、ACL、TTFT/TPOT 和基本容量估算。
+- **首次阅读**：只跟企业知识助手主线；两道变体题留到第二遍。
+- **完成信号**：能在 40 分钟内澄清需求、画出最小闭环、完成容量手算，并给出故障与发布方案。
+- **卡住时**：先区分题目给定、自己假设和必须实测，暂时不要增加组件。
+
+</div>
+
+**求职导航**：[面试题与回答方法](interview-questions.md) · [岗位路线](roadmap.md) ·
+[简历项目](resume-projects.md) · [RAG 请求主线](../applications/rag-request-lifecycle.md)
+{ .doc-nav }
+
 面试官说：
 
 > 为一家一万人的公司设计企业知识库助手。要求回答带引用，不能泄漏部门文档，峰值 20 QPS。
@@ -9,6 +26,22 @@
 
 好的系统设计回答像一次公开的工程推理：先把模糊需求变成约束，再给最小闭环，估算数量级，
 沿故障链说明降级和恢复，最后指出哪些结论仍需压测或线上证据。
+
+## 先看 40 分钟怎样分配
+
+系统设计面试不是把下面所有内容一次讲完。可以按这条时间线推进，并在每个节点停下来让面试官追问：
+
+| 时间 | 你要完成的动作 | 白板上应该留下什么 |
+|---|---|---|
+| 0–5 分钟 | 问出会改变架构的条件 | 用户、任务、数据、流量、SLO 与发布标准 |
+| 5–8 分钟 | 声明工作假设 | “题目给定 / 当前假设 / 必须实测”三类标记 |
+| 8–15 分钟 | 画最小数据链和请求链 | ACL 在哪里生效，证据怎样进入答案 |
+| 15–25 分钟 | 沿一次请求讲状态和失败 | 输入、检索、生成、引用、拒答与删除路径 |
+| 25–33 分钟 | 做一阶容量估算 | 在途请求、实例算术下限与余量 |
+| 33–38 分钟 | 给发布、降级和恢复方案 | 指标、故障树、canary 与回滚条件 |
+| 最后 2 分钟 | 总结风险与下一项证据 | 最大风险、待验证假设和演进条件 |
+
+如果面试官在第 15 分钟就追问权限或容量，就沿当前因果链深入。时间线是防止遗漏的骨架，不是必须照读的剧本。
 
 ## 前五分钟先问什么
 
@@ -24,12 +57,13 @@
 
 | 维度 | 当前假设 | 为什么需要确认 |
 |---|---|---|
-| 流量 | 峰值 20 eligible QPS，持续 10 分钟 | 平均 QPS 无法描述 burst 和 queue |
-| 输入 | p50 300、p95 1,500 tokens | 长 prompt 会改变 prefill 和上下文预算 |
-| 输出 | p50 120、p95 300 tokens | 输出长度决定 decode 占用 |
+| 流量 | 峰值 20 个合格请求/秒，持续 10 分钟 | 平均 QPS 无法描述突发和排队 |
+| 输入 | p50 300、p95 1,500 tokens；规划均值暂取 800 | 长 Prompt 会改变 prefill 和上下文预算 |
+| 输出 | p50 120、p95 300 tokens；规划均值暂取 180 | 输出长度决定 decode 占用 |
+| 停留时间 | 规划均值暂取 2.5 秒 | Little's Law 使用均值，不能拿 p95 代替 |
 | SLO | p95 TTFT < 1.5 s，成功率 99.5% | 用户延迟包含排队，不只模型执行 |
 | 权限 | OIDC 身份映射到部门和文档 ACL | Prompt 无法替代认证与授权 |
-| 质量 | 回答正确、引用支持、越权为零 | 单个相似度分数不足以决定发布 |
+| 质量 | 回答和引用达到门槛；ACL 越权不允许发布 | 单个相似度分数不足以决定发布 |
 
 把“业务给定”“当前假设”和“必须实测”分开说。这样后续数字变化时，可以替换参数，而不是推翻整套答案。
 
@@ -59,8 +93,9 @@ flowchart LR
   E -.-> V
 ```
 
-这已经足以形成可上线的最小方案：版本化文档和 ACL，授权后做 hybrid retrieval，
-把有限证据打包进 Prompt，生成带 source ID 的答案，再由发布策略决定 answer、abstain 或 reject。
+这张图足以说明最小闭环，但还不是“已经可以上线”的证据。方案先对文档和 ACL 做版本管理，只在授权范围内进行
+混合检索（hybrid retrieval）。系统把有限证据装入 Prompt，让模型生成带来源 ID 的答案；最后再根据证据情况
+返回答案、拒答，或因协议错误拒绝请求。
 
 Graph RAG、Agent、多轮 query planning 或微调可以后加。先说明它们准备解决哪个已观测失败，
 否则“高级架构”只是把更多不可观测步骤塞进主链。
@@ -69,21 +104,23 @@ Graph RAG、Agent、多轮 query planning 或微调可以后加。先说明它�
 
 用户问：“生产数据库的备份保留多久？”
 
-1. Gateway 从认证 token 生成 subject、tenant 和 principals；请求 body 不能自报管理员身份。
-2. Retriever 只在该用户可见的文档集合中计算候选。
-3. Sparse retrieval 保留型号、错误码和专有名词，dense retrieval 补语义改写。
-4. Reranker 比较 query 与候选，context packer 按目标 tokenizer 预留输出后再装入证据。
-5. LLM 生成 atomic claims 和短 source IDs。
-6. Citation gate 检查 ID、覆盖和 evidence；证据不足时返回 abstain。
+1. 网关从认证 token 取得用户、租户和权限组；请求正文不能自报管理员身份。
+2. 检索器只在该用户可见的文档集合中计算候选。
+3. 词面检索保留型号、错误码和专有名词，向量检索补充语义改写。
+4. 重排器比较问题与候选，证据打包器按目标 tokenizer 预留输出空间后再装入证据。
+5. LLM 把回答拆成可检查的短陈述，并附上简短来源 ID。
+6. 引用门禁检查 ID 是否存在、关键陈述是否有引用，以及引用片段是否支持陈述；证据不足时拒答。
 
-权限要在正文进入 scorer、Prompt 和共享 cache 之前生效。若先在全库打分、最后过滤结果，
-越权文档已经影响 query statistics、reranker 或模型输入。
+权限要在正文进入打分器、Prompt 和共享缓存之前生效。若先在全库打分、最后过滤结果，
+越权文档已经影响检索统计、重排结果或模型输入。
 
-Context budget 以最终 chat template 渲染结果为准。System、history、query 和 evidence 可以分别做规划，
-最终仍要保存完整 input token IDs/count 和 packing decisions，因为分段 token 数未必严格可加。
+上下文预算以聊天模板最终渲染的结果为准。系统指令、历史、问题和证据可以先分别规划，
+但发布记录仍要保存完整输入的 token IDs、总数和打包决定。模板边界会加入额外 token，各段计数未必能直接相加。
 
-离线链路则保存 source、parser、chunk、ACL、embedding/index 和删除版本。蓝绿 index 发布允许请求固定到一个 snapshot，
-cache key 也要包含 index 与 policy revision。删除请求沿原文、派生 chunk、index、cache 和受控日志传播。
+离线链路保存来源、解析器、文本块、ACL、向量和索引版本。索引采用蓝绿发布时，每个请求固定读取一个快照，
+避免同一次问答混用新旧数据。缓存键也要包含索引和权限规则版本。
+
+收到删除请求后，系统从原文出发，继续清理派生文本块、索引和缓存；受控日志则按单独的保留与删除规则处理。
 
 ## 容量估算先发现数量级错误
 
@@ -93,8 +130,14 @@ Little's Law 给稳定系统的一阶关系：
 L=\lambda W.
 \]
 
-如果峰值到达率 \(\lambda=20\) QPS，平均端到端停留 \(W=2.5\) 秒，平均在途请求约为 50。
-这不意味着需要 50 张 GPU；在途请求还包含网关、检索、排队和流式生成。
+这里的 \(\lambda\) 和 \(W\) 都是同一稳定时间窗内的**均值**。采用前面声明的规划假设，
+\(\lambda=20\) 请求/秒、\(W=2.5\) 秒，因此平均在途请求约为：
+
+\[
+L=20\times 2.5=50.
+\]
+
+不能把 p95 延迟代入这个均值公式。50 个在途请求也不等于 50 张 GPU；它们可能正处于网关、检索、排队或流式生成。
 
 若每请求平均输入 \(t_{in}\) 个 token、输出 \(t_{out}\) 个 token，API usage volume 可以粗估为：
 
@@ -102,16 +145,38 @@ L=\lambda W.
 R_{token}=QPS\,(t_{in}+t_{out}).
 \]
 
-这个量适合估算 token 费用和流量，不等于 GPU forward work。Prefill 与 decode 使用不同资源，
-真实 padded slots、kernel FLOPs、KV 和显存流量还受 batch、prefix cache、调度、beam 与 speculative decoding 影响。
+按规划均值 800 个输入 token、180 个输出 token 计算，峰值流量约为每秒 19,600 个 token。
+十分钟窗口共收到 12,000 个请求，对应约 11,760,000 个输入加输出 token。
 
-因此实例数要通过目标模型、runtime、量化、硬件和真实长度分布下的压测得到。
-假设单实例在满足 TTFT/TPOT SLO 时稳定处理 4 QPS，算术下限是 5 个实例；
-容量计划还要加入单实例故障、滚动发布和 burst 余量。
+这个量适合估算 API 费用和数据流量，不等于 GPU 的实际计算量。输入处理（prefill）和逐 token 生成（decode）
+使用资源的方式不同；补齐长度、批处理、缓存和调度也会改变真实工作量。
 
-压测需要说明 arrival process。Closed-loop worker 会在系统变慢时自动降低 offered load，
-适合模拟有限并发；constant 或 Poisson open-loop 更容易暴露饱和 queue。
-两者都保存 scheduled-offered、dispatch、first-token 和 terminal 时间，并报告 generator lag。
+因此，“每个实例能处理多少 QPS”必须来自目标模型、推理运行时、量化方式、硬件和真实长度分布下的压测。
+为了继续手算，假设压测已经表明：单实例在满足 TTFT/TPOT 门槛时可以稳定处理 4 QPS。此时：
+
+| 计划条件 | 算法 | 需要的实例数 |
+|---|---:|---:|
+| 只满足 20 QPS | \(\lceil 20/4\rceil\) | 5 |
+| 预留 25% 流量余量 | \(\lceil 20\times1.25/4\rceil\) | 7 |
+| 再允许 1 个实例不可用 | \(\lceil 20\times1.25/4\rceil+1\) | 8 |
+
+5 是算术下限，不是生产建议。表中最终的 8 表示：失去一个实例后，剩余 7 个仍能承担规划的 25 QPS。
+如果团队把滚动发布和单实例故障视为同一个“最多一个不可用”条件，就只加一次；不能看到两个名词便重复加余量。
+
+压测还要说明请求怎样到达。闭环客户端会等上一个请求完成，再发下一个请求。
+当系统变慢时，它施加的流量也会自动下降。
+这种方式适合模拟固定用户并发，却可能隐藏过载。开放环客户端按固定或 Poisson 节奏发请求，更容易暴露饱和排队。
+无论选择哪一种，都要保存计划到达、实际发送、首 token 和结束时间，并报告负载生成器自身是否已经跟不上节奏。
+
+### 两个白板练习
+
+1. 峰值改为 35 QPS，单实例仍是 4 QPS，保留 25% 余量并允许一个实例不可用，需要多少实例？
+2. 如果 p95 输入长度从 1,500 增加到 6,000，能否继续沿用“单实例 4 QPS”？
+
+??? note "答案"
+
+    第一题是 \(\lceil35\times1.25/4\rceil+1=12\) 个实例。第二题不能直接沿用旧结果；长度分布已经变化，
+    prefill、KV 占用、排队和 batch 组成都会变化，需要用新分布重跑容量实验。
 
 ## 用故障树解释为什么请求失败
 
@@ -150,63 +215,64 @@ Shadow 用真实输入检查兼容性，canary 承接真实结果；两者都要
 
 ## 变体一：能发邮件和建工单的 Agent
 
-如果题目加入副作用，最小方案先保持 workflow：
+如果题目加入副作用，第一版仍采用可检查的固定流程：
 
 ```text
 理解请求 -> 收集字段 -> 生成草稿 -> 用户确认
--> 执行 -> 查询业务状态 -> verifier -> 最终答复
+-> 执行 -> 查询业务状态 -> 验证最终状态 -> 最终答复
 ```
 
-模型不持有邮件或工单凭证。它只提出 ToolCall；runtime 使用认证 context 和服务端解析的 resource 检查 schema、
-ACL、policy 与预算。Approval 绑定 subject、task、call、具体参数、资源和 policy revision。
+模型不持有邮件或工单凭证，只能提出工具调用。运行时从服务端取得用户、任务和资源身份，再检查参数结构、ACL、
+业务规则与预算。审批记录必须绑定这次用户、任务、工具调用、具体参数、资源和规则版本，不能批准一份随后会变化的草稿。
 
-执行前在 ledger claim 稳定 call/effect ID。超时后先查询外部系统：provider 可能已成功，只是响应丢失。
-Transactional outbox 可以在同一数据库事务中写业务状态和 pending effect，再由带 lease 的 worker 投递。
+执行前，账本先登记稳定的调用 ID 和副作用 ID。超时后要先查询外部系统，因为对方可能已经成功，只是响应丢失。
+事务发件箱（transactional outbox）可以在同一数据库事务中保存业务状态和待发送动作，再由持有短期租约的 worker 投递。
 
-Outbox 提供的是本地原子记录与 at-least-once delivery。Provider 成功而本地 ack 丢失时仍会重投；
-只有对端真正 honor idempotency key 才能折叠重复请求。Receipt 还要和订单、收件人、金额或工单状态核对。
+发件箱保证本地记录原子写入，并采用至少一次投递。外部服务成功而本地确认丢失时，动作仍可能被再次发送。
+只有对方真正支持幂等键，重复请求才会合并成一次效果。最终回执还要与订单、收件人、金额或工单状态核对。
 
 Agent 评测要把几种分母分开：
 
-- task success 只统计有 final-state verifier 的 case；
-- blocked unsafe proposal 检查越权是否在 handler 前停止；
-- unapproved attempt 检查副作用是否绕过审批；
-- duplicate effect 由业务状态或模拟环境 verifier 计数；
-- unresolved pending 单独阻塞发布。
+- 任务成功率只统计能检查最终业务状态的 case；
+- 被阻止的危险提议用于确认越权请求是否在工具执行前停止；
+- 未审批执行次数用于发现副作用是否绕过审批；
+- 重复副作用由真实业务状态或模拟环境计数；
+- 尚未确定结果的待处理动作单独阻塞发布。
 
-故障注入至少覆盖执行前超时、执行成功后响应丢失、`429`、业务失败、审批后参数漂移，
-以及进程在 ledger/outbox 不同位置崩溃。完整主线见[一次 Agent 退款任务](../applications/agent-task-lifecycle.md)。
+故障注入至少覆盖执行前超时、执行成功后响应丢失、`429`、业务失败和审批后参数漂移。
+还要让进程分别在账本与发件箱的不同位置崩溃。完整主线见[一次 Agent 退款任务](../applications/agent-task-lifecycle.md)。
 
 ## 变体二：单卡多租户 LLM 服务
 
-如果题目变成一张消费级 GPU 承载多个租户，核心从检索转向 admission、KV 和公平性。
+如果题目变成一张消费级 GPU 承载多个租户，核心从检索转向准入、KV Cache 和公平调度。
 
 ```text
-Gateway: authentication / quota / max tokens / cancellation
-Scheduler: queue / continuous batching / fairness / preemption
-Engine: weights / Paged KV / prefix cache / kernels
-Observer: TTFT / TPOT / tokens/s / KV / terminal outcomes
+网关：认证 / 配额 / 最大 token 数 / 取消
+调度器：排队 / 连续批处理 / 公平性 / 抢占
+推理引擎：权重 / Paged KV / 前缀缓存 / 计算内核
+观测：TTFT / TPOT / 每秒 token 数 / KV 使用量 / 请求终态
 ```
 
-显存账本至少包含 weights、KV 和 workspace。未做 prefix sharing 的 decoder-only 模型，KV 元素数量一阶估算为：
+显存账本至少包含模型权重、KV Cache 和临时工作区。对未共享前缀的 decoder-only 模型，
+KV 元素数量可以先做一阶估算：
 
 \[
 2BTLH_{kv}D_h,
 \]
 
-其中 2 对应 K/V，\(B\) 是并发序列，\(T\) 是缓存长度，\(L\) 是层数，
-\(H_{kv}\) 是 KV heads，\(D_h\) 是 head dimension；最后乘每元素字节数。
-Block allocator、量化、prefix sharing、sliding window、碎片和临时 workspace 会改变真实值。
+其中 2 对应 K 和 V；\(B\) 是并发序列数，\(T\) 是缓存长度，\(L\) 是层数。
+\(H_{kv}\) 表示 KV 头数，\(D_h\) 表示每个头的维度。元素总数还要乘以每个元素的字节数，才能得到理想容量。
+分页分配、量化、前缀共享、滑动窗口、碎片和临时工作区都会改变真实值。
 
-公平性不能只按 request count。32k prompt 和 64-token prompt 消耗完全不同，可以用预计 prefill/decode work、
-deadline 与 tenant quota 做 admission 和 scheduling，同时保留硬性上下文与输出上限。
+公平性不能只按请求数量计算。32k token 的 Prompt 与 64-token Prompt 消耗完全不同。
+准入和调度可以考虑预计的输入处理量、输出生成量、截止时间和租户配额，同时保留硬性的上下文与输出上限。
 
-Prefix cache identity 由可信 gateway 状态构造，绑定 tenant/visibility domain、policy、
-model/tokenizer/template/adapter、position/RoPE、KV dtype 和 exact token prefix。
-命中后还要比较完整字段，正在使用的 block 用 refcount/lease 固定，取消时观察 disconnect-to-release。
+前缀缓存的身份必须由可信网关构造。第一组字段回答“谁可以共享”：租户、可见域和权限规则版本。
+第二组字段回答“计算是否相同”：模型、tokenizer、模板、adapter、位置编码、KV 数据类型和精确 token 前缀。
+哈希命中后还要逐字段比较。正在使用的数据块用引用计数或租约固定；取消请求时，要测量从客户端断连到资源真正释放的时间。
 
-过载时快速 `429`、进入已验证的小模型路线或减少非必要输出预算。安全检查和租户隔离不参与性能降级。
-容量实验分别覆盖 prefill-heavy、decode-heavy、cold/warm cache、取消和单租户热点。
+过载时可以快速返回 `429`，切换到经过验证的小模型，或减少非必要的输出预算。安全检查和租户隔离不能为了性能降级。
+容量实验分别覆盖长输入、长输出、缓存冷启动与命中、取消请求，以及单个租户的热点流量。
 
 ## 面试回答最后怎样收口
 
