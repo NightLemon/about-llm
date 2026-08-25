@@ -5,22 +5,67 @@
 [环境矩阵](../../guide/environment.md)
 { .doc-nav }
 
-本项目不用 Flax 封装，直接用 JAX arrays、PyTree、显式 PRNG key、`value_and_grad`、Optax 和 `jax.jit`
-实现一个最小 decoder-only Transformer。模型跑通后，再依次回答三个问题：PyTorch/JAX 是否真在计算同一个函数，
-optimizer trajectory 是否对齐，跨进程 checkpoint 是否恢复了完整训练状态。
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
 
-!!! warning "四个实验回答四个问题"
-    Tiny-batch overfit、plain-SGD parity、shared-mask AdamW parity 与精确恢复分别检查训练接线、跨框架函数、
-    optimizer 轨迹和状态恢复。前一个实验的成功不能替后一个作证；四者也都没有执行 CUDA/TPU、多设备 sharding、目标模型或生产训练。
+**学习导航**
+
+- **适合读者**：想从 PyTorch 迁移到 JAX，或需要验证训练恢复正确性的开发者。
+- **先修**：Transformer 前向、反向传播、AdamW 和基本 checkpoint 概念。
+- **首次阅读**：先跟一次“训练 3 步后退出，再继续 3 步”的任务理解完整状态，再运行四个实验。
+- **完成信号**：能解释 params、Optax state、PRNG key 和 data cursor 各自怎样影响下一步更新。
+- **卡住时**：先忽略跨框架 parity，只运行 `train_tiny.py`，画出一个 train step 的输入与输出。
+
+</div>
+
+设想一个具体任务：MiniGPT 已经训练 3 步，现在进程退出。新进程加载 checkpoint 后继续训练 3 步。
+如果恢复正确，第 4—6 步读取的样本、dropout mask、loss、梯度和参数，都应与从未中断的运行一致。
+
+本项目不借助 Flax 封装，而是直接组合下面几项能力：
+
+| JAX 组件 | 在项目中的作用 |
+|---|---|
+| JAX array | 保存参数、输入和中间结果 |
+| PyTree | 组织嵌套参数与 optimizer state |
+| PRNG key | 显式传递随机状态 |
+| `value_and_grad` | 同时计算 loss 与 gradients |
+| Optax | 维护 clipping、AdamW 更新和 moments |
+| `jax.jit` | 编译 train step |
+
+这样实现最小 decoder-only Transformer，目的不是少写框架代码，而是让训练状态都出现在函数输入或输出中。
+
+在第 \(t\) 步开始时，可以把完整状态写成：
+
+\[
+S_t=(\theta_t, o_t, k_t, \pi_t, c_t, t),
+\]
+
+| 符号 | 第 \(t\) 步开始时的含义 |
+|---|---|
+| \(\theta_t\) | 模型参数 |
+| \(o_t\) | Optax 的 optimizer state |
+| \(k_t\) | 下一次随机操作要使用的 PRNG key |
+| \(\pi_t\) | 当前 epoch 的样本排列 |
+| \(c_t\) | 排列中的读取位置 |
+| \(t\) | Global step |
+
+少恢复其中任何一项，第 4 步以后都可能走向另一条训练轨迹。
+
+!!! note "本项目的范围"
+    四个实验依次检查训练接线、跨框架数学、optimizer 轨迹和中断恢复。它们都运行在 CPU tiny 模型上；
+    CUDA、TPU、多设备 sharding 和目标大模型属于后续验收。
 
 ## 四层学习与证据地图
 
-| 层 | 入口 | 核心问题 | 已验证 | 仍未验证 |
-|---|---|---|---|---|
-| 原生 JAX 闭环 | `train_tiny.py` | PyTree、autodiff、Optax、JIT 是否接通 | 632 参数 CPU float32 tiny batch 60 步 overfit | 泛化、生成质量、目标硬件性能 |
-| 架构/梯度 parity | `cross_framework_parity.py` | 两框架是否执行同一数学函数 | 同解析参数、20 个 unique parameters、plain SGD 一步 | AdamW、dropout/RNG、JIT |
-| Optimizer trajectory parity | `cross_framework_training_parity.py` | clipping/moments/schedule 是否逐步对齐 | 三步 shared-mask AdamW、错误 mask 反例 | native RNG equivalence、decay mask、checkpoint |
-| 跨进程 resume | `checkpoint_resume_control.py` | 权重之外的状态是否完整 | params/Optax/typed PRNG/permutation/cursor/step bit-exact | Orbax、分片 checkpoint、断电原子性、来源认证 |
+| 实验 | 它只改变或检查什么 | 通过时可以说什么 |
+|---|---|---|
+| Tiny-batch overfit | 一套 JAX 模型能否反向传播并更新 | PyTree、autodiff、Optax 和 JIT 已接通 |
+| Plain-SGD parity | 两框架使用相同解析权重、输入和公式 | 这一小模型的 forward、gradient 与一步 SGD 对齐 |
+| Shared-mask AdamW parity | 两框架使用同一批 dropout masks | Clipping、moments、schedule 与三步更新轨迹对齐 |
+| 跨进程 resume | 第 3 步保存并由新进程继续 | 本实验列出的完整状态足以 bit-exact 续跑 |
+
+四个实验是递进关系，却不能互相替代。Overfit 成功仍可能掩盖公式差异；一步 SGD 对齐也没有检查
+AdamW moments；optimizer 对齐后，遗漏数据 cursor 仍会让恢复后的训练分叉。
 
 ## JAX 训练心智模型
 
@@ -37,9 +82,18 @@ flowchart LR
     N -->|"next call"| F
 ```
 
-与隐式持有参数和 optimizer 的对象式训练相比，这里每一步都显式接收旧 `params/optimizer_state` 并返回新值。Python 变量重新绑定不等于原地修改 device array；checkpoint 也必须保存两棵状态树及所有影响未来 batch/随机性的状态。
+对象式训练器常把参数和 optimizer state 藏在实例内部。这里的 train step 显式接收旧 `params` 与
+`optimizer_state`，再返回两棵新树。Python 变量重新绑定，不表示 device array 被原地修改。
 
-PRNG key 同样是值。调用方必须 split、消费并保存新 key；重复使用旧 key 会重复随机流。Typed JAX key 的内部 data 可以进入 checkpoint，但这不意味着它与 PyTorch、NumPy、worker 或 accelerator RNG 是同一种算法或同一个状态机。
+同样，checkpoint 也不只是“保存模型权重”。凡是会改变下一批数据、随机 mask 或参数更新的状态，
+都必须随 \(S_t\) 一起恢复。
+
+PRNG key 同样是一份显式状态。调用方先 split key，把其中一份交给当前随机操作，再把另一份保存给未来。
+重复使用旧 key，会重复同一段随机流。
+
+Typed JAX key 的内部数据可以写进 checkpoint。不过，它只恢复 JAX 这一路随机状态。
+PyTorch、NumPy、data worker 和 accelerator 可能各自使用另一种算法与状态机。它们如果参与训练，
+也要单独保存。
 
 ## 从零实现的模型
 
@@ -53,19 +107,26 @@ PRNG key 同样是值。调用方必须 split、消费并保存新 key；重复�
 - MLP up/down `[dim, ratio×dim]` 与 `[ratio×dim, dim]`；
 - attention/MLP/final RMSNorm scale。
 
-`blocks` 最终转为 tuple，使树结构稳定。当前核心没有 Linear bias 或 norm bias，LM head 与 token embedding 通过转置矩阵乘法绑定；这与仓库 PyTorch MiniGPT 的默认 LayerNorm 架构并不相同。
+这些数组按名称嵌套成 PyTree。`blocks` 最终使用 tuple，确保树的路径和叶子顺序保持稳定。
+
+当前模型的 Linear 与 RMSNorm 都不含 bias。LM head 直接使用 token embedding 的转置，因此两者共享权重。
+仓库中的 PyTorch MiniGPT 默认使用 LayerNorm。做 parity 前，需要把两边改成同一架构约定。
 
 ### 纯函数前向
 
 给定 `input_ids [B,T]`：
 
-1. token embedding 与前 `T` 个 position embedding 相加；
-2. pre-norm attention：fused QKV → `[B,H,T,D_h]` → causal score → softmax → output projection → residual；
-3. pre-norm MLP：approximate GELU → down projection → residual；
-4. final RMSNorm；
+1. Token embedding 与前 `T` 个 position embedding 相加；
+2. Pre-norm attention：融合 QKV → `[B,H,T,D_h]` → causal score → softmax → 输出投影 → 残差；
+3. Pre-norm MLP：近似 GELU → down projection → 残差；
+4. Final RMSNorm；
 5. 与 `token_embedding.T` 相乘得到 logits `[B,T,V]`。
 
-Causal mask 只允许位置 \(t\) 访问 \(j\le t\)。专项测试把后两个 input token 改掉，前两个位置 logits 仍在容差内相同。当前实现使用 `-1e30` 屏蔽未来位置；它没有覆盖全 padding row、低精度 sentinel 或 fused attention kernel。
+Causal mask 只允许位置 \(t\) 访问 \(j\le t\)。专项测试先记录所有 logits，再只改输入的后两个 token。
+如果前两个位置的 logits 保持不变，说明未来 token 没有越过 mask 影响过去。
+
+当前实现用 `-1e30` 屏蔽未来位置。这个 CPU float32 实验没有覆盖全 padding row、低精度 mask 值或
+融合 attention 算子；迁移实现时要重新检查这些边界。
 
 ### Masked token mean
 
@@ -76,12 +137,20 @@ Causal mask 只允许位置 \(t\) 访问 \(j\le t\)。专项测试把后两个 i
 \log p_\theta(y_{b,t}\mid x_{b,\le t}).
 \]
 
-实现把 ignored target 暂替换为 0 以安全 gather，再乘 mask。全 ignored batch 或可见 target 越界会让低层 primitive 返回非有限 sentinel；`make_train_step` 的 host wrapper 会在 compiled update 前拒绝它们。
-这样不会把零监督误报成有限的 0 loss，也避免 AdamW weight decay 在错误 batch 上悄悄改参数；真实训练仍应在更早的数据门禁统计并拒绝零监督记录。
+JAX 的 gather 仍会读取稍后被 mask 的位置。实现先把 `-100` target 临时替换为合法 ID 0，完成索引后
+再乘监督 mask。
+
+这个替换只用于安全索引。Ignored token 仍不进入 loss 的分子与分母。
+
+如果整批 target 都是 `-100`，分母 \(|M|\) 为 0。可见 target 越过词表时，索引同样无效。
+`make_train_step` 的 Python wrapper 会在进入已编译更新前拒绝这两类输入。
+
+这一步避免把零监督误报成 `loss=0`，也避免 AdamW 的 weight decay 在错误 batch 上修改参数。
 
 ### JIT train step
 
-`make_train_step(config, optimizer)` 用闭包捕获静态 config/optimizer，动态参数是 PyTree、Optax state、input IDs 与 targets。内部顺序是：
+`make_train_step(config, optimizer)` 把不随 step 改变的配置和 optimizer 放进闭包。
+每次调用传入四项动态值：params PyTree、Optax state、input IDs 与 targets。核心顺序是：
 
 ~~~text
 loss, grads = value_and_grad(loss_fn)(params)
@@ -90,7 +159,11 @@ updates, new_state = optimizer.update(grads, state, params)
 new_params = optax.apply_updates(params, updates)
 ~~~
 
-Optimizer 是 `optax.chain(clip_by_global_norm, adamw)`；报告中的 gradient norm 是裁剪前值。教学入口对全部参数采用同一 weight decay，未实现生产常见的 norm/bias-like exclusion mask。
+Optimizer 使用 `optax.chain(clip_by_global_norm, adamw)`。因此先按全局范数裁剪 gradient，再交给 AdamW；
+报告中的 gradient norm 是裁剪前的值。
+
+教学入口对所有参数采用同一个 weight decay。真实训练通常会明确哪些 norm、bias 或 embedding 不衰减，
+并把这份 mask 当作 optimizer 配置的一部分。
 
 ## 原生 JAX 最小运行 { #run }
 
@@ -101,7 +174,8 @@ python -m pip install -e ".[dev,torch,jax]"
 python scripts/doctor.py
 ~~~
 
-安装成功只表明当前 wheel/backend 可导入。报告里的 `backend/device` 才说明本次走了哪个设备；CPU 结果不得外推 CUDA、TPU 或多设备。
+安装成功只表示 Python 能导入当前 wheel 和 backend。实际运行报告中的 `backend/device` 才说明计算落在哪个设备。
+本页录制的是 CPU 结果，CUDA、TPU 和多设备需要各自重跑。
 
 ### 2. Overfit 一个确定性 tiny batch
 
@@ -112,16 +186,19 @@ python projects/jax-minigpt/train_tiny.py `
   --seed 11
 ~~~
 
-录制运行使用 JAX/JAXlib `0.11.0`、Optax `0.2.8` 和 CPU `cpu:0`。固定两条
-`[0,1,2,3]→[1,2,3,4]` 样本，632 参数模型的 loss 从约 `2.1086` 降到 `0.0030`。
+本页录制运行使用 JAX/JAXlib `0.11.0`、Optax `0.2.8` 和 CPU `cpu:0`。训练数据只有两条相同的
+`[0,1,2,3]→[1,2,3,4]` 样本。632 参数模型训练 60 步后，loss 从约 `2.1086` 降到 `0.0030`。
 
-该脚本**不生成文本**。它输出参数量、loss、梯度范数和计时；旧版页面所说的“检查生成结果”不是实际交付，已删除。Tiny overfit 可发现梯度断开、target shift 或 optimizer 未更新，但不能证明泛化或语言质量。
+这个脚本只训练，不生成文本。它输出参数量、loss、梯度范数和计时。
+Tiny overfit 能暴露梯度断开、target shift 或 optimizer 没有更新，却不衡量泛化与语言质量。
 
 ### 3. 正确测量 JAX 时间
 
-JAX dispatch 通常是异步的。脚本每步调用 `loss.block_until_ready()` 后再停止计时，因此把首次
-`compile + step` 与后续同步 steps 分开。不等待结果时，计时很可能只覆盖 Python enqueue；这里的 CPU tiny
-shape 数字也不能外推 GPU/TPU 吞吐。
+JAX dispatch 通常是异步的：Python 把工作提交给 backend 后，可以在设备尚未完成时继续运行。
+如果立刻停止计时，测到的可能只是 enqueue 时间。
+
+脚本在每一步调用 `loss.block_until_ready()`，等设备真正完成后再停止计时。它还把首次
+`compile + step` 与后续已编译 step 分开。这里的 CPU tiny shape 只用于解释计时方法，不能预测 GPU 或 TPU 吞吐。
 
 ## PyTorch↔JAX 同权重前向、反向与 SGD parity
 
@@ -131,22 +208,29 @@ python projects/jax-minigpt/cross_framework_parity.py
 
 ### 为什么不能比较两个随机模型
 
-两个框架各自随机初始化后，即使 loss 都有限，也无法判断差异来自权重、架构、数值约定还是实现错误。
-这个实验用 name-ordered sin/cos 解析参数生成 PyTorch 权重，再显式映射到 JAX：
+让 PyTorch 和 JAX 各自随机初始化，得到的本来就是两个函数。即使两边 loss 都有限，也无法判断差异来自
+随机权重、架构约定、数值误差还是实现 bug。
+
+这个实验先按参数名称生成确定性的 sin/cos 数值，作为唯一源权重。PyTorch 直接加载这些数组，JAX 则按照
+下表显式转换：
 
 | 必须对齐的约定 | 本实验的选择 |
 |---|---|
-| normalization | affine LayerNorm，含 mean subtraction、scale/bias，epsilon=`1e-5` |
-| Linear layout | PyTorch `[out,in]` 映射为 JAX `[in,out]` |
-| activation | tanh-approximate GELU |
-| attention | 相同 causal mask 与 head reshape |
-| LM head | tied token embedding |
-| loss | 一个 `-100` target 的 masked token mean |
-| optimizer | plain SGD，lr=`0.025`，无 momentum/decay |
-| runtime | 强制 CPU float32；不使用 framework RNG |
+| 归一化 | Affine LayerNorm：减均值，含 scale/bias，epsilon=`1e-5` |
+| Linear 权重布局 | PyTorch `[out,in]` 转置为 JAX `[in,out]` |
+| 激活函数 | Tanh-approximate GELU |
+| Attention | 相同 causal mask 和 head reshape |
+| LM head | 与 token embedding 共享权重 |
+| Loss | 含一个 `-100` target 的 masked token mean |
+| Optimizer | Plain SGD，lr=`0.025`，无 momentum 与 decay |
+| 执行环境 | 强制 CPU float32，不调用框架随机数 |
 
-当前固定输入使用 11-vocab、2-layer、8-dim、2-head 模型，对账 logits、loss、20 个 unique parameters 的
-gradients、一步参数与 post-step forward：
+固定输入使用词表 11、两层、hidden size 8、两个 attention heads 的模型。对账沿一次更新逐层推进：
+
+1. 比较初始 logits 与 loss；
+2. 比较 20 组独立参数的 gradients；
+3. 比较 SGD 更新后的全部参数；
+4. 用新参数再次比较 logits 与 loss。
 
 | 比较项 | max absolute difference | 门槛 |
 |---|---:|---:|
@@ -157,13 +241,21 @@ gradients、一步参数与 post-step forward：
 | post-step logits | `7.450580596923828e-08` | `2e-6` |
 | post-step loss | `2.384185791015625e-07` | `2e-6` |
 
-Report fingerprint 为 `sha256:63408e2e…40277e5`。通过只证明这个对齐 contract；不能写成“PyTorch 与 JAX 天然等价”。
+完整报告的 fingerprint 为 `sha256:63408e2e…40277e5`。这些误差证明的是上表定义的小模型与单步 SGD
+在给定容差内对齐，不是“PyTorch 与 JAX 天然执行相同函数”。
 
 ### RMSNorm 反事实
 
-原生 JAX MiniGPT 使用不减均值、无 bias、epsilon=`1e-6` 的 RMSNorm。把同一主干权重直接送入原生路径，
-logits 差异会远大于 parity tolerance。它提醒我们：Normalization、epsilon、bias、GELU、mask、weight tying
-和 loss reduction 都是模型身份的一部分。
+原生 JAX MiniGPT 使用 RMSNorm。它不减均值，也没有 bias，epsilon 为 `1e-6`。
+把相同主干权重直接送入这条路径后，logits 差异远远超过 parity tolerance。
+
+这个反例说明，“都是 decoder-only Transformer”还不足以对账。至少要逐项核对：
+
+- 归一化方法与 epsilon；
+- Bias 和 GELU；
+- Attention mask；
+- Weight tying；
+- Loss reduction。
 
 ## 三步 AdamW trajectory parity
 
@@ -171,14 +263,15 @@ logits 差异会远大于 parity tolerance。它提醒我们：Normalization、e
 python projects/jax-minigpt/cross_framework_training_parity.py
 ~~~
 
-接下来在已对齐的 LayerNorm 主干上加入：
+一步 plain SGD 不维护 moments，也不使用随 step 变化的 schedule。第二个 parity 实验因此在已经对齐的
+LayerNorm 主干上连续更新三步，专门检查 optimizer state 是否同步。
 
-- NumPy PCG64 seed `20260814` 外部物化的三张 embedding inverted-dropout masks；
-- dropout rate `0.25`，每步 kept elements 为 `54/50/45`；
-- global-norm clip `0.08`；
-- AdamW beta `0.9/0.95`、epsilon `1e-8`、weight decay `0.03`；
-- `0.02→0.01→0.005` schedule；
-- 三步 raw/clipped gradients、first/second moments、count、params 与 post-step forward。
+- 用 NumPy PCG64 seed `20260814` 预先生成三张 embedding inverted-dropout masks；
+- Dropout rate 为 `0.25`，三步分别保留 `54/50/45` 个元素；
+- Global-norm clip 为 `0.08`；
+- AdamW beta 为 `0.9/0.95`，epsilon 为 `1e-8`，weight decay 为 `0.03`；
+- Learning rate 依次为 `0.02→0.01→0.005`；
+- 每一步都比较裁剪前后 gradient、一阶与二阶 moments、step count、params 和更新后 logits。
 
 裁剪公式为
 
@@ -186,13 +279,17 @@ python projects/jax-minigpt/cross_framework_training_parity.py
 g'_t=g_t\min\left(1,\frac{c}{\lVert g_t\rVert_2}\right),
 \]
 
-三步 pre-clip norm 都高于阈值，所以 clipping 路径确实执行。Raw/clipped gradients、AdamW moments、parameters
-和 post-step logits 均通过录制的 Float32 tolerance。精确误差与 report fingerprint 留在脚本输出和
-[项目控制台账](../../evidence/project-controls.md)。
+三步裁剪前的 gradient norm 都高于 `0.08`，所以实际走到了 clipping 分支。
+裁剪前后 gradient、AdamW moments、parameters 和更新后 logits 都通过录制的 Float32 tolerance。
 
-故意循环移位 JAX mask 后，最终参数出现明显差异。共享 mask 只是在隔离随机输入变量，不证明 native RNG
-equivalence，也没有验证全部 dropout sites、JIT 或 accelerator kernel。当前实验对所有参数 decay，
-因此也没有覆盖生产常见的 norm/bias decay mask。
+各项精确误差与报告 fingerprint 保存在脚本输出和[项目控制台账](../../evidence/project-controls.md)。
+
+为了确认 parity 不是“容差太宽”，实验还把 JAX 使用的三张 mask 循环移位。最终参数随即出现明显差异。
+
+两边共享预先生成的 mask，只是把“随机输入不同”这个变量排除掉。它没有比较 PyTorch 与 JAX 的原生 RNG，
+也没有覆盖所有 dropout 位置、JIT 或 accelerator 算子。
+
+当前实验对所有参数做 decay。生产常见的 norm/bias decay mask 需要另行验证。
 
 ## 可校验 checkpoint 与跨进程 bit-exact resume
 
@@ -202,31 +299,66 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 
 ### 需要保存哪些状态
 
-| 状态面 | 本实验保存的内容 |
+开头的 \(S_t\) 到这里变成实际文件。第 3 步结束时，本实验保存：
+
+| 状态 | 文件中保存的内容 |
 |---|---|
-| 参数 | 完整 params PyTree leaves/treedef identity |
-| optimizer | Optax count、first/second moments |
-| 随机性 | typed dropout key data、data-shuffle key data |
+| 参数 | Params PyTree 的全部 leaves 和 treedef identity |
+| Optimizer | Optax step count、first/second moments |
+| 随机性 | Typed dropout key data、data-shuffle key data |
 | 数据进度 | permutation、cursor |
 | 训练进度 | global step、模型/optimizer/dataset identity |
-| 未覆盖 | Python/NumPy/worker/accelerator RNG、分片拓扑 |
+
+Python、NumPy、data worker、accelerator RNG 和分片拓扑没有进入这份文件。如果实际训练使用了它们，
+就要扩展状态面，不能照搬当前清单。
 
 ### Artifact 格式
 
-`ALLMJAX1` 单文件包含 canonical manifest、连续 little-endian arrays 与 outer digest。Manifest 逐叶绑定 name、
-shape、dtype、offset、size 和 digest。Loader 在创建 JAX arrays 前拒绝字段、顺序、shape/dtype、截断与 trailing
-bytes 漂移；writer 使用 exclusive create 与 file `fsync`。
+`ALLMJAX1` 是本仓库为教学实现的单文件格式：
 
-File `fsync` 不等于目录项已 durable，也不证明断电原子性。Outer/inner SHA-256 检测漂移但不认证发布者；有写权限的攻击者可以协同重算无密钥 hash。
+| 区域 | 保存什么 |
+|---|---|
+| Header + canonical manifest | Schema、训练身份和每个 PyTree leaf 的描述 |
+| 连续 little-endian arrays | Params、Optax 和其他状态的原始字节 |
+| Outer digest | 绑定 manifest 与全部 array payload |
+
+Manifest 为每个 leaf 记录名称、shape、dtype、offset、字节数和独立 digest。
+
+Loader 在创建 JAX arrays 前，先检查字段、叶子顺序、shape/dtype、offset、文件截断和多余尾部。
+
+Writer 使用 exclusive create 避免覆盖已有文件，并对文件内容调用 `fsync`。
+
+文件 `fsync` 只推进文件内容的持久化，不保证目录项已经落盘，也不等于整个保存过程具备断电原子性。
+内外两层 SHA-256 可以发现无意损坏；拥有写权限的人仍能修改内容并重新计算 hash，所以它们不认证发布者。
 
 ### 当前实跑结果
 
-固定 7 examples、batch 2、dropout `0.2`、clip+AdamW 六步，在 step 3 由第一个 spawn process 写出 `13,476 bytes` artifact，SHA-256 为 `e9252e5dddfa4aa5…70568a35`；第二个独立进程加载并完成后三步。
+实验使用 7 条样本、batch size 2、dropout `0.2` 和 clip+AdamW，共训练 6 步：
 
-Uninterrupted 与 resumed 的 sample IDs、六步 loss/gradient trace、params、Optax、PRNG 和 data state bit-exact。
-报告只发布 distinct worker count，不暴露 raw PID。
+```text
+不中断基线：process A ───────── step 1 → 2 → 3 → 4 → 5 → 6
+恢复路径：  process B ───────── step 1 → 2 → 3 → save
+                                      new process C → load → 4 → 5 → 6
+```
 
-仅把 dropout key 重置为初始 seed 的 wrong PRNG 负例，最终参数差为 `0.037261832505464554`；仅把 cursor 从 6 重置为 0 的 wrong cursor 负例，差为 `0.03700308472616598`。这证明“权重和 Optax state 能加载”仍不足以保证训练连续。
+第一个恢复进程在 step 3 写出 `13,476 bytes` 文件，SHA-256 为 `e9252e5dddfa4aa5…70568a35`。
+另一个独立进程加载文件并完成后三步。
+
+恢复路径与不中断基线在以下项目上均 bit-exact：
+
+- Sample IDs 与六步 loss/gradient trace；
+- Params 与 Optax state；
+- PRNG keys；
+- Data permutation 与 cursor。
+
+报告只保留不同 worker 的数量，不公开 PID。
+
+两个负例解释了为什么要保存完整 \(S_t\)：
+
+- 只把 dropout key 重置为初始 seed，最终参数最大差为 `0.037261832505464554`；
+- 只把 data cursor 从 6 重置为 0，最终参数最大差为 `0.03700308472616598`。
+
+两次运行都能加载模型权重和 Optax state，但下一步使用了不同随机 mask 或样本，所以已经不是同一条训练轨迹。
 
 ## 专项测试与故障定位
 
@@ -238,7 +370,7 @@ python -m pytest `
 | 现象 | 优先检查 | 不能据此下的结论 |
 |---|---|---|
 | loss 不下降 | target shift、mask 分母、gradient tree、optimizer state 是否回传 | 一次下降不等于泛化 |
-| 首步很慢 | compile 与执行是否拆分、shape/dtype 是否变化 | enqueue time 不等于计算时间 |
+| 首步很慢 | 编译与执行是否拆分、shape/dtype 是否变化 | Enqueue time 不等于计算时间 |
 | parity 失败 | norm/epsilon/bias、Linear transpose、GELU、mask、tied weight、reduction | 不能先调大容差掩盖身份差异 |
 | AdamW 前两步对、后续漂移 | schedule count、moment count、clipping 顺序、mask/RNG | shared mask 不证明 native RNG |
 | checkpoint 能打开但 trace 漂移 | PRNG、permutation/cursor、step、Optax state、dataset identity | 可反序列化不等于 exact resume |
@@ -248,24 +380,35 @@ python -m pytest `
 
 ### 参数与 optimizer policy
 
-为 PyTree leaves 建立可审计的 path/type/shape identity，并显式定义 weight-decay mask。Schedule count、
-accumulation position、loss-scaling state 和 EMA 只要影响未来更新，也必须进入 checkpoint 与 parity test。
+为每个 PyTree leaf 记录稳定的 path、type 和 shape，并显式定义 weight-decay mask。
+
+Schedule count、梯度累积位置、loss-scaling state 和 EMA 都会改变未来更新。
+训练使用其中任何一项时，都应写入 checkpoint，并纳入 parity test。
 
 ### 数据与随机性
 
-为每个 dropout site、数据 shuffle、augmentation 和 sampling 建立 key split 约定。多设备时还需明确 fold-in 的 process/device/step/example identity，避免所有设备重复随机流或恢复后重新使用 key。Shared materialized mask 适合隔离数学差异，不是最终 RNG 设计。
+为每个 dropout site、数据 shuffle、augmentation 和 sampling 规定怎样 split key。
+
+多设备训练还要说明 fold-in 使用哪些 identity，例如 process、device、step 和 example。明确这些维度，
+可以避免不同设备重复随机流，也可以避免恢复后再次使用已经消费过的 key。
+
+预先生成并共享 mask 很适合隔离跨框架数学差异，却不是生产训练的最终 RNG 设计。
 
 ### JIT、shape 与性能
 
-把 compile、warm steady state、host↔device transfer、collective 与 checkpoint I/O 分开测量，并记录
-shape/dtype/sharding/mesh identity 与同步点。一次 CPU `block_until_ready()` 计时不能证明 GPU/TPU 性能，
-也不能排除 shape-triggered recompilation。
+性能报告应分别测量首次编译、预热后的稳定执行、host↔device 传输、collective 和 checkpoint I/O。
+每项结果都要记录输入 shape、dtype、sharding、mesh 和实际同步点。
+
+一次 CPU `block_until_ready()` 计时只说明这个小实验等待了设备完成。它既不能预测 GPU/TPU 性能，
+也没有覆盖 shape 改变后触发的重新编译。
 
 ### Sharding 与 checkpoint
 
-在目标多设备环境验证 mesh、partition rules、global/local shapes、batch divisibility 与 collective semantics。
-若采用 Orbax/TensorStore，还要测试异步保存、拓扑变化 reshard、partial write、preemption 和 object-store
-consistency；单文件 `ALLMJAX1` 不能替这些组件作证。
+扩展到多设备后，先在目标环境检查 mesh 与 partition rules。随后分别对账全局与本地 shape、
+batch 可整除性和 collective 语义。
+
+如果采用 Orbax 或 TensorStore，还要测试异步保存、拓扑变化后的 reshard、部分写入、preemption 和
+object-store consistency。单文件 `ALLMJAX1` 只服务于当前教学实验，不能代表这些组件已经正确。
 
 ## 项目验收与求职讲法
 
@@ -278,14 +421,28 @@ consistency；单文件 `ALLMJAX1` 不能替这些组件作证。
 - [ ] 能把 CPU、单 accelerator、多设备、目标模型证据分栏；
 - [ ] 能说明带完整字段和 hash 的 artifact，其完整性、真实性与 durability 是三个不同问题。
 
-面试中可按“纯函数状态 → tiny overfit → 模型身份 parity → optimizer trajectory → checkpoint state surface → accelerator/sharding 扩展”讲解。简历若只有当前证据，应写“在 CPU tiny 固定输入上实现并验证”，
-不能写“完成大模型 JAX 分布式训练”或“性能优于 PyTorch”。
+面试中可以沿一条因果链讲解：纯函数状态 → tiny overfit → 模型身份对账 → optimizer 轨迹 →
+checkpoint 状态面 → accelerator/sharding 扩展。
+
+当前项目适合写成“在 CPU tiny 固定输入上实现并验证 JAX 训练与跨进程精确恢复”。
+“完成大模型 JAX 分布式训练”或“性能优于 PyTorch”需要目标模型、多设备和性能证据，当前实验尚未覆盖。
 
 ## 证据边界
 
-当前证据覆盖本机 CPU 上 JAX/JAXlib `0.11.0`、Optax `0.2.8` 的单设备 tiny-batch JIT 训练，强制 CPU 的
-PyTorch/JAX LayerNorm/SGD 与 shared-mask AdamW 对照实验，以及本仓库实现的 `ALLMJAX1` 跨进程 bit-exact resume。
+本页录制了三类 CPU 证据：
 
-它不证明原生 PyTorch/JAX RNG 等价、生产式 decay mask、Flax/Orbax/TensorStore、directory `fsync`/断电、来源认证、CUDA/TPU、混合精度、多设备 mesh/sharding、数据并行效率、目标模型收敛、生成质量或生产性能。每个未执行项都需要目标环境与独立验收。
+- JAX/JAXlib `0.11.0` 与 Optax `0.2.8` 的单设备 tiny-batch JIT 训练；
+- 强制 CPU 的 PyTorch/JAX LayerNorm-SGD 与 shared-mask AdamW 对照；
+- `ALLMJAX1` 跨进程 bit-exact resume。
+
+下一阶段可以分三条线推进：
+
+| 方向 | 仍要验证什么 |
+|---|---|
+| 训练语义 | 原生 PyTorch/JAX RNG、生产 weight-decay mask、混合精度 |
+| 系统与恢复 | Flax/Orbax/TensorStore、目录持久化、断电恢复、来源认证 |
+| 目标环境 | CUDA/TPU、多设备 sharding、目标模型收敛、生成质量和性能 |
+
+这些问题都需要在目标环境中验收，不能从 CPU tiny 结果外推。
 
 完整实现说明见 [projects/jax-minigpt](https://github.com/NightLemon/about-llm/tree/main/projects/jax-minigpt)。
