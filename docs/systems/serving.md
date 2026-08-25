@@ -60,6 +60,22 @@ flowchart LR
 反过来，网关返回 `200` 也只说明 HTTP 路径成功。要确认目标 checkpoint、tokenizer 和 template 确实执行，
 还需要用 request ID 把网关记录与服务端 generation trace 连起来。
 
+### 这条服务链怎样对应 nano-vLLM
+
+nano-vLLM 实现的是模型引擎，不是一套完整的在线服务。把前面的服务状态映射到实验代码，可以看清边界：
+
+| 服务状态 | nano-vLLM 中能观察到什么 | 仍由服务外围负责什么 |
+|---|---|---|
+| `offered / eligible` | 尚未进入引擎 | HTTP、认证、Schema、租户配额与请求上限 |
+| `queued` | `add_request()` 创建 `WAITING` sequence | 服务队列 deadline、公平性和快速拒绝 |
+| `admitted` | Scheduler 选择 sequence，BlockManager 分配 KV block | 全局并发额度和跨副本 admission |
+| `running` | ModelRunner 执行 prefill/decode，Sampler 选 token | Socket 断连、流式背压和外部依赖 |
+| `terminal` | Postprocess 标记完成并释放活动 KV 引用 | HTTP 终态、费用核销、审计与重试语义 |
+
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)从 `LLM.generate → add_request` 开始，记录 Scheduler、
+BlockManager、ModelRunner、Qwen3 和 Sampler 的真实执行。它回答“引擎内部为什么走到这一步”。本章继续回答外围问题：
+请求是否应该进入引擎、客户端看到什么终态，以及服务过载时如何保持可解释。
+
 ## 第一个问题：哪些请求算成功
 
 延迟分位数通常只统计成功请求，因此必须和完整终态计数一起看：
@@ -134,13 +150,19 @@ Closed-loop worker 完成上一条请求后才发送下一条。服务一变慢�
 \widehat W_i=\widehat P_i+O_i^{cap}-1.
 \]
 
-这里 \(\widehat P_i\) 是输入 token 估计，\(O_i^{cap}\) 是输出上限。它表达 token-position work，
-不是 GPU 秒或显存字节。Beam search、speculative decoding、prefix hit、preemption 和 padding 都会改变真实成本。
-KV 预留还要结合层数、KV heads、head dimension、dtype 和 block allocator。
+这里 \(\widehat P_i\) 是输入长度估计，\(O_i^{cap}\) 是输出长度上限。这个式子估算需要处理多少个序列位置，
+不能直接换算成 GPU 秒或显存字节。
 
-Queue policy 是产品选择：FCFS 容易解释，但会被超长请求 head-of-line blocking；按长度分 lane 可保护短请求，
-却要防止长请求饥饿；优先队列需要 aging 和配额。优先级来自认证后的控制面策略，不能接受 Prompt 自报的
-`priority=critical`。
+束搜索、推测解码、前缀命中、抢占和补齐都会改变真实工作量。估算 KV 容量时，还要加入模型层数、K/V head 数、
+每个 head 的维度、数值类型和 block allocator 的分配规则。
+
+队列策略是一项产品选择：
+
+- 先到先服务（FCFS）容易解释，但超长请求会阻塞后面的短请求；
+- 按长度分队列可以保护短请求，同时要防止长请求一直得不到执行；
+- 优先队列需要配额和随等待时间提升优先级的 aging 规则。
+
+优先级应来自认证后的控制面策略，不能接受 Prompt 自报的 `priority=critical`。
 
 超载时，快速返回可解释的 `429` 或执行已授权降级，通常比让所有请求越过 deadline 更好。
 长上下文可以进入独立 lane；重试提示必须带 backoff，避免所有客户端同时制造 retry storm。
@@ -158,9 +180,16 @@ queue_timeout / execution_timeout / cancelled
 server_error / outcome_unknown
 ```
 
-Request ID 关联一次网络 attempt；logical call ID 聚合调用方重试；idempotency key 则服务于某个明确的业务去重契约。
-三者用途不同。纯文本重放会产生另一份 token 和费用；付款、发信或创建资源等副作用还需要稳定 effect ID、
-状态查询与 reconciliation，不能靠 HTTP 客户端盲目重试。
+这三个 ID 分别回答不同问题：
+
+| 标识 | 关联对象 |
+|---|---|
+| Request ID | 一次网络请求 |
+| Logical call ID | 用户眼中的同一次调用及其多次重试 |
+| Idempotency key | 业务约定中需要去重的一次操作 |
+
+重新生成文本会产生另一份 token 和费用。付款、发信或创建资源等副作用还需要稳定的 effect ID、状态查询和对账流程，
+不能只依靠 HTTP 客户端重试。
 
 版本协商失败时应明确报错。客户端请求的 model、adapter 或 API feature 不存在时，服务不能静默换模型后
 返回普通成功，否则调用者无法知道实际运行了什么。
@@ -171,8 +200,8 @@ Request ID 关联一次网络 attempt；logical call ID 聚合调用方重试；
 Server-Sent Events（SSE）只能证明服务在分块发送字节。后端可能先生成完整结果，再分块发出；
 要验证增量生成，需要观察首个 delta 到达时 decode 是否仍在运行。
 
-Stop string 可能跨 token、event 甚至 UTF-8 byte chunk。客户端需要暂存仍可能构成 stop 的最长 suffix，
-并明确是否返回 stop、重叠优先级、Unicode 规则、usage 和 finish reason。
+停止字符串可能横跨多个 token、SSE 事件，甚至 UTF-8 字节块。客户端需要暂存“仍可能组成停止字符串”的最长后缀。
+协议还要明确：停止字符串是否返回给用户，多个规则重叠时谁优先，以及 Unicode、usage 和 finish reason 怎样处理。
 
 客户端截断展示并不会让后端自然停止。取消测试应该分别测量：
 
@@ -186,9 +215,11 @@ Stop string 可能跨 token、event 甚至 UTF-8 byte chunk。客户端需要暂
 
 ## 路由、降级与缓存先守住边界
 
-模型路由先排除不可行候选，再优化质量、延迟与成本。数据地域、许可证、模态、上下文、tool/schema 能力、
-租户隔离和安全策略属于 hard gate。通过后，才可以让小模型处理分类、让大模型处理开放推理，
-或在低置信度时转人工。
+模型路由分两步。第一步先检查硬条件：数据地域、许可证、模态、上下文长度、工具与 Schema 能力、租户隔离和
+安全策略。不满足任意一项的模型都要排除。
+
+第二步才在可行候选中比较质量、延迟和成本。例如让小模型处理分类，让大模型处理开放推理，或者在低置信度时
+转交人工。
 
 降级可以减少候选、缩短上下文、关闭非必要工具、切换已验证的备用模型或转人工。
 安全检查、租户隔离和数据地域不能作为高峰期的性能开关。路由器本身也需要版本化评测，
@@ -203,36 +234,55 @@ Stop string 可能跨 token、event 甚至 UTF-8 byte chunk。客户端需要暂
 | Prefix / KV cache | 已计算前缀 | 精确 token、模型、位置编码、KV dtype 与可见域 |
 | 检索缓存 | 候选或结果 | 索引 revision、ACL 与查询上下文 |
 
-缓存键中的身份与权限字段来自认证和策略层。Prefix/KV 命中至少绑定 tenant、policy、
-model/tokenizer/template/adapter、position/RoPE、KV dtype 和 exact token prefix。
-Fingerprint 可以帮助查 bucket，命中后仍要比较完整字段，并为敏感数据设计 TTL、删除、加密和 timing side-channel 控制。
+缓存键中的身份与权限字段必须来自认证和策略层。一次 Prefix/KV 命中至少要绑定：
+
+- 租户和权限策略；
+- 模型、tokenizer、template 与 adapter 版本；
+- Position/RoPE 配置和 KV 数值类型；
+- 完全相同的 token 前缀。
+
+指纹可以用来快速寻找候选 bucket，真正命中前仍要比较完整字段。敏感数据还需要 TTL、删除、加密和时间侧信道控制。
 
 ## 一个副本健康，不代表整个服务有容量
 
-常见拓扑由 gateway/router、model-serving replicas 以及外部 RAG/tool 依赖组成。每一层的并发限制只在自身范围内成立。
-例如 4 个 worker 各自持有 `Semaphore(8)` 时，进程组上限可能是 32，而不是 8；replica-local queue 也无法单独实现租户全局配额。
+常见服务包含网关或路由器、多个模型副本，以及外部 RAG 和工具依赖。每一层的并发限制只在自己的作用域内生效。
 
-Tensor/pipeline parallel 让一个模型实例跨设备执行，replica parallel 则让多个实例接不同请求。
-它们的故障域和扩缩容单位不同。Sticky routing 可以提高 prefix cache locality，也可能制造热点；未认证 session key 不能跨租户选缓存。
+例如，4 个 worker 分别持有 `Semaphore(8)`，整个进程组最多可能同时放行 32 个请求，而不是 8 个。单个副本的本地
+队列也无法独自实施租户的全局配额。
 
-Readiness 要确认目标 model/tokenizer/template/adapter、设备、scheduler 和关键依赖都能接流量。
-Liveness 只回答进程是否值得重启。滚动发布时先停止 admission 并摘除路由，再等待或有界取消 in-flight，最后释放模型与 KV。
+Tensor parallel 和 pipeline parallel 让一个模型实例跨多台设备执行；副本并行则让多个完整实例接收不同请求。
+前两者的扩缩容单位是一个跨设备实例，后者的扩缩容单位是一个完整副本。
 
-Autoscaling 不能只看 GPU utilization。Admission 过严时 GPU 可能很闲，而 queue 已经超时；饱和时 GPU 也可能长期满载。
-扩缩容信号应组合 queue age、admitted sequences、KV blocks、prefill/decode work、preemption、错误与目标延迟。
+粘性路由可以提高前缀缓存命中率，也可能把流量集中成热点。用于选路的 session key 必须经过认证，并且不能跨租户
+复用缓存。
+
+Readiness 检查回答“这个副本现在能否接流量”，需要覆盖目标模型、tokenizer、template、adapter、设备、scheduler
+和关键依赖。Liveness 检查只回答“进程是否还活着，是否值得重启”。
+
+滚动发布时，先停止接收新请求并摘除路由，再等待在途请求完成或按上限取消，最后释放模型与 KV。
+
+GPU 利用率不足以单独决定扩缩容：admission 过严时，GPU 可能很闲而队列已经超时；服务饱和时，GPU 又可能长期满载。
+
+扩缩容信号应组合队列等待时间、已接收序列数、KV block 使用量、prefill/decode 工作量、抢占次数、错误率和目标延迟。
 
 新副本还要经历模型下载、完整性验证、权重加载、kernel/graph warmup 和 cache 冷启动。
 容量计划至少覆盖稳态、burst、单副本故障，以及发布期间少一部分 capacity 四种场景。
 
 ## Trace 要能解释时间去了哪里
 
-一次请求的 trace 应串起网关、Prompt 构造、检索、模型、工具、验证和响应。指标用于看趋势，
-trace 用于还原一条请求，日志保存事件细节。request ID 属于 trace 或日志，不适合作为长期 metrics label；
-raw Prompt、工具参数和异常 body 也不应进入普通 metrics。
+一次请求的 trace 应串起网关、Prompt 构造、检索、模型、工具、验证和响应。三类可观测数据各有用途：
 
-同一进程的 duration 使用 monotonic clock。不同机器的 monotonic 值没有共同原点，不能直接相减。
-各组件记录自己的 span duration，再用 trace ID 建立因果关系；端到端 client duration 与各 span 之间无法解释的空白，
-应保留为 transport、queue 或 unknown，而不是用负数或猜测填满。
+- 指标（metrics）观察整体趋势；
+- Trace 还原一条请求跨组件的时间线；
+- 日志保存某个事件的详细信息。
+
+Request ID 适合写入 trace 或日志，不适合作为长期指标标签，否则会制造极高的基数。原始 Prompt、工具参数和异常
+响应体也不应进入普通指标。
+
+同一进程内的耗时使用单调时钟测量。不同机器的单调时钟没有共同起点，所以跨机器时间戳不能直接相减。
+
+每个组件分别记录自己的 span duration，再用 trace ID 表达调用先后关系。客户端端到端耗时减去已知 span 后若仍有
+空白，应将其标成网络、队列或未知时间，保留尚未解释的事实。
 
 一份服务 receipt 至少关联：
 
@@ -247,15 +297,23 @@ raw Prompt、工具参数和异常 body 也不应进入普通 metrics。
 
 ## 质量和性能要在同一场发布中相遇
 
-线上通常没有即时正确答案。服务可以持续回放版本化评测集，并抽样做人工审查；同时观察输入语言、长度、
-拒答率、用户纠错与转人工率。更快的版本若增加 schema failure 或引用错误，不能只凭 TTFT 发布；
-质量更高却让 queue timeout 激增，也未必提高成功任务率。
+线上通常没有即时正确答案。服务可以持续回放版本化评测集，抽样做人工审查，并观察输入语言、长度、拒答率、
+用户纠错和转人工率。
+
+发布判断必须同时看质量和性能。一个版本即使 TTFT 更短，只要 Schema 失败或引用错误增加，就不应直接发布；另一个
+版本即使离线质量更高，只要队列超时激增，也可能降低成功任务率。
 
 Shadow 复制输入但不把结果给用户，适合检查兼容性和离线质量；它会额外消耗容量，并扩大敏感数据处理范围。
 Canary 承接真实结果，因此要提前固定流量资格、观察窗口、质量/安全/可靠性 gate、停止条件和回滚 owner。
 
-发布单元不只有模型权重，还包括 tokenizer、chat template、adapter、runtime/kernel、sampling defaults、
-API/schema、Prompt、RAG index、tool contract、policy 和 routing config。推荐按下面顺序推进：
+一次发布包含的不只是模型权重，还包括：
+
+- Tokenizer、chat template 和 adapter；
+- 推理框架、kernel 与采样默认值；
+- API、Schema、Prompt、RAG 索引和工具契约；
+- 安全策略与路由配置。
+
+推荐按下面顺序推进：
 
 1. 验证不可变 artifact 的完整性、shape、loader、tokenizer/template 和最小生成；
 2. 在隔离环境运行质量、安全、协议和目标 workload；
@@ -272,8 +330,11 @@ Trace schema、cache key 和序列化状态需要版本兼容，否则模型回�
 总成本还包括 Embedding、重排、检索存储、工具、网络、可观测、人工审核和失败重试。
 更便宜但经常返工的模型，可能拥有更高的每成功任务成本。
 
-自托管服务可以先预留 token/KV capacity，再在 terminal 后结算实际 work；云 API 的每个可能计费 attempt 也要单独预留费用。
-本地 estimate、runtime usage 与 provider invoice 是三种来源。取消或 `500` 是否收费，应由 provider 账单与契约确认。
+自托管服务可以先预留 token 和 KV 容量，在请求进入终态后再按实际工作量结算。调用云 API 时，每一次可能计费的
+网络请求也要单独预留费用。
+
+成本数据有三种来源：本地估算、运行时 usage 和服务商账单。请求被取消或返回 `500` 后是否收费，应以服务商契约和
+最终账单为准。
 
 事故发生时先止损，再定位。几个常见入口是：
 
@@ -294,7 +355,7 @@ Trace schema、cache key 和序列化状态需要版本兼容，否则模型回�
 1. 冻结 model/runtime/hardware 和 workload manifest，先跑单请求 correctness baseline。
 2. 在低负载下确认时钟、SSE parser、终态分类与服务端 trace 可以对账。
 3. 用 burst 和 open-loop 多档提高 eligible offered rate，每档采用一致的预热、运行和冷却窗口。
-4. 保存全部 attempt；把 success rate、client/server queue、TTFT、TPOT 与资源指标放在一起看。
+4. 保存每次网络请求；把成功率、客户端/服务端排队时间、TTFT、TPOT 与资源指标放在一起看。
 5. 同步采集 batch、prefill/decode work、KV、preemption、GPU/CPU/网络和外部依赖。
 6. 用质量、安全、成功率、尾延迟、资源与成本的联合 gate 选择 operating point。
 7. 为单副本故障和发布保留余量；长度、租户、cache、adapter 或硬件变化后重新测量。
