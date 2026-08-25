@@ -23,6 +23,30 @@ Llama 是学习开放权重模型工程的好入口：你可以检查 config、t
 
 本章用一条主线组织这些知识：选定一个具体 checkpoint，把它变成一个可复现、可评测、可回滚的单卡系统。
 
+## 先运行：仓库真的验证了什么 { #run }
+
+从仓库根目录运行：
+
+```powershell
+python projects/transformers-basics/verify_release_evidence.py
+```
+
+在输出中找到 `llama-3.2-text-model-card`。这条记录固定了 Meta Llama 3.2 文本模型卡的提交、文件哈希和本地投影，
+并把参数规模、128k 上下文、GQA 等内容明确标为厂商声明。
+
+| 当前证据 | 仓库是否已有 |
+|---|---|
+| 固定版本的 Llama 3.2 官方模型卡 | 有 |
+| 该版本模型卡中的厂商声明投影 | 有 |
+| 目标 Llama checkpoint 的配置与分词器 | 尚未选择 |
+| Llama 权重加载、前向计算与 KV cache 对账 | 尚未执行 |
+| Llama 在目标 GPU 上的质量、显存和性能 | 尚未测量 |
+
+默认离线运行会显示 `upstream_verified=false`。它表示本轮只核对仓库中已经保存的文件；
+若要验证上游内容，需要显式启用联网检查。
+
+因此，当前 Llama 证据停留在模型卡层。配置、权重和真实运行要分别补充，后面的公式属于机制推导。
+
 ## 第一步不是下载权重
 
 先写出实验对象：
@@ -105,6 +129,30 @@ h'' = h' + \operatorname{MLP}(\operatorname{RMSNorm}(h')).
 
 下面四个机制决定了大量工程行为。
 
+## 先让一个 token 穿过 Decoder Block { #token-walkthrough }
+
+假设分词器已经把输入变成 token ID，embedding 层先查表得到当前位置的向量 (h)。
+在一个常见的 Llama-style 文本 Decoder Block 中，它按下面顺序前进：
+
+```mermaid
+flowchart TD
+  A["当前位置向量 h"] --> B["RMSNorm"]
+  B --> C["Q / K / V 投影"]
+  C --> D["RoPE 旋转 Q / K"]
+  D --> E["GQA 注意力<br/>读取历史 K / V"]
+  E --> F["第一次残差相加"]
+  F --> G["RMSNorm"]
+  G --> H["SwiGLU MLP"]
+  H --> I["第二次残差相加"]
+  I --> J["进入下一层"]
+```
+
+Prefill 时，模型同时处理输入中的所有位置，并为每一层保存 K/V。
+Decode 时，只处理新生成的那个位置：新的 K/V 追加到缓存，新的 Q 则读取全部可见历史。
+GQA 减少的是每个位置需要保存的 K/V 头数；RMSNorm、RoPE 和 SwiGLU 仍然参与这次计算。
+
+最后一层输出经过最终归一化和词表投影，得到下一 token 的 logits。下面四节只是把这条路径中的四个部件逐一放大。
+
 ## RMSNorm：只按均方根缩放
 
 \[
@@ -114,7 +162,8 @@ h'' = h' + \operatorname{MLP}(\operatorname{RMSNorm}(h')).
 
 与 LayerNorm 相比，它不先减去均值。直觉上，它控制向量整体尺度，让后续 attention/MLP 看到更稳定的输入。
 
-实现和 checkpoint 兼容性仍取决于 epsilon、accumulation dtype、scale 参数 shape 和 norm 所在位置。RMSNorm 与 LayerNorm shape 相同，也不能互换权重语义。
+能否与 checkpoint 兼容，还取决于 ε 的取值、累加时的数据类型、缩放参数的形状，以及归一化位于残差路径的什么位置。
+RMSNorm 与 LayerNorm 即使参数形状相同，权重含义和数值路径也不同。
 
 ## RoPE：旋转 Q/K 表达相对位置
 
@@ -156,14 +205,15 @@ P_{\mathrm{MLP}}=3dm.
 
 Grouped-Query Attention（GQA）让多个 query heads 共享较少的 K/V heads。
 
-设 query heads 为 \(H_q\)、KV heads 为 \(H_{kv}\)、head dimension 为 \(d_h\)。标准 layout 下：
+设查询头数为 \(H_q\)、KV 头数为 \(H_{kv}\)、每个头的维度为 \(d_h\)。在标准张量布局下：
 
 \[
 P_Q=dH_qd_h,\qquad
 P_K=P_V=dH_{kv}d_h.
 \]
 
-当 \(H_{kv}<H_q\) 时，K/V projection 与 KV Cache 会减少。但 Q/O projection、MLP、embedding 和 runtime workspace 不会按同一比例缩小。
+当 \(H_{kv}<H_q\) 时，K/V 投影参数和 KV cache 都会减少。
+Q 与输出投影、MLP、embedding 和运行时工作区则不会按相同比例缩小。
 
 所以 GQA 的价值主要体现在解码 cache 和部分投影，而不是“整个模型按 KV head 比例变小”。
 
@@ -178,7 +228,8 @@ M_{\mathrm{weights}}
 =\sum_i \operatorname{numel}(W_i)\times \operatorname{bytes}(dtype_i).
 \]
 
-参数量应从 actual name/shape 账本计算，并说明 tied embeddings、buffer、adapter 和量化 metadata 怎样处理。产品名中的 B 只是标签，不能替代重算。
+参数量应从实际参数名和形状逐项计算，并说明输入输出 embedding 是否共享、buffer 是否计入，
+以及 adapter 和量化元数据怎样处理。产品名中的 B 只是规模标签，不能替代重算。
 
 ### KV 账
 
@@ -191,7 +242,8 @@ M_{KV,\mathrm{ideal}}
 
 其中 \(L\) 是层数，\(B\) 是 batch，\(T\) 是缓存 token 数，\(s\) 是每个元素的字节数。
 
-这个公式不包含 page/block 对齐、allocator、prefix sharing、量化 scale、workspace、CUDA graph reserve、weights 或 activations。
+这个公式没有计入分页或分块对齐、内存分配器、前缀共享、量化缩放因子、算子工作区和 CUDA Graph 预留，
+也没有计入模型权重与激活值。
 
 因此它适合做预检和解释变量趋势，不能当作 GPU 峰值。若 checkpoint 使用自定义 attention，也要先确认公式前提成立。
 
@@ -230,15 +282,16 @@ tool definition + call + result
 Unicode and multilingual input
 ~~~
 
-保存 rendered text、token IDs、special-token positions 与 template fingerprint。训练和部署必须使用同一协议。
+保存模板渲染后的文本、token ID、特殊 token 的位置和模板 fingerprint。训练与部署必须使用同一输入协议。
 
 成功 tokenize 不证明权重匹配或回答质量；Base 套上 Instruct template 也不会自动获得指令能力。
 
 ## Generation 也要固定最终配置
 
-记录 decoding method、temperature、top-p/top-k、max new tokens、special token IDs、stop strings、penalties 和 runtime version。
+记录解码方法、temperature、top-p、top-k、最大新增 token 数、特殊 token ID、停止字符串、惩罚项和运行时版本。
 
-Model defaults、generation config、显式 kwargs 与 serving 参数可能有不同 precedence。比较 Transformers 和 vLLM 前，应先打印最终 resolved config。
+模型默认值、生成配置、函数显式参数和服务层参数可能采用不同优先级。
+比较 Transformers 与 vLLM 前，先打印两边最终生效的完整生成配置。
 
 模型 EOS、应用 stop string、客户端取消和服务 finish reason 是不同终止层。截断用户可见字符串不能伪造模型真实 terminal，也不能改写 usage。
 
@@ -256,7 +309,8 @@ Model defaults、generation config、显式 kwargs 与 serving 参数可能有�
 
 因此 4-bit 不等于每个参数严格占 0.5 byte，也不保证速度更快。没有匹配 kernel 时，dequant 和数据搬运可能抵消收益。
 
-量化验收要同时比较 reload 后的固定 logits/continuation、任务质量、峰值显存、TTFT、TPOT、吞吐和并发。CPU packing demo 不能替代目标 GPU 证据。
+量化模型重新加载后，要比较固定输入的 logits 与续写、任务质量和峰值显存。
+性能部分再比较首 token 延迟、后续 token 延迟、吞吐和并发。CPU 上的打包演示不能替代目标 GPU 测量。
 
 ## LoRA/QLoRA：少训练参数不等于少一切内存
 
@@ -274,9 +328,16 @@ P_{\mathrm{LoRA}}=r(d_{in}+d_{out}).
 
 总数取决于实际 target modules。分离的 q/v projection、fused QKV 与 all-linear 会得到完全不同的参数账。
 
-QLoRA 通常低比特存储 frozen base，但 adapter、gradients、optimizer、activations 和部分计算仍使用更高精度。Base 文件变小不代表训练峰值同比下降。
+QLoRA 通常以低位格式存储冻结的基座权重，但 adapter、梯度、优化器状态、激活值和部分计算仍使用更高精度。
+基座文件变小，不表示训练峰值会同比下降。
 
-发布 adapter 时绑定 exact base、tokenizer、template、target modules、rank/scaling、数据、runtime 和评测。保存后在新的 base 实例重载，不能只验证内存中的 merge。
+发布 adapter 时，先绑定三组身份：
+
+- 输入与模型：基座权重、分词器和模板；
+- 训练配置：目标模块、秩、缩放规则和训练数据；
+- 执行证据：运行时版本与评测结果。
+
+保存后再创建一个新的基座模型实例，重新加载 adapter 并运行固定输入。
 
 ## 单张消费级 GPU 的渐进路线
 
@@ -302,15 +363,40 @@ QLoRA 通常低比特存储 frozen base，但 adapter、gradients、optimizer、
 
 ### Phase 2：容量扫描
 
-每次只改变一个变量：input length、max output、batch/concurrency、quantization 或 KV dtype。记录成功、OOM、timeout 和其他失败的完整分母。
+每次只改变一个变量：输入长度、最大输出、批大小或并发、量化方案，或者 KV cache 数据类型。
+记录成功、显存不足、超时和其他失败的完整分母。
 
 推理通常先降低 batch/concurrency 和 token budget，再考虑经验证的量化或更小模型。每次降级都生成新 manifest，并重新跑质量回归。
 
 ### Phase 3：服务与微调
 
-先用 Transformers 建立 token、logits、cache 和 generation baseline，再接入 vLLM 测 continuous batching、paged KV、prefix cache、取消和 offered-load。
+先用 Transformers 建立 token、logits、KV cache 和生成结果基线。
+再接入 vLLM，测量连续批处理、Paged KV、前缀缓存、取消请求，以及固定到达负载下的表现。
 
 微调则从 labels 检查、tiny-batch overfit、LoRA backward、adapter reload 开始，最后才扩大数据和序列长度。
+
+## 模型架构与运行库怎样分工 { #runtime-stack }
+
+同一个 Llama checkpoint 可以由 Transformers 或 vLLM 加载，但两条路径并不是“换一个函数名”。
+先把各层职责分开：
+
+| 层 | 主要负责什么 | 更换它时要重新检查什么 |
+|---|---|---|
+| Checkpoint 文件 | 权重、静态配置、分词器和对话模板 | 文件身份、架构字段、输入协议和许可 |
+| Transformers | 读取配置与分词器，提供参考模型实现和生成接口 | 模型类、最终生成配置、KV cache 与固定 logits |
+| PyTorch | 张量、设备、数据类型、算子调度和显存分配 | 算子数值、数据类型、设备放置和内存统计 |
+| 注意力与量化内核 | 执行 FlashAttention、SDPA、低位矩阵乘等局部算子 | 支持的形状、数据类型、数值误差、工作区和目标 GPU |
+| vLLM | 使用自己的模型执行与服务运行时，负责调度、Paged KV、连续批处理、前缀缓存和取消 | 模型实现支持、模板输入、采样结果、缓存正确性和负载性能 |
+| PEFT / 量化工具 | 注入 LoRA，或把选定权重转换成低位格式 | 基座身份、目标模块、保存与重载、质量和内核兼容性 |
+| CUDA / NCCL | GPU 内核执行，以及多 GPU 通信 | 驱动与运行时版本、算子兼容和多卡通信行为 |
+
+Transformers 经常作为参考路径：先确认输入 token、logits、KV cache 和停止条件。
+
+vLLM 更关注服务过程，并使用自己的模型执行与调度代码。接入时仍要核对模型实现、配置、分词器和模板是否兼容。
+因此，两条路径要分别执行固定输入；能够加载和能够启动只是起点，最终还要比较生成结果。
+
+这个分层也解释了为什么模型架构差异会传导到依赖库。RoPE 或 KV 布局改变时，模型实现和注意力内核可能都要适配；
+只改变调度策略时，权重数学可以不变，但延迟、缓存占用和取消行为需要重新测量。
 
 ## 长上下文要测“有效”，不只测“能放”
 
@@ -325,7 +411,7 @@ QLoRA 通常低比特存储 frozen base，但 adapter、gradients、optimizer、
 | 长输入 + 长输出 | 后段约束是否保持 |
 | 多语言/代码 | tokenizer 与能力分布 |
 
-报告 tokenizer token length，并把 OOM、timeout、truncation、refusal 与 wrong answer 放入分母。
+报告分词器计算出的 token 长度，并把显存不足、超时、截断、拒答和错误答案全部放入分母。
 
 Model card 报告的 context length、runtime 接受的长度和任务有效长度是三种不同结论。
 
@@ -333,7 +419,8 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 
 可下载权重不自动等于 OSI open source。具体 Llama 发布可能有独立 Community License、acceptable-use、归因、再分发或规模条款。
 
-发布前审查 exact version、adapter/derivative、tokenizer/code dependencies、训练数据、目标客户/地域/行业和 NOTICE。教材不能替代责任主体的法律判断。
+发布前要审查具体模型版本、adapter 或衍生权重、分词器与代码依赖、训练数据、目标客户、地域和行业，
+并处理 NOTICE 等随附文件。教材不能替代责任主体的法律判断。
 
 生产 manifest 至少绑定：
 
@@ -352,7 +439,8 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 }
 ~~~
 
-升级 model、tokenizer、template、runtime 或 quantization 的任一项，都视为候选系统变化。使用 paired offline eval、shadow、canary，再保留完整旧 bundle 回滚。
+模型、分词器、模板、运行时或量化方案中只要有一项升级，就把它视为一次候选系统变化。
+先做同 case 的离线配对评测，再经过影子流量和小流量灰度；完整旧版本组合要继续保留，以便回滚。
 
 ## 一个最小学习项目
 
