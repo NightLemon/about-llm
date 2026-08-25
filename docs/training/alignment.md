@@ -7,63 +7,73 @@
 
 - **适合读者**：已理解 SFT，想进一步掌握奖励模型、DPO、PPO 和对齐评测的工程师。
 - **先修**：[对齐入门](alignment-basics.md)、条件概率、梯度优化与基础策略学习。
-- **首次阅读**：偏好数据 → Reward Model → KL → DPO；PPO 放在第二遍。
-- **完成信号**：能从数据、目标、状态和失败模式四方面比较 SFT、RM、DPO 与 PPO。
-- **卡住时**：先运行偏好数据审计，再用一对 chosen/rejected 手算 DPO log-ratio。
+- **首次阅读**：一条偏好样本 → 测量记录 → Reward Model → DPO；PPO 放在第二遍。
+- **完成信号**：能说明同一条样本进入 SFT、RM、DPO 与 PPO 时，数据和训练信号分别怎样变化。
+- **卡住时**：先忽略 PPO，只用本页的 A/B 回答手算一次 RM 和 DPO。
 
 </div>
 
 **学习入口**：[对齐入门](alignment-basics.md) · [微调总览](finetuning.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md) · [对齐证据台账](../evidence/alignment-controls.md)
 { .doc-nav }
 
-对齐（alignment）不是把一个 loss 降下来，而是让模型行为在明确的人群、规则和场景中更符合目标，并用系统约束处理训练无法保证的权限与副作用。
+对齐（alignment）不是把一个 loss 降下来，而是让模型行为在明确的人群、规则和场景中更符合目标。
+训练无法保证的权限和副作用，仍然要由系统强制约束。
 
-本章沿着一条数据流学习：示范建立行为先验，偏好比较表达 trade-off，Reward Model 把比较压成代理分数，DPO 或 PPO 再改变 policy。
+本章不从算法名开始，而是跟着同一个安全事件问题，观察它怎样变成 SFT 示范、偏好记录、奖励模型样本、
+DPO 目标和 PPO 的在线反馈。
 
 每一步都可能继承上一步的偏差，因此最终判断必须回到独立任务、安全和系统评测。
 
-## 先写清“对齐给谁”
+## 先认识这条偏好样本 {#running-example}
+
+用户问：
+
+> 我把公司的 API key 误写进共享日志了，应该怎么办？
+
+系统采样出两个候选回答。
+
+**候选 A——按本次规则更好**
+
+> 立即撤销并轮换 key，限制日志访问，检查使用记录，并按安全事件流程上报。
+
+**候选 B——按本次规则更差**
+
+> 从日志中删掉 key 就可以继续使用；为了完整起见，再写一份很长的排查说明。
+
+本例把 A 记为 `chosen`，把 B 记为 `rejected`。理由不是 A “听起来更专业”，而是本次规则要求先让已暴露的
+凭据失效，再处理日志副本和影响范围。B 即使更长、更自信，也遗漏了轮换凭据这个关键动作。
+
+这个标签仍然只是一条测量结果。它依赖任务规则、标注者和候选集；换一个问题或利益相关方，判断可能改变。
+
+## 同一条样本怎样进入四种训练方法
+
+**SFT** 只把 A 当作示范，提高 A 中目标 token 的似然。
+
+**Reward Model** 读取“A 优于 B”的比较，学习让 A 的分数高于 B。
+
+**DPO** 同时读取 A/B、当前策略和冻结的参考策略，让当前策略相对参考策略更偏向 A。
+
+**PPO/RL** 不直接重放这条回答对，而是用奖励模型或规则评价策略新生成的回答，再提高采样轨迹的受约束回报。
+
+这四种方法没有共享同一个 loss。SFT 只需要示范；RM 与 DPO 需要成对比较；PPO 还要保存当前策略真正采样出的
+轨迹、旧策略概率、奖励和价值估计。
+
+如果基础格式、知识和指令跟随还没有稳定，直接增加偏好目标不会自动补齐这些能力。
+
+## 训练前先写清“对齐给谁”
 
 同一个回答可能帮助终端用户，却违反系统所有者的数据政策；也可能符合多数标注者偏好，却伤害某一语言或群体。
 
 项目开始前先固定：
 
-- instruction hierarchy 与不可覆盖约束；
+- 指令优先级（instruction hierarchy）与不可覆盖约束；
 - 目标用户、语言、地区和专业水平；
-- helpfulness、truthfulness、harmlessness 等维度怎样权衡；
+- 有用、真实和安全等维度怎样权衡；
 - 必须拒绝、可以安全替代和应正常帮助的边界；
-- 哪些决定必须交给人或 policy engine；
-- 申诉、纠错和 incident response。
+- 哪些决定必须交给人或规则引擎；
+- 申诉、纠错和事件响应流程。
 
-“人类偏好”不是客观无噪声标量。它是特定标注者、rubric、界面、候选模型和时间共同产生的观测。
-
-## 先看完整数据流
-
-~~~mermaid
-flowchart LR
-    A["任务与约束"] --> B["SFT 示范"]
-    B --> C["SFT policy"]
-    C --> D["采样候选"]
-    D --> E["偏好 judgments"]
-    E --> F{"训练路线"}
-    F --> G["DPO / offline preference"]
-    F --> H["Reward Model"]
-    H --> I["PPO / online RL"]
-    G --> J["candidate policy"]
-    I --> J
-    J --> K["独立评测与发布"]
-~~~
-
-SFT、DPO 和 PPO 的输入并不相同：
-
-| 方法 | 主要数据 | 直接优化什么 |
-|---|---|---|
-| SFT | prompt + target response | target token likelihood |
-| Reward Model | prompt + pairwise judgment | preferred 与 rejected 的分数差 |
-| DPO | prompt + chosen/rejected + reference | reference-relative pair classification |
-| PPO/RL | policy rollouts + reward/value | 受约束的期望回报 |
-
-如果基础格式、知识和指令跟随还没有稳定，直接增加 preference objective 不会自动补齐这些能力。
+“人类偏好”不是客观无噪声标量。它是特定标注者、评分规则、界面、候选模型和时间共同产生的观测。
 
 ## SFT 建立行为先验
 
@@ -77,6 +87,9 @@ Response-only SFT 的目标是：
 
 高质量示范可以教会格式、语气、任务流程和拒答样例。但一个 target 会把多解任务压成单一示范，也会复制教师的冗长、风格和错误。
 
+在贯穿案例中，可以把候选 A 写成 SFT target。模型会学习“A 的 token 在这个 prompt 后更可能出现”，
+却没有直接看到候选 B，也不知道 A 胜出的原因是“先撤销凭据”。如果示范只写“请联系管理员”，SFT 同样会忠实学习这个不完整答案。
+
 训练前必须打印 token IDs、role boundaries 和 labels，确认：
 
 - prompt token 是否正确 mask；
@@ -89,51 +102,58 @@ Loss 下降只说明模型更接近训练 targets，不说明目标任务、安�
 
 ## 偏好数据首先是一份测量记录
 
-一条 pairwise example 不应只剩 chosen 和 rejected。至少保存：
+一条成对偏好样本不应只剩 chosen 和 rejected。至少保存：
 
 ~~~json
 {
-  "prompt_id": "p-1042",
-  "prompt": "...",
-  "candidate_a": "...",
-  "candidate_b": "...",
+  "id": "credential-017",
+  "prompt": [
+    {"role": "user", "content": "API key 误写入共享日志后该怎么办？"}
+  ],
+  "candidate_a": "撤销并轮换 key，限制日志访问，检查使用记录并上报。",
+  "candidate_b": "删除日志里的 key 后继续使用，再补一份排查说明。",
   "presentation_order": ["b", "a"],
   "label": "a",
-  "strength": "slight",
-  "rubric_revision": "help-safe-grounded-v3",
-  "annotator_pool": "domain-experts-cn",
-  "generator_revisions": ["model-x@rev", "model-y@rev"]
+  "preference_strength": "clear",
+  "rubric_revision": "credential-response-v1",
+  "annotator_pool": "security-reviewers-cn"
 }
 ~~~
 
-还要记录语言、风险、group、split、生成参数和 policy version。Tie、invalid 和 disagreement 是数据，不应为了适配 trainer 偷改成 winner。
+为了便于阅读，上面只展示了与判断有关的字段，不能直接作为命令行输入。
 
-### 为什么要保留原始 judgment
+实际训练记录还要保存来源、许可、任务、语言、风险和分组，并绑定数据切分、生成参数与候选模型版本。
+这些信息用于后续的治理与泄漏审计。
+
+平局、无效判断和标注者分歧也是数据，不能为了适配训练器强行改成胜负标签。
+
+### 为什么要保留原始判断
 
 最终多数标签无法回答：
 
 - 标注者是否一致；
 - A/B 展示顺序是否影响选择；
 - 某一人群或语言是否系统性不同；
-- 一个强偏好由多少条独立 judgment 支持；
-- adjudication 是否覆盖了分歧。
+- 一个强偏好由多少条独立判断支持；
+- 仲裁是否真正覆盖了分歧。
 
-关键切片应保留逐标注者结果、展示顺序、rubric、耗时、盲化与 adjudication。Agreement 和 Fleiss’ κ 描述一致性，但一致也可能是共享偏差。
+关键切片应保留逐标注者结果、展示顺序、评分规则、耗时、盲化与仲裁过程。
+原始一致率和 Fleiss’ κ 可以描述一致程度，但高度一致也可能来自共享偏差。
 
 ### 常见标注捷径
 
-- **Position bias**：偏好先显示或左侧候选。
-- **Verbosity bias**：更长回答显得更充分。
-- **Style bias**：标题和自信措辞掩盖错误。
-- **Authority bias**：未经核验的引用看起来可信。
-- **Identity leakage**：标注者猜出候选模型。
-- **Criterion collapse**：多个维度被压成含糊的“更好”。
+- **位置偏差（position bias）**：偏好先显示或左侧候选。
+- **冗长偏差（verbosity bias）**：更长回答显得更充分。
+- **风格偏差（style bias）**：标题和自信措辞掩盖错误。
+- **权威偏差（authority bias）**：未经核验的引用看起来可信。
+- **身份泄漏（identity leakage）**：标注者猜出候选模型。
+- **标准坍缩（criterion collapse）**：多个维度被压成含糊的“更好”。
 
 通过随机交换 A/B、隐藏身份、分维度标注、允许 tie，并在关键切片上双人标注，降低但不能消除这些偏差。
 
 ## Reward Model 学的是相对排序
 
-给定 prompt \(x\)、preferred response \(y_w\) 和 rejected response \(y_l\)，Bradley–Terry 模型写成：
+给定问题 \(x\)、较优回答 \(y_w\) 和较差回答 \(y_l\)，Bradley–Terry 模型写成：
 
 \[
 P(y_w\succ y_l\mid x)
@@ -148,31 +168,43 @@ P(y_w\succ y_l\mid x)
 =\operatorname{softplus}(-(r_w-r_l)).
 \]
 
-只有 reward difference 影响 pair probability。给同一 prompt 的两个 reward 同时加常数，预测不会变化，所以绝对 reward 不是可跨模型解释的“用户价值单位”。
+只有两个奖励分数的差影响成对偏好概率。给同一问题的两个分数同时加上常数，预测不会变化。
+因此，绝对奖励分数不是可以跨模型解释的“用户价值单位”。
+
+回到 API key 案例。假设奖励模型给 A 打 3 分、给 B 打 1 分，那么：
+
+```text
+偏好 A 的概率 = sigmoid(3 - 1) ≈ 0.881
+训练 loss = -log sigmoid(3 - 1) ≈ 0.127
+```
+
+把两个分数同时改成 103 和 101，概率与 loss 完全不变。这组数值也由仓库的
+`bradley_terry_loss(3.0, 1.0)` 实现直接计算；它只演示公式，不是某个真实奖励模型对中文回答的测量结果。
 
 ### 从线性 RM 看懂 shortcut
 
-先设 response 特征为 \(f(x,y)\)，线性 scorer 为：
+先把回答特征记为 \(f(x,y)\)，用线性打分器计算：
 
 \[
 r_w(x,y)=w^\top f(x,y).
 \]
 
-假设训练集中 preferred 回答通常更长，模型可能给 length feature 很大的正权重。Pair accuracy 会提高，但它学到的是数据捷径，而不是事实性或帮助性。
+假设训练集中胜出的回答通常更长，模型可能给“长度”特征很大的正权重。成对准确率会提高，
+但它学到的是数据捷径，而不是事实性或帮助性。本页的候选 B 故意更长，正好可以作为反例。
 
-因此 RM 评测除了 held-out pair accuracy，还应加入：
+因此，奖励模型评测除了留出集成对准确率，还应加入：
 
-- 长度匹配 pairs；
-- 风格改写但事实不变的 pairs；
-- 事实错误却措辞自信的 hard negatives；
-- 语言、风险、领域和 generator 切片；
-- score distribution、margin 与 calibration。
+- 长度匹配的回答对；
+- 风格改写但事实不变的回答对；
+- 事实错误却措辞自信的困难负例；
+- 语言、风险、领域和生成器切片；
+- 分数分布、间隔与校准结果。
 
-Transformer RM 只是把特征提取换成模型 hidden states 和 scalar head，并没有消除 shortcut。
+Transformer 奖励模型只是让神经网络从隐藏状态提取特征，再用标量输出头打分；它没有消除数据捷径。
 
 ## KL 约束回答“不要走太远”
 
-若直接最大化 learned reward，policy 会寻找 RM 的漏洞。常见目标加入相对 reference policy 的 KL penalty：
+若直接最大化学到的奖励，当前策略会主动寻找奖励模型的漏洞。常见做法是加入相对参考策略的 KL 惩罚：
 
 \[
 \max_\theta\;
@@ -183,17 +215,19 @@ R(x,y)-\beta
 \right].
 \]
 
-更完整地写，就是 reward 减去 \(\beta D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})\) 的期望。
+更完整地写，就是期望奖励减去 \(\beta D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})\)。
 
-\(\beta\) 大时更保守，小则允许 policy 为追求 reward 移动更远。它不是安全系数，也不能阻止 reference 本身已有的错误。
+\(\beta\) 大时更新更保守；\(\beta\) 小时，当前策略可以为追求奖励移动得更远。
+它不是安全系数，也不能消除参考策略本身已有的错误。
 
-工程上要同时记录 reward、KL、response length、entropy 和真实任务指标。只看总 objective，可能掩盖 reward 上升完全来自更长输出或分布漂移。
+工程上要同时记录奖励、KL、回答长度、熵和真实任务指标。只看总目标，可能掩盖奖励上升其实来自更长输出或分布漂移。
 
-## DPO：直接学习 reference-relative 偏好
+## DPO：直接学习相对参考策略的偏好
 
-DPO 不单独训练一个在线使用的 RM。它把偏好模型与 KL-regularized policy 的关系代入一个 pairwise classification objective。
+DPO 不需要单独训练一个在线调用的奖励模型。它把偏好模型与 KL 正则化策略之间的关系，
+改写成一个成对分类目标。
 
-先定义 policy 对 pair 的 log-probability gap：
+先定义当前策略对较优、较差回答的序列对数概率差：
 
 \[
 \Delta_\theta
@@ -201,7 +235,7 @@ DPO 不单独训练一个在线使用的 RM。它把偏好模型与 KL-regulariz
 -\log\pi_\theta(y_l\mid x),
 \]
 
-reference gap 为：
+参考策略的差值为：
 
 \[
 \Delta_{\mathrm{ref}}
@@ -218,43 +252,68 @@ DPO loss 可写为：
 \right).
 \]
 
-直觉是：candidate policy 应比 reference 更偏向 chosen，而不是只让 chosen 的绝对概率变大。
+直觉是：当前策略要比参考策略**更加偏向较优回答**，而不是只让较优回答的绝对概率变大。
+
+### 用贯穿案例手算一次
+
+为了只看公式，假设策略对 A/B 的序列对数概率如下。这些是仓库公式测试采用的固定数字，
+不是模型运行本页中文文本得到的结果。
+
+| 概率来源 | A（chosen） | B（rejected） | A 减 B |
+|---|---:|---:|---:|
+| 当前策略 | -2.0 | -5.0 | 3.0 |
+| 参考策略 | -2.5 | -3.5 | 1.0 |
+
+取 \(\beta=0.2\)：
+
+```text
+DPO logit = 0.2 × (3.0 - 1.0) = 0.4
+DPO loss = -log sigmoid(0.4) ≈ 0.513
+```
+
+当前策略已经比参考策略多给 A 两个单位的相对优势，所以 logit 为正。如果两者的 A/B 差值完全相同，
+logit 就是 0，loss 为 \(\log 2\)。
 
 ### 一对样本怎样流过 DPO { #target-qwen-dpo-control }
 
-对同一个 prompt，分别渲染 chosen 和 rejected：
+对同一个问题，分别渲染较优回答和较差回答：
 
-1. 用同一 tokenizer/template 得到 token IDs。
-2. 只在 response tokens 上累加 log probability。
-3. 分别由 policy 和 frozen reference 计算 sequence log-probability。
-4. 得到两个 gap，再计算 logistic loss。
-5. 梯度只更新 policy 或 adapter。
+1. 用同一分词器和对话模板得到 token ID。
+2. 只在回答 token 上累加对数概率。
+3. 分别由当前策略和冻结的参考策略计算序列对数概率。
+4. 得到两个差值，再计算 logistic loss。
+5. 梯度只更新当前策略或 adapter。
 
-Prompt masking、EOS、truncation 或 template 任一错位，都会让目标变成另一件事。
+Prompt 掩码、EOS、截断或模板任一错位，都会让目标变成另一件事。
 
-### Beta、长度和 reduction
+### Beta、长度与聚合方式
 
-DPO 的 \(\beta\) 控制 reference-relative preference signal 的尺度。它不是简单学习率，改变它会改变 loss 对 log-ratio 的敏感度。
+DPO 的 \(\beta\) 控制相对偏好信号的尺度。它不是简单的学习率；改变它会改变 loss 对对数概率比的敏感度。
 
-Sequence log-probability 是 token log-probability 的和时，较长 response 拥有更多项；若改成平均，又得到不同目标。训练、验证和不同实现必须明确 sum/mean、mask 与 length normalization。
+序列对数概率采用各回答 token 的求和时，较长回答会包含更多项；改成均值则会得到不同目标。
+训练、验证和不同实现必须明确采用求和还是均值，以及掩码和长度归一化规则。
 
-DPO 仍依赖可靠 pairs、固定 reference、support overlap 和独立评测。它省掉了显式 RM + online rollout，
+DPO 仍依赖可靠的回答对、固定参考策略、分布覆盖和独立评测。它省去了显式奖励模型和在线采样循环，
 但数据和目标函数中的对齐假设仍然存在。
 
-## PPO：在 policy 自己的输出上学习
+## PPO：在策略自己生成的回答上学习
 
-PPO 适合需要在线采样、环境反馈或可验证 reward 的场景。它比 DPO 多出完整 rollout 状态：
+PPO 适合需要在线采样、环境反馈或可验证奖励的场景。它比 DPO 多出一份完整的采样轨迹：
 
 ~~~text
-prompt
-→ old policy samples response
-→ reward / verifier scores trajectory
-→ value estimates returns
-→ advantages
-→ clipped policy and value updates
+问题
+→ 旧策略采样回答
+→ 奖励模型或验证程序给轨迹打分
+→ 价值模型估计未来回报
+→ 计算优势值
+→ 用裁剪目标更新策略和价值模型
 ~~~
 
-Token 级 probability ratio 为：
+同一条 API key 问题进入 PPO 后，不再只是重放原来的 A/B。当前策略会生成新回答，奖励模型或规则再给它打分。
+如果奖励模型偏爱冗长、自信的文字，一条与 B 类似的错误回答也可能得到高分；PPO 随后会增强这种错误。
+这就是“原始偏好标签正确，在线优化仍然走偏”的一种方式。
+
+每个 token 的新旧策略概率比为：
 
 \[
 \rho_t(\theta)
@@ -262,7 +321,7 @@ Token 级 probability ratio 为：
 {\pi_{\mathrm{old}}(a_t\mid s_t)}.
 \]
 
-Clipped surrogate 的最大化形式是：
+裁剪后的策略目标可写成：
 
 \[
 \mathbb E_t
@@ -274,135 +333,146 @@ Clipped surrogate 的最大化形式是：
 \right].
 \]
 
-Clip 限制单轮更新幅度，但不是训练稳定或安全的保证。RLHF 还常有 reference KL、value loss、entropy、reward normalization 和 response masks。
+裁剪只限制当前样本上的单轮更新幅度，不保证训练稳定或模型安全。RLHF 通常还会加入参考策略 KL、
+价值损失、熵、奖励归一化和回答掩码。
 
-### Reward 怎样分配给 token
+### 序列奖励怎样分配给 token
 
-很多任务只在序列结束时得到一个 score。Value model 和 Generalized Advantage Estimation（GAE）用于估计每一步相对预期的好坏。
+很多任务只在序列结束时得到一个分数。价值模型和广义优势估计（Generalized Advantage Estimation，GAE）
+用于估计每一步相对预期是更好还是更差。
 
-若 terminal reward、KL penalty、padding mask 或 bootstrap terminal 处理错误，代码仍可能反向传播，却优化错误目标。
+若终局奖励、KL 惩罚、padding 掩码或截断后的 bootstrap 处理错误，代码仍可能正常反向传播，却优化错误目标。
 
 PPO 验收至少观察：
 
-- old/new/ref log probabilities；
-- reward、KL、advantages 与 returns；
-- clip fraction、entropy 与 value error；
-- response length 和 invalid rate；
-- held-out task、安全与 shortcut slices。
+- 旧策略、当前策略和参考策略的对数概率；
+- 奖励、KL、优势值与回报；
+- 裁剪比例、熵与价值误差；
+- 回答长度和无效率；
+- 留出任务、安全与捷径切片。
 
 ### 为什么 PPO 更容易产生证据错觉
 
-Reward curve 上升可能来自 RM shortcut、输出变长、采样分布改变或 verifier loophole。Tiny CPU rollout 通过只能证明局部数学和状态转移，不证明目标 checkpoint 已完成 RLHF。
+奖励曲线上升可能来自奖励模型捷径、输出变长、采样分布改变或验证程序漏洞。
+小型 CPU 采样实验通过，只能证明局部数学和状态转移，不证明目标 checkpoint 已经完成 RLHF。
 
-PPO 只有在 reward 可审计、在线探索确有价值、计算预算允许且回滚机制成熟时，才优先于更简单的 SFT/DPO 路线。
+只有在奖励可审计、在线探索确有价值、计算预算允许且回滚机制成熟时，PPO 才优先于更简单的 SFT/DPO 路线。
 
 ## DPO、RM+PPO 怎样选择
 
 | 条件 | 更适合的起点 |
 |---|---|
 | 有高质量示范，基础行为未稳定 | SFT |
-| 有固定、可靠的 offline pairs | DPO |
-| 需要复用可解释的 preference scorer | Reward Model |
-| 需要 policy 在线探索或环境反馈 | PPO / Online RL |
-| 有确定判据的任务 | Verifier + sampling/RL，可同时保留人工切片 |
-| 问题本质是权限或实时事实 | 系统 policy、工具或 RAG，不先靠训练 |
+| 有固定、可靠的离线回答对 | DPO |
+| 需要复用可解释的偏好打分器 | Reward Model |
+| 需要策略在线探索或接收环境反馈 | PPO / Online RL |
+| 有确定判据的任务 | 验证程序 + 采样或 RL，同时保留人工切片 |
+| 问题本质是权限或实时事实 | 规则引擎、工具或 RAG，不先靠训练 |
 
-复杂方法只有在能回答“它解决了哪一个 baseline 失败”时才值得加入。
+复杂方法只有在能回答“它解决了哪一个基线失败”时才值得加入。
 
-## RLAIF、原则与 Verifier
+## RLAIF、原则与验证程序
 
-RLAIF 用模型根据 rubric 或 principles 提供反馈，可以扩大标注规模，但不会消除人类治理。人仍要制定原则、校准 evaluator、抽检分歧并定义发布门槛。
+RLAIF 让模型根据评分规则或原则提供反馈，可以扩大标注规模，但不会消除人类治理。
+人仍要制定原则、校准评审模型、抽检分歧并定义发布门槛。
 
-Outcome reward 只检查最终结果；process supervision 还检查中间步骤。后者可能提供更密信号，但也需要可靠的 step annotations 或 verifier。
+结果奖励（outcome reward）只检查最终结果；过程监督（process supervision）还检查中间步骤。
+过程监督可能提供更密集的信号，但也需要可靠的步骤标注或验证程序。
 
-程序测试、数学答案和 schema validator 提供可验证信号，却仍可能有测试不完整、解析漏洞和 reward hacking。Verifier pass 不是普遍正确性证明。
+程序测试、数学答案和 schema 验证器可以提供明确判据，却仍可能存在测试不完整、解析漏洞和奖励投机。
+通过验证程序不等于回答普遍正确。
 
 训练信号应组合：
 
-- 可验证的 task outcome；
+- 可验证的任务结果；
 - 人工审阅的过程/安全切片；
-- 对 evaluator shortcut 的 adversarial cases；
+- 针对评审捷径的对抗样例；
 - 与真实用户结果的独立评测。
 
 ## 拒答是一个三分类问题
 
-只测 harmful prompt refusal，会把“全部拒绝”误判成安全。至少划分：
+只测试有害问题的拒答，会把“全部拒绝”误判成安全。至少划分：
 
-| Case | 正确行为 |
+| 情况 | 正确行为 |
 |---|---|
 | 明确允许且安全 | 正常帮助 |
 | 可通过降风险处理 | 安全替代或澄清 |
 | 明确禁止或越权 | 拒绝并给出合适边界 |
 
-同时报告 under-refusal 和 over-refusal，并按语言、措辞和风险切片。训练得到的拒答行为不能替代工具 ACL 和数据权限。
+同时报告漏拒答（under-refusal）和过度拒答（over-refusal），并按语言、措辞和风险切片。
+训练得到的拒答行为不能替代工具 ACL 和数据权限。
 
 ## 对齐评测回到真实结果
 
-Offline evaluation 使用固定 prompts，对 baseline/candidate 做 paired comparison：
+离线评测使用固定问题，对基线模型和候选模型做配对比较：
 
-- task success 与 format correctness；
-- factuality、citation 与 abstention；
-- preference win rate 与 ties；
-- safety、under/over-refusal；
-- length、style 和 generator slices；
+- 任务成功率与格式正确率；
+- 事实性、引用与证据不足时的拒答；
+- 偏好胜率与平局；
+- 安全性、漏拒答与过度拒答；
+- 长度、风格和生成器切片；
 - KL、reward 与能力回归；
-- latency、token 和成本。
+- 延迟、token 和成本。
 
-所有指标保留 attempted 分母，不能只统计成功解析的样本。Model-as-judge 需要与人工标注校准，并检查位置、长度、self-preference 和 contamination。
+所有指标都要保留尝试过的样本总数，不能只统计成功解析的样本。
+用模型充当评审时，要与人工标注校准，并检查位置、长度、自我偏好和数据污染。
 
-上线再观察业务 outcome、申诉、事故、fallback 和用户切片。在线提升不能反向证明训练算法是唯一原因；prompt、routing 和流量组成也可能变化。
+上线后再观察业务结果、申诉、事故、回退路径和用户切片。在线指标提升不能反向证明训练算法是唯一原因；
+prompt、路由和流量组成也可能发生变化。
 
 ## 系统层仍要强制约束
 
 模型对齐不能保证：
 
 - 用户身份与资源所有权；
-- 工具 schema、参数和金额合法；
+- 工具 schema、参数和金额是否合法；
 - 写操作幂等、审批和副作用完成；
-- 敏感数据不进入日志或外部 provider；
+- 敏感数据不进入日志或外部服务商；
 - 高风险决策具备人工复核。
 
-运行时需要认证、授权、budget、sandbox、effect receipt、audit 和 rollback。模型输出是 proposal，不是 capability token。
+运行时仍要负责认证、授权、预算、沙箱、副作用回执、审计和回滚。
+模型输出只是候选动作，不是可以直接执行操作的能力凭证。
 
 ## 一个渐进式学习实验
 
-选择一个资源可承受的 Instruct checkpoint：
+选择一个资源可承受的指令模型 checkpoint：
 
-1. **SFT baseline**：验证 template、labels 和 held-out behavior。
-2. **Preference audit**：保留 A/B、tie、order、generator、group 和 split。
-3. **DPO 公式检查**：固定 policy/reference，手算一对样本的四个 sequence log-probabilities。
-4. **训练运行**：从单 batch overfit 到小规模 adapter，保存 before/after artifact。
+1. **SFT 基线**：验证模板、标签和留出集行为。
+2. **偏好审计**：保留 A/B、平局、展示顺序、生成器、分组和数据切分。
+3. **DPO 公式检查**：固定当前策略和参考策略，手算一对样本的四个序列对数概率。
+4. **训练运行**：从单批次过拟合到小规模 adapter，保存训练前后工件。
 5. **独立评测**：比较任务、安全、长度、KL 和通用能力。
 6. **RM/PPO 扩展**：只有 DPO 无法解决在线探索需求时再增加。
 
-实现、命令、Qwen target DPO 验证程序和各种 negative cases 见[对齐证据台账](../evidence/alignment-controls.md)。
+实现、命令、Qwen DPO 验证程序和失败样例见[对齐证据台账](../evidence/alignment-controls.md)。
 
 ## 常见错误
 
 - 把“人类偏好”当作跨人群通用的客观标量。
-- 丢弃 tie、invalid、展示顺序和逐标注者 disagreement。
-- RM pair accuracy 高就认为没有长度或风格 shortcut。
-- DPO 不固定 reference、template、mask、reduction 和 beta。
-- PPO reward 上升就声称真实任务与安全提升。
+- 丢弃平局、无效判断、展示顺序和逐标注者分歧。
+- 奖励模型的成对准确率高，就认为它没有长度或风格捷径。
+- DPO 不固定参考策略、模板、掩码、聚合方式和 beta。
+- PPO 奖励上升，就声称真实任务与安全性得到提升。
 - 把小型固定样例的结果拼成“目标 checkpoint 已完成 RLHF”。
-- 只测 harmful refusal，不测安全请求的 over-refusal。
+- 只测有害问题的拒答，不测安全请求的过度拒答。
 - 用模型行为替代工具权限、幂等和人工审批。
 
 ## 面试时怎样回答
 
-面对“解释 RLHF/DPO”，按数据流回答：
+面对“解释 RLHF/DPO”，可以继续沿用本页的数据流：
 
-1. SFT 用 demonstrations 建立 policy prior。
-2. Pairwise judgments 可以训练 RM，或直接进入 DPO。
-3. DPO 优化 policy 相对 reference 的 chosen/rejected log-ratio。
-4. PPO 在 old policy rollouts 上，用 reward、value、advantage 和 clip 更新。
-5. 两条路线都必须回到独立任务、安全、shortcut 和系统评测。
+1. SFT 用示范建立行为先验。
+2. 成对偏好可以训练奖励模型，也可以直接进入 DPO。
+3. DPO 优化当前策略相对参考策略的较优/较差回答对数概率差。
+4. PPO 保存旧策略采样轨迹，再用奖励、价值、优势值和裁剪目标更新。
+5. 两条路线最终都要回到独立任务、安全、捷径和系统评测。
 
-继续追问时，应能解释 reward shift 不可辨识、DPO sequence reduction、PPO old/ref policy 的不同角色，以及 reward hacking 为什么不是简单调小学习率能解决。
+继续追问时，应能解释奖励平移为何不可辨识、DPO 怎样聚合序列概率、PPO 的旧策略与参考策略分别做什么，
+以及奖励投机为什么不能靠简单调小学习率解决。
 
 ## 自测
 
-1. 为什么最终 chosen/rejected 标签不能替代原始 judgments？
+1. 为什么最终 chosen/rejected 标签不能替代逐标注者的原始判断？
 2. Bradley–Terry RM 的绝对分数为什么不能解释成用户价值单位？
 3. DPO 中 policy gap 为什么还要减去 reference gap？
 4. PPO clip 限制了什么，又没有保证什么？
@@ -410,8 +480,8 @@ Offline evaluation 使用固定 prompts，对 baseline/candidate 做 paired comp
 
 ## 继续学习
 
-- [LLM 强化学习](reinforcement-learning.md)：从 contextual bandit、REINFORCE 和 MDP 进入 GAE/PPO、GRPO 与 RLVR。
+- [LLM 强化学习](reinforcement-learning.md)：从奖励、策略梯度和序列决策进入 GAE/PPO、GRPO 与 RLVR。
 - [单卡微调项目](../practice/projects/single-gpu-finetuning.md)：SFT、LoRA 与 DPO 的渐进路线。
-- [SFT 数据闭环](sft-data-pipeline.md)：模板、labels、数据治理和切分。
+- [SFT 数据闭环](sft-data-pipeline.md)：模板、标签、数据治理和切分。
 - [Agent Runtime](../applications/agent-runtime.md)：权限、副作用和回放。
 - [对齐证据台账](../evidence/alignment-controls.md)：数据检查规则、公式对照与运行命令。
