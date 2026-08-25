@@ -306,7 +306,7 @@ NumPy 测试验证局部代数。PyTorch 和 JAX 的 tiny GPT 测试再向外走
 FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返与完整中间矩阵存储。它仍计算精确 attention
 的数学目标，不是把一般复杂度改成线性；不同浮点归约顺序也可能产生细小差异。
 
-[数学基础](../foundations/math.md#attention-storage-online-softmax)给出递推公式，
+[Attention 数值计算](../foundations/attention-numerics.md)给出递推公式，
 `projects/transformers-basics/online_softmax_demo.py` 会逐块与 dense reference 对账。这项 NumPy 实验只验证代数，
 执行范围不包含 CUDA kernel 和 HBM 流量测量。
 

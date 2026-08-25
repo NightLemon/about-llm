@@ -7,13 +7,13 @@
 
 - **适合读者**：需要读懂 shape、概率、梯度和评测区间的工程师。
 - **先修**：Python 基础；能理解变量、函数、指数和对数记号。
-- **首次阅读**：先读 Shape、矩阵乘法、概率与 softmax；模型比较转到[评测统计](evaluation-statistics.md)。
-- **完成信号**：能标注一次 attention 的 shape，并解释一个数值公式的成立前提。
+- **首次阅读**：先手算下面的两-token 例子，再读 Shape、Attention、softmax 与梯度；模型比较转到[评测统计](evaluation-statistics.md)。
+- **完成信号**：能从输入向量算到 attention、loss 和 logits 梯度，并解释每个公式的成立前提。
 - **卡住时**：先看[新手知识地图](../guide/beginner-map.md)，只回补当前公式需要的小节。
 
 </div>
 
-## 怎样使用本章
+**怎样使用本章**
 
 读 Attention 公式时，你可能同时卡在三个地方：`QKᵀ` 为什么能相乘，softmax 为什么放在这一轴，
 以及代码里的 tensor shape 怎样对应纸面符号。本章就是为这类问题准备的数学工具箱。
@@ -21,9 +21,63 @@
 不必先学完再去读模型章节。遇到 shape 问题就看前两节，遇到 loss 与 PPL 就看概率和信息论，
 开始训练时再读梯度与优化。需要比较两个系统的区间和显著性时，转到[评测统计](evaluation-statistics.md)。
 
-学完后，你应该能用小数字复算一次 Attention，追踪 loss 怎样传回参数，并说出公式依赖哪些假设。
-仓库里的 NumPy Attention、PyTorch/JAX tiny GPT 和 KV Cache 计算器提供了可运行例子；大模型训练稳定性和
-目标硬件性能仍要在相应环境里验证。
+学完后，你应该能用小数字复算一次 Attention，并追踪 loss 怎样沿计算图传回参数。
+
+仓库提供三类可运行例子：NumPy Attention、PyTorch/JAX tiny GPT，以及 KV Cache 容量计算器。
+
+这些小实验检查公式与训练闭环；大模型训练稳定性和目标硬件性能仍要在相应环境中验证。
+
+## 先用两个 token 走完整条计算链 {#two-token-attention}
+
+先暂时去掉 batch 和多头两个轴，只保留两个 token、每个 token 两个特征。令输入和三组投影为：
+
+\[
+X=\begin{bmatrix}1&0\\1&1\end{bmatrix},
+\qquad W_Q=W_K=W_V=I_2.
+\]
+
+因此 \(Q=K=V=X\)。每一行对应一个 token，每一列对应一个特征。缩放后的分数为：
+
+\[
+\frac{QK^T}{\sqrt 2}
+=\begin{bmatrix}0.707&0.707\\0.707&1.414\end{bmatrix}.
+\]
+
+第一个 token 不能读取未来的第二个 token，所以 causal mask 把右上角改成 \(-\infty\)。逐行做 softmax 后：
+
+\[
+A\approx
+\begin{bmatrix}
+1&0\\
+0.330&0.670
+\end{bmatrix}.
+\]
+
+这两行已经能读成人话：第一个 token 只能复制自己；第二个 token 把约 33% 的注意力给第一个位置，约 67% 给自己。
+乘上 \(V\) 得到：
+
+\[
+O=AV\approx
+\begin{bmatrix}
+1&0\\
+1&0.670
+\end{bmatrix}.
+\]
+
+为了继续手算，假设输出头直接把第二行 \([1,0.670]\) 当作两个类别的 logits，正确类别是第二类。
+softmax 概率约为 \([0.582,0.418]\)，交叉熵为 \(-\log 0.418\approx0.872\)。
+
+对 logits 的梯度是 \(p-y\)：
+
+\[
+\frac{\partial L}{\partial z}
+\approx [0.582,-0.582].
+\]
+
+正梯度会在梯度下降时压低第一个 logit，负梯度会抬高正确类别的 logit。自动微分随后把这个信号依次传回输出头、
+\(O=AV\)、softmax、\(QK^T\) 和三个投影矩阵。
+
+后面的章节只是把这条小链路逐段放大：加回 batch 与多头 shape，解释数值稳定性，再讨论优化器怎样使用梯度。
 
 ## 1. 先用 Shape 排除不可能
 
@@ -87,7 +141,11 @@ Shape 对得上只是第一关。把 Q/K 轴弄反后，矩阵乘法可能仍然
 
 矩阵 \(W\) 把输入坐标映到输出空间。神经网络线性层不只是“乘一个表”，它学习哪些输入方向要放大、衰减或组合。Bias 允许仿射平移。
 
-Embedding lookup 等价于用 one-hot 向量选矩阵的一行，但实现不会真的构造巨大 one-hot。Tied embedding/lm head 共享参数：输入表 \(E\in\mathbb R^{V\times d}\)，输出 logits 常为 \(XE^T\)。
+Embedding lookup 可以理解成：用独热向量（one-hot）从矩阵中选出一行。实现会直接按 token ID 查表，
+不会真的构造一个词表大小的独热向量。
+
+输入 embedding 与语言模型输出头还可以共享参数，这称为 tied embedding/LM head。
+若输入表为 \(E\in\mathbb R^{V\times d}\)，输出 logits 常写成 \(XE^T\)。
 
 ### 点积、范数与角度
 
@@ -174,44 +232,22 @@ O:     [B,H,T,D]
 
 Causal mask 应在 softmax 前把未来 score 设为足够负的值，使概率为 0。若 softmax 后再乘 0，行和不再为 1；若 mask 值在低精度下不够负，仍可能泄漏。
 
-Padding mask、causal mask、packing block mask 和 loss mask 目的不同：前三者控制信息能否被读取，最后一个控制该位置是否贡献训练目标。
+四种常见 mask 解决的是不同问题：
+
+- **Padding mask**：不让真实 token 读取补齐位置；
+- **Causal mask**：不让当前位置读取未来；
+- **Packing block mask**：不让拼接后的不同样本互相读取；
+- **Loss mask**：决定哪些位置计入训练目标，本身不改变前向可见性。
 
 ### 复杂度与存储 { #attention-storage-online-softmax }
 
-朴素 score 矩阵有 \(O(T^2)\) 元素，QK/AV 计算也含二次项。FlashAttention 通过 tiled IO 与 online softmax 避免物化完整 score/probability，降低 HBM traffic 和内存；它没有普遍把精确 dense attention 的算术复杂度变成线性。
+朴素 Attention 会形成含 \(T^2\) 个元素的分数矩阵，\(QK^T\) 和 \(AV\) 也都包含二次计算。
+FlashAttention 的关键改进是分块搬运数据，并在块之间维护 softmax 状态，从而避免把完整分数和概率矩阵写回 HBM。
 
-Online softmax 的关键是旧 block 的统计量可以在全局最大值变化后重标定。
-对一个 query row，把第 \(b\) 个 key block 的 scaled、masked scores 写成 \(s_{b,j}\)。
-维护 running maximum \(m_b\)、normalizer \(\ell_b\) 与未归一化 value accumulator \(o_b\)。初值为 \(m_0=-\infty,\ell_0=0,o_0=0\)：
+它节省的是高带宽显存（HBM）读写与中间存储。对于精确的稠密 Attention，算术复杂度通常仍是 \(O(T^2)\)。
 
-\[
-m_b=\max\left(m_{b-1},\max_j s_{b,j}\right),
-\]
-
-\[
-\ell_b=e^{m_{b-1}-m_b}\ell_{b-1}+\sum_j e^{s_{b,j}-m_b},
-\]
-
-\[
-o_b=e^{m_{b-1}-m_b}o_{b-1}+\sum_j e^{s_{b,j}-m_b}v_{b,j}.
-\]
-
-最后输出 \(o_B/\ell_B\)。第一项把旧 block 的分子和分母缩放到新 maximum 坐标系；第二项加入当前 block。
-对不可见位置令 \(s=-\infty\)。
-若此前还没有任何可见 key，旧 \(\ell/o\) 本来就是 0，实现应直接把旧贡献定义为 0，不能真的计算 \(-\infty-(-\infty)\)。
-这样前几个 block 全被 mask、后续才出现可见 key 也不会产生 NaN。
-若处理完全部 blocks 后整行仍不可见，则 \(\ell_B=0\)，实现必须拒绝。
-
-在实数算术下，这和一次性计算 dense softmax 完全等价；有限精度下，block 划分与归约顺序可能造成微小误差，不能要求逐 bit 相同。
-仓库的 blockwise online attention 使用 float64 累积，只构造当前 score tile 与每行状态，不返回完整 probability matrix。
-报告的 logical peak score elements 只是最大逻辑 tile，不包含 Q/K/V、输出、NumPy temporary 或 allocator，因此不是进程峰值内存测量。
-这份 CPU 对照结果只检查公式和中间状态。CUDA kernel、FlashAttention backend、HBM traffic、速度和
-vLLM 行为仍需在对应运行环境中测量。
-
-~~~powershell
-python projects/transformers-basics/online_softmax_demo.py
-python -m pytest tests/test_attention_numpy.py -q
-~~~
+分块算法为什么仍与完整 softmax 等价、全 mask 行为什么会产生 NaN，以及仓库里的 CPU 对照怎样验证这些边界，
+继续读[Attention 数值计算](attention-numerics.md)。
 
 ## 4. 概率：模型输出究竟是什么
 
@@ -255,7 +291,12 @@ tokenization 和表达方式，模型也可能对错误模板给出很高概率�
 p(H\mid E)=\frac{p(E\mid H)p(H)}{p(E)}
 \]
 
-低 base-rate 事件即使检测器 sensitivity 较高，阳性中仍可能有大量 false positive。安全分类、异常检测和成员推断都必须报告 precision/recall 与真实 prevalence，不能只报 accuracy。
+基准率（base rate）很低时，即使检测器的召回率很高，阳性结果也可能以误报为主。
+
+例如 10,000 个事件里只有 10 个真实阳性。若检测器找回其中 9 个，同时把 1% 的阴性误报为阳性，就会产生约
+100 个误报；此时阳性预测的精确率只有 \(9/(9+100)\approx8.3\%\)。
+
+因此，安全分类、异常检测和成员推断要同时报告 precision、recall 与真实发生率，不能只看 accuracy。
 
 ## 5. Softmax、LogSumExp 与数值稳定
 
@@ -344,7 +385,10 @@ Bits-per-byte/character 可改善跨 tokenizer 比较，但仍要统一数据编
 f(x+\Delta x)\approx f(x)+J_f(x)\Delta x
 \]
 
-标量对向量梯度 \(\nabla_xL\) 指向局部上升最快方向。高维网络不显式构造巨大 Jacobian；reverse-mode autodiff 计算 vector-Jacobian product（VJP），对“多参数 → 一个标量 loss”特别高效。
+标量 loss 对向量的梯度 \(\nabla_xL\)，指向局部上升最快的方向。
+
+高维网络不会显式构造完整 Jacobian。反向模式自动微分（reverse-mode autodiff）从一个标量 loss 出发，
+沿计算图反向计算向量—Jacobian 乘积（VJP），因此特别适合“很多参数 → 一个 loss”的训练问题。
 
 ### 链式法则
 
@@ -436,13 +480,18 @@ Adam 按历史二阶矩自适应缩放方向。\(\epsilon\) 不只是防除 0，
 -\eta_t\lambda\theta_t
 \]
 
-Decoupled weight decay 不经过 Adam 的二阶缩放。对 SGD，L2 regularization 与 weight decay 在简单条件下可等价；对自适应 optimizer 通常不能混为一谈。
+AdamW 使用解耦权重衰减（decoupled weight decay）：衰减项不经过 Adam 的二阶矩缩放。
+
+在普通 SGD 的简单设置中，L2 正则与 weight decay 可以得到等价更新；换成自适应优化器后，两者通常不再等价。
 
 Norm scale、bias-like 参数常排除 decay，但这是参数 mask 配置，不是 AdamW 数学自动知道。
 
 ### Warmup 与 schedule
 
-Warmup 降低初始化早期的大步风险；cosine/linear decay 控制后期更新。Schedule 的横轴应明确是 optimizer step 还是 consumed token；gradient accumulation 或 batch 变化会让二者关系改变。
+Warmup 在训练初期逐渐增大学习率，降低初始化阶段迈出过大步长的风险。余弦或线性衰减则控制后期更新。
+
+学习率曲线的横轴必须明确：按 optimizer step，还是按已经消费的 token 计数。
+Gradient accumulation 或 batch 大小变化后，这两个进度单位不再保持原来的对应关系。
 
 ### Gradient clipping
 
@@ -464,7 +513,14 @@ g'=g\min\left(1,\frac{c}{\lVert g\rVert_2+\epsilon}\right)
 - non-associativity：\((a+b)+c\neq a+(b+c)\)；
 - reduction order：多卡 collective 顺序改变末位。
 
-BF16 指数范围接近 FP32、尾数更短；FP16 指数范围更小，训练常用 loss scaling；FP8 依赖格式和动态 scale。Mixed precision 必须逐项声明参数、matmul、accumulation、gradient、optimizer 和 collective dtype。
+几种低精度格式的主要取舍不同：
+
+- **BF16**：指数范围接近 FP32，但有效尾数更短；
+- **FP16**：指数范围更小，训练中常配合 loss scaling；
+- **FP8**：行为取决于具体格式，还需要动态缩放策略。
+
+描述混合精度时，不能只写一个“训练 dtype”。应分别说明参数存储、矩阵乘法、累加、梯度、优化器状态和
+通信归约各自使用的 dtype。
 
 ### Stable variance
 
@@ -484,7 +540,10 @@ BF16 指数范围接近 FP32、尾数更短；FP16 指数范围更小，训练�
 
 ### Attention 因果性
 
-本仓库 NumPy/PyTorch/JAX 测试使用两条只在未来位置不同的序列，断言过去位置 logits 相同。这比“看代码里有 tril mask”更强，因为它验证 observable invariant。
+本仓库分别用 NumPy、PyTorch 和 JAX 做同一个因果性测试：构造两条只在未来位置不同的序列，断言过去位置的
+logits 保持相同。
+
+检查代码里是否出现 `tril` 只能看到实现意图；这个对照直接验证了“未来 token 不改变过去输出”这一可观察性质。
 
 ### KV Cache 容量
 
@@ -494,11 +553,17 @@ BF16 指数范围接近 FP32、尾数更短；FP16 指数范围更小，训练�
 M=2\times L\times B\times T\times H_{kv}\times d_h\times bytes(dtype)
 \]
 
-`2` 表示 K 和 V。它不含 allocator、block metadata、fragmentation、workspace，也不适用于 MLA 等不同 cache layout。本仓库测试验证特定配置精确为 1 GiB，只证明公式实现。
+式子中的 `2` 分别代表 K 和 V。这个理想公式没有计算 allocator、block 元数据、碎片和临时工作区，
+也不适用于 MLA 等不同的 cache layout。
+
+本仓库测试中的一组特定参数恰好得到 1 GiB，用来检查公式实现；它不是目标推理框架的显存实测。
 
 ### Tiny-batch overfit
 
-JAX/Optax 实验固定 632 参数模型和 tiny batch，验证 loss 大幅下降、参数变化、gradient norm 有限、JIT 同步计时。它能发现训练闭环错误，不证明 validation 泛化。
+JAX/Optax 实验使用一个 632 参数模型和固定小 batch。它检查 loss 是否下降、参数是否更新、梯度范数是否有限，
+并在 JIT 执行后同步计时。
+
+这个实验能发现训练闭环错误，但没有使用独立验证集，不能据此判断泛化。
 
 ## 常见错误
 

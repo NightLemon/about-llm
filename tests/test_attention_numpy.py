@@ -30,6 +30,51 @@ def test_scaled_attention_matches_hand_computed_two_key_distribution() -> None:
     np.testing.assert_allclose(output, [[5.0]], rtol=1e-12, atol=1e-12)
 
 
+def test_documented_two_token_chain_matches_hand_computed_values() -> None:
+    """Bind the math chapter's attention, loss, and logit-gradient example."""
+
+    hidden = np.array([[1.0, 0.0], [1.0, 1.0]], dtype=np.float64)
+    output, attention = scaled_dot_product_attention(
+        hidden,
+        hidden,
+        hidden,
+        mask=causal_mask(2),
+    )
+
+    np.testing.assert_allclose(
+        attention,
+        [[1.0, 0.0], [0.33023845067334306, 0.6697615493266569]],
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        output,
+        [[1.0, 0.0], [1.0, 0.6697615493266569]],
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+    logits = output[-1]
+    probabilities = np.exp(logits - np.max(logits))
+    probabilities /= np.sum(probabilities)
+    loss = -np.log(probabilities[1])
+    logit_gradient = probabilities - np.array([0.0, 1.0])
+
+    np.testing.assert_allclose(
+        probabilities,
+        [0.5818173944324645, 0.4181826055675355],
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    assert loss == pytest.approx(0.8718370864262046, rel=1e-12)
+    np.testing.assert_allclose(
+        logit_gradient,
+        [0.5818173944324645, -0.5818173944324645],
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
 def test_rms_norm_matches_definition_and_preserves_dtype() -> None:
     x = np.array([[3.0, 4.0], [0.0, 2.0]], dtype=np.float32)
     weight = np.array([2.0, 0.5], dtype=np.float32)

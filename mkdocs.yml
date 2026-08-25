@@ -96,6 +96,7 @@ nav:
           - 可靠性、重试与预算: models/cloud-api-reliability.md
   - 基础:
       - 数学基础: foundations/math.md
+      - Attention 数值计算: foundations/attention-numerics.md
       - 评测统计: foundations/evaluation-statistics.md
       - 机器学习与深度学习: foundations/ml-dl.md
       - NLP 与语言建模: foundations/nlp.md
