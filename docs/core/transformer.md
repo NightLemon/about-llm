@@ -7,14 +7,14 @@
 
 - **适合读者**：需要实现、调试或部署 decoder-only 模型的工程师。
 - **先修**：[Tokenization](tokenization.md)、矩阵乘法、softmax 和因果语言建模。
-- **首次阅读**：Decoder-only 数据流 → Attention shape → 四类 mask → KV Cache。
+- **首次阅读**：4-token prefill → 第一轮 decode → Attention shape → 四类 mask → KV Cache。
 - **完成信号**：能手算两 token attention，并验证 cached/full logits 等价。
 - **卡住时**：回到[数学基础](../foundations/math.md)的 shape 与矩阵乘法。
 
 </div>
 
-打开一个 decoder-only 模型的调试器，最容易迷路的地方不是公式，而是同一个序列不断改变形状：token ids
-先变成 hidden states，再拆成 Q/K/V，经过多头混合后回到 residual stream，最后投影成整个词表的 logits。
+调试 decoder-only 模型时，最容易迷路的是张量形状。同一条序列先从 token ID 变成隐藏状态，再拆成 Q、K、V；
+注意力把多个头的信息混合后，结果回到残差流，最后投影成整个词表上的 logits。
 
 本章只追踪一次具体 forward。假设一条短 prompt 被 tokenizer 编成 4 个 token：
 
@@ -27,11 +27,28 @@ Prefill 会同时算完这 4 个位置，并用最后一个位置的 logits 选�
 一个 token，并复用前面保存的 K/V。读到每一节时，都问同一个问题：**这一步读了哪些位置，张量是什么形状，
 它为训练还是生成服务？**
 
+为了让形状可以手算，本页使用一个教学配置：
+
+```text
+d=512, Hq=8, Hkv=2, D=64
+```
+
+这里有 8 个 query head、2 个 K/V head，每 4 个 query head 共享一组 K/V。一次 prefill 和第一步 decode 的形状账本是：
+
+| 阶段 | Q | K/V 可见历史 | Attention score | Logits |
+|---|---|---|---|---|
+| Prefill `t0..t3` | `[1,8,4,64]` | `[1,2,4,64]` | `[1,8,4,4]` | `[1,4,V]` |
+| Decode `t4` | `[1,8,1,64]` | `[1,2,5,64]` | `[1,8,1,5]` | `[1,1,V]` |
+
+Prefill 的最后一行 logits 用来选出 `t4`。把 `t4` 送回模型后，decode 才生成预测 `t5` 的 logits。后文所有专题
+都可以回到这两行检查，而不必重新想象一组抽象符号。
+
 ## 1. Decoder-only 数据流
 
-输入 token id \(I\in\mathbb{N}^{B\times T}\) 经 Embedding 得到隐藏状态
-\(X\in\mathbb{R}^{B\times T\times d}\)。在上面的短 prompt 中，它从 `[1,4]` 变成 `[1,4,d]`。
-每个 Pre-Norm block 计算：
+输入 token ID \(I\in\mathbb{N}^{B\times T}\) 先经过词嵌入层（Embedding），得到隐藏状态
+\(X\in\mathbb{R}^{B\times T\times d}\)。上面的短输入会从 `[1,4]` 变成 `[1,4,512]`。
+
+这个例子使用 Pre-Norm：每个子层先做归一化，再把计算结果加回残差流。一个 block 的计算是：
 
 \[
 X' = X + \operatorname{Attention}(\operatorname{Norm}(X)),
@@ -54,9 +71,11 @@ flowchart LR
   E --> F["Final Norm + LM Head [B,T,V]"]
 ```
 
-自回归训练常让位置 \(t\) 的 hidden state 预测下一个 token。不同库可能由 data collator 显式 shift，
-也可能在模型 loss 内部 shift；两边都做会错移一位。`input_ids`、attention visibility 和 labels/loss mask
-是三个不同契约。
+自回归训练通常让位置 \(t\) 的隐藏状态预测下一个 token。标签需要相对输入错开一位，但实现位置因库而异：
+有的 data collator 先移动标签，有的模型在计算 loss 时移动。两边都做会让监督信号再错开一位。
+
+调试时要把三个问题分开：`input_ids` 提供了哪些 token，attention mask 允许每个位置读取谁，loss mask 又让哪些
+位置参与目标函数。
 
 ## 2. 缩放点积注意力
 
@@ -80,13 +99,15 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 \frac{\exp(s_i-\max_j s_j)}{\sum_k\exp(s_k-\max_j s_j)}.
 \]
 
-若一行所有 key 都被 mask，直接对全 `-inf` 做 softmax 会产生未定义的 `0/0`/NaN。数据与 mask 应保证
-每个有效 query 至少能看到一个 key；如果做不到，kernel 就要明确定义这种输入。本仓库的 NumPy 实现遇到
-全遮挡行时会直接报错，避免悄悄传播 NaN。
+如果某个 query 看不到任何 key，它对应的一整行 score 都会被写成 `-inf`。此时 softmax 的分母为零，会产生 NaN。
+
+因此，每个有效 query 至少要能看到一个 key。若业务允许全遮挡行，kernel 必须另行定义返回值。本仓库的 NumPy
+实现选择直接报错，让问题停在输入边界，而不是把 NaN 继续传到后面的层。
 
 ## 3. 多头张量形状
 
-设 query head 数为 \(H_q\)，K/V head 数为 \(H_{kv}\)，head dimension 为 \(D\)，通常 \(d=H_qD\)。reshape 后：
+设 query head 数为 \(H_q\)，K/V head 数为 \(H_{kv}\)，每个 head 的维度为 \(D\)。通常有
+\(d=H_qD\)。线性投影完成后，把张量整理成以下形状：
 
 | 张量 | 形状 |
 |---|---|
@@ -112,7 +133,10 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 2\,B\,L\,T\,H_{kv}\,D,
 \]
 
-其中 2 表示 K 与 V。GQA/MQA 直接降低这一项及 decode 读取带宽，但不会按同样比例减少 Q projection、MLP、Embedding、LM head 或全部权重。若 checkpoint 使用 latent/compressed attention，不能套用标准 MHA/GQA cache 公式。
+式子开头的 2 分别代表 K 和 V。GQA 与 MQA 减少了 K/V head 数，所以 KV Cache 更小，decode 读取的 K/V 数据也更少。
+
+但 Q 投影、MLP、词嵌入和词表输出层不会按同样比例缩小。模型若使用潜变量或压缩注意力，K/V 的保存方式已经
+变化，也不再适用这条标准 MHA/GQA 公式。
 
 ## 4. 四类 mask 不可混用
 
@@ -126,14 +150,21 @@ A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{D}}+M\right),
 
 ### packing/document mask
 
-把多篇文档拼进一个长 block 时，普通 causal mask 仍允许后一篇读取前一篇。若训练目标要求文档独立，需 block-diagonal/document-aware visibility，并同时正确设置 position 与 loss。仅插入 EOS 不会自动切断 attention。
+训练时常把多篇文档拼成一个长序列。普通 causal mask 只阻止读取未来位置，因此后一篇文档仍能读取前一篇。
+
+若训练目标要求文档互相独立，需要使用块对角的文档 mask，并同时处理位置 ID 和损失 mask。EOS 只是序列中的一个
+token；插入 EOS 本身不会改变注意力可见性。
 
 ### loss mask
 
-决定哪些 label 对目标函数有贡献，常用 ignore index 表示。它不改变 attention visibility：把 prompt label 设为 `-100` 不会阻止 response token 读取 prompt；反过来 causal mask 也不会自动排除 padding/prompt loss。
+Loss mask 决定哪些标签参与目标函数，常用 ignore index 表示。例如，把 prompt 对应的 label 设为 `-100`，可以只训练
+response 部分。
 
-回到 4-token prompt：只修改 `t3`，位置 `t0..t2` 的 logits 应保持不变。这个测试能抓 causal 泄漏，
-却没有覆盖 padding、packing 或 loss mask；它们需要各自的不变量。
+这不会改变注意力可见性：回答部分仍然可以读取输入提示。反过来，因果 mask 也只控制“能读谁”，不会自动排除
+padding 或提示位置上的 loss。
+
+回到 4-token prompt：只修改最后的 `t3`，更早位置 `t0..t2` 的 logits 应保持不变。这个反事实测试可以发现未来信息
+泄漏。Padding、文档拼接和 loss mask 是另外三种契约，需要分别设计测试。
 
 ## 5. LayerNorm、RMSNorm 与残差
 
@@ -151,11 +182,17 @@ RMSNorm 不减均值：
 \gamma\odot\frac{x}{\sqrt{\operatorname{mean}(x^2)+\epsilon}}.
 \]
 
-RMSNorm 不是 LayerNorm 的“推理简化模式”；两者参数与函数不同，不能在加载 checkpoint 时互换。
-Epsilon、统计累积 dtype、输出 cast 和 weight dtype 都会影响数值。仓库 `rms_norm` 的 float64 累积只是
-小数组 correctness reference，不代表目标 kernel 的逐 bit 行为。
+RMSNorm 与 LayerNorm 是两种不同函数。RMSNorm 保留输入均值，也通常没有 LayerNorm 中的 bias；checkpoint 必须按照
+训练时使用的类型加载，不能把两者互换。
 
-Pre-Norm 在进入子层前归一化，残差支路保留较直接的 identity path；Post-Norm 在残差相加后归一化。它们会改变优化与 checkpoint 函数，不是可随意切换的代码风格。深层稳定性还受初始化、residual scaling、学习率和数值精度影响，不能归因于 norm 位置一个因素。
+Epsilon、统计量的累积精度、输出转换精度和权重精度都会影响结果。仓库的 `rms_norm` 使用 float64 累积，是为了给
+小数组提供高精度参考值。目标硬件上的 kernel 可能采用不同归约顺序，因此不要求逐 bit 相同。
+
+Pre-Norm 在进入 Attention 或 MLP 前归一化，残差支路保留一条较直接的恒等路径。Post-Norm 则先完成残差相加，
+再对结果归一化。
+
+Norm 的位置会改变整个 block 的函数和优化行为，也是 checkpoint 架构的一部分。分析深层训练稳定性时，还要一起
+考虑初始化、残差缩放、学习率和数值精度。
 
 ## 6. RoPE：旋转 Q/K，不是给 hidden state 加表
 
@@ -198,7 +235,11 @@ Pre-Norm 在进入子层前归一化，残差支路保留较直接的 identity p
 W_d\left(\operatorname{SiLU}(W_gx)\odot W_ux\right).
 \]
 
-它有 gate、up、down 三个投影。不能把 GELU MLP 的“中间维度约为若干倍 d”直接套成 SwiGLU 参数量；不同模型会调整 intermediate size 以平衡参数/FLOPs。bias、tensor parallel 切分、激活融合和量化支持也以 checkpoint/runtime 为准。
+SwiGLU 有门控（gate）、升维（up）和降维（down）三个投影。GELU MLP 常见的中间维度经验值不能直接用于计算
+SwiGLU 参数量；模型通常会重新选择中间维度，在参数量和计算量之间取平衡。
+
+是否包含 bias、怎样做 tensor parallel 切分、能否融合激活，以及量化路径是否支持，都要以具体 checkpoint 和
+推理框架为准。
 
 ## 8. Prefill、Decode 与 KV Cache 等价性
 
@@ -220,7 +261,11 @@ step_t = attention(Q[t:t+1], K[:t+1], V[:t+1], causal_mask(1, t+1))
 assert concat(step_0, ..., step_T_minus_1) == full
 ```
 
-这项等价需要相同权重、RoPE position、visibility、未被错误截断的 cache，以及可比数值路径。训练 dropout 必须关闭；量化 cache、滑窗淘汰、不同 kernel reduction order 可能产生数值差异。小数组 `allclose` 只证明 reference algebra，不证明生产 cache allocator、并发调度或 GPU 吞吐。
+比较完整前向与使用 cache 的增量解码时，要固定以下条件：相同权重、相同 RoPE 位置、相同可见性，以及完整保存的
+K/V。模型还应切换到评估模式，关闭训练时的 dropout。
+
+量化 cache、滑动窗口淘汰和不同 kernel 的浮点归约顺序都可能带来数值差异。小数组上的 `allclose` 只验证注意力
+代数，生产环境中的 cache allocator、并发调度和 GPU 吞吐需要另外测试。
 
 ## 9. 用 NumPy 对照实现检查公式
 
@@ -239,24 +284,34 @@ python -m pytest tests/test_attention_numpy.py -q
 python -m pytest tests/test_gpt_torch.py tests/test_gpt_jax.py -q
 ~~~
 
-NumPy 测试验证局部代数；PyTorch/JAX tiny GPT 再验证完整 forward、梯度和一步更新。跨框架对账要求显式统一
-LayerNorm、activation、mask、weight tying、loss 与 optimizer，不能因为模块同名就假设数值等价。
+NumPy 测试验证局部代数。PyTorch 和 JAX 的 tiny GPT 测试再向外走一层，检查完整前向、梯度和一次参数更新。
 
-`blockwise_online_attention` 覆盖 causal prefill、带历史 K/V 的单 token decode 和任意 boolean visibility mask。
-任一 query 没有可见 key 时，函数会报错而不是返回无效概率。具体输入、反事实差值和未覆盖项集中在
+跨框架对账前，要统一归一化方式、激活函数、mask、权重共享、loss 和优化器。两个模块名称相同，只说明接口相似，
+不保证每一步数值相同。
+
+`blockwise_online_attention` 覆盖三条路径：因果 prefill、带历史 K/V 的单 token decode，以及调用者提供的布尔
+可见性 mask。某个 query 没有任何可见 key 时，函数会报错。
+
+具体输入、反事实差值和未覆盖项集中在
 [Transformers 控制台账](../evidence/transformers-controls.md)。
 
 ## 10. 复杂度和 kernel 边界
 
-标准 dense attention 的 score/probability 张量有 \(T_qT_k\) 项，每头 score 与 value aggregation 的主要算术随 \(T_qT_kD\) 增长。投影与 MLP 通常含 \(Td^2\) 量级项。短序列/大 hidden 时线性层可能主导；长序列时 attention 与 KV 读写更突出。Big-O 不能直接替代实测延迟。
+标准稠密注意力的每个 head 都有 \(T_qT_k\) 个分数和对应概率。计算分数、再按概率聚合 V，主要算术量随
+\(T_qT_kD\) 增长。线性投影和 MLP 则通常包含 \(Td^2\) 量级的计算。
+
+序列较短而隐藏维度较大时，线性层可能占主导；序列变长后，Attention 计算与 KV 读写会更加突出。渐近复杂度只能
+说明增长趋势，实际延迟还取决于 kernel、显存带宽、batch 和硬件利用率。
 
 FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返与完整中间矩阵存储。它仍计算精确 attention
 的数学目标，不是把一般复杂度改成线性；不同浮点归约顺序也可能产生细小差异。
 
-[数学基础](../foundations/math.md#attention-storage-online-softmax)给出 recurrence，
-`projects/transformers-basics/online_softmax_demo.py` 会逐块与 dense reference 对账。这个 NumPy 实验没有执行
-CUDA kernel，也没有测 HBM 流量。部署时要记录实际 backend，并检查 head dim、dtype、mask、GQA、RoPE
-与硬件是否走到了预期 kernel，而不是只看“开关已启用”。
+[数学基础](../foundations/math.md#attention-storage-online-softmax)给出递推公式，
+`projects/transformers-basics/online_softmax_demo.py` 会逐块与 dense reference 对账。这项 NumPy 实验只验证代数，
+执行范围不包含 CUDA kernel 和 HBM 流量测量。
+
+部署时应记录实际使用的计算后端，并确认 head dimension、数值类型、mask、GQA、RoPE 和硬件组合确实选择了预期
+kernel。配置中出现一个启用开关，并不能证明运行时没有回退。
 
 ## 11. 架构类型
 
@@ -265,7 +320,14 @@ CUDA kernel，也没有测 HBM 流量。部署时要记录实际 backend，并�
 - Encoder-decoder：encoder 双向处理 source，decoder 通过 causal self-attention 与 cross-attention 条件生成；
 - 稀疏/线性 attention、SSM、卷积或混合架构：改变信息混合、状态与硬件权衡，不能只按渐近复杂度判断真实速度或质量。
 
-“Transformer”不是一个固定 config。Norm 类型/位置、position method、head grouping、MLP、bias、parallel residual、sliding window、logit scaling 与 weight tying 都可能变化。
+“Transformer”代表一类架构，不是一份固定配置。阅读具体模型时，至少确认下面四组选择：
+
+- 归一化：类型、放在子层之前还是之后；
+- Attention：位置编码、head 分组和滑动窗口；
+- Block：MLP 形式、bias 与并行残差；
+- 输出：logit 缩放与输入输出权重共享。
+
+加载 checkpoint 前，应从 config 和模型代码确认这些选择。
 
 ## 12. 常见错误定位
 
