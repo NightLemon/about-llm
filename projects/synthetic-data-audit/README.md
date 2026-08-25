@@ -1,42 +1,20 @@
-# 合成数据离线审计
+# 合成数据审计：四条候选为什么只剩一条新内容
 
-这个项目把 synthetic candidate 进入训练前最容易混淆的五件事拆开：
+这个项目检查 synthetic data 在进入训练前发生了什么。固定样例有 4 条候选，其中 2 条通过必要的 verifier，
+但这两条正文完全相同。因此最重要的结果不是一个笼统的“通过率”，而是三个不同分母：
 
-1. lineage 是否可解析；
-2. required verifier 是否存在并通过；
-3. generator/verifier revision 是否重叠；
-4. exact content identity 与 eligible unique 分母；
-5. target mixture expectation 与实际训练 exposure。
+```text
+4 candidates → 2 eligible → 1 eligible unique content
+```
 
-它不调用 teacher/student、judge API 或训练程序。当前交付是 `about-llm.synthetic-data-audit.v2` CPU 离线审计器：
-解析时拒绝重复字段、非法数值和未知字段，随后执行确定性审计、绑定输入 bytes 与外部 policy、生成
-self-fingerprint，并可从 caller-supplied 输入完整复算。
+第一次学习时，先预测每条记录会落入哪个集合，再复算仓库已经录制的报告。完整的 lineage、去重、mixture 公式和
+威胁边界见 [Synthetic Data Audit 教学页](../../docs/practice/projects/synthetic-data-audit.md)。
 
-## 最短运行
+## 第一次运行
 
-~~~powershell
-python -m about_llm.synthetic_data_cli `
-  --records projects/synthetic-data-audit/records.example.jsonl `
-  --required-verifier schema `
-  --required-verifier grounding `
-  --known-parent-id real-anchor-001 `
-  --mixture projects/synthetic-data-audit/mixture.example.json `
-  --output artifacts/synthetic-data/audit.json
-~~~
+从仓库根目录复核固定报告：
 
-`--output` 默认 exclusive-create，防止无意覆盖旧证据。确需替换时显式传 `--overwrite`。写入路径会执行 file `fsync`；这仍不等于 directory entry durable、断电原子发布或可信存储。
-
-安装包后也可使用：
-
-~~~powershell
-about-llm-synthetic-audit --help
-~~~
-
-## 完整本地复算
-
-不要只读报告里的 `report_fingerprint`。用同一份 caller-supplied records、mixture 和 policy 重建全部字段：
-
-~~~powershell
+```powershell
 python -m about_llm.synthetic_data_cli `
   --records projects/synthetic-data-audit/records.example.jsonl `
   --required-verifier schema `
@@ -44,266 +22,172 @@ python -m about_llm.synthetic_data_cli `
   --known-parent-id real-anchor-001 `
   --mixture projects/synthetic-data-audit/mixture.example.json `
   --verify-report projects/synthetic-data-audit/audit.example.json
-~~~
+```
 
-成功输出：
+成功时会输出：
 
-~~~json
+```json
 {
   "report_fingerprint": "sha256:202d8db97b704c5542e8516c5bd0c945da1c1022100f6ecbfb828f2d2bb6f4cd",
   "schema_version": "about-llm.synthetic-data-audit.v2",
   "verification_scope": "full_local_recomputation",
   "verified": true
 }
-~~~
+```
 
-Verifier 不只是“检查 self-hash”，而是：
+`verified=true` 表示程序用命令行提供的 records、mixture 和 policy 重新执行了全部计算，并与录制报告逐字段一致。
+它不是只拿报告中的 hash 再验同一份报告。
 
-- 按同样规则解析现有 report；
-- 重新读取 caller 指定的 records/mixture；
-- 用 caller 指定的 required verifiers、known parents 和 fingerprint profile 重跑审计；
-- 重算输入 size/SHA-256、audit、mixture、scope 与 report fingerprint；
-- 对 canonical JSON 做完整相等比较。
+## 先预测四条记录
 
-所以攻击者即使同时篡改 `eligible_count` 并重算无密钥 self-hash，仍无法通过原输入与 policy 的 full-local-recomputation。反过来，如果 caller 也把输入/policy 换成攻击者版本，unkeyed hash 不能提供来源认证；可信 policy head、签名或受控发布渠道仍在项目范围外。
+| Record | 必要验证 | 其他信息 | 预期结果 |
+|---|---|---|---|
+| `syn-001` | Schema、grounding 均通过 | 人工复核标记为 true | Eligible |
+| `syn-002` | Schema、grounding 均通过 | 正文与 `syn-001` 相同；grounding revision 与 generator 相同 | Eligible，但不增加 unique content |
+| `syn-003` | 缺少 grounding | 第一轮候选 | Missing verifier，不 eligible |
+| `syn-004` | Grounding 明确失败 | Parent 是 `syn-001` | Failed verifier，不 eligible |
 
-## 本例使用的固定输入
+打开报告后，先检查这些字段：
 
-`records.example.jsonl` 有四条 candidates：
+```text
+audit.candidate_count                 = 4
+audit.eligible_count                  = 2
+audit.eligible_unique_content_count   = 1
+audit.self_verified_record_ids        = ["syn-002"]
+audit.missing_verifier_record_ids     = ["syn-003"]
+audit.failed_verifier_record_ids      = ["syn-004"]
+```
 
-| ID | Round | Parent | Required verifier | 其他 finding |
-|---|---:|---|---|---|
-| `syn-001` | 1 | external real anchor | schema pass、grounding pass | human reviewed |
-| `syn-002` | 1 | external real anchor | schema pass、grounding pass | 与 `syn-001` byte-exact duplicate；grounding revision 与 generator 相同 |
-| `syn-003` | 1 | external real anchor | schema pass、grounding missing | 不 eligible |
-| `syn-004` | 2 | `syn-001` | schema pass、grounding fail | 不 eligible |
+`self_verified_record_ids` 只表示 generator revision 与某个 verifier revision 字符串相同。它提醒你进一步调查独立性，
+并不能证明两个调用真的来自同一个进程或同一份权重。
 
-`mixture.example.json` 声明 2,000,000 total consumed tokens：
+## 生成自己的报告
 
-- real anchor：800,000 unique tokens，weight 3；
-- synthetic round 1：100,000 unique tokens，weight 1。
+```powershell
+python -m about_llm.synthetic_data_cli `
+  --records projects/synthetic-data-audit/records.example.jsonl `
+  --required-verifier schema `
+  --required-verifier grounding `
+  --known-parent-id real-anchor-001 `
+  --mixture projects/synthetic-data-audit/mixture.example.json `
+  --output artifacts/synthetic-data/audit.json
+```
 
-固定报告 `audit.example.json` 绑定：
+`--output` 默认不会覆盖已有文件。目标存在时，先比较旧报告；确实要替换才显式传入 `--overwrite`。
+安装仓库后也可以运行 `about-llm-synthetic-audit --help` 查看全部参数。
 
-| Artifact | Size | SHA-256 |
-|---|---:|---|
-| records JSONL | 1,457 bytes | `7b1fe328…8d8530` |
-| mixture JSON | 341 bytes | `4bef57e8…669bc0` |
-| report | schema v2 | `202d8db9…bb6f4cd` |
+## 一份报告包含什么
 
-固定审计结果：
+| 顶层字段 | 你要从中确认什么 |
+|---|---|
+| `inputs` | Records 与 mixture 的精确字节数和 SHA-256 |
+| `policy` | Required verifiers、known parents 与 fingerprint profile |
+| `audit` | Eligible、missing、failed、lineage、duplicate 与 round 账本 |
+| `mixture` | 目标采样比例、预计消费 token 和预计重复次数 |
+| `scope` | 这次实际运行和没有运行的能力 |
+| `evidence_boundary` | 报告可以支持到哪一步 |
+| `report_fingerprint` | 除本字段外整个 canonical payload 的 SHA-256 |
 
-- `candidate_count=4`；
-- `eligible_count=2`，eligibility rate 0.5；
-- `eligible_unique_content_count=1`；
-- self/revision-overlap record：`syn-002`；
-- missing required verifier：`syn-003`；
-- failed required verifier：`syn-004`；
-- round 1 为 3 candidates / 2 eligible；
-- round 2 为 1 candidate / 0 eligible；
-- unresolved parent、nonmonotonic parent 和 lineage cycle 都为空。
+输入的换行或 JSON 格式只要改变，bytes identity 就会变化。审计结果可能仍然相同，但旧报告应当验证失败，因为它绑定的
+已经不是同一个输入 artifact。
 
-## Record contract
+## 为什么 2 eligible 只剩 1 unique
 
-每个 JSONL object 必须恰好使用以下字段：
+Eligibility 只看命令行指定的 required verifiers 是否存在并通过。`syn-001` 和 `syn-002` 都满足这个规则，
+所以分母仍然是 2。
 
-~~~json
-{
-  "record_id": "syn-001",
-  "content": "候选文本",
-  "parent_ids": ["real-anchor-001"],
-  "generator_revision": "teacher@v1",
-  "prompt_revision": "expand@v3",
-  "generation_round": 1,
-  "verifications": [
-    {
-      "verifier_id": "schema",
-      "revision": "schema-rules@v2",
-      "passed": true
-    }
-  ],
-  "human_reviewed": false
-}
-~~~
+默认的 `byte_exact` profile 会直接对正文的 UTF-8 字节求 SHA-256。两条记录正文相同，因此只算一份独立内容。
+审计器会报告重复组，同时保留两条原始记录。最终保留哪一条，还要结合来源、许可、时间、人工复核和数据切分策略。
 
-`human_reviewed` 可省略，默认 false；其他字段必需。遇到下列输入时，Loader 会在审计开始前停止：
+对于明确允许空白归一化的普通文本，可以改用：
 
-- 拒绝 duplicate JSON keys、`NaN`/`Infinity`、invalid UTF-8；
-- 拒绝 missing/unknown record、verification、mixture/component fields；
-- `passed` 与 `human_reviewed` 必须是 JSON boolean，整数 0/1 不可冒充；
-- `generation_round` 与 token budget 不接受 boolean；
-- record ID、parent ID、revision、content 必须非空；
-- parent IDs、verifier IDs、record IDs、known parent IDs 必须各自唯一；
-- record 不可把自己列为 parent；
-- input 有显式 byte cap。
-
-严格 schema 只解决解析歧义，不证明字段值真实。
-
-## Lineage graph
-
-内部 parent 是同一 input 中的 `record_id`；external parent 只有在 caller 通过 `--known-parent-id` 明确声明时才算 resolved。未知 parent 保存在 `unresolved_parent_pairs`，不会被静默当作真实锚点。
-
-对内部边 \(p\rightarrow c\)，期望：
-
-\[
-round(c)>round(p).
-\]
-
-违反项进入 `nonmonotonic_parent_pairs`。DFS 还单独报告真正处于环中的 `lineage_cycle_record_ids`，不会把仅指向环的后代误标成环成员。
-
-这两类 finding 与 unresolved lineage 当前都不自动改变 verifier eligibility。原因是报告需要分开呈现“声明的质量 gate”与“来源治理 gate”，避免一个布尔值吞掉失败原因。生产 publication policy 应显式决定：
-
-- unresolved/cycle/nonmonotonic 是否一票否决；
-- external parent registry 如何认证；
-- 删除 parent 时如何传播到派生数据、shard 与 checkpoint；
-- 多 source parent 的 round 和许可如何合并。
-
-## Required verifier gate
-
-令 required verifier 集合为 \(V\)，record \(x\) 的结果为 \(r_v(x)\)。当前 eligibility 定义为：
-
-\[
-eligible(x)=
-\bigwedge_{v\in V}
-\left[present(v,x)\land passed(v,x)\right].
-\]
-
-“missing”和“present but failed”分别进入不同列表。额外 verifier 不参与该 policy，但仍保留在 record 中。
-
-若任一 verifier 的 exact `revision` 等于 `generator_revision`，record 会进入 `self_verified_record_ids`。这个字段准确含义只是 **revision string overlap**：
-
-- 它不能证明同一进程或同一权重真的生成并验证；
-- 没有 overlap 也不能证明 judge 独立；
-- 不同 revision 仍可能同模型族、同训练数据或同偏差；
-- verifier pass 不等于 calibration、事实正确或不可被 reward hacking。
-
-`human_reviewed_count` 也只是 authored boolean 计数，不认证 reviewer、rubric、盲评或一致性。
-
-## Exact identity 与双分母
-
-默认 `byte_exact`：
-
-\[
-id(x)=SHA256(UTF8(content_x)).
-\]
-
-任何空白或 Unicode 表示差异都会产生新 identity。可显式选择 `nfc_whitespace`：
-
-1. Unicode NFC；
-2. 按 Unicode whitespace split；
-3. 用单个 ASCII space join；
-4. 对 UTF-8 bytes 求 SHA-256。
-
-~~~powershell
+```powershell
 python -m about_llm.synthetic_data_cli `
   --records projects/synthetic-data-audit/records.example.jsonl `
   --required-verifier schema `
   --required-verifier grounding `
   --known-parent-id real-anchor-001 `
   --fingerprint-profile nfc_whitespace
-~~~
+```
 
-该 profile 只适用于明确允许归一化的 prose。代码缩进、Markdown 表格、YAML、格式遵循任务可能因 whitespace folding 改变语义。
+这个 profile 会做 Unicode NFC 和空白折叠。代码、YAML、Markdown 表格或格式遵循任务中的空白可能承载语义，
+所以不适合使用这套归一化。
 
-Duplicate finding 不自动删除记录，也不从 `eligible_count` 隐藏：
+两种 profile 都只能发现内容相同的记录。语义近重复和数据泄漏仍需要单独检测。
 
-- candidate 分母回答“多少条进入 audit”；
-- eligible 分母回答“多少条通过声明 gate”；
-- eligible unique 回答“通过项中有多少 exact identity”。
+## Lineage 为什么单独记账
 
-保留哪条 duplicate 还取决于 parent、许可、时间、review、split 和 canonical-selection policy。本项目没有 embedding/MinHash/语义 near-duplicate detector，也不证明 train/held-out 无 paraphrase 污染。
+Parent 可以来自当前输入中的另一条记录，也可以是命令行明确声明的外部锚点。未解析的 parent、generation round 倒退和
+cycle 会分别写入报告。
 
-## Mixture 与重复暴露
+这些 finding 当前不会修改 verifier eligibility。这样你能看见“质量验证通过”和“来源治理失败”是两个问题。
+生产发布策略通常会把严重 lineage 问题作为单独的拒绝条件，而不是继续复用一个含义模糊的 `eligible` 布尔值。
 
-对 component \(i\)，relative weight \(w_i\) 先归一化：
+## Mixture 的 3:1 到底表示什么
 
-\[
-p_i=\frac{w_i}{\sum_jw_j}.
-\]
+固定样例计划消费 2,000,000 tokens。Real 与 synthetic 的相对权重为 3:1，因此目标比例是 0.75 和 0.25：
 
-给定 total consumed-token budget \(D\) 与 unique tokens \(n_i\)：
+| Component | Expected consumed | Unique tokens | Expected repetition |
+|---|---:|---:|---:|
+| Real anchor | 1,500,000 | 800,000 | 1.875 |
+| Synthetic round 1 | 500,000 | 100,000 | 5.0 |
 
-\[
-E[C_i]=Dp_i,\qquad
-E[repeat_i]=\frac{Dp_i}{n_i}.
-\]
+按照这份采样计划，每个合成数据 token 平均会被消费 5 次。这不是训练过程的实际读取次数。动态过滤、worker 偏差、
+读取失败、checkpoint 恢复和提前停止都可能改变结果，真实训练需要另建 token 消费账本。
 
-固定样例得到：
+## 为什么完整复算比 self-hash 更强
 
-| Component | Fraction | Expected consumed | Unique | Expected repetition |
-|---|---:|---:|---:|---:|
-| real | 0.75 | 1,500,000 | 800,000 | 1.875 |
-| synthetic r1 | 0.25 | 500,000 | 100,000 | 5.0 |
+攻击者可以修改 `eligible_count`，再为篡改后的报告计算一条新的无密钥 hash。只检查 self-hash 时，这份报告仍然自洽。
 
-Weight 3:1 是相对权重，不可直接把 `weight*D` 当 token 数。Synthetic component 必须声明正 generation round，real component 反而禁止声明 generation round。
+`--verify-report` 会重新读取调用方指定的输入和 policy，从头生成预期报告，所以这种协同重哈希无法匹配原始输入。
+但如果调用方同时接受了攻击者替换的 records、policy 和报告，无密钥 SHA-256 仍然无法认证发布者；这需要签名、MAC
+或受控发布渠道解决。
 
-这些都是 target sampler expectation。Packing、动态过滤、worker skew、读取失败、curriculum、sample replacement、checkpoint resume 与 early stop 会改变实际 exposure。生产必须另建 observed-token ledger，按 component/round/source/split 记录 committed tokens，并与 target expectation 分账。
+## 主要文件
 
-## Artifact threat model
+| 文件 | 用途 |
+|---|---|
+| `records.example.jsonl` | 四条固定候选及其 lineage、generator 与 verifier 信息 |
+| `mixture.example.json` | Real/synthetic 目标采样权重与 token 预算 |
+| `audit.example.json` | 可以完整复算的 v2 录制报告 |
+| [`synthetic_data.py`](../../src/about_llm/synthetic_data.py) | Lineage、verifier gate、identity 与 mixture 核心计算 |
+| [`synthetic_data_cli.py`](../../src/about_llm/synthetic_data_cli.py) | 无歧义 JSON loader、artifact 与 CLI |
+| [教学页](../../docs/practice/projects/synthetic-data-audit.md) | 逐步解释公式、失败实验与生产扩展 |
 
-V2 artifact 绑定：
+## 常见故障
 
-- exact records/mixture byte size 与 SHA-256；
-- required verifier、known parent 和 fingerprint profile；
-- 三个 finding 不影响 verifier eligibility 的 policy flags；
-- 全部 audit/mixture 数值；
-- 机器 scope 与 evidence boundary；
-- canonical report fingerprint。
+| 现象 | 先检查什么 |
+|---|---|
+| 报告一开始就无法解析 | Duplicate key、NaN/Infinity、unknown field、UTF-8 与 boolean 类型 |
+| `candidate_count` 不符合预期 | JSONL 是否多行、少行，record ID 是否重复 |
+| Eligible 数量不对 | Required verifier 名称、missing 与 failed 列表 |
+| Unique 数量不对 | Fingerprint profile、正文空白与 Unicode 表示 |
+| Lineage 出现 unresolved | `--known-parent-id`、parent 拼写和输入中是否存在对应 record |
+| Mixture 数字放大数倍 | 是否先归一化 relative weights，再乘总 token budget |
+| `full local recomputation` 失败 | 先比输入 bytes，再比 policy、audit、mixture，最后看 report fingerprint |
+| 输出文件已存在 | 比较旧报告；确认替换后再使用 `--overwrite` |
 
-它防止 accidental drift，并在 caller 保持可信输入/policy 时拒绝协同重哈希的结果篡改。它没有：
+## 运行专项测试
 
-- MAC/signature、publisher identity 或可信 timestamp；
-- directory `fsync`、atomic rename 或 crash injection；
-- verify 后交给另一个 consumer 的 verify-use TOCTOU 防护；
-- 远程 object-store generation/lease；
-- secret/PII/license scan；
-- raw generator/verifier response 与计费；
-- teacher/student execution、training 或质量评测。
-
-## 测试与故意失败
-
-~~~powershell
+```powershell
 python -m pytest `
   tests/test_synthetic_data.py `
   tests/test_synthetic_data_cli.py -q
-~~~
 
-当前 40 个测试覆盖：
+python scripts/check_docs.py
+python scripts/check_content_accuracy.py
+```
 
-- eligible / missing / failed 分账；
-- generator-verifier exact revision overlap；
-- external/internal/unresolved parent；
-- cycle 与 nonmonotonic generation round；
-- byte-exact 与 NFC/whitespace identity；
-- duplicate 不从 eligibility 分母消失；
-- normalized mixture 与 repetition；
-- duplicate/non-finite/unknown JSON；
-- untyped boolean/enum、重复 ID、非法 weight/budget；
-- report round trip、input byte drift、cooperative rehash；
-- output exclusive-create 与显式 overwrite。
+当前 40 个测试覆盖三个分母、版本重叠、lineage graph、两种内容指纹规则、mixture 公式和 JSON 解析，
+也会故意制造输入漂移、协同重哈希和输出文件冲突。
 
-重点反例：
+## 这个项目还没有做什么
 
-~~~powershell
-python -m pytest `
-  tests/test_synthetic_data.py::test_audit_reports_cycles_and_nonmonotonic_parent_rounds `
-  tests/test_synthetic_data_cli.py::test_report_verifier_rejects_cooperative_rehash `
-  tests/test_synthetic_data_cli.py::test_report_verifier_binds_exact_input_bytes `
-  tests/test_synthetic_data_cli.py::test_output_is_exclusive_create_unless_overwrite_is_explicit `
-  -q
-~~~
+当前实现只在 CPU 上离线读取本仓库准备的输入。接入生产流水线时，还要补充：
 
-## 接入真实流水线
+- Teacher、student 和 verifier model 的原始请求与响应；
+- 模型、Prompt、许可和隐私检查记录；
+- Verifier calibration、语义近重复和保留集污染评测；
+- 实际 token 消费，以及跨代数据集、模型和评测 manifest。
 
-至少再补：
-
-- raw teacher request/response、sampling、seed、时间、cost 与 provider/model revision；
-- prompt/template/tool schema 的 immutable bytes；
-- source license、consent、PII/secret 与 deletion policy；
-- verifier input/output、infra failure、calibration slice 和人工 adjudication；
-- semantic near-duplicate、cluster 与 group-aware split；
-- real-only untouched holdout；
-- target/observed sampler ledger 和 resume state；
-- 每代 dataset/model/eval manifest、rollback 与 stop rule。
-
-Eligibility 不等于高质量可用数据；exact unique 不等于语义多样性；target mixture 不等于 observed exposure；full local recomputation 不等于 provenance authentication。
+因此 `eligible` 只表示声明的 verifier gate 通过；它不等于事实正确、高质量、语义多样或适合直接发布。
