@@ -319,6 +319,9 @@ python projects/evaluation-gate/holm_correction_toy.py
 python projects/evaluation-gate/sequential_peeking_toy.py
 ```
 
+`paired_randomization_toy.py` 先对同一组五条差值 `[1,1,1,1,0]` 做配对 bootstrap，再完整枚举 16 种符号翻转。
+这样可以直接比较平均差、区间、单侧与双侧 p-value，而不是把它们当成互不相干的数字。
+
 这些脚本只检查公式和假设，不会自动改变前面的发布决定。如果生产门禁采用其中一种方法，版本化工件还要记录：
 一起检验的假设集合、查看中间结果的时间表、原始与校正后的 p-value，以及预先设定的效应门槛。
 

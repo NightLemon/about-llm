@@ -135,7 +135,7 @@ Schema-valid 的 JSON 仍可能写错值；引用 span 完全匹配也可能与 
 | Calibration、Brier、NLL 与 ECE | `evaluation.cli calibrate` |
 | Reliability、validity 与 power 的反例 | `measurement_toy.py` |
 | 同一用户多条 case 怎样重采样 | `clustered_bootstrap_toy.py` 与 cluster compare |
-| Paired randomization 与 sign-flip | `paired_randomization_toy.py`、`clustered_randomization_toy.py` |
+| 同一组配对差值的 bootstrap 与 sign-flip | `paired_randomization_toy.py`、`clustered_randomization_toy.py` |
 | Multiple testing 怎样控制 family-wise error | `holm_correction_toy.py` |
 | 反复偷看结果为什么膨胀假阳性 | `sequential_peeking_toy.py` |
 | 发布历史怎样形成认证链 | `authenticated_release_ledger_toy.py` |

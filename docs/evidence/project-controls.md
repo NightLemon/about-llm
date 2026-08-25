@@ -152,7 +152,18 @@ Target-Qwen recorded control 则是另一条独立证据：固定同一 7-file/9
 
 完成任一路径时，交付物不应只有终端截图。至少保存环境与命令、原始机器输出、一个故意失败的反例、通过/失败判断，以及不超过五行的结论边界。
 
-`evaluation-gate` 另有 `clustered_bootstrap_toy.py`：枚举完整 cluster resample，并区分 case-weighted ratio 与 equal-cluster mean。`paired_randomization_toy.py` exact 枚举非零 paired differences 的 sign assignment；`clustered_randomization_toy.py` 对同 cluster 的 case 联合翻转；`holm_correction_toy.py` 固定 rank multiplier、running maximum 与 input-order remap；`sequential_peeking_toy.py` 用 exact dynamic program 将五次 naive 0.05 peeking 的总体假阳性算为约 0.1010，并与预设 Bonferroni split 的约 0.0152 对照。它们不建立真实 sampling/exchangeability/cluster/family/sequential 设计，也不证明 coverage、因果、effect importance 或模型质量。
+`evaluation-gate` 还提供五个可以手算的小程序：
+
+- `clustered_bootstrap_toy.py` 枚举全部 cluster 重采样，区分请求等权与 cluster 等权。
+- `paired_randomization_toy.py` 对差值 `[1,1,1,1,0]` 做配对 bootstrap，得到均值 `0.8` 和区间 `[0.4,1.0]`；
+  随后枚举 16 种非零差值符号分配，得到单侧/双侧 p-value `0.0625/0.125`。
+- `clustered_randomization_toy.py` 将同一 cluster 的 case 一起翻转。
+- `holm_correction_toy.py` 固定排序、逐步乘数、单调校正和原顺序映射。
+- `sequential_peeking_toy.py` 精确计算五次固定 0.05 偷看的总体假阳性率约为 0.1010；
+  预设 Bonferroni 分配的对照约为 0.0152。
+
+这些程序验证固定输入下的计算，没有建立真实数据所需的抽样代表性、可交换性、聚类、多重比较族或序贯设计，
+也无法据此推出因果影响、效应是否值得发布或模型总体质量。
 
 `authenticated_release_ledger_toy.py` 则把两份 run manifest 与 comparison 的当前 bytes 纳入三条 HMAC chain，并在末条轮换 fixture key。它把 chain authentication、artifact rehash 和外部 trusted-head match 分开报告：缺 trusted head 时无法发现合法前缀截断。公开 key、caller timestamp 与 exclusive-create/file-fsync 分别不证明 key custody、真实时间、不可否认性或目录原子发布。
 

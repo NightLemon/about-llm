@@ -45,6 +45,20 @@ def test_paired_bootstrap_is_reproducible_and_detects_improvement() -> None:
     assert first.probability_of_improvement > 0.99
 
 
+def test_documented_five_case_bootstrap_trace_stays_reproducible() -> None:
+    result = paired_bootstrap(
+        baseline=[0, 0, 0, 0, 1],
+        candidate=[1, 1, 1, 1, 1],
+        samples=10_000,
+        seed=7,
+    )
+
+    assert result.mean_difference == pytest.approx(0.8)
+    assert result.confidence_low == pytest.approx(0.4)
+    assert result.confidence_high == pytest.approx(1.0)
+    assert result.probability_of_improvement == pytest.approx(0.9995)
+
+
 def test_release_gate_reports_every_failed_constraint() -> None:
     quality = paired_bootstrap([1, 0, 1, 0], [1, 0, 1, 0], samples=500)
     gate = ReleaseGate(
