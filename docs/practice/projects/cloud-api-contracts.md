@@ -1,39 +1,103 @@
-# Cloud API Contracts：一次请求怎样安全重试、计费和收尾
+# Cloud API Contracts：失败以后，能不能再试一次？
 
 **项目导航**：[项目索引](../project-index.md) · [云 API 契约](../../models/cloud-api-contracts.md) ·
 [服务请求生命周期](../../systems/serving.md) · [实验 0C](../labs/lab-0c-cloud-budget.md) ·
 [实验 0D](../labs/lab-0d-reasoning-artifact-security.md)
 { .doc-nav }
 
-假设应用调用云模型生成一段客服回复。SSE 已经返回半句话，连接突然中断。此时有三个不能靠猜的问题：
+假设应用调用云模型生成客服回复。第一次请求得到 HTTP 500，重试后第二次成功。用户最终只看到一条回答，但系统需要回答：
 
-1. 用户到底收到了多少内容，响应能否算完成？
-2. Provider 是否继续生成或计费？
-3. 客户端能否自动重试，还是会产生第二次生成和第二笔费用？
+- 第一次请求是否已经消耗 token 或产生费用？
+- 为什么第二次发送前还要重新预留预算？
+- 如果第一次不是 500，而是已经交付半段 SSE 后断线，还能照样重试吗？
 
-这个项目不会访问真实 Provider。它用本仓库准备的 JSON 与 SSE 样例、MockTransport 和 SQLite，
-让你在离线环境观察解析、重试、计费和恢复。只有调用者明确选择后，程序才允许联网或产生费用。
+这个项目用本地固定响应、`httpx.MockTransport` 和 SQLite 重现这些边界。默认命令不会访问真实 Provider；联网和产生费用
+必须由调用者另外启用。
 
-## 一次逻辑调用的状态账本
+## 先跟完一次有重试的调用 { #run }
 
-```mermaid
-flowchart LR
-  P["target preflight"] --> R["reserve attempt 1"]
-  R --> H["HTTP / SSE attempt"]
-  H -->|"证明未发送"| C["cancel reservation"]
-  H -->|"完整 usage"| S["settle actual usage"]
-  H -->|"已发送但结果未知"| U["uncertain full reservation"]
-  C --> D{"retry policy"}
-  U --> D
-  D -->|"safe + budget remains"| R2["reserve attempt 2"]
-  D -->|"stop"| X["reconcile / report"]
-  S --> X
+每次运行使用一个新的数据库文件：
+
+```powershell
+python projects/cloud-api-contracts/budgeted_retry_demo.py `
+  --database artifacts/cloud-api/first-budgeted-retry.sqlite
 ```
 
-每个 attempt 有独立 reservation ID。Attempt 1 必须先变成 `cancelled`、`settled` 或 `uncertain`，才能 sleep
-并开始 attempt 2。进程崩溃留下的 active reservation 默认继续占额度，因为崩溃不能证明请求没有发送。
+脚本模拟一次逻辑调用。输入估算为 60 tokens，请求最多生成 10 tokens，每次发送前最多预留 80 micro-USD。
 
-## 第一步：统一业务对象，不抹平 Provider 差异 { #run }
+```mermaid
+flowchart TD
+  P["检查目标 URL 和请求"] --> R1["Attempt 1<br/>预留 80"]
+  R1 --> H1["收到 HTTP 500<br/>request ID = fixture-attempt-1"]
+  H1 --> U["usage 缺失<br/>保守记为 uncertain 80"]
+  U --> D["重试策略允许再次发送"]
+  D --> R2["Attempt 2<br/>重新预留 80"]
+  R2 --> H2["收到 HTTP 200<br/>usage = 58 input + 4 output"]
+  H2 --> S["按实际用量结算 66"]
+  S --> F["返回 fixture answer<br/>账本累计 146"]
+```
+
+输出中最值得对照的是：
+
+| 记录 | Attempt 1 | Attempt 2 |
+|---|---:|---:|
+| Reservation ID | `logical-call:attempt:1` | `logical-call:attempt:2` |
+| HTTP 状态 | 500 | 200 |
+| 是否允许继续 | 是，`retryable_status` | 已成功，无需重试 |
+| 账本终态 | `uncertain` | `settled` |
+| 本地估算费用 | 80 | 66 |
+
+因此最终账本累计为 `80 + 66 = 146` micro-USD。第一次返回的是可重试状态码，同时缺少完整 usage。Provider 的最终
+计费尚未确定，账本便保守保留 80 的最大估值。
+
+这揭示了三个不同问题：
+
+| 决策 | 它在问什么 |
+|---|---|
+| API 结果 | 这次请求是否得到完整、可用的响应？ |
+| Retry policy | 在当前 deadline、次数和重放语义下，能否再发送一次？ |
+| Budget reconciliation | 上一次发送最终消耗了多少 token 和费用？ |
+
+HTTP 500 可以允许重试，同时让费用保持 `uncertain`。这两个状态并不矛盾。
+
+## 一次逻辑调用为什么包含多个 attempt
+
+“用户点了一次发送”是逻辑调用；每次真正经过网络的请求是一个 attempt。两者不能共用一条费用记录：
+
+```text
+logical call
+├── attempt 1: reserve → send → 500 → uncertain
+└── attempt 2: reserve → send → 200 → settle
+```
+
+Attempt 1 必须先进入 `cancelled`、`settled` 或 `uncertain`，Attempt 2 才能占用新预算。否则，内部重试两次却只记一次
+最大费用，会让预算门禁在最需要保护时失效。
+
+进程如果在发送后、写入终态前崩溃，SQLite 中会留下 `active` reservation。它继续占额度，因为“进程已经退出”无法
+证明请求没有到达 Provider。
+
+## 发送以前，先固定请求身份
+
+在占用预算之前，程序先检查目标地址和请求对象。`RequestSpec` 会复制调用方传入的 body 与 headers，随后创建稳定的
+请求 fingerprint。这样，调用方稍后修改原字典，不会悄悄改变已经记录的请求。
+
+边界检查包括：
+
+- 目标 origin 必须精确匹配允许列表；
+- 默认只允许 HTTPS，并关闭重定向；
+- URL 不接受 query、userinfo 和 fragment；
+- Header 名不能重复，credential 写入日志前替换为 `<redacted>`；
+- JSON 不接受重复字段、`NaN`、`Infinity`、顶层数组和未知 Content-Type；
+- 单次请求超时与整个逻辑调用的 deadline 分开记录。
+
+非法目标会在 reservation 之前停止，因此不会留下占用预算的记录。
+
+非流式 `max_response_bytes` 需要特别理解：当前实现先缓冲 body，再检查大小。它限制解析器接受的结果，却不是网络下载
+过程的内存上限。真正的下载上限需要逐块读取、累计字节，并在超限时关闭响应。
+
+## Provider adapter 统一什么，保留什么
+
+先运行三种文本协议的本地映射：
 
 ```powershell
 python -m about_llm.integrations.cloud_api_cli verify `
@@ -41,193 +105,151 @@ python -m about_llm.integrations.cloud_api_cli verify `
   --output artifacts/cloud-api/contracts.json
 ```
 
-固定输入使用 `.invalid` 域名与假密钥，也不会导入 HTTP client。程序把三种协议映射到业务侧最小
-`ChatMessage/ChatResponse`：
+三个样例都问 “What is RAG?”；域名使用 `.invalid`，密钥也是虚构值。程序只把共同的文本对话语义映射成
+`ChatMessage` 与 `ChatResponse`：
 
-| Provider family | System 与 role | Response/usage/terminal 的主要位置 |
+| 协议 | System 放在哪里 | 文本、用量和结束原因在哪里 |
 |---|---|---|
-| OpenAI-compatible Chat | System 在 `messages` | `choices/message`、usage、finish reason |
-| Anthropic Messages | System 是顶层字段 | Content blocks、usage、stop reason |
-| Gemini `generateContent` | `user/model` roles、`systemInstruction` | Parts、`usageMetadata`、finish reason |
+| OpenAI-compatible Chat | `messages` | `choices/message`、usage、finish reason |
+| Anthropic Messages | 顶层 `system` | content blocks、usage、stop reason |
+| Gemini `generateContent` | `systemInstruction` | parts、`usageMetadata`、finish reason |
 
-统一对象只保留真正共享的业务语义。Tool-only、thinking、media 或无文本结果不会被悄悄 stringify；text-only adapter
-会明确失败。Gemini Interactions 与 `generateContent` 也是不同协议，不能仅因品牌相同就混用字段。
+共同对象适合表达“文本回答是什么、用了多少 token、为何结束”，不应伪装所有协议都相同。工具调用、reasoning、媒体、
+拒答或无文本结果需要各自的类型。只支持文本的 adapter 遇到这些对象时应明确失败。
 
-`RequestSpec` 会复制 body/headers，拒绝 duplicate header、non-finite number 和非 JSON value，并在日志中将 credential
-替换为 `<redacted>`。这个离线结果没有验证 DNS、TLS、认证、配额或真实 endpoint 行为。
+同一品牌也可能拥有不同协议。例如 Gemini Interactions 与 `generateContent` 的请求和事件结构不能混用。
 
-## 第二步：先决定这次失败能否重放
+## 什么失败允许重试
+
+运行九组固定决策：
 
 ```powershell
 python -m about_llm.integrations.cloud_api_cli retry-matrix `
   --output artifacts/cloud-api/retry-matrix.json
 ```
 
-Retry decision 同时使用：error category、`replay_safe`、`outcome_uncertain`、monotonic deadline、`Retry-After`、
-bounded exponential backoff 和 jitter。
+Retry policy 同时考虑已观察到的错误、请求能否重放、结果是否未知、当前 attempt、剩余时间和 `Retry-After`：
 
-| 观察 | 默认处理 |
+| 已观察到的情况 | 默认处理 |
 |---|---|
-| Pool/connect 明确未发送 | 在 deadline 内可按策略重试 |
-| 408/429/部分 5xx，且请求可重放 | 尊重 `Retry-After` 与 attempt cap |
-| Write/read/protocol timeout | Outcome uncertain，先停止并对账 |
-| 已交付 partial SSE | 不自动重放 |
-| 工具副作用或未知重放语义 | 不自动重放 |
-| Schema/认证/业务拒绝 | 修复请求，不做相同重试 |
+| Connect 或 pool failure，能证明尚未发送 | 在次数和 deadline 内重试 |
+| 408、429、500、502、503、504，且请求可重放 | 按 `Retry-After` 或本地退避重试 |
+| Write、read 或 protocol timeout | 结果可能已经发生，停止自动重放并对账 |
+| 已向用户交付部分 SSE | 保留部分输出，停止自动重放 |
+| 工具副作用或重放语义未知 | 停止自动重放 |
+| Schema、认证或业务拒绝 | 修改请求，不重复原调用 |
 
-教学 allowlist 是 `408/429/500/502/503/504`，不是“所有 4xx/5xx”。即使纯文本生成没有业务副作用，
-重复请求仍可能重复生成与计费；Provider 是否支持 idempotency key 必须按具体接口确认。
+允许列表不是“所有 4xx 和 5xx”。例如 400 与 501 在固定矩阵中都不重试；503 也会因为请求不可安全重放而停止。
 
-`Retry-After` 只接受非负 delta-seconds 或合法 HTTP-date。有效 header 覆盖本地 delay；若等待会越过 deadline，
-本次逻辑调用直接结束。
+`Retry-After` 只接受非负秒数或合法的 HTTP date。有效值优先于本地退避时间；如果等待会越过整体 deadline，本次逻辑
+调用直接结束。退避和 jitter 的作用是控制重试节奏，不能把不安全的请求变成可重放请求。
 
-## 第三步：把 JSON HTTP 边界做窄
+## 半截 SSE 为什么比 HTTP 500 更难处理
 
-`execute_json_request` 接收 caller-owned `httpx.AsyncClient`，并执行这些约束：
+一次网络 read 可能只包含半个 UTF-8 字符，也可能同时包含多个 SSE event。下面四种对象必须分开：
 
-- Origin 必须 exact allowlist match；默认 HTTPS，URL 不允许 query、userinfo 或 fragment；
-- Redirect 默认关闭；attempt timeout 与 overall deadline 分开；
-- 2xx body 必须是 object JSON；duplicate key、`NaN/Infinity`、错误 Content-Type 和顶层 array 都失败；
-- Trace 只保存相对时间、status、稳定错误类别、request ID 与 retry decision；
-- Cancellation 原样传播，不伪装成普通错误或 retry。
+```text
+网络 byte chunk ≠ SSE event ≠ 文本增量 ≠ 模型 token
+```
 
-非流式 `max_response_bytes` 在 body 已缓冲后才检查，因此只是 parser acceptance cap，不是下载过程的内存上限。
-真正限制 ingress 需要 streaming read、逐 chunk 计数并在超限时关闭 response。
+`SSEDecoder` 可以跨任意字节边界恢复 UTF-8，并处理 BOM、CR/LF/CRLF、comment、`event/data/id/retry` 和多行 data。
+只有空行结束事件；EOF 若留下半行或未完成事件，会返回明确错误。
 
-## 第四步：SSE chunk、token 与完成事件是三回事
+在 framing 之上，三种 Provider stream 仍有不同的完成信号：
 
-`SSEDecoder` 接收任意 byte chunks。一次网络 read 可能只有半个 UTF-8 character，也可能包含多个 SSE events；
-它从不假设“一 chunk = 一 token”。
+| 协议 | 需要跟踪的内容 |
+|---|---|
+| OpenAI-compatible Chat Completions | content delta、usage、finish reason、`[DONE]` |
+| Anthropic Messages | message/content-block 生命周期、usage、`message_stop` |
+| Gemini streaming | 单 candidate text parts、`usageMetadata`、finish reason |
 
-Decoder 处理 BOM、CR/LF/CRLF、comment、`event/data/id/retry`、多行 data 与资源上限。只有空行完成事件；
-EOF 若留下半行或未终止 event，会明确报错。
+Tool、拒答、reasoning、媒体和未知 block 不会被删除后冒充纯文本回答。
 
-`cloud_stream` 在 framing 之上分别实现：
+一旦 2xx stream 已经向上层交付部分文字，自动重试可能让用户看到重复开头，也可能产生第二笔生成费用。客户端关闭连接
+只证明本地资源已经释放，不能证明 Provider 停止 GPU 工作或计费。因此，这条路径进入 terminal failure 与费用对账。
 
-- OpenAI-compatible Chat Completions 的 content delta、usage、finish reason 与 `[DONE]`；
-- Anthropic message/content-block lifecycle、usage 与 `message_stop`；
-- Gemini 单 candidate text parts、`usageMetadata` 与 finish reason。
+## 预算为什么要先 reserve，再 settle
 
-Tool、refusal、thinking、media 或未知 block 会失败，不会被丢掉后把剩余文本冒充完整回答。
+`TokenPricingSnapshot` 由调用者根据具体 Provider、模型和版本人工核对。仓库不会按品牌名猜价格，也不会联网刷新单价。
 
-一旦 2xx stream 开始，partial failure 会关闭 response 并终止，不自动重放。客户端 close 只能证明本地资源释放，
-不能证明服务器停止 GPU 工作或停止计费。
-
-## 第五步：先 reserve 最大可能费用
-
-`TokenPricingSnapshot` 由调用者人工核对，记录 provider/model/revision、checked-at 以及 input/output 单价。
-仓库不会按品牌名猜价格，也不会联网刷新。
-
-运行预算 toy：
+运行最小预算例子：
 
 ```powershell
 python projects/cloud-api-contracts/usage_budget_toy.py
 ```
 
-一次 reservation 使用目标 tokenizer 的 input estimate 与请求中的最大 output cap。完成响应后：
+发送前，程序用目标 tokenizer 的输入估算和请求的最大输出上限预留费用。响应结束后按证据选择终态：
 
-| 结果 | Ledger 怎样记 |
+| 已经知道什么 | 账本怎样处理 |
 |---|---|
-| 能证明从未发送 | `cancel_before_send`，释放 reservation |
-| 返回完整非负 usage | 按 actual usage settle |
-| 已发送但 usage 缺失 | `usage_uncertain`，保守占满 reservation |
-| Parser 失败或取消 | 若已越过发送边界，同样 uncertain |
-| Actual 超过 hard limit | 先持久化已发生费用，再报告 post-call breach |
+| 能证明请求从未发送 | `cancel_before_send`，释放预留 |
+| 返回完整、非负的 usage | 按实际用量 settle |
+| 已发送但 usage 缺失 | `usage_uncertain`，保留最大估值 |
+| 解析失败或取消，且已越过发送边界 | 保守记为 uncertain |
+| Actual usage 超过 hard limit | 先记录已经发生的费用，再报告超限 |
 
-这些 micro-USD 是本地策略估值，不是发票。Hidden/reasoning tokens、cache tier、最低计费单位、税费和 tokenizer
-差异都可能让账单不同。
+示例中的 micro-USD 是本地策略估值，不是 Provider 发票。Reasoning tokens、cache 计价、最低计费单位、套餐、税费和
+tokenizer 差异都可能改变真实账单。
 
-## 第六步：让预算在重启后仍然存在
-
-每次 demo 使用新数据库路径：
+## 重启以后，旧 reservation 仍要有去处
 
 ```powershell
 python projects/cloud-api-contracts/sqlite_usage_budget_demo.py `
   --database artifacts/cloud-api/durable-budget.sqlite
 ```
 
-SQLite ledger 在事务中验证 config、创建 reservation 并追加 event。同一文件上的并发 writer 不能同时花掉最后一份
-本地 capacity。脚本 reopen 后，未终结 reservation 仍占额度，随后由 operator 标为 cancelled、settled 或 uncertain。
+SQLite 账本在一个事务中检查预算配置、创建 reservation 并追加事件。同一数据库上的并发 writer 不能同时花掉最后一份
+本地额度。重新打开文件以后，未终结的 reservation 仍然存在。
 
-Reservation 不按 TTL 自动释放。TTL 只说明“本地记录旧了”，没有证明 Provider 没收到请求。对账要结合 call ID、
-attempt trace、Provider usage/billing export 和 request ID。
+TTL 只能说明记录已经很旧，不能证明 Provider 没有收到请求，因此程序不会按 TTL 自动释放预算。Operator 需要结合：
 
-SQLite 解决单文件可达范围内的 quota atomicity，不提供跨区域 distributed quota，也无法和远端请求组成原子事务。
+- 逻辑调用与 attempt ID；
+- 本地请求 trace 和 Provider request ID；
+- Provider usage 或 billing export；
+- 业务系统实际状态。
 
-## 第七步：每次 retry 都要单独占预算
+对账后，记录才能进入 `cancelled`、`settled` 或 `uncertain`。SQLite 提供的是单文件范围内的本地原子性；跨区域配额以及
+本地记录与远端请求之间的一致性，需要另外设计。
 
-先看单 attempt wrapper：
+## OpenAI Responses 不能当成 Chat delta 解析
 
-```powershell
-python projects/cloud-api-contracts/budgeted_http_demo.py `
-  --database artifacts/cloud-api/budgeted-http.sqlite
-```
-
-Target preflight 在 reservation 前运行，因此非法 origin/URL 不留下 active record。只要收到 HTTP response，generic
-wrapper 就认为越过了“确定未发送”边界；2xx 且 parser/usage 完整时 settle，其余保守 uncertain。
-
-再看逐 attempt retry：
-
-```powershell
-python projects/cloud-api-contracts/budgeted_retry_demo.py `
-  --database artifacts/cloud-api/budgeted-retry.sqlite
-```
-
-逻辑调用为每次发送创建 `logical-call:attempt:N`。Attempt 1 必须 terminalize，Attempt 2 才能 reserve；若第二次
-reservation 过不了 hard gate，网络不会发送。Connect failure 可以释放“确定未发送”的 attempt，而 HTTP 500
-在通用 wrapper 中保守记 uncertain。
-
-这套设计防止“内部重试两次、预算只记一次”。Provider 执行后、SQLite terminal commit 前 crash 仍可能留下 active
-reservation，需要后续 reconciliation。
-
-## OpenAI Responses：Event graph 不是 text delta
-
-Responses API 使用 `response → output item → content part`，与 Chat Completions 的 `messages → choices` 不同。
-运行 reviewed replay：
+Responses API 的层次是 `response → output item → content part`，不同于 Chat Completions 的
+`messages → choices`。运行本地事件回放：
 
 ```powershell
 python projects/cloud-api-contracts/openai_responses_replay.py `
   --events projects/cloud-api-contracts/openai-responses-events.example.jsonl
 ```
 
-State machine 跟踪 response lifecycle、message text/refusal parts、function-call argument deltas、item completion、
-terminal output 与 usage。Function arguments 即使 JSON 解析失败也会保留原字符串，但标记
-`arguments_is_strict_object=false`，后续 Runtime 不得执行。
+状态机会分别跟踪响应、输出项、文字或拒答片段、函数参数增量、完成事件和 usage。函数参数解析失败时仍保留原字符串，
+同时写入 `arguments_is_strict_object=false`；下游 Runtime 不得执行这份参数。
 
-这条命令只读取本仓库准备的 SDK-shaped JSONL，没有运行 OpenAI SDK、HTTP 或远程模型。精确 events、fingerprints 和
-reviewed subset 见[项目控制台账](../../evidence/project-controls.md)。
+这是一段纯离线事件回放：输入是仓库准备的 SDK-shaped JSONL，执行对象是本地状态机。在线 Responses API 的事件版本、
+网络行为和目标模型表现需要另行验证。
 
-## Opaque reasoning artifact：密文也要绑定上下文
+## 会话记录能保存，不等于可以公开
+
+Provider 原始响应可能含 reasoning、signature 或客户端不理解的 block。两个离线程序分别检查使用和发布边界：
 
 ```powershell
 python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
   --output artifacts/cloud-api/reasoning-replay-matrix.json
-```
 
-本地示例先故意演示 content-only AEAD 的缺陷：密文没有被修改，却可以被跨 subject、tenant、session 或 model 重放。
-随后 context-bound envelope 把 tenant、subject、session、branch、predecessor、model、policy、key 和 expiry 放进
-associated data，并用 single-use ledger 阻止 replay。
-
-固定虚构 key/nonce 与内存 ledger 只用于教学。它没有验证生产 nonce uniqueness、KMS/HSM、轮换、跨进程 replay
-protection 或任何 Provider 的 opaque format。
-
-## 发布轨迹时只允许审过的 block
-
-```powershell
 python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
   --input projects/cloud-api-contracts/trajectory-release.example.json `
   --output artifacts/cloud-api/trajectory-release-report.json
 ```
 
-发布 Schema 只允许 `text/tool_call/tool_result/citation`。遇到 reasoning、thinking、signature、encrypted、
-未知 block 或嵌套禁用字段时，程序会停止发布并给出错误。
+第一条命令说明：密文保持完整时，仍要核对用户、租户、会话、上一条消息、允许模型、有效期和消费状态。完整解释见
+[看不见的 Reasoning Block](../../quality/reasoning-artifact-security.md)。
 
-报告不回显被拒绝值，并明确记录 `secret_pii_scan_performed: false`。因此通过 allowlist 只说明 block shape 可发布，
-不代表 text 已完成 secret/PII、版权、consent 或用途审查。
+第二条命令只接受已经重新构造的发布对象。允许的 block 是 `text`、`tool_call`、`tool_result` 和 `citation`；reasoning、
+signature、encrypted 和未知字段会使发布停止。
 
-## 最小验证与故意破坏
+报告中的 `secret_pii_scan_performed: false` 提醒你：字段形状通过以后，可见文字仍需进行 secret、个人信息、版权、
+用户同意和用途审查。这个 gate 不是原始 Provider 响应的自动脱敏器。
 
-完整项目回归：
+## 修改项目后怎样验证
 
 ```powershell
 python -m pytest `
@@ -245,21 +267,34 @@ python -m pytest `
   tests/test_budgeted_cloud.py -q
 ```
 
-优先保留这些高风险负例：
+这些测试优先守住会改变结论的边界：
 
-- Reasoning scope/tamper/replay 被拒绝；
-- Unsafe 或 outcome-uncertain request 不自动重放；
-- 2xx SSE 截断、超限和取消保持 terminal failure；
-- Cancel 后不伪造零 usage；
-- 每个 attempt 都有 reservation/tombstone；
-- SQLite config 漂移或物理篡改会在继续处理前被拒绝。
+- 结果未知或已经交付部分输出的请求停止自动重放；
+- 截断、超限和取消后的 stream 保持失败终态；
+- 已发送请求缺少 usage 时不会被记成免费；
+- 每个 attempt 拥有独立 reservation 和终态记录；
+- 数据库配置漂移、重复字段和物理篡改会在继续处理前停止；
+- reasoning 的错误上下文、篡改和第二次消费会被拒绝。
 
-一次可审计运行至少保存 provider/API/model revision、脱敏 RequestSpec identity、attempt trace、retry/outcome decision、
-每 attempt reservation、Provider request ID 和 billing reconciliation。API key、reasoning plaintext/ciphertext、
-raw Provider body 与被拒绝输入值不进入普通 artifact 或异常日志。
+一次可审计运行至少保存：
 
-本项目可以说明离线 adapter、typed-event replay、MockTransport JSON/SSE、AES-GCM 上下文绑定、trajectory
-allowlist 和 SQLite budget 在这些固定输入上的行为。真实 DNS/TLS、SDK、模型、配额、取消传播、usage 与 invoice
-仍需要在目标 Provider 环境验证。
+- 具体 Provider、API 和模型版本；
+- 脱敏的请求身份；
+- 每次发送的 trace 与重试决定；
+- 费用预留、Provider request ID 和账单对账结果。
 
-完整代码位于 [projects/cloud-api-contracts](https://github.com/NightLemon/about-llm/tree/main/projects/cloud-api-contracts)。
+普通日志应排除 API key、原始 reasoning 内容和被拒绝输入值。
+
+## 这些离线实验还没有证明什么
+
+| 已经实际运行 | 仍需在目标环境验证 |
+|---|---|
+| 三种固定文本协议的 adapter | 真实 SDK、端点和模型输出 |
+| `MockTransport` 的 JSON、SSE 与 retry | DNS、TLS、代理、连接池和取消传播 |
+| SQLite 的逐 attempt 预算 | Provider usage、发票与跨区域配额 |
+| 固定 Responses 事件回放 | 在线事件版本与长时间 stream |
+| 本地 reasoning 与发布门禁 | 当前 Provider 的 opaque 格式和真实数据治理 |
+
+完整代码和命令索引位于
+[projects/cloud-api-contracts](https://github.com/NightLemon/about-llm/tree/main/projects/cloud-api-contracts)，固定结果与版本边界见
+[Cloud API 证据页](../../evidence/cloud-api-controls.md)。

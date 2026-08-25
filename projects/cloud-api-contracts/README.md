@@ -8,11 +8,19 @@
 
 ## 第一次运行 { #run }
 
-下面三条命令都只使用本地固定输入，不访问真实 API：
+先运行一次包含 HTTP 500、自动重试和逐次预算的完整离线调用。每次使用新的数据库路径：
 
 ```powershell
 New-Item -ItemType Directory -Force artifacts/cloud-api | Out-Null
 
+python projects/cloud-api-contracts/budgeted_retry_demo.py `
+  --database artifacts/cloud-api/first-budgeted-retry.sqlite
+```
+
+输出会显示第一次 attempt 保守记为 `uncertain`，第二次按实际 usage 结算。完整解释见
+[教学页](../../docs/practice/projects/cloud-api-contracts.md#run)。随后可运行三个最小组件实验：
+
+```powershell
 python -m about_llm.integrations.cloud_api_cli verify `
   --contracts projects/cloud-api-contracts/contracts.example.jsonl `
   --output artifacts/cloud-api/contracts.json
@@ -23,8 +31,8 @@ python -m about_llm.integrations.cloud_api_cli retry-matrix `
 python projects/cloud-api-contracts/usage_budget_toy.py
 ```
 
-它们依次回答：三种 provider 协议怎样映射为共同业务对象；哪些失败可以安全重放；一次调用怎样先预留最大费用，
-再根据实际 usage 结算或进入 uncertain。
+它们依次回答：三种 Provider 协议怎样映射为共同业务对象；哪些失败可以安全重放；一次调用怎样先预留最大费用，再根据
+实际 usage 结算或进入 uncertain。
 
 ## 一次逻辑调用的状态
 
@@ -71,8 +79,13 @@ Gemini Interactions 与 `generateContent` 也属于不同协议，不能因为�
 
 ## HTTP 与 SSE 边界
 
-JSON 请求执行器先核对精确的 origin allowlist、HTTPS 和重定向策略。URL 中的 query、userinfo 与 fragment，
-以及错误 Content-Type、过大响应、重复 JSON 字段和非法数值都会被拒绝。单次 attempt timeout 与整个调用的 deadline 分开记录。
+JSON 请求执行器依次检查：
+
+- origin 是否精确匹配允许列表，是否使用 HTTPS；
+- 重定向是否关闭，URL 是否带有 query、userinfo 或 fragment；
+- Content-Type、响应大小和 JSON 结构是否符合约定。
+
+JSON 中的重复字段和非法数值会失败。单次请求超时与整个逻辑调用的 deadline 分开记录。
 
 SSE 解析器接收任意字节片段：一次网络读取可能只有半个 UTF-8 字符，也可能包含多个事件。因此，网络片段、
 SSE 事件、文本增量和模型 token 是四种不同对象。
