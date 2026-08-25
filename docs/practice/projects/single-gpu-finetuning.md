@@ -298,22 +298,52 @@ python projects/single-gpu-finetuning/train_qlora.py `
 
 ### 第 6 步：像用户一样重载 Adapter
 
-发布目录至少包含：
+一步训练成功后，runner 会在输出目录里创建 `adapter-bundle`。它不复制 Qwen3 的完整底座权重，而是保存：
 
 | 文件或身份 | 为什么需要 |
 |---|---|
 | PEFT config 与 adapter weights | 定义可训练增量 |
 | 不可变 base revision | 防止加载到另一个底座 |
 | Tokenizer 与 chat template | 保持训练/推理序列化一致 |
-| Generation config | 固定评测时解码协议 |
-| Manifest、大小与 hash | 检查 bundle 完整性 |
-| 数据与训练 run identity | 能追溯来源 |
+| 五份数据、mask、label 与训练报告 | 能追溯监督目标和运行结果 |
+| Manifest、文件大小与 hash | 在加载前发现缺失或变化 |
 
-在全新进程里加载 base 和 Adapter，不要复用训练进程里的 model object。
+先做不加载模型的离线检查：
+
+```powershell
+python projects/single-gpu-finetuning/sft_adapter_bundle.py verify `
+  --bundle artifacts/qwen3-sft-one-step/adapter-bundle `
+  --expected-model-id Qwen/Qwen3-0.6B `
+  --expected-revision c1899de289a04d12100db370d81485cdf75e47ca
+```
+
+验证程序会重新计算发布包中每个文件的大小和 SHA-256，再核对 PEFT config、底座 revision 和训练报告。
+
+它还会比较 tokenizer 与 chat template，并解析 safetensors，确认目标模块具有有限的 LoRA A/B tensor。
+
+然后启动一个新进程，加载固定底座和 Adapter：
+
+```powershell
+python projects/single-gpu-finetuning/sft_adapter_bundle.py reload `
+  --bundle artifacts/qwen3-sft-one-step/adapter-bundle `
+  --expected-model-id Qwen/Qwen3-0.6B `
+  --expected-revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --report artifacts/qwen3-sft-reload.json `
+  --device cuda `
+  --dtype float16
+```
+
+如果底座已经位于 Hugging Face cache，可以加 `--local-files-only`，避免 reload 时访问网络。
+
+脚本用固定的非敏感问题做一次 forward。它先保存 base 的最后一个 token logits，再挂载 Adapter 并重复计算。
+报告中的 `maximum_last_logit_delta` 应为有限正数，这说明重载后的 Adapter 确实改变了这次计算。
 
 对固定输入比较保存前后的 logits 或输出，并确认 base revision 变化会被拒绝。
 
 重载成功说明文件和加载路径正常。任务质量是否提升，还要由留出集评测回答。
+
+QLoRA bundle 会记录训练时使用了量化底座。上述 reload 命令加载的是指定 dtype 的普通底座，因此只能检查
+Adapter 可加载且会产生数值影响，不能证明 NF4 训练环境或量化部署结果完全一致。
 
 仓库保存的 Qwen LoRA 运行可用于离线核对这条路径：
 
@@ -418,7 +448,7 @@ python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
 | 数据发布包 | Train-only JSONL、split/duplicate/governance、readiness identity |
 | Token/label 审计 | Model/tokenizer/template、input IDs、assistant mask、final labels |
 | 训练运行包 | Immutable revisions、依赖、seed、超参数、资源与 checkpoint 语义 |
-| Adapter bundle | PEFT config/weights、base identity、template、manifest、fresh-load test |
+| Adapter bundle | PEFT config/weights、base identity、template、manifest、fresh-load report |
 | 比较评测包 | Base/Prompt/RAG/adapter 同 cases 的逐例结果与 gate |
 
 发布或写入简历前做一次自查：

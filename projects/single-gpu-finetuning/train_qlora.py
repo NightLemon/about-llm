@@ -17,6 +17,10 @@ from about_llm.finetuning import (
     prepare_assistant_mask_features,
     validate_sft_training_readiness,
 )
+from about_llm.finetuning.adapter_bundle import (
+    bind_peft_adapter_identity,
+    publish_sft_adapter_bundle,
+)
 from about_llm.finetuning.training_runtime import (
     cuda_memory_snapshot,
     normalize_trainer_metrics,
@@ -343,8 +347,20 @@ def main() -> None:
             ),
         )
         raise
-    trainer.save_model()
-    tokenizer.save_pretrained(args.output_dir)
+    adapter_directory = args.output_dir / "adapter"
+    tokenizer_directory = args.output_dir / "tokenizer"
+    for path in (adapter_directory, tokenizer_directory):
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(f"refusing to replace completed training artifact: {path}")
+    bind_peft_adapter_identity(
+        trainer.model, model_id=args.model_id, revision=args.revision
+    )
+    trainer.model.save_pretrained(
+        adapter_directory,
+        safe_serialization=True,
+        save_embedding_layers=False,
+    )
+    tokenizer.save_pretrained(tokenizer_directory)
     write_strict_json(
         args.output_dir / "sft-training-run.json",
         _training_run_report(
@@ -364,6 +380,7 @@ def main() -> None:
             memory_after=cuda_memory_snapshot(torch, device),
         ),
     )
+    publish_sft_adapter_bundle(args.output_dir)
 
 
 if __name__ == "__main__":

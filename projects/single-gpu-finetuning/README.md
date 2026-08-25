@@ -75,6 +75,7 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 | Assistant 区域是否真的进入 labels | `smoke_trl_sft.py`、`run_qwen_target_sft_label_control.py` |
 | Base 是否冻结，Adapter 能否保存、重载和合并 | `smoke_peft.py`、`run_qwen_target_lora_control.py` |
 | 目标模型的 LoRA/QLoRA 能否启动 | `train_trl_sft.py`、`train_qlora.py` |
+| 本次 Adapter bundle 是否完整并能在新进程重载 | `sft_adapter_bundle.py verify/reload` |
 | Preference 数据和 DPO 路径是否连通 | `smoke_trl_dpo.py`、`run_qwen_target_dpo_control.py` |
 | 变长序列的梯度累积是否按 token 加权 | `gradient_accumulation_toy.py` |
 | DDP、`no_sync` 或 AMP 为何产生不同梯度 | `ddp_*_control.py`、`amp_grad_scaler_control.py` |
@@ -98,6 +99,8 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 | `*.control.json` | 固定实验所使用的输入和身份 |
 | `*.recorded-report.json` | 已录制结果，可在没有目标权重时离线核对 |
 | `sft-training-run.json` | 记录单次训练终态、步数、依赖版本、参数量和进程内 CUDA 显存 |
+| `adapter-bundle/` | 绑定 Adapter、tokenizer、训练证据与固定 base revision 的发布目录 |
+| `sft_adapter_bundle.py` | 离线验证发布目录，或在新进程中加载底座与 Adapter |
 | `artifacts/`、`outputs/` | 本地运行生成的报告、Adapter 和训练工件 |
 
 正式发布包至少要绑定底座版本、tokenizer、对话模板、生成配置、数据身份、训练配置和 Adapter 文件。
