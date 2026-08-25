@@ -1,145 +1,155 @@
-# 代码模型、对话状态与 LLMOps
+# 代码 Agent、任务状态与 LLMOps
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：代码 Agent、对话系统和 LLMOps 平台工程师。
-- **先修**：软件测试、版本控制、Agent 基础和 artifact identity。
-- **首次阅读**：任务分类 → repository context → patch-first → execution feedback → 发布。
-- **完成信号**：能产出可验证 patch、typed conversation state 和 evidence trace。
-- **卡住时**：先读[Agent 总览](agents.md)和[评测总览](../quality/evaluation.md)。
+- **适合读者**：构建代码 Agent、长任务对话系统和 LLMOps 平台的开发者。
+- **先修**：软件测试、版本控制、[Agent 任务主线](agent-task-lifecycle.md)和[评测总览](../quality/evaluation.md)。
+- **首次阅读**：跟着一次重复退款修复，依次完成仓库定位、最小 patch、任务恢复和分阶段发布。
+- **完成信号**：能指出一次发布所对应的 base revision、patch、验证证据、任务状态和生产 artifact graph。
+- **卡住时**：先只画出 `失败证据 → patch → 测试 → commit → canary`，再补对话记忆与运行追踪。
 
 </div>
 
-假设用户在长对话中提出：“修复退款服务重复提交的问题，并帮我发布。”Agent 要先锁定仓库 revision，复现失败，
-生成 patch，再运行测试。对话暂停或进程重启后，它还要知道哪一步已经完成；进入发布阶段后，团队必须能回答
-线上请求究竟用了哪份代码、Prompt、模型、工具和 policy。
+用户在长对话中提出：“退款服务在重试后提交了两次，请修复并帮我发布。”
 
-这就是本章把代码模型、对话状态和 LLMOps 放在一起的原因：它们共同处理一项任务怎样从自然语言变成
-**可复现的修改、可恢复的状态和可回滚的发布**。
+这不是一次普通补全。代码 Agent 要锁定仓库版本，复现失败，找到重复副作用的来源，生成最小 patch，
+再让测试和审查程序验证修改。任务可能在中途暂停；恢复时不能重新猜测做到哪一步。进入发布阶段后，
+团队还要回答：线上究竟运行了哪份代码、模型、Prompt、工具策略和索引？
+
+本章使用一个示意任务 `refund-duplicate-fix` 贯穿全页。它不是仓库录制的真实代码修复，
+但每个机制都对应仓库中可执行的代码指标、记忆账本或 artifact fingerprint。
 
 ```mermaid
 flowchart LR
-  I["Issue + failing test"] --> C["Repository snapshot"]
-  C --> P["Patch"]
-  P --> V["Execution verifier"]
-  V --> M["Typed task memory"]
-  M --> A["Artifact graph"]
-  A --> R["Canary / rollback"]
+  subgraph C["产出可验证修改"]
+    direction TB
+    I["失败证据"] --> S["仓库快照与相关上下文"] --> P["最小 patch"] --> V["隔离执行与验证"]
+  end
+  subgraph R["恢复并发布确切结果"]
+    direction TB
+    T["任务 checkpoint"] --> A["代码与系统 artifact graph"] --> G["离线门禁"] --> D["shadow / canary / rollback"]
+  end
+  V --> T
 ```
 
-## Part A：代码模型与软件工程 Agent
+## 阶段一：从失败现场产出可验证 patch
 
-## 1. 先问清楚模型正在完成哪类代码任务
+### 1. 先把自然语言请求变成任务契约
 
-- next-token/FIM completion；
-- 函数/模块生成；
-- repository-level bug fix；
-- test generation；
-- refactor/migration；
-- code explanation/review；
-- vulnerability detection/remediation；
-- dependency/config/build repair；
-- natural language ↔ SQL/API/schema。
+“修复重复退款”至少要补齐下面的信息：
 
-不同任务的 context、验证器和风险不同。“HumanEval 很高”不能证明能安全修改大型仓库。
+| 字段 | 本例要回答的问题 |
+|---|---|
+| Base revision | 失败发生在哪个不可变 commit？ |
+| Failure evidence | 哪条命令、哪个输入和哪个外部状态复现了重复副作用？ |
+| Expected behavior | 同一业务 effect 重试后应产生几次退款？ |
+| Allowed scope | 可以修改哪些模块、依赖和配置？ |
+| Verification | 哪些目标测试、回归测试和安全检查必须通过？ |
+| Release authority | Agent 可以准备发布，还是可以实际放量？ |
 
-## 2. Code representation 与 FIM
+Agent 应先把缺失项变成问题，而不是直接改代码。对于副作用缺陷，还要区分“请求发送了两次”与
+“支付服务应用了两次 effect”。修复目标通常是稳定 effect identity、远端幂等契约和恢复对账，
+不只是减少某条函数的调用次数。
 
-纯 causal LM 只能按左到右预测。Fill-in-the-middle（FIM）用 model-specific special tokens 序列化 prefix、suffix 和 middle，使模型能利用光标两侧。
+代码模型还可能面对其他任务：行内补全、函数生成、重构迁移、解释审查、依赖修复或漏洞修补。
+每类任务需要的上下文和验证器不同。一个模型在短函数 benchmark 上表现很好，不能直接证明它能安全修改大型仓库。
 
-FIM template 是 checkpoint 契约；不能猜 `<fim_prefix>` 名称或顺序。Suffix 太长也会挤占 context。评测应控制 prefix/suffix 长度、语言与文件位置。
+### 2. 行内补全与仓库修复使用不同上下文
 
-代码 tokenizer 对空白、缩进、Unicode identifier、数字和长字符串有不同效率。格式化前后 token 数和模型行为都可能变化。
+纯 causal LM 从左向右预测。Fill-in-the-middle（FIM）把光标前缀、后缀和待补中间位置按模型约定序列化，
+使模型同时利用两侧代码。FIM 的特殊 token 名称与顺序属于 checkpoint 契约，不能凭经验猜测。
 
-## 3. 不要把整个仓库塞进上下文
+仓库修复则需要追踪跨文件关系。对于 `refund-duplicate-fix`，检索顺序可以是：
 
-仓库任务需要的不只是语义相似文件：
+1. 失败测试、错误输出和调用堆栈；
+2. 退款 handler 与幂等键的定义；
+3. 所有调用者、接口、Schema 和数据库约束；
+4. 相邻测试、重试配置、依赖锁文件和本地开发规范；
+5. 必要时查看相关提交历史与代码所有者。
 
-- symbol definition/reference；
-- import/include/module graph；
-- interface/type/schema；
-- failing tests、stack trace 和 logs；
-- build/package/lock configuration；
-- local conventions、formatter/linter；
-- git diff/history/blame（按需）；
-- generated/vendor boundaries；
-- security/ownership policy。
+路径或文本相似度只是入口。符号定义与引用、AST 索引、LSP、调用图和最近修改位置，通常比单纯向量相似更适合代码。
 
-### 3.1 Retrieval pipeline
+每个上下文片段保存路径、仓库 revision、符号或行范围，以及它被选中的原因。代码变化后，旧行号可能已经失效；
+缓存键因此要包含 commit 与索引版本。
 
-可组合 lexical path/symbol search、AST/index、LSP、call graph、embedding 和 recent edit locality。先检索定义/调用者，再补相邻 tests/config，而不是把整个仓库塞满窗口。
+上下文预算按“失败证据 → 当前符号 → 接口与调用者 → 测试 → 配置和文档”分配。
+片段尽量保留完整函数、类型或语法块；在字符串和条件分支中间截断，可能改变代码含义。
 
-Context item 保存 path、revision、line/symbol range 和 retrieval reason。代码变化后旧 chunk line number 失效，cache key 含 commit/index revision。
+### 3. 先写最小失败假设，再生成 diff
 
-### 3.2 Context budget
+退款重复提交的第一版假设可以是：
 
-优先：用户问题与失败证据 → 当前文件/符号 → 接口和调用者 → tests → config/docs。对每个片段保留完整语法边界。截断在字符串/函数中间会误导模型。
+> 重试请求生成了新的幂等键，支付服务因此把它当成新的 effect。
 
-## 4. 从失败现场走到最小 patch
+接下来的循环是：
 
-比整文件重写更安全：
+1. 在固定工作目录和环境中复现失败，并保存命令、退出码和脱敏输出；
+2. 读取局部指令、实现、调用者和相关测试；
+3. 用证据支持或推翻当前假设；
+4. 生成尽量小的 diff，而不是重写整个文件；
+5. 先运行格式、静态、类型和目标测试；
+6. 再运行更广的回归与安全检查；
+7. 审阅 diff、生成文件、迁移和依赖变化。
 
-1. 复现失败并保存 command/output；
-2. 读取局部指令和相关代码；
-3. 写最小假设；
-4. 生成 diff/patch；
-5. 静态/类型/targeted tests；
-6. broader regression；
-7. review diff、generated files 和 dependency changes；
-8. 保留失败证据与限制。
+最小 patch 会减少无关覆盖，却仍可能改错位置、遗漏生成产物或与新提交冲突。应用前核对 base revision 和上下文，
+应用后再次读取实际 diff。Agent 不能为了得到绿灯而删除测试、放宽断言或扩大权限。
 
-Patch 能减少无关覆盖，但仍可能修改错误行、产生 merge conflict 或遗漏生成产物。应用前校验 base revision/context。
+### 4. 把编译器和测试当作下一条 observation
 
-## 5. 让编译器和测试给出下一条 observation
+编译器、类型检查器、单元与集成测试、linter、静态分析器、fuzzer 和 benchmark 都可以产生新的观察。
+每次执行都固定：
 
-Compiler、type checker、unit/integration tests、linter、static analyzer、fuzzer 和 benchmark 是 verifier。反馈循环必须：
+- 命令、工作目录、环境和超时；
+- 输入 revision 与 patch identity；
+- 退出码和完整但脱敏的输出；
+- 失败属于产品、测试基础设施还是超时；
+- 剩余修复轮数、token 与执行预算。
 
-- 固定 command、cwd、env、timeout；
-- 捕获 exit code 与完整但脱敏 output；
-- 区分 test failure、infra failure 和 timeout；
-- 限制修复轮数/预算；
-- 不让模型为了绿灯删除测试、放宽断言或扩大权限；
-- 每轮重新运行相关安全/回归 gate。
+测试失败后，Agent 更新诊断再决定下一步，而不是机械重复同一 patch。测试通过则说明当前测试覆盖的性质成立；
+它不等于软件已经不存在其他缺陷。
 
-测试通过只证明 tests 覆盖性质，不证明无 bug。
+### 5. 不可信代码只能在受限环境中执行
 
-## 6. 执行模型生成的代码时隔离什么
+模型生成的 patch、仓库现有代码和依赖安装脚本都可能执行任意程序。隔离环境至少限制：
 
-生成代码和 repository code 都是不可信程序。Sandbox 需要限制 filesystem、network、process、CPU、RAM、time、
-output、device 和 secret。Package install/build hook 也能执行任意代码，因此依赖来源、lock/hash、SBOM 和 cache
-都应进入隔离与审计范围。
+| 资源 | 需要控制什么 |
+|---|---|
+| 文件系统 | 只挂载必要工作区，输出写入指定目录 |
+| 网络 | 默认关闭，按域名和操作临时放行 |
+| 进程与设备 | 进程数、系统调用、GPU 和 Docker socket |
+| 计算资源 | CPU、内存、磁盘、时间和输出大小 |
+| 凭据 | 不注入云 metadata token、生产数据库或无关 secret |
+| 依赖 | 锁定来源、版本与 hash，审查 build hook 和 SBOM |
 
-不要把 host Docker socket、cloud metadata token 或生产数据库暴露给 sandbox。容器不是自动安全边界。
+容器提供一种隔离机制，却不会自动形成完整安全边界。暴露宿主 Docker socket 或高权限凭据，
+仍可能让容器内程序控制宿主或生产系统。
 
-## 7. Code evaluation
+### 6. 代码评测要从语法走到仓库行为
 
-### 7.1 Correctness layers
+验证层级逐步增加：
 
-- parse/compile；
-- type/static checks；
-- visible/hidden unit tests；
-- integration/system behavior；
-- property/fuzz/mutation tests；
-- security/performance/compatibility；
-- human maintainability review。
+1. 能否解析和编译；
+2. 类型与静态检查是否通过；
+3. 可见和私有单元测试是否通过；
+4. 集成与系统行为是否符合预期；
+5. 性质测试、fuzz 和 mutation test 是否暴露缺口；
+6. 安全、性能、兼容性和可维护性是否满足要求。
 
-“能编译”远低于正确，“visible tests 通过”可能是 overfit。
+`refund-duplicate-fix` 的关键参考结果不是“函数被调用一次”，而是相同 effect identity 在重试、超时和恢复后
+只产生一次外部退款，并且不同退款请求不会错误合并。
 
-### 7.2 pass@k
+#### pass@k 回答“给多次机会能否至少成功一次”
 
-从同一任务生成 \(n\) 个独立候选，\(c\) 个通过 verifier，常用估计：
+对同一任务生成 (n) 个候选，其中 (c) 个通过验证器。给 (k) 次机会至少通过一次的常用估计为：
 
 \[
-\operatorname{pass@k}
-=1-
+\operatorname{pass@k}=1-
 \frac{\binom{n-c}{k}}{\binom{n}{k}},
 \qquad 1\le k\le n.
 \]
-
-它估计给 \(k\) 次机会至少一次正确，不是单次线上成功率。依赖候选生成近似 i.i.d. 和 verifier 正确；若只生成 \(n<k\)，不能可靠报告该 pass@k。
 
 ```python
 from about_llm.evaluation import pass_at_k
@@ -148,80 +158,72 @@ score = pass_at_k(num_samples=10, num_correct=2, k=2)
 assert score == 17 / 45
 ```
 
-同时报告 samples/task、temperature、token budget、执行成本和 pass@1。
+这个数给同一任务 (k) 次机会，因此不能冒充生产只生成一次时的成功率。报告同时给出 pass@1、每题候选数、
+采样参数、token 预算和执行成本。候选并非近似独立同分布，或验证器本身错误时，指标解释也会改变。
 
-### 7.3 Repository benchmark
+仓库级 benchmark 还要固定 base commit、issue、环境和测试集合，并检查 patch 能否应用、修改行数、依赖变化、
+回归、安全、时间与成本。公开任务可能进入训练数据，因此最终判断需要新鲜或私有任务。
 
-固定 base commit、issue、environment 和 tests。检查 patch 是否可应用、target tests、full regression、changed lines、
-dependency/security、time 和 cost。Benchmark tests 公开后可能进入训练数据，因此还要保留 fresh/private tasks。
+安全修复额外要求 exploit regression test。SQL 使用参数绑定；命令、路径和 HTML 按各自上下文转义或白名单；
+授权在服务端重新检查；密码学使用成熟库；迁移、删除和外部写操作需要审批、备份与恢复方案。
+同一个模型生成和审查 patch 可能共享盲点，关键修改要由独立工具或人复核。
 
-## 8. 安全代码生成
+## 阶段二：对话暂停后，恢复的是任务状态
 
-- SQL 用 parameter binding，不拼接；
-- HTML/command/path 按 context-specific escaping/allowlist；
-- authz 在服务端重新检查；
-- crypto 使用成熟库，不自创算法；
-- secret 不进入 code/prompt/log；
-- dependency/version 有来源与漏洞检查；
-- migrations/删除/外部写操作需审批、备份和回滚；
-- security fix 需要 exploit regression test。
+### 7. Transcript、task checkpoint 和长期 memory 是三样东西
 
-让同一模型生成并 review 可能共享盲点；关键变更用独立工具/人复核。
+假设 Agent 已经生成 patch 并跑完目标测试，用户说“我晚点再继续”。系统应保存结构化任务 checkpoint：
 
-## Part B：对话状态与记忆
+```text
+task_id
+base revision + current patch/commit identity
+current stage and completed transitions
+reproduction command + evidence digest
+verification commands + result digests
+pending questions and approvals
+external proposals, receipts and uncertain outcomes
+budget, policy and tool versions
+```
 
-## 9. 对话记录不等于任务状态
+恢复时先重新核对仓库 revision、实际 diff 和证据文件，再从明确 stage 继续。递归总结聊天文本，
+无法可靠恢复“测试是否真的执行”“发布是否已经审批”或“外部操作结果是否未知”。
 
-生产状态应拆分：
+三类信息的职责不同：
 
-- recent raw turns；
-- authenticated identity、tenant、locale；
-- current goal/constraints；
-- confirmed facts 与 source；
-- pending questions/actions；
-- tool proposals、receipts 和 uncertain outcomes；
-- short summary；
-- user-managed long-term memory；
-- policy/model/prompt versions。
+| 信息 | 例子 | 生命周期 |
+|---|---|---|
+| Transcript | 用户与 Agent 的原始消息 | 按会话与隐私策略保存 |
+| Task checkpoint | patch、测试、审批和发布 stage | 任务结束后归档或清理 |
+| Long-term memory | 用户明确允许保存的稳定偏好 | 可查看、更正、删除并受 TTL/同意约束 |
 
-模型从消息中“猜”状态不等于系统状态。余额、订单状态、权限必须来自 authoritative store/tool。
+余额、订单状态、权限和发布状态来自权威数据库或工具。模型从历史消息中“记得”某个状态，不能替代重新查询。
 
-## 10. Memory 类型
+### 8. 只有未来确实需要的信息才进入长期 memory
 
-### 10.1 Working memory
+常见记忆可以分为：
 
-当前任务临时信息，任务结束应清理或显式归档。
+| 类型 | 适合保存什么 | 不应怎样使用 |
+|---|---|---|
+| Working | 当前任务中的临时约束 | 自动升级为永久偏好 |
+| Episodic | 带时间、来源和 TTL 的过去事件 | 用摘要覆盖原始来源 |
+| Semantic/profile | 用户明确确认的稳定事实或偏好 | 在没有同意时跨会话个性化 |
+| Procedural | 版本化工作流、策略和工具 Schema | 被某次普通对话永久改写 |
 
-### 10.2 Episodic memory
+写入前要回答：未来用途是什么，用户是否预期，信息是否敏感，来源能否验证，何时过期？
+模型可以提出候选记忆，确定性规则或用户确认负责真正写入。
 
-过去交互事件，保存 timestamp、source conversation、confidence 和 TTL。摘要不应覆盖原始来源。
+每条记录保存值、类型、来源、创建与更新时间、过期时间、置信度、作用域、同意或策略版本，以及修正与撤回关系。
+无法追溯来源的自由文本总结，不适合作为权威事实。
 
-### 10.3 Semantic/profile memory
+### 9. 可执行 memory 账本怎样处理修正
 
-稳定偏好或用户明确提供事实。区分“本次想用 Python”与“永久偏好 Python”。用户应能查看、更正、删除和关闭个性化。
-
-### 10.4 Procedural memory
-
-工作流、policy 和 tool schema，属于版本化系统配置，不应被某次用户对话永久改写。
-
-## 11. 什么值得写进长期 memory
-
-先判断：是否必要、用户是否预期、是否敏感、是否有 TTL、未来用途、可否验证。模型可提出 candidate memory，由 deterministic rule/用户确认决定写入。
-
-每条记录：value、type、source、created/updated/expiry、confidence、scope、consent/policy、supersedes/retracted。不要保存无法追溯的自由文本总结。
-
-### 11.1 可执行的 typed memory 核心
-
-仓库提供内存参考实现 `ConversationMemoryLedger`。它把“记住一句话”拆成有来源的不可变 fact，以及显式 correction/retraction 事件：
+仓库的 `ConversationMemoryLedger` 把事实和修正保存成不可变事件。下面的 session 偏好先写“中文”，
+一分钟后由新事件改为“English”：
 
 ```python
 from datetime import datetime, timedelta, timezone
 
-from about_llm.conversation import (
-    ConversationMemoryLedger,
-    MemoryKind,
-    MemoryScope,
-)
+from about_llm.conversation import ConversationMemoryLedger, MemoryKind, MemoryScope
 
 ledger = ConversationMemoryLedger()
 now = datetime.now(timezone.utc)
@@ -256,202 +258,218 @@ assert ledger.active_facts(
 ) == (new,)
 ```
 
-参考内核保护以下不变量：
+参考实现检查这些行为：
 
-- 同一 tenant/subject/key 不能同时出现两个 active value，修正必须指向旧 fact；
-- correction/retraction 不能跨 tenant 或 subject；
-- profile scope 必须带 `consent_reference`，session scope 不会自动升级为长期偏好；
-- expiry 边界采用 `expires_at <= now` 即失效，时间必须 timezone-aware；
-- correction/retraction 只在事件时间之后生效，历史时间视图不会提前应用未来事件；
-- value 在写入时成为 canonical JSON 快照，调用方之后修改原对象不会改历史；
-- active view 不返回 superseded、retracted 或 expired fact，history 仍能解释修正链。
+- 同一租户、用户和 key 只能有一个 active value；修正必须指向旧事实；
+- 修正与撤回不能跨租户或用户；
+- Profile 作用域必须带同意凭据，session 事实不会自行升级；
+- `expires_at <= now` 时事实失效，而且时间必须带时区；
+- 未来发生的修正不会提前改变过去时间点的视图；
+- 写入值会变成 canonical JSON 快照，调用方后来修改原对象不会篡改历史；
+- Active view 隐藏已取代、撤回或过期事实，history 仍保留解释链。
 
-这只是单进程内存 reference，不提供数据库事务、encryption、RBAC、跨副本一致性、备份删除、retention worker
-或真实授权。生产服务还需在存储查询中强制 tenant/subject 条件，并用并发测试证明“同 key 单 active”约束；
-不能先全局读取，再让模型过滤。
+这是单进程内存参考实现。生产服务还需要数据库事务、加密、RBAC、跨副本一致性、备份删除和 retention worker。
+租户与用户条件必须进入存储查询，不能先读取全局数据再让模型过滤；“同 key 单 active”也需要并发测试。
 
-## 12. 摘要会丢信息，所以原始状态不能消失
+### 10. 摘要用于导航，结构化状态用于恢复
 
-摘要会遗漏否定、时间、谁说的和不确定性。用结构化 state + extractive source pointer，定期校验：
+摘要可能丢掉否定、时间、说话人和不确定性。长任务保留原始事件指针与结构化状态，并定期检查：
 
-- 用户纠正后旧事实被标记 superseded；
-- pending action 与 executed action 不混；
-- tool error 不变成事实；
-- 多人/多租户实体不串；
-- summary version 与 source range 可追溯。
+- 用户修正后，旧事实已经标记为 superseded；
+- 待执行动作、已执行动作和结果未知没有混在一起；
+- 工具报错没有被总结成业务事实；
+- 多用户和多租户实体没有串线；
+- 摘要版本能够回到对应来源范围。
 
-Context 压缩不是无损。长任务保留 checkpoint/state machine，不靠递归摘要无限续命。
+长会话评测也要跨多个 turn 检查任务成功、状态准确、纠正与打断、错误记忆、隐私删除、
+未知外部结果的对账，以及上下文长度、延迟和成本。单轮 benchmark 无法替代这些场景。
 
-## 13. 对话评测
+## 阶段三：把确切修改绑定进可回滚发布
 
-- task success across turns；
-- state accuracy、slot consistency；
-- correction/interrupt/topic switch；
-- memory precision/recall 与错误写入；
-- privacy/deletion/cross-tenant；
-- pending/uncertain action reconciliation；
-- context length、latency/cost；
-- persona/style stability（若确有产品需求）。
+### 11. 开发证据和生产系统都需要 identity
 
-单轮 benchmark 不能证明长会话可靠。构造 20–100 turn synthetic/stateful scenarios，并以 authoritative state verifier 判断。
+代码 Agent 交付的开发证据包括：
 
-## Part C：LLMOps
+```text
+base revision
+patch or result commit
+commands + environment
+test outputs and review decisions
+dependency and migration changes
+known limits
+```
 
-## 14. 一次回答究竟由哪些版本共同产生
-
-一次输出由以下版本共同决定：
+当这份代码进入一个 LLM 服务，线上回答还受模型、Prompt、索引、工具和运行时影响：
 
 ```mermaid
 flowchart TD
-  M["Model + tokenizer/template"] --> R["Run"]
+  C["Code revision + build"] --> R["Release artifact graph"]
+  M["Model + tokenizer/template"] --> R
   P["Prompt + examples"] --> R
-  D["Corpus + index + retriever/reranker"] --> R
+  D["Corpus + index + retriever"] --> R
   T["Tools + schemas + policy"] --> R
   G["Generation + runtime"] --> R
-  I["Input + identity"] --> R
   R --> O["Output + tool receipts"]
-  R --> E["Evaluation artifact"]
+  R --> E["Evaluation + release decision"]
 ```
 
-只记录 model name 无法回放/归因。每个节点使用 immutable revision/hash，边记录兼容关系。
+只记录模型名称或 Git commit 都不够。图中的每个节点使用不可变 revision 或 digest，边记录兼容关系。
+例如，旧工具 Schema 可能无法与新 Prompt 一起使用，即使二者分别都有版本号。
 
-## 15. Trace schema
+仓库的 `artifact_fingerprint` 会把显式 JSON 组件按稳定字段顺序编码为 UTF-8，再计算 SHA-256。
+映射插入顺序不会改变结果，消息等序列的顺序会改变结果：
 
-最低字段：
+```python
+from about_llm.llmops import artifact_fingerprint
 
-- trace/request/case ID、时间、tenant/user pseudonym；
-- model/provider/revision、tokenizer/template；
-- rendered prompt digest 与消息（按隐私策略）；
-- retrieval query/results/source/index/ACL；
-- tool proposal/validation/approval/execution/receipt；
-- generation config/finish reason/usage；
-- latency breakdown、retry/cache；
-- output/evaluation/safety decision；
-- error、fallback 和 final task state。
+first = artifact_fingerprint({"model": "m1", "messages": ["system", "user"]})
+second = artifact_fingerprint({"messages": ["system", "user"], "model": "m1"})
+assert first == second
+```
 
-Trace 本身是敏感资产。按字段脱敏、RBAC、TTL、encryption 和 sampling；不要因“可观测”永久保存所有 prompt。
+Fingerprint 只能识别清单中实际列出的内容。若 manifest 漏掉工具策略，hash 再稳定也无法绑定该安全行为；
+它也不会自动证明远程 provider 真正执行过，或两个版本语义相同。
 
-## 16. Deterministic artifact identity
+### 12. Trace 要能从线上失败回到完整系统版本
 
-仓库 `artifact_fingerprint` 对显式 JSON component 做 stable key ordering、UTF-8 和 SHA-256。Mapping insertion order 不影响 digest，sequence order会影响。
+一次请求的 trace 至少关联：
 
-Fingerprint 只识别已列配置。它不会自动读取远程 provider、代码、环境或数据，也不证明语义/输出相同。Manifest 中遗漏 tool policy，hash 再稳定也不能重放该安全行为。
+- 请求、case、时间和经过假名化的租户/用户身份；
+- 模型、provider、revision、tokenizer 和模板；
+- 渲染后 Prompt 的摘要，以及按隐私策略保留的消息；
+- 检索查询、结果、来源、索引和 ACL；
+- 工具 proposal、校验、审批、执行与 receipt；
+- 生成配置、结束原因和用量；
+- 分阶段延迟、重试与 cache；
+- 输出、评测、安全决定、错误和最终任务状态。
 
-## 17. 离线评测怎样变成发布门禁
+Trace 本身包含敏感数据。按字段脱敏，配置 RBAC 与 TTL，并对存储和采样做限制。
+“为了可观测”不是永久保存所有 Prompt 和用户输入的理由。
 
-流程：
+### 13. 离线门禁决定能否进入 shadow
 
-1. 冻结 candidate artifact graph；
-2. 运行 capability/quality/safety/efficiency cases；
-3. 与 baseline 做 case-level paired comparison；
-4. 检查 protected slices 和 hard invariants；
-5. 保存 raw outputs/config/report；
-6. 由 owner 审批或阻断。
+对于本例，发布门禁可以按下面的顺序运行：
 
-Gate 分为：必须为零的越权/副作用、统计质量阈值、延迟/成本 SLO 和人工评审。总体提升不能抵消关键租户泄露。
+1. 冻结包含代码 commit 的候选 artifact graph；
+2. 在固定 cases 上运行功能、质量、安全和效率评测；
+3. 与当前版本做逐 case 配对比较；
+4. 检查关键租户切片与“重复退款数必须为零”等强制规则；
+5. 保存原始输出、配置、测试与评测报告；
+6. 由有权限的 owner 批准进入 shadow，或返回全部阻断原因。
 
-## 18. 先 shadow，再 canary
+权限泄露和重复外部副作用通常是零容忍门禁，不能用总体帮助性提升抵消。
 
-- replay/shadow：不影响用户；
-- canary：小流量与严格 kill switch；
-- gradual：按 tenant/region/use case；
-- full：持续 drift/incident monitoring。
+离线通过后再逐步放量：
 
-A/B 做 sample-ratio check、用户固定分桶、guardrail、提前停止规则。线上点击/停留是代理，不替代事实/安全评测。
+| 阶段 | 用户影响 | 本例重点 |
+|---|---|---|
+| Replay/shadow | 不执行真实用户副作用 | 比较会不会提出重复退款 |
+| Canary | 小流量，可快速停止 | 检查真实重试、延迟和重复 effect |
+| Gradual | 按租户、地区或 use case 扩大 | 观察切片退化与容量 |
+| Full | 全量但持续监控 | 保持回滚与事故响应能力 |
 
-## 19. 观测面要覆盖质量、系统、成本和安全
+线上 A/B 还要做样本比例检查、用户固定分桶、保护指标和预设停止规则。点击或停留时间只是代理指标，
+不能替代事务状态与安全评测。
 
-| 观测面 | 代表指标 |
+### 14. 监控要能回答“坏在模型、代码还是依赖”
+
+| 观测面 | 退款修复中的代表信号 |
 |---|---|
-| Quality | task success、citation/tool correctness、refusal、correction/escalation、human override |
-| System | QPS、queue、TTFT、TPOT、E2E、timeouts、429/5xx、KV/cache、OOM、tokens/s |
-| Cost | input/output/cached/reasoning/media tokens、retrieval/rerank/tool、retry、每成功任务成本 |
-| Safety | ACL denial、injection、unauthorized execution、PII/secret、sandbox violation、pending |
+| 任务质量 | 退款完成、拒答、纠正、升级人工和重复 effect |
+| 系统 | 队列、TTFT、TPOT、端到端延迟、超时、429/5xx、OOM 和吞吐 |
+| 成本 | 输入输出 token、检索、工具、重试和每次成功退款成本 |
+| 安全 | ACL 拒绝、注入、越权执行、PII/secret 暴露和 sandbox 违规 |
 
-高 cardinality label（raw user/prompt）不能直接进入 metrics；放受控 trace/object storage。
+原始用户 ID 和 Prompt 是高基数字段，不应直接成为 metrics label；它们放入访问受控的 trace 或对象存储。
 
-## 20. Drift 与回归定位
+质量下降时，先比较 artifact graph、关键切片和延迟分解。即使模型权重没变，代码、模板、索引、embedding、
+reranker、工具 Schema、cache、运行时和流量构成都可能引入回归。先定位发生变化的节点，再决定是否修改 Prompt。
 
-可能变化的包括 input language/length、corpus freshness、retriever score、provider alias、model behavior、tool/API、
-policy 和用户策略。定位时先做 artifact diff、slice diff 和 latency breakdown，而不是先改 Prompt。
+### 15. Cache、fallback 和 rollback 都属于系统行为
 
-模型权重没变时，template、index、embedding、reranker、tool schema、cache、runtime 或 traffic 都能导致回归。
+Cache identity 至少包含：
 
-## 21. Cache
+- 回答与 prefix cache：模型、模板、Prompt、输入、生成参数、租户和策略；
+- 检索 cache：语料、索引、retriever 与 ACL；
+- 失败或空结果：合理 TTL，不让短暂故障长期固化；
+- 模型或索引更新：明确使旧 cache 失效；
+- 高风险输出：不跨身份共享。
 
-- response/prefix cache key 包含 model/template/prompt/input/generation/tenant/policy；
-- retrieval cache 包含 corpus/index/retriever/ACL；
-- negative/failed result 设置合理 TTL；
-- model/index 更新使旧 cache 失效；
-- cache hit 与 miss 分别测质量/延迟；
-- sensitive output 不跨身份共享。
+语义 cache 可能把措辞相似但权限、数字或否定含义不同的请求合并。退款等高风险操作通常不应只靠向量相似复用结果。
 
-Semantic cache 的 embedding similarity 可能把语义不同请求合并，尤其是否定、数字和权限；高风险任务慎用。
+每种失败都要预先定义动作。Provider 429、工具超时、检索失败、Schema 无效、安全分类器不可用和 GPU OOM，
+不能共享一句模糊的“自动 fallback”。备用模型可能使用不同 tokenizer、工具协议和安全能力，因此也要独立评测并留下 trace。
 
-## 22. Failure、fallback 与 rollback
+回滚对象包括代码、模型、tokenizer、模板、Prompt、索引、工具策略、运行时与 cache invalidation。
+代码或模型回滚只能改变未来请求；已经产生的重复退款需要查询外部状态、对账和 forward fix，无法靠切回旧版本撤销。
 
-明确 Provider 429/timeout、retrieval failure、tool uncertain、Schema invalid、safety classifier unavailable 和 GPU OOM
-分别会触发什么行为。Fallback 模型的 tokenizer、tool 和 safety 能力可能不同，需要独立评测，不能静默替换。
+### 16. 反馈进入数据前还要再过一次治理
 
-Rollback 要覆盖 model、tokenizer/template、Prompt、index/retriever、tools/policy、runtime 和 cache invalidation。
-数据库与外部副作用还需要 forward fix 或 reconciliation，不能靠回滚模型撤销。
+点赞与点踩存在选择偏差，点击和停留时间受界面影响，用户主动修正更接近任务结果但仍不完整。
+反馈管线要记录同意、脱敏、垃圾与投毒检测、抽样、标签规则、来源链和留出集隔离。
 
-## 23. Feedback loop
+线上输出不能无条件回灌训练。否则旧模型错误、攻击内容和选择偏差会被下一版继续放大。
 
-点赞/踩有选择偏差，点击/停留受 UI 影响，用户修正更接近任务结果但仍不完整。Feedback pipeline 仍需 consent、
-PII removal、spam/poisoning detection、sampling、label rubric、lineage 和 holdout separation。
+## 阶段四：让用户看见系统处于什么状态
 
-不要自动把所有线上输出回灌训练：会放大旧模型错误、攻击内容和 selection bias。
+退款任务的界面应区分：模型建议、检索证据、工具 proposal、等待审批、已经执行、执行失败和结果未知。
+流畅动画或没有校准依据的“97% confidence”，不能把未知状态变成确定事实。
 
-## Part D：AI 产品交互
+用户控制至少包括：
 
-## 24. 别让流畅语言冒充确定性
+- 查看、更正和删除长期 memory，或关闭个性化；
+- 暂停或取消长任务；
+- 在副作用发生前查看对象、金额、范围和可逆性；
+- 撤销工具与账户访问；
+- 导出或删除数据；
+- 转人工与申诉。
 
-界面区分：模型建议、检索证据、工具 proposal、已审批、已执行、执行结果未知。不要用流畅动画或无依据“97% confidence”制造确定性。
+审批要绑定具体参数，不能让一个“确认”按钮批准未来任意退款。高风险 claim 展示来源、日期和版本，
+并提供纠错入口。系统无法完成时，说明缺少什么、已经做过什么和安全的下一步。
 
-高风险 claim 展示 source/date/版本与纠错入口。无法完成时说明缺什么、已做什么和安全下一步。
+可访问性也属于正确性：支持键盘、屏幕阅读器、清晰焦点、文本缩放、字幕和较低认知负担。
+Streaming 不应让每个 token 抢焦点或被重复朗读。多语言不仅是翻译界面，还要重新检查模型、安全、排版、输入法和文化语境。
 
-## 25. 用户要能看到、撤销和纠正
+## 当前仓库能实际证明什么
 
-- edit/delete memory 与关闭个性化；
-- cancel/pause 长任务；
-- 副作用 preview、对象/范围/金额/可逆性；
-- revoke tool/account access；
-- export/delete data；
-- transfer to human 与 appeal。
+本仓库目前有三组与本页直接相关的可执行基础：
 
-确认按钮避免诱导式默认；approval 绑定具体参数，不能批准“随便处理一下”。
+| 能力 | 实现与测试 | 能支持的结论 |
+|---|---|---|
+| Code metric | `pass_at_k` 与 `tests/test_code_metrics.py` | 组合公式和输入边界符合当前定义 |
+| Typed memory | `ConversationMemoryLedger` 与 `tests/test_conversation_memory.py` | 来源、TTL、修正、撤回和租户作用域不变量 |
+| Artifact identity | `artifact_fingerprint` 与 `tests/test_llmops.py` | 显式 JSON 组件可得到稳定 fingerprint |
 
-## 26. 可访问性
+运行：
 
-键盘、屏幕阅读器、焦点、颜色、字幕/转录、文本缩放和认知负担。Streaming 避免每个 token 抢焦点/重复朗读。图表/图像提供 alt text，但自动描述也需校验。
+```powershell
+python -m pytest `
+  tests/test_code_metrics.py `
+  tests/test_conversation_memory.py `
+  tests/test_llmops.py -q
+```
 
-多语言不只翻译 UI；同时测模型、安全、排版、输入法、语音和文化语境。
+这些实现没有构成真实大型仓库 benchmark、持久化 memory 服务、跨副本并发系统、生产 trace backend、
+线上 A/B 或语义 cache。它们适合验证基础契约，不能证明整个系统已经达到生产成熟度。
 
-## 27. 当前仓库证据边界
+## 回到重复退款修复
 
-仓库已有代码 smoke/test、pass@k 数学、typed memory reference core、RAG/Agent CLI、评测门禁、云 contract、
-chat template 和 artifact fingerprint。Memory core 验证了来源、TTL、修正/撤回和租户隔离的不变量，
-但它只是单进程内存实现。
+任务完成时，不应只留下“Agent 说已经修好”。交付记录应能回答：
 
-仓库没有真实大型仓库 benchmark、persistent memory service、跨副本并发测试、production trace backend、
-线上 A/B 或语义 cache。因此，本章提供的是可执行基础合同与工程验收，而不是 L3/L4 生产成熟度证明。
+1. 哪个 base revision 上复现了什么失败？
+2. 哪个 patch 或 commit 改变了哪条幂等契约？
+3. 哪些命令在什么环境运行，结果如何？
+4. 暂停与恢复时，任务 stage、审批和未知外部结果怎样保存？
+5. 发布 artifact graph 绑定了哪些代码、模型、Prompt、工具和索引版本？
+6. 哪个门禁允许进入 canary，哪些信号会停止或回滚？
+7. 若重复退款已经发生，谁负责外部对账与补救？
 
-## 28. 常见错误结论
+能够逐项回到证据，才算把自然语言请求变成了可复现修改、可恢复任务和可回滚发布。
 
-- **“代码编译了就正确”**：功能、安全、性能和兼容仍未证明。
-- **“pass@10 是线上成功率”**：它给同任务十次机会，并消耗更多预算。
-- **“摘要就是会话事实”**：摘要可能错，需 source/state。
-- **“保存全部 history 最准确”**：旧错误、隐私和 context 干扰会累积。
-- **“记录 model name 就能重放”**：artifact graph 还有 template/index/tools/runtime。
-- **“Hash 相同证明语义相同”**：fingerprint 只证明 canonical bytes 身份。
-- **“只是改 Prompt，不需要发布流程”**：工具、安全和成本都可能改变。
+## 自测
 
-## 自测与实践
-
-1. 为仓库 bug fix 设计 symbol/test/config context retrieval 顺序。
-2. 从 \(n=10,c=2\) 推导 pass@1 与 pass@2，为什么不能报告 pass@20？
-3. 设计用户纠正旧偏好后的 memory supersession schema。
-4. 列出完整 LLM trace 的版本轴与敏感字段。
-5. 模型权重不变但 p95/质量下降，按哪些 artifact/metric 排查？
-6. 为 tool timeout + rollback 说明为什么模型版本回退无法撤销外部状态。
+1. 为什么 task checkpoint 不能只保存一段对话摘要？
+2. `pass@10` 为什么不能直接作为单次线上代码修复成功率？
+3. 模型权重不变但质量下降时，按什么顺序比较 artifact 和 trace？
+4. 为什么回滚模型无法撤销已经发生的重复退款？
+5. 设计一条用户修正长期偏好后的 memory supersession 记录。
