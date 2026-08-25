@@ -7,55 +7,75 @@
 
 - **适合读者**：需要选模型、部署路线、API 供应商或设计模型迁移评测的开发者与算法工程师。
 - **先修**：知道模型家族、checkpoint、tokenizer、runtime、云 API 和完整应用系统不是同一层对象。
-- **首次阅读**：对象分层 → 家族定位 → 硬约束 → 任务协议 → 成本与迁移。
-- **完成信号**：能提交一份包含候选身份、淘汰理由、固定 workload、证据等级和回滚条件的模型选型记录。
+- **首次阅读**：先跟随 3070 Laptop 上的选型案例，再学习怎样扩展候选、比较任务表现和设计迁移。
+- **完成信号**：能说明一个候选为什么可以继续测试、为什么被淘汰，以及哪些变化其实来自模板、运行时或应用系统。
 - **卡住时**：先读[新手知识地图](../guide/beginner-map.md)、[Transformer](../core/transformer.md)和[云 API 契约](cloud-api-contracts.md)。
 
 </div>
 
-## 先回答一个看似简单的问题
+## 从你的机器开始选，而不是从排行榜开始
 
-团队问“GPT、Qwen 和 Llama 选哪个”时，最诚实的第一反应通常是：准备用它做什么，又准备怎样运行？
+假设你现在有一台配备 RTX 3070 Laptop GPU 的笔记本，想做两件事：
 
-真正进入测试的不是品牌名，而是一条**可执行候选**：具体模型或 API、tokenizer 与 template、runtime、精度或量化、
-服务配置，再加上固定任务协议。先用隐私、许可、输入模态、显存和接口能力排除不可用方案；剩下的候选才值得
-放到同一 workload 中比较质量、失败、延迟和成本。榜单适合帮助你发现候选，发布决定仍要来自自己的约束和实验。
+1. 用中文 RAG 回答自己的技术文档，并给出引用；
+2. 让 Agent 生成结构化工具参数，但真正的权限检查和执行仍由程序完成。
 
-## 先把比较对象分层
+你正在运行 `Qwen3-0.6B + nano-vLLM`。这个组合很适合学习一次请求怎样经过调度、KV Cache、
+prefill、decode 和 sampling，也能承担本地功能冒烟。不过，这些事实还不能证明它已经达到真实业务所需的回答质量。
+固定版本、运行命令和逐步观察项见 [Qwen3 穿过 nano-vLLM](../practice/labs/lab-7b-nano-vllm-qwen3.md)。
 
-“GPT 比 Llama 强吗”之所以难回答，是因为两个名字都跨越了多层对象。把问题拆开后，每一层需要的证据会清楚很多：
+因此，第一轮选型可以先作出一个阶段性决定：
+
+| 角色 | 候选 | 这一轮要回答的问题 |
+|---|---|---|
+| 本地学习基线 | 固定 revision 的 Qwen3-0.6B + nano-vLLM | 链路能否跑通？显存、延迟和失败状态能否解释？ |
+| 云端质量参照 | 一个记录了供应商、API、model id、区域和核对日期的候选 | 在同一批 RAG/Agent case 上，质量提升是否值得费用与数据治理成本？ |
+
+这不是提前宣布谁获胜。本地小模型和云端模型先承担不同角色，等它们通过同一组硬约束与任务评测后，
+才能决定生产主路、降级路或是否继续扩大本地模型。
+
+这个案例也揭示了“GPT、Qwen 和 Llama 选哪个”为什么不是一个完整问题。品牌名不能直接运行。
+程序真正运行的是某个 checkpoint 或 API，连同 tokenizer、对话模板、运行时、精度、量化和服务配置。
+
+## 先看清自己正在比较哪一层
+
+同一个模型名字可能指论文、模型家族、权重文件，也可能指云端产品。它们回答的问题不同：
 
 | 层 | 例子 | 这一层回答什么 | 下一步还要固定什么 |
 |---|---|---|---|
-| 研究主张 | 某篇 scaling、MoE、MLA、对齐论文 | 某个方法在论文设置中怎样工作 | 产品是否采用、采用到什么程度 |
+| 研究主张 | 某篇 scaling、MoE、MLA 或对齐论文 | 某个方法在论文实验中怎样工作 | 产品是否采用，以及采用到什么程度 |
 | 模型家族 | GPT、Claude、Gemini、Llama、Qwen、DeepSeek | 生态、发布方式和研究路线 | 具体型号、版本、架构与接口 |
-| 发布 artifact | checkpoint revision、tokenizer、processor、license | 你实际取得了哪些文件 | runtime 支持与任务行为 |
-| 产品 SKU/API | provider、region、API surface、model id、snapshot | 供应商对外承诺的调用契约 | 内部更新、路由和当前实测行为 |
+| 发布文件 | checkpoint revision、tokenizer、processor、license | 你实际取得了哪些文件 | 运行时是否支持，任务表现怎样 |
+| 云端 API | provider、region、API surface、model id、snapshot | 供应商对外承诺什么调用契约 | 后端是否更新、怎样路由、当前实测怎样 |
 | 执行配置 | runtime、kernel、dtype、quantization、adapter、template | 这次程序到底怎样运行模型 | 目标硬件上的正确性、容量和速度 |
 | 应用系统 | RAG、Agent、缓存、权限、重试、评测 | 用户最终经历的完整链路 | 失败发生在哪一层 |
 
-同一个开放权重 checkpoint 换 tokenizer 模板、量化方法或 serving runtime，输出和吞吐都可能改变；同一个云端 model id 换 API surface、区域、工具协议或供应商别名，也可能不是同一契约。比较报告必须先声明比较的是哪一层。
+同一个开放权重 checkpoint，换一个对话模板、量化方法或推理运行时，输出与吞吐都可能改变。
+同一个云端 model id，换 API、区域或工具协议后，也未必还是同一份调用契约。
 
-### 可执行候选的最小身份
+### 把候选写成别人可以重新运行的记录
 
-本地或自托管候选可以写成：
+以本地 Qwen 候选为例，模型名之外还要保存：
 
-\[
-c_{local}=(repo,revision,files,tokenizer,template,processor,runtime,dtype,quant,adapter,serve)
-\]
+| 部分 | 要记录什么 | 少了会发生什么 |
+|---|---|---|
+| 模型文件 | repo、完整 revision、文件哈希 | 无法确认两次运行使用了相同权重 |
+| 输入处理 | tokenizer、chat template、processor | 输入 token 或模态处理可能已经变化 |
+| 执行方式 | nano-vLLM revision、dtype、量化、kernel | 输出、显存和速度无法复现 |
+| 服务配置 | batch、上下文、采样、adapter | 质量或容量差异会被错归因给模型 |
+| 测试任务 | case、检索上下文、工具 schema、成功条件 | 两个分数可能根本没有比较同一件事 |
 
-云端候选可以写成：
-
-\[
-c_{api}=(provider,platform,region,api\ surface,model\ id,snapshot,checked\_at,request\ contract)
-\]
-
-供应商没有提供不可变 snapshot 时，把字段记为未知或 `null`。一个长期不变的 model alias 仍可能在服务端更新或路由；
-请求/响应 hash 只能帮助你确认保存下来的字节，无法替供应商内部版本作证。
+云端候选改为记录供应商、平台、区域、API、model id、请求契约和核对日期。
+供应商提供不可变 snapshot 时一并保存；只提供动态别名时，就把内部版本记为未知。
+请求或响应的哈希只能确认你保存的字节，无法揭示供应商内部使用了哪个版本。
 
 ## 六个家族应该怎样放进候选池
 
 下表不是能力排名。它告诉你把某个家族放进候选池后，第一批实验应该验证什么。
+
+在开头的案例中，Qwen 首先进入本地候选，是因为你已经在目标机器上运行它，并且 nano-vLLM 提供了可学习的推理链路。
+云端候选则可以来自 GPT、Claude、Gemini、Qwen 或 DeepSeek 的 API。选择来源时先看数据政策、接口与任务需要，
+再用同一批 case 实测；家族名称本身不提供优先级。
 
 | 家族 | 常见取得方式 | 首先固定什么 | 优先验证什么 | 典型误读 |
 |---|---|---|---|---|
@@ -75,7 +95,7 @@ c_{api}=(provider,platform,region,api\ surface,model\ id,snapshot,checked\_at,re
 - [Qwen](qwen.md)：中文/多语言、dense/MoE、模板、工具与本地/云分层；
 - [DeepSeek](deepseek.md)：MoE、MLA、推理后训练与派生 checkpoint 边界。
 
-### 下载到权重之后还要检查什么
+### 权重下载完成，还不能直接发布
 
 “可以下载权重”解决了取得文件的问题。是否能安全、合法并可重复地使用，还要分别检查：
 
@@ -88,10 +108,13 @@ c_{api}=(provider,platform,region,api\ surface,model\ id,snapshot,checked\_at,re
 因此报告里最好分别写“开放权重（open-weight）”“开源代码（open-source code）”和“开放数据（open data）”。
 一句“开源模型”常常会把许可、数据和实现透明度混在一起。
 
-## 第一步：先做硬约束过滤
+## 第一步：先排除根本无法使用的候选
 
-跑 benchmark 之前先建立 feasible set。候选若违反数据驻留、许可或硬件容量等硬约束，就不进入后续排名；
-平均质量再高，也解决不了这些部署条件。
+先回到 3070 Laptop 的案例。假如私有文档不得离开本机，那么未获数据处理批准的云 API 就应停在这里。
+它的回答质量再高，也无法弥补这个冲突。相反，如果目标是学习推理引擎，Qwen3-0.6B 能否在这张 GPU 上稳定加载，
+比它在综合榜单上的名次更重要。
+
+这类“必须满足”的条件称为硬约束。开始性能测试前，逐项查证：
 
 | 约束 | 需要的证据 | 常见假阳性 |
 |---|---|---|
@@ -105,41 +128,55 @@ c_{api}=(provider,platform,region,api\ surface,model\ id,snapshot,checked\_at,re
 | 安全与治理 | IAM、ACL、日志、删除、保留、审批与事件流程 | 模型会拒答 |
 | 可运维性 | health、限流、升级、回滚、观测与 on-call | demo 能返回一句话 |
 
-可以把约束写成布尔 gate：
+程序里可以把这些条件写成布尔门禁：
 
 \[
 feasible(c)=\bigwedge_j g_j(c)
 \]
 
-只有 `feasible(c)=true` 的候选才进入质量/成本比较。`unknown` 表示信息还不够：高风险约束缺少证据时先停止，
-低风险探索则可以记录 exception、负责人和到期时间后继续。
+这里的 \(g_j(c)\) 表示候选 \(c\) 是否通过第 \(j\) 项条件。所有条件都通过，`feasible(c)` 才为真。
 
-## 第二步：再做多目标比较
+有些条件暂时只能得到 `unknown`。涉及敏感数据、许可或真实副作用时，未知就意味着暂停；
+只做低风险本地探索时，可以记录临时例外、负责人和到期时间。
 
-模型选型通常没有单一最大值。至少同时观察：
+## 第二步：让剩下的候选完成同一组任务
+
+通过硬约束后，让本地和云端候选回答同一批中文 RAG 问题、生成同一套工具参数。
+不要先追求一个“总分”，因为选型同时关心以下几件事：
 
 - 任务质量：正确、完整、忠实、引用、格式和拒答；
 - 风险：越权、泄漏、注入、危险动作和受保护切片退化；
-- 时延：排队、TTFT、TPOT、terminal latency 与 timeout；
+- 时延：排队、首 token 时间（TTFT）、后续 token 间隔（TPOT）、完整响应时间与超时；
 - 容量：吞吐、并发、峰值内存和降级曲线；
 - 成本：token/media/tool 费用、重试、闲置、运维和迁移；
 - 可复现与可控：revision、模板、量化、adapter、回滚和数据驻留。
 
-先画 Pareto frontier，查看哪些候选在所有目标上都被支配。若业务必须汇总为一个分数，可写：
+例如，本地候选可能便宜、可查看运行细节，却在复杂问答上落后；云端候选可能质量更高，
+却受到网络时延、费用或数据策略限制。这不是一个数字能够诚实概括的取舍。
+
+可以先画 Pareto frontier（帕累托前沿）：如果候选 A 在所有重要指标上都不优于 B，就先淘汰 A。
+若业务最终必须汇总为一个分数，可以写成：
 
 \[
 U(c)=\sum_k w_k\tilde m_k(c),\qquad \sum_k w_k=1
 \]
 
-但权重、归一化范围、方向和缺失值策略必须在看结果前确定。一个加权分数会隐藏 protected slice、安全 gate 和尾延迟，不得替代逐项报告。不要在看到赢家后调整权重。
+\(w_k\) 是业务为第 \(k\) 项指标预先设定的权重，\(\tilde m_k(c)\) 是统一方向和量纲后的指标值。
+权重、归一化范围和缺失值处理方式应在查看结果前确定。最终报告仍要单列安全门禁、关键用户切片和尾延迟，
+这样一个较高的平均分才不会掩盖局部事故。
 
 ### 报告不确定性，而不只报均值
 
-同一 case 上比较候选时保存 paired result，给出逐 case 差值、关键切片和适当的配对区间/检验。用户、文档或会话内相关时按 cluster 重采样或随机化；不能把相关 case 当独立样本。统计显著不等于业务重要，区间也不修复错误标签、污染或不代表生产的 workload。具体方法见[评测方法](../quality/evaluation-methodology.md)。
+两个候选回答同一道题时，保存成对结果和逐题差值。这样能看出改进来自多数题，还是少数极端样本。
 
-## 第三步：为任务固定比较协议
+若多条样本来自同一用户、文档或会话，它们彼此相关。此时应按用户、文档或会话分组重采样，
+而不是把每一行都当成独立证据。区间与显著性只描述当前样本中的不确定性；业务影响、标签质量、
+数据污染和生产代表性需要另外判断。具体方法见[评测方法](../quality/evaluation-methodology.md)。
 
-“通用能力”不能替代目标系统的 failure taxonomy。以下协议用于生成可证伪证据，不预设某一家族获胜。
+## 第三步：先固定任务，再运行候选
+
+“通用能力强”不能告诉你一次 RAG 引用为什么错，也不能告诉你 Agent 是否会重复退款。
+为目标任务固定输入、系统组件和成功条件，才能把失败定位到具体环节。下表给出了常见任务的起点：
 
 | 场景 | 固定变量 | 主要指标/gate | 必须分账的失败 |
 |---|---|---|---|
@@ -153,47 +190,74 @@ U(c)=\sum_k w_k\tilde m_k(c),\qquad \sum_k w_k=1
 
 ### RAG 选型
 
-单独比较 generator 时，先冻结检索结果与 packing，避免把检索差异归因给模型；比较端到端系统时，则同时保存
-retrieval 与 generation trace。Citation format、source identity 和 semantic support 是三项检查。证据不足时的
-正确拒答也要进入 coverage-risk，而不能只统计 answer rate。
+如果只想比较生成模型，就给所有候选相同的检索片段和上下文排列。这样，答案差异才主要来自生成阶段。
+如果比较完整 RAG 系统，则同时保存检索轨迹与生成轨迹，用来判断正确证据究竟在哪一步丢失。
+
+引用检查至少回答三个问题：引用格式是否可解析、来源是否真实存在、来源内容是否支持对应主张。
+还要统计证据不足时能否正确拒答；只看“回答率”会奖励没有证据也敢猜的模型。
 
 ### Agent 选型
 
-工具调用只是候选动作，不是执行授权。评测既要覆盖正常任务，也要覆盖 prompt injection、未知字段、错 tool id、并行调用、超时后状态未知、审批恢复、重复 effect 和 verifier 拒绝。模型“没有调用工具”可能是安全拒绝，也可能是能力失败，必须按 policy expectation 分账。
+模型生成的工具调用只是动作建议，执行层仍要独立授权。正常任务之外，至少加入以下失败情形：
+
+- 文档或工具结果中含有提示注入；
+- 参数出现未知字段，或工具 ID 指向错误对象；
+- 多个动作并行返回，远端超时后状态暂时未知；
+- 审批后恢复任务，或同一副作用被重复请求；
+- 业务验证程序拒绝模型声称的完成状态。
+
+模型没有调用工具，有时是符合策略的安全拒绝，有时是任务能力失败。预先写出每条 case 期望的行为，评测时才能正确归类。
 
 ### 微调选型
 
-先建立 Prompt/RAG/base baseline，再判断是否需要更新参数。比较不同 base model 时，分别使用它们兼容的 tokenizer、
-chat template 与 target modules；训练前先固定 data audit、split binding、assistant labels 和 held-out gate。
-Train loss 与 adapter reload 属于训练/发布证据，任务改善与 serving compatibility 仍需独立验收。
+先跑 Prompt、RAG 和原始模型基线，再判断是否值得更新参数。每个基础模型都要使用自己兼容的 tokenizer、
+对话模板和 LoRA 目标层。训练前完成数据审计，固定训练/留出集，并确认只有目标回答位置参与损失。
+
+训练损失下降说明优化器在拟合训练目标；adapter 能重新加载说明工件可以读取。任务质量是否提高、
+推理服务是否兼容，仍需在留出任务和目标运行时中分别验收。
 
 ### 推理部署选型
 
-先用同一输出协议检查质量差，再比较性能。固定 warm/cold、batch/并发、输入输出长度分布、sampling、prefix reuse、量化、runtime/kernel 和硬件。一次短 prompt 的 tokens/s 不能外推到长 prefill、多轮 KV、burst arrival 或 tool-heavy workload。
+先确认候选在同一输出协议下达到质量门槛，再比较速度。记录冷启动或预热状态、批量与并发、输入输出长度、
+采样参数、前缀复用、量化、运行时、kernel 和硬件。
+
+一条短 Prompt 的每秒 token 数只描述这一次测试。长输入的 prefill、多轮对话的 KV Cache、突发请求和频繁工具调用，
+都会产生不同的瓶颈。
 
 ## 本地单 GPU：容量账本
 
-本地候选的峰值内存不是权重文件大小。推理时至少拆为：
+Qwen3-0.6B 的权重能放进 3070 Laptop 显存，只说明第一道门可以通过。运行时还会为 KV Cache、
+中间激活、kernel 工作区和框架自身分配显存。可以先用下面的账本估算峰值：
 
 \[
 M_{peak}\approx M_{weights}+M_{KV}+M_{activations}+M_{workspace}+M_{runtime}
 \]
 
-训练或 LoRA 还要加入梯度、optimizer state、可训练 master weights、保存/合并副本和 dataloader/pinned memory。QLoRA 通常只是冻结 base 权重低位存储；adapter、激活、梯度、optimizer 和部分计算仍使用更高精度，不能写成“整个训练都是 4-bit”。
+做 LoRA 训练时，账本还要增加梯度、优化器状态、可训练参数的高精度副本、保存或合并副本，
+以及数据加载使用的锁页内存。QLoRA 主要压缩被冻结的基础权重。adapter、激活、梯度和优化器状态仍可能使用更高精度，
+所以“4-bit 基础权重”不等于整个训练过程只占 4-bit。
 
-标准 MHA/GQA 的理想 K/V payload 可由层数、KV heads、head dimension、tokens、batch 和 element bytes 计算。
-MLA、跨层共享、压缩 cache、paged allocator、量化 metadata 与 workspace 要按实际实现重新建模。遇到未知
-attention layout 时先查配置与 runtime，再决定使用哪套公式。
+对于标准 MHA 或 GQA 布局，理想的 K/V 数据量约为：
+
+\[
+M_{KV}=2L B T H_{kv} d_{head}s
+\]
+
+这里的 2 表示 K 和 V；\(L\) 是层数，\(B\) 是 batch size，\(T\) 是已缓存 token 数，
+\(H_{kv}\) 是 K/V head 数，\(d_{head}\) 是每个 head 的维度，\(s\) 是每个元素的字节数。
+
+这个公式只计算理想数据本体。分页分配器、block table、量化 scale、临时张量和 kernel 工作区都会增加开销。
+MLA、跨层共享或压缩 cache 采用不同布局，应读取目标 checkpoint 与运行时实现后重新建模。
 
 单卡筛选顺序：
 
-1. 固定 checkpoint、tokenizer/template、license 与 runtime support；
-2. 静态估算权重/KV/训练状态，明确不含项；
-3. 在目标设备加载，记录 load peak 与 steady idle；
-4. 用目标长度分布测 prefill/decode 和峰值；
-5. 扩大 batch/并发直到受控 OOM 或 SLO 边界；
-6. 量化后重新跑质量、安全和长上下文回归；
-7. 保存版本、命令、原始 trace 和失败样本。
+1. 固定 checkpoint、tokenizer、对话模板、许可和运行时版本；
+2. 静态估算权重、KV Cache 和训练状态，并写清估算尚未包含哪些开销；
+3. 在目标设备加载模型，记录加载峰值和空闲稳态显存；
+4. 使用目标输入长度，分别测量 prefill、decode 和峰值显存；
+5. 逐步增加 batch 或并发，直到触及受控 OOM 或服务目标边界；
+6. 量化后重新检查质量、安全行为和长上下文表现；
+7. 保存版本、命令、原始轨迹和失败样本。
 
 ## 云 API：接口与费用账本
 
@@ -203,9 +267,11 @@ attention layout 时先查配置与 runtime，再决定使用哪套公式。
 C_{request}=C_{input}+C_{cached}+C_{output}+C_{media}+C_{tool}+C_{retry}
 \]
 
-Token 分类与单价要按 provider、model、API version 和 checked-at 核对。计费用量以 Provider usage/billing export
-为准；本地 tokenizer 估算只用于 preflight。Usage 缺失、partial stream、timeout 或 outcome unknown 时保留
-uncertain reservation，因为每个 retry attempt 都可能单独产生费用。
+供应商可能分别计算普通输入、缓存输入、输出、媒体和工具费用。每次实验都要按供应商、model id、API 版本和核对日期查价。
+
+正式对账以供应商返回的 usage 或账单导出为准。本地 tokenizer 只能在发请求前估算预算。
+如果流式响应中断或请求超时，客户端可能暂时不知道供应商是否已经完成并计费。此时先保留一笔“费用待确认”，
+因为后续重试也可能形成独立费用。
 
 “按 token 便宜”也不等于总成本低。还要计入：
 
@@ -215,11 +281,13 @@ uncertain reservation，因为每个 retry attempt 都可能单独产生费用�
 - adapter 维护、版本迁移和双跑窗口；
 - 自托管的闲置容量、能源、值班和升级成本。
 
-只在同一成功定义和质量 gate 下比较 cost per successful task；否则便宜但失败的请求会被错误地奖励。
+因此，成本比较的分母应是“成功完成的任务”，而不是请求总数。两个候选还要使用相同的成功定义并通过相同质量门槛，
+否则一个便宜但经常失败的方案反而会显得占优。
 
-## Provider adapter：统一什么，保留什么
+## 统一云 API 时，哪些差异必须保留
 
-内部 adapter 可以统一最小稳定语义：
+为了让业务代码能够切换供应商，可以在中间增加 provider adapter（供应商适配层）。
+它把稳定的公共部分整理成内部请求和结果：
 
 ```text
 NormalizedRequest
@@ -238,7 +306,7 @@ NormalizedResult
 └── provider-specific raw projection
 ```
 
-但不能把 provider 差异抹掉：
+公共结构减少了业务层的重复代码，但供应商特有语义仍要保留：
 
 - OpenAI 的 Responses 与 Chat Completions 不是只差 URL；
 - Anthropic Messages 的顶层 `system`、content blocks 和 stop reason 有自身状态机；
@@ -246,11 +314,13 @@ NormalizedResult
 - DeepSeek/Qwen 云 API 的扩展字段不由开放 checkpoint config 决定；
 - “OpenAI-compatible”通常只表示部分请求/响应 shape 兼容，不保证错误、stream、usage、tool、idempotency 或计费语义一致。
 
-未知 block/event 不应静默丢弃；在受控存储中保留脱敏原始投影，并让上层显式决定是否支持。纯文本业务遇到 only-tool、refusal 或未知 block 时应返回 typed state，而不是空字符串成功。
+遇到未知的内容块或流事件时，适配层应返回明确的“暂不支持”状态，并在受控存储中保留脱敏后的原始结构。
+纯文本业务收到只有工具调用、拒答或未知内容块的响应时，也应返回对应状态；空字符串会让上层误以为请求成功。
 
-## 可复现选型 manifest
+## 把选择过程保存下来
 
-一个候选至少保存以下字段；示例是仓库协议，不是任何 provider 的请求 schema：
+下面的 manifest（实验清单）把候选身份、运行方式、任务和决策规则放在一起。
+它是本仓库建议的记录格式，不是供应商 API 的请求结构：
 
 ```json
 {
@@ -281,7 +351,9 @@ NormalizedResult
 }
 ```
 
-对本地 checkpoint，`immutable_revision=null` 通常是不合格输入；对没有公开权重 revision 的云 API，它可能是诚实记录。两种情况必须由 `provider_or_repo` 和证据边界区分，不能用同一字段含混处理。
+本地 checkpoint 应提供不可变 revision；这里若写 `null`，通常说明身份记录还没完成。
+云 API 可能只公开动态 model id，此时 `null` 是对供应商可见信息的诚实记录。
+读取 manifest 时，应结合 `provider_or_repo` 判断是哪种情况，并在结论中写明版本漂移风险。
 
 ## 升级与迁移不是改一个 model id
 
@@ -296,7 +368,24 @@ NormalizedResult
 7. protected slice、越权、安全与内容政策回归；
 8. 延迟、限额、成本、峰值内存和 fallback 行为。
 
-先 shadow/offline replay，再小流量 canary；任何真实流量双跑都要满足数据处理授权，不能为了评测把敏感请求复制给未批准的 provider。发布记录应包含 threshold、审批人、回滚触发器和旧版本保留期。若 provider 别名不可固定，还要持续做 drift detection，而不是只在首次接入时评测。
+先做离线重放或 shadow（只观察、不影响用户结果的影子流量），再进入小流量 canary（金丝雀发布）。
+真实请求要经过数据处理授权后才能复制给第二个供应商。发布记录还要写明通过阈值、审批人、回滚触发器和旧版本保留期。
+
+供应商别名会动态更新时，在接入后继续运行 drift detection（漂移检测）。它负责发现同一别名的输出、延迟或协议行为是否发生变化。
+
+## 回到这台 3070：这一轮究竟怎样结束
+
+完成上述检查后，阶段性决定可以有三种：
+
+| 实测结果 | 决定 | 原因 |
+|---|---|---|
+| 本地候选通过质量、安全和延迟门槛 | 让本地路线承担目标任务，云端保留为可选参照 | 数据与运行时都在自己的控制范围内 |
+| 本地候选质量不足，云端候选通过治理和任务门槛 | 云端承担目标任务，本地继续用于学习和回归 | 小模型的教学价值与生产质量要求可以分开 |
+| 两者各有未通过的硬约束 | 暂不发布，调整任务、检索、模型或治理条件后重测 | 排名无法覆盖硬约束失败 |
+
+无论得到哪种结果，都要保留逐条 case 和运行轨迹。若本地答案变化，先检查模型 revision、tokenizer、
+对话模板、nano-vLLM、量化和采样；若端到端 RAG 变化，还要检查检索与上下文。
+只有其他条件保持一致时，差异才有理由主要归因于模型。
 
 ## 常见错误
 
@@ -351,4 +440,6 @@ schema 约束语法，不证明字段真实、资源属于当前 tenant、金额
 
 ## 型号信息的时间边界
 
-型号、价格、上下文长度、区域、限额和 API 字段变化快。本章保留稳定比较方法；具体项目用 manifest 记录 provider/repo、model、revision/snapshot、API/runtime version、region 和 `checked_at`，再从对应官方文档与固定 artifact 核对。不要维护没有日期和来源的“永久最新/最强模型表”。
+型号、价格、上下文长度、区域、限额和 API 字段都会变化，因此本章只保留稳定的比较方法。
+具体项目使用 manifest 记录供应商或仓库、model id、revision 或 snapshot、API 或运行时版本、区域和 `checked_at`。
+这些字段应从对应官方文档与固定文件核对。有日期、有来源的实验记录，比一张声称“永久最新、永远最强”的型号表更可靠。
