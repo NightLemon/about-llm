@@ -5,201 +5,275 @@
 
 **学习导航**
 
-- **适合读者**：需要在 Prompt、RAG、全参数训练和 PEFT 之间做选择的工程师。
+- **适合读者**：需要在 Prompt、RAG、全参数训练和参数高效微调之间做选择的工程师。
 - **先修**：Transformer、tokenization、训练/验证切分和基础优化。
-- **首次阅读**：判断是否需要训练 → 数据与 labels → LoRA/QLoRA → 评测 → 发布。
-- **完成信号**：能说明为何选择某种干预，并设计带基线、held-out 与回归切片的实验。
-- **卡住时**：先读 [SFT 数据流水线](sft-data-pipeline.md)，不要从训练命令开始。
+- **首次阅读**：先跟一条样本走完全程，再理解 SFT、LoRA、QLoRA、评测与发布。
+- **完成信号**：能指出一条对话中哪些 token 产生 loss，并在 3070 Laptop 上设计一次可解释的 Qwen3-0.6B LoRA 实验。
+- **卡住时**：先读 [SFT 数据流水线](sft-data-pipeline.md)，不要从调学习率开始。
 
 </div>
 
-微调改变模型在给定输入下的行为分布。它适合学习稳定任务、输出格式、领域表达和工具协议，但不是知识库、权限系统、事实验证器或服务优化器。
+微调会改变模型在给定输入下生成各种回答的概率。它适合学习稳定的任务映射、输出格式、领域表达和工具协议；
+它不会自动变成知识库、权限系统、事实验证器，也不会解决推理服务太慢的问题。
+
+这页先用一条售后对话说明“改权重”到底发生了什么，然后再展开各项工程选择。
 
 ## 先判断问题在哪一层
 
-“效果不好”还不是训练理由。先把失败分类，再选择最小干预：
+假设用户问：“包裹少了一件商品，怎么处理？”模型已经查到了订单记录，却总是漏掉“先核对签收照片，再创建补发单”这一步。
+如果这种错误在大量稳定、合规的样本中反复出现，微调可能有用。若系统根本没查到订单，问题仍在检索或工具层，训练模型并不能补回缺失的数据。
 
-| 主要失败 | 首选基线 | 微调可能有用的部分 | 微调不能替代 |
+| 主要失败 | 先建立什么基线 | 微调可能学到什么 | 仍需外部系统负责什么 |
 |---|---|---|---|
-| 缺少易变或私有事实 | RAG、数据库、工具 | 学习怎样引用和使用证据 | 新鲜数据、ACL、引用核验 |
-| JSON 或固定格式不稳定 | schema、constrained decoding、few-shot | 降低格式错误率 | 解析、业务校验、执行授权 |
-| 工具选择不稳定 | typed tool contract、状态机 | 学习 proposal pattern | 参数校验、幂等、人工确认 |
-| 稳定领域任务较弱 | zero/few-shot 基线 | 学习任务映射或领域表达 | held-out 评测、数据许可 |
-| 偏好或拒答边界不稳定 | rubric、SFT 基线 | 改变被测分布上的行为概率 | 外部 policy、事实 verifier |
-| 延迟或显存过高 | 小模型、量化、路由、batching | 蒸馏后恢复部分质量 | runtime profiling 与容量验收 |
+| 缺少易变或私有事实 | RAG、数据库、工具 | 怎样引用和使用查到的证据 | 新鲜数据、访问控制、引用核验 |
+| JSON 或固定格式不稳定 | Schema、约束解码、少样本提示 | 更稳定地遵守格式 | 解析、业务校验、执行授权 |
+| 工具选择不稳定 | 有类型的工具接口、状态机 | 何时提出哪种工具调用 | 参数校验、幂等、人工确认 |
+| 稳定领域任务较弱 | 零样本或少样本基线 | 任务映射和领域表达 | 留出集评测、数据许可 |
+| 拒答或偏好边界不稳定 | 评分规则、SFT 基线 | 调整被测分布上的行为概率 | 外部策略、事实验证 |
+| 延迟或显存过高 | 小模型、量化、路由、批处理 | 蒸馏后恢复部分质量 | 性能分析和容量验收 |
 
-若错误来自检索漏召回、权限过滤、Prompt 拼接或服务超时，继续增加训练样本是在错误层修问题。
+先把失败归到正确的层，再选择成本最低的干预。否则，检索漏召回、权限过滤或服务超时都可能被误写成“训练数据不够”。
+
+## 先跟一条样本走完全程 {#sample-lifecycle}
+
+下面是一条简化后的训练样本。真实项目还需要来源、许可、用户同意、隐私处理和数据划分等信息。
+
+```json
+{
+  "messages": [
+    {"role": "system", "content": "按售后流程回答，信息不足时先询问。"},
+    {"role": "user", "content": "包裹少了一件商品，怎么处理？"},
+    {
+      "role": "assistant",
+      "content": "请先核对签收照片和包裹内清单；确认缺件后，我会为你创建补发单。"
+    }
+  ]
+}
+```
+
+它进入 Qwen3-0.6B 的一次 LoRA 训练，大致会经过八步：
+
+1. **Chat template 排版**：把角色和内容变成 Qwen3 认识的特殊 token 序列。
+2. **Tokenizer 切分**：把字符串变成 `input_ids`。
+3. **Assistant mask 标记答案**：用户问题仍作为上下文，但只有理想回复属于监督区间。
+4. **Labels 生成**：监督区间复制相应 token ID，其余位置写成 `-100`，PyTorch 的交叉熵会忽略这些位置。
+5. **SFT loss 反向传播**：模型学习在“包裹少件”上下文之后提高理想回复 token 的概率。
+6. **LoRA 更新**：Qwen3 底座保持冻结，只更新注意力投影层旁边的低秩矩阵。
+7. **Adapter 保存并重载**：把低秩增量与底座版本、tokenizer 和模板一起记录，在新进程里重新加载。
+8. **留出集比较**：用训练时没见过的售后问题比较原模型、Prompt/RAG 基线和 Adapter；这一步才回答行为是否真的改善。
+
+这条链路中，前四步决定模型究竟在学什么，第五、六步决定哪些参数怎样变化，最后两步决定结果能不能复用、是否值得发布。
 
 ## SFT 学到了什么
 
-监督微调使用“输入 → 目标输出”示例最小化 next-token loss。对话训练常只监督 assistant token：prompt 仍参与 attention，却用 loss mask 排除，不要求模型复述用户消息。
+监督微调（Supervised Fine-Tuning，SFT）使用“输入 → 理想输出”示例继续做逐 token 预测。
 
-设第 \(i\) 个 token 的标签为 \(y_i\)，监督位置集合为 \(S\)，则常见目标为：
+在上面的对话里，系统消息和用户问题都参与注意力，模型生成答案时仍然可以读取它们。这些位置不计入损失，因此模型不会被要求复述用户消息。
+
+设第 \(i\) 个 token 的标签为 \(y_i\)，真正参与监督的位置集合为 \(S\)，常见目标是：
 
 \[
 \mathcal{L}_{\text{SFT}}
 =-\frac{1}{|S|}\sum_{i\in S}\log p_\theta(y_i\mid x_{<i}).
 \]
 
-关键不是“样本里有 assistant 字段”，而是 template、tokenization、shift、mask 和 truncation 之后，正确 token 真正进入了 \(S\)。训练前应打印少量样本的 token、角色边界和最终 labels。
+可以把模板处理后的局部结果想成下表。实际 token ID 取决于固定的 tokenizer，这里只展示语义：
+
+| 位置 | 内容 | Assistant mask | Label | 作用 |
+|---|---|---:|---|---|
+| 角色与问题 | `user … 怎么处理？` | 0 | `-100` | 可被答案读取，不计算 loss |
+| 回答起始 | `assistant` 角色标记 | 0 | `-100` | 标出角色边界 |
+| 理想回复 | `请先核对…` | 1 | 对应 token ID | 计算 next-token loss |
+| Padding | 补齐批次长度 | 0 | `-100` | 不应影响更新 |
+
+仅仅在 JSON 中写了 `assistant` 字段还不够。经过对话模板、分词、截断和组批以后，理想回复必须仍然落在集合 \(S\) 中。
+
+训练前应解码并查看几条最终输入、mask 和 labels。如果答案被截掉或 mask 全为零，训练跑得再久也学不到预期行为。
 
 ## 数据决定了训练上限
 
 ### 划分与泄漏
 
-按来源、任务模板、用户或时间划分，而不是先随机打散近重复样本。检查 exact duplicate 只是起点；改写、翻译、共享模板和同一文档切片也会让验证集过于乐观。
+售后数据不能先随机打散再放心地划分。来自同一工单的追问、同一模板的轻微改写、翻译版本或同一知识文档的切片，
+应放在同一 split 中。否则验证集看似陌生，内容却可能已经出现在训练集里。
 
-保留独立 test 集，不用它挑 rank、checkpoint、Prompt 或停止点。若迭代中反复查看 test，它就已经变成开发集，需要新的最终评测。
+保留独立 test 集，不用它挑 LoRA rank、checkpoint、Prompt 或停止点。反复查看 test 结果后，它实际上已经成了开发集；
+此时需要另留一份未参与选择的最终评测数据。
 
 ### 对话模板与 labels
 
-训练与部署应使用同一角色语义、special token 和 chat template。至少检查：
+训练和部署必须保持相同的角色含义、特殊 token 和 chat template。对每种样本至少回答这些问题：
 
-- system、user、assistant、tool 的顺序是否合法；
-- assistant-only mask 是否覆盖预期回复；
-- EOS 是被监督、仅用作停止，还是两者兼有；
-- prompt 太长时从哪一侧截断；
-- tool calls 与 tool results 是否保持结构而非意外字符串化；
-- padding token 是否被 loss mask 排除。
+- system、user、assistant、tool 的顺序是否合法？
+- Assistant mask 是否准确覆盖理想回复，多轮对话中覆盖了哪些轮次？
+- EOS 是需要学习的答案结尾、只用于生成停止，还是两者兼有？
+- 对话过长时从哪里截断，理想回复会不会被截没？
+- 工具调用和工具结果是否保留结构，而不是意外变成普通字符串？
+- Padding 是否已经从 loss 中排除？
 
-详细的 schema、模板、mask 和数据审计流程见 [SFT 数据流水线](sft-data-pipeline.md)。
+仓库为固定的 Qwen3-0.6B 版本提供了一份带 `{% generation %}` 区间的训练模板。该模型原模板负责正确排版对话，
+但没有直接提供 TRL 生成 Assistant mask 所需的区间标记；仓库模板只补上监督边界，不改变角色序列化规则。
+具体检查方法见 [SFT 数据流水线](sft-data-pipeline.md)。
 
 ### Packing 与有效 token
 
-Sequence packing 可以减少 padding，但样本边界、position、attention mask 与 loss mask 必须一起设计。仅插入 EOS 不一定阻止后一条样本读取前一条样本。
+序列打包（sequence packing）会把多条短样本装进同一条长序列，以减少 padding。它同时改变了样本边界、位置编号和可见范围。
 
-比较不同 batch 时，用有效监督 token 作为 loss 分母。若两个 micro-batch 分别有 \(n_1\) 和 \(n_2\) 个监督 token，直接平均两个 local mean 会给短批过高权重；应累加 loss sum，再除以整个 update window 的 \(n_1+n_2\)。
+因此，不能只在两条样本之间插入 EOS 就认为它们完全隔离。Attention mask 和 loss mask 都要与打包方案一致。
+
+比较不同 batch 时，还应按有效监督 token 计算平均损失。假设两个 micro-batch 分别含 \(n_1\) 和 \(n_2\) 个监督 token。
+
+正确做法是先累加两批的损失总和，再除以整个更新窗口中的 \(n_1+n_2\)。若直接平均两批各自的平均损失，答案较短的 batch 会获得过高权重。
 
 ## 选择训练方法
 
-| 方法 | 更新内容 | 主要优势 | 主要代价 |
+| 方法 | 更新什么 | 适合什么时候 | 主要代价 |
 |---|---|---|---|
-| 全参数微调 | 全部权重 | 表达容量最大 | 显存、存储和遗忘风险最高 |
-| LoRA | 低秩增量 | 训练与多任务存储较小 | target modules、rank 和服务切换需验证 |
-| QLoRA | 量化冻结基座 + LoRA | 进一步降低基座常驻显存 | 量化误差和 runtime 兼容更复杂 |
-| Prefix/Prompt tuning | 连续前缀参数 | 参数极少 | 能力上限和部署支持依任务而变 |
-| Adapter/IA³ | 小型模块或通道缩放 | 模块化 | 插入位置与服务支持不统一 |
+| 全参数微调 | 全部权重 | 数据和算力充足，需要较大表达容量 | 显存、存储与遗忘风险最高 |
+| LoRA | 注入线性层的低秩增量 | 单卡实验、多任务 Adapter、快速迭代 | 需要选择目标模块和 rank |
+| QLoRA | 量化后的冻结底座 + LoRA | LoRA 仍放不进显存 | 量化误差与运行时兼容更复杂 |
+| Prefix/Prompt tuning | 可训练的连续前缀 | 参数预算极小且部署端支持 | 能力上限依任务而异 |
+| Adapter/IA³ | 小型模块或通道缩放 | 需要模块化切换 | 插入位置与服务支持不统一 |
 
-先用最简单方法建立基线。参数更少不自动意味着训练更快，文件更小也不等于峰值显存更低。
+参数更少不保证训练一定更快，Adapter 文件更小也不代表训练峰值显存更低。先用最简单的方法建立可比较的基线，再增加复杂度。
 
 ## LoRA
 
-对冻结权重 \(W\in\mathbb{R}^{d_{out}\times d_{in}}\)，LoRA 学习低秩增量：
+对一个冻结的线性层权重 \(W\in\mathbb{R}^{d_{out}\times d_{in}}\)，LoRA 不直接更新 \(W\)，而是学习低秩增量：
 
 \[
 W' = W + \Delta W
    = W + \frac{\alpha}{r}BA,
 \]
 
-其中 \(A\in\mathbb{R}^{r\times d_{in}}\)、\(B\in\mathbb{R}^{d_{out}\times r}\)，且 \(r\ll\min(d_{in},d_{out})\)。可训练参数约为 \(r(d_{in}+d_{out})\)。
+其中 \(A\in\mathbb{R}^{r\times d_{in}}\)、\(B\in\mathbb{R}^{d_{out}\times r}\)，并且 \(r\ll\min(d_{in},d_{out})\)。
 
-需要一起报告：
+新增的可训练参数约为 \(r(d_{in}+d_{out})\)。直觉上，LoRA 假设这次任务需要的权重变化主要落在少数几个方向上。
 
-- target modules，而不只写“用了 LoRA”；
-- rank \(r\)、缩放 \(\alpha\)、dropout 与初始化；
-- 可训练参数数和占比；
-- adapter 是否动态加载或 merge；
-- base、tokenizer、template 与 adapter 的完整身份。
+在本仓库的 Qwen3-0.6B 起步实验中，LoRA 先接到注意力层的 `q_proj`、`k_proj`、`v_proj` 和 `o_proj`。
+当售后样本产生梯度时，优化器只更新这些投影层旁边的 \(A\) 和 \(B\)，底座权重保持冻结。实验报告至少应写清：
 
-Rank 越高表达容量越大，但也更耗显存并更容易拟合噪声。应在固定预算和同一 held-out 集上比较，而不是按 train loss 选择。
+- 具体目标模块，而不只是“使用了 LoRA”；
+- rank \(r\)、缩放系数 \(\alpha\)、dropout 和初始化方式；
+- 可训练参数的数量与占比；
+- 部署时动态加载 Adapter，还是先与底座合并；
+- 底座、tokenizer、模板和 Adapter 分别使用了哪个版本。
+
+Rank 越高，可表达的更新方向越多，同时也增加显存和拟合噪声的机会。应在同一训练预算和同一留出集上比较，
+不能只因为某个 rank 的训练 loss 更低就选择它。
 
 ## QLoRA
 
-QLoRA 将冻结基座权重量化，forward 时按 runtime 规则反量化，并以较高精度训练 LoRA 参数。它不意味着“训练全程都是 4-bit”：adapter、梯度、优化器状态、激活和部分算子仍使用更高精度。
+QLoRA 进一步量化冻结的底座权重，前向计算时再按运行时规则还原到所需精度。LoRA 参数仍以较高精度训练。
 
-实验中明确区分：权重存储 dtype、计算 dtype、量化 group/zero point、double quantization、optimizer、activation checkpointing 和实际峰值显存。某个 adapter 文件只有几 MB，不能用来推断训练显存或服务延迟。
+因此，“QLoRA 是 4-bit 训练”是一种容易误解的简称。通常只有底座权重以 4-bit 形式存储；Adapter、梯度、优化器状态、激活值和部分算子仍使用更高精度。
 
-具体的单卡预算、PEFT 导出与验证见 [LoRA、QLoRA 与单卡工程](peft-qlora-engineering.md)。
+对 Qwen3-0.6B 和 RTX 3070 Laptop，建议先尝试长度 512、batch 1、rank 8 的普通 LoRA。
+
+若仍然 OOM，先缩短序列。确定主要压力来自底座常驻显存后，再把 QLoRA 作为对照。这样可以分辨收益来自量化底座，还是来自同时改动的其他参数。
+
+记录结果时要分别写明权重存储精度、计算精度、量化方式、优化器、activation checkpointing 和真实峰值显存。
+更完整的容量拆解见 [LoRA、QLoRA 与单卡工程](peft-qlora-engineering.md)。
 
 ## 训练预算与稳定性
 
-一次可比较的训练至少固定：
+为了让两次实验能够比较，至少固定四组信息：
 
-- 模型、tokenizer、template 与数据版本；
-- 最大长度、有效 token batch、accumulation 和 packing；
-- optimizer、学习率、warmup、weight decay 和 clipping；
-- 精度、量化、gradient checkpointing 与硬件；
-- seed、最大 token/step/时间预算和 early stopping 规则。
+1. **输入身份**：模型、tokenizer、chat template 和数据版本。
+2. **Batch 语义**：最大长度、每个 micro-batch 的样本数、梯度累积步数、有效监督 token 和 packing 方式。
+3. **优化设置**：优化器、学习率、warmup、weight decay、梯度裁剪和最大 step/token 预算。
+4. **运行环境**：随机种子、数值精度、量化、activation checkpointing、PyTorch/CUDA 版本和硬件。
 
-同时记录 train/validation loss、任务指标、gradient/overflow、吞吐和峰值显存。Loss 突降先检查 label leakage、重复 shift、padding 与 mask；loss 不降再检查监督 token 是否为空、学习率、冻结范围和截断。
+训练过程中同时查看训练/验证损失、任务指标、梯度、数值溢出、吞吐与显存峰值。
 
-单次训练无法说明随机性。高风险比较至少重复多个 seed，报告原始结果与离散程度；预算不足时，应明确只有一次探索性运行。
+损失突然异常变小，先排查标签泄漏、重复 shift 和 padding mask。损失完全不变，则先确认监督 token 不为空、目标参数确实可训练，再检查学习率。
+
+一次运行只能作为探索。若结论会影响上线或较大资源投入，应使用多个 seed，并报告原始结果和离散程度。
 
 ## 怎样证明训练有用
 
-“训练跑通”至少拆成五个问题：
+回到那条售后样本，“脚本跑完了”只回答了很小一部分问题：
 
-| 层 | 关键问题 | 合适证据 |
+| 层 | 要回答的问题 | 可以查看的证据 |
 |---|---|---|
-| 数据 | 实际监督了哪些 token？ | split、template、token IDs、mask、截断样例 |
-| 机制 | 声明的参数真的更新了吗？ | trainable/frozen 清单、finite gradient、optimizer step |
-| 目标 | 未用于该步更新的数据是否改善？ | validation 曲线、预定义停止指标 |
-| 行为 | 部署式生成是否更好？ | held-out 任务、格式、通用能力和安全切片 |
-| 发布 | 目标 runtime 能否加载和回滚？ | 独立重载、兼容性、容量、canary 与 rollback |
+| 数据 | 模型实际监督了哪些 token？ | 数据划分、模板、解码后的 mask 和最终 labels |
+| 机制 | 声明的 LoRA 参数真的更新了吗？ | 可训练/冻结清单、有限梯度、优化器 step |
+| 优化 | 未参与当前更新的数据是否改善？ | Validation 曲线和预先定义的停止指标 |
+| 行为 | 新售后问题上的回答是否更好？ | 留出任务、格式、通用能力和安全切片 |
+| 发布 | 目标运行时能否加载、监控和回滚？ | 新进程重载、兼容性、容量、灰度与回滚演练 |
 
-使用同一 case、预处理和 decoding 比较 base + Prompt、RAG（若适用）、LoRA 与其他候选。报告 effect size 和失败样例，而不只报“提升百分比”。同 batch loss 下降只能证明优化目标在当前 batch 上变化，不能代替 held-out 行为。
+评测时，让原模型 + Prompt、RAG（如果任务需要事实）和 LoRA Adapter 使用同一批样例，以及相同的预处理与解码设置。
+
+除了汇总分数，还要保存改善和退化的样例。同一个训练 batch 上损失下降，只能说明优化器改变了这批数据的目标值。它不能证明模型已经学会处理没见过的售后问题。
 
 ## Checkpoint 与精确恢复
 
-能加载模型参数，不等于能继续同一条训练轨迹。若训练实际使用了某项状态，checkpoint 就必须保存或明确回退：
+能够重新加载模型参数，不等于训练从断点处沿着原轨迹继续。若某项状态会影响下一次更新，就要保存它，或明确说明恢复后会发生什么变化：
 
 | 状态 | 遗漏后的典型后果 |
 |---|---|
-| model / adapter | 参数回退或错配 base |
-| optimizer | moments 与 step 丢失，下一次更新不同 |
-| scheduler / global step | 学习率轨迹漂移 |
-| GradScaler | overflow 判断与 skip/update 不同 |
-| Python/NumPy/Torch/CUDA RNG | dropout、增强或采样序列变化 |
-| sampler、permutation、cursor | 漏样本、重样本或顺序变化 |
-| accumulation position 与 `.grad` | 半个 update window 被丢弃或重复 |
-| distributed/sharded state | rank 间参数、optimizer 或数据进度不一致 |
+| Model / Adapter | 参数回退，或 Adapter 配到了错误底座 |
+| Optimizer | 动量与 step 丢失，下一次更新发生变化 |
+| Scheduler / global step | 学习率轨迹漂移 |
+| GradScaler | 溢出判断与跳过更新的行为变化 |
+| Python、NumPy、Torch、CUDA RNG | Dropout、增强或采样序列变化 |
+| Sampler、permutation、cursor | 样本遗漏、重复或顺序变化 |
+| 梯度累积位置与 `.grad` | 半个更新窗口被丢弃或重复 |
+| 分布式或分片状态 | 不同 rank 的参数、优化器或数据进度不一致 |
 
-常见策略有两种：
+简单做法是在一次 `optimizer.step()` 完成且梯度清空后保存。崩溃时从最近提交点重放少量数据，语义较容易解释。
+若要在梯度累积窗口中间恢复，还需保存待处理样本、loss 分母、已有梯度、随机状态和数据游标，契约会复杂很多。
 
-1. **只在 optimizer commit boundary 保存**：保证 gradients 已清空；崩溃后从最近提交点重放，接受 at-least-once 数据读取。
-2. **保存窗口中间态**：同时保存 pending sample identity、分母、gradients、相关 RNG 和 cursor，恢复更快但契约更复杂。
-
-DataLoader 的 sampler-emitted、main-loop-consumed 和 optimizer-committed 不是同一个 cursor；prefetch 会放大差异。先定义哪条进度线是恢复边界，再做真正退出进程后的 uninterrupted/split 对照。只比较最终 loss“差不多”不足以证明 exact resume。
+DataLoader 已经预取的样本、主循环已经消费的样本和优化器已经提交的样本，不是同一条进度线。
+验证精确恢复时，应真正退出进程，再比较不中断运行与断点运行的参数和状态；只看到最终 loss “差不多”还不够。
 
 ## 导出、发布与回滚
 
-训练 checkpoint 面向继续训练；服务 bundle 面向不可变加载。后者通常还需要 base、tokenizer、chat template、adapter 或 merged weights、generation config、runtime contract 和安全/质量结果。
+训练 checkpoint 用来继续训练，服务 bundle 用来稳定加载。对这条 Qwen3 LoRA 链路，服务包至少要能追溯：
 
-Merge、量化或格式转换会产生新的部署对象，应重新验证：
+- 固定的底座模型版本；
+- Tokenizer 与训练所用 chat template；
+- PEFT 配置和 Adapter 权重；
+- 生成配置与目标运行时；
+- 数据、训练、质量和安全评测的结果。
 
-- 独立进程能否加载；
-- logits 或任务行为是否在预定容差内；
-- tokenizer/template 是否匹配；
-- 目标硬件上的延迟、吞吐和显存；
-- 安全与通用能力是否回归；
-- 上一版本能否完整回滚。
+在新进程里先加载底座，再挂载 Adapter，并确认 Adapter 对固定输入确实产生有限的数值变化。随后才做留出任务评测。
 
-文件 hash 可以发现意外漂移，但无密钥 hash 不认证来源。发布判断仍需访问控制、来源管理和可审阅的评测记录。
+如果执行了合并、量化或格式转换，得到的就是新的部署对象。它需要重新检查加载、质量、延迟、吞吐、显存和回滚路径。
+
+文件 hash 可以发现内容是否意外变化，但它本身不能证明文件来自可信作者。来源和发布权限仍需单独管理。
 
 ## 一个最小实验
 
-1. 选择一个有自动评分和人工可审阅样例的小任务。
-2. 固定 100–500 条 train、独立 validation/test 和三类失败切片。
-3. 建立 base zero/few-shot 基线。
-4. 打印 3 条最终 token/label，确认监督边界。
-5. 训练两个 rank 或学习率配置，预算相同。
-6. 用固定 decoding 比较 held-out 质量、格式和通用回归。
-7. 独立重载最佳 adapter，并保存最差样例。
+在你的 RTX 3070 Laptop 上，可以把第一次实验控制在“确认完整链路成立”，不要一开始追求质量提升：
 
-项目代码与运行入口见 [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md)。项目中的控制脚本用于检查某个机制，不应把固定录制数字当作本实验的学习目标。
+1. 按[单卡微调项目](../practice/projects/single-gpu-finetuning.md)准备 train-only 数据和 readiness 报告。
+2. 使用固定的 `Qwen/Qwen3-0.6B` 版本和仓库提供的 generation-aware 模板，先运行 tokenization preflight。
+3. 解码三条样本，确认 Assistant mask 与 labels 只覆盖理想回复。
+4. 用长度 512、batch 1、LoRA rank 8，只训练 `q_proj/k_proj/v_proj/o_proj`，执行一个 optimizer step。
+5. 查看报告中的有效监督 token、可训练参数、完成状态与显存测量窗口；OOM 也应保留为实验结果。
+6. 保存 Adapter bundle，在新进程中核对底座版本并重载。
+7. 换入真正的 train-only 数据后再增加 step，并在未参与训练的售后问题上比较基线与 Adapter。
+
+第一轮跑通能证明数据、mask、反向传播、保存和重载路径彼此接上了；它不能证明 Qwen3 的售后能力已经改善。
+仓库中已有的 Qwen2.5 CPU 报告只用于离线复核代码机制，也不能当作你的 Qwen3 或 3070 实测结果。
+
+项目页给出了可直接复制的 PowerShell 命令、输出文件和 OOM 排查顺序。完成这条路线后，你应能从任意一条训练样本追到最终 Adapter，
+并说清每一步是在检查“学了什么”“更新了什么”还是“发布后是否有效”。
 
 ## 何时不要微调
 
-- 需要的是最新事实：优先 RAG 或工具。
+- 需要的是最新事实：优先使用 RAG 或工具。
 - 少量示例已经稳定解决：先保留简单 Prompt。
 - 没有可靠评测集：先建立基线和失败分类。
 - 数据来源、许可或隐私不清楚：先解决数据治理。
-- 只想“减少幻觉”：还需要证据、验证、拒答和权限边界。
+- 只想“减少幻觉”：还需要外部证据、验证、拒答和权限边界。
 
 ## 自测
 
-1. 为什么把 prompt labels 设为 `-100` 不会阻止 response 读取 prompt？
-2. 两个 micro-batch 的监督 token 数不同，为什么不能直接平均 local mean loss？
-3. LoRA adapter 很小，为什么不能据此推断训练峰值显存？
-4. 能重新加载权重，为什么仍不能声称 exact resume？
-5. 一次训练 loss 下降后，还需要哪几类 held-out 与发布证据？
+1. 为什么把用户问题对应的 labels 设为 `-100`，仍不妨碍回答读取问题？
+2. Qwen3 原始对话模板能正确渲染文本，为什么训练时仍可能需要补充 `{% generation %}` 区间？
+3. 两个 micro-batch 的监督 token 数不同，为什么不能直接平均各自的 mean loss？
+4. LoRA Adapter 很小，为什么不能据此推断训练峰值显存？
+5. 一次 optimizer step 和新进程重载分别证明了什么，又没有证明什么？
+6. 能重新加载权重，为什么仍不能声称训练实现了精确恢复？
