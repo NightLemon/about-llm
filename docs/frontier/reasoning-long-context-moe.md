@@ -16,15 +16,55 @@
 **专题导航**：[推理系统](reasoning-systems.md) · [长上下文](long-context-systems.md) · [MoE 系统](moe-systems.md) · [证据台账](../evidence/frontier-controls.md)
 { .doc-nav }
 
-Reasoning、long context 和 Mixture of Experts（MoE）常被放在“前沿模型”同一页，但它们扩大的是三种不同资源：
+假设一个合同审查系统答错了“提前解约需要提前多少天通知”。团队提出三个改法：
 
-| 路线 | 扩大什么 | 主要系统代价 |
+1. 对同一问题生成四份答案，再选最好的一份；
+2. 把整份合同都放进上下文；
+3. 换成总参数更多、每个 token 只激活部分专家的 MoE 模型。
+
+这三种改法解决的不是同一个瓶颈。第一种增加每道题在推理阶段使用的计算，第二种增加模型一次能读取的
+信息，第三种增加模型总容量并改变每层前向计算的组织方式。
+
+| 路线 | 它扩大什么 | 随之增加的系统负担 |
 |---|---|---|
-| Reasoning / test-time compute | 每个问题的采样、搜索、验证或工具调用 | tokens、calls、延迟、verifier 风险 |
-| Long context | 一次调用可访问的信息范围 | attention/KV、位置可靠性、干扰和成本 |
-| MoE | 模型总参数容量，保持部分激活计算 | 权重存储、routing、负载与通信 |
+| Reasoning / test-time compute | 每题的采样、搜索、验证或工具调用 | 输出 token、调用次数、延迟和选择错误 |
+| Long context | 一次调用可访问的信息范围 | Attention、KV Cache、位置可靠性、干扰和成本 |
+| MoE | 模型总参数容量，同时让每个 token 只经过部分专家 | 权重存储、路由失衡和跨设备通信 |
 
-三者都可能提升某些任务，也都可能让结果更差。更多 tokens 会污染轨迹，更长 context 会增加干扰，更多 experts 会产生路由不均和通信瓶颈。
+先定位失败原因。如果正确条款根本没有进入输入，应优先修检索或上下文；如果条款已经在输入中，但任务需要
+比较多个条件，可以增加推理预算；如果要更换模型容量与计算结构，才进入 MoE 选择。三条路线都可能有帮助，
+也都可能让结果更差。
+
+## 用一笔请求看清三种预算 { #request-ledger }
+
+下面的数字只用于建立账本，不代表任何模型的默认配置：
+
+```text
+input:
+  total_tokens: 24,000
+  answer_position: around 18,000
+model:
+  routed_experts_per_moe_layer: 64
+  experts_selected_per_token: 2
+generation:
+  candidates: 4
+  max_output_tokens_each: 1,000
+selection:
+  verifier_calls: 1
+```
+
+**长上下文账本**关心 24,000 个输入 token 能否被协议接受、运行时能否完成 prefill，以及模型能否在
+18,000 附近找到并整合条款。输入成功并不等于答案证据被有效使用。
+
+**MoE 账本**发生在模型每个 routed layer 内。每个 token 都会单独选择专家；top-2 表示产生两个专家任务，
+不是整条请求只使用两个专家。系统要记录各专家收到和实际执行的 token 数，以及丢弃、改派和跨设备通信。
+
+**Reasoning 账本**关心四条候选及一次选择。四条候选最多使用 4,000 个输出 token，另外还有 verifier 的
+调用与 token。若候选中至少一条正确，`oracle@4` 记为成功；只有 verifier 最后选中了正确候选，
+`selected@4` 才成功。前者衡量候选集合，后者才是系统交给用户的结果。
+
+四个候选可以共享同一次 prefill，也可能由四次独立调用生成；前缀缓存、批处理和供应商计费规则都会改变
+真实成本。因此，不能把上面的数字直接相加后当作 GPU 计算量或账单。
 
 ## 用一个问题判断该学哪条
 
@@ -38,40 +78,42 @@ Reasoning、long context 和 Mixture of Experts（MoE）常被放在“前沿模
 
 ### 模型容量想增大但不希望每 token 激活全部参数
 
-进入[MoE 系统](moe-systems.md)，学习 router、top-k、capacity、expert parallel 和 total/active parameters。
+进入 [MoE 系统](moe-systems.md)，跟踪路由器怎样为每个 token 选择专家、专家容量怎样限制实际执行，
+再理解跨设备专家并行，以及总参数与每次激活参数的区别。
 
 如果问题是实时事实、权限或副作用，可能更需要 RAG、tools 和 system policy，而不是三条路线中的任何一种。
 
-## 三条路线怎样组合
+## 它们在一次请求的哪里发生 { #combined-request }
 
-一个推理 API 可能运行 MoE 模型、读取长 context，再为同一题采样多条候选。这不表示三种机制可以共用证据。
+这份合同先作为长输入进入模型。模型每经过一个 MoE 层，当前 token 都要路由到专家；完成前向计算后，
+系统生成四条候选，最后再由 verifier 选择。它们在同一请求里相遇，却仍然需要三份独立证据。
 
 ~~~mermaid
-flowchart LR
-    A["Long input"] --> B["Model forward"]
-    C["MoE routing inside model"] --> B
-    B --> D["Candidate trajectories"]
-    D --> E["Verifier / search"]
-    E --> F["Final answer"]
+flowchart TB
+    A["24k-token 合同"] --> B["Attention / 共享层"]
+    B --> C["每个 MoE 层的路由"]
+    C --> D["选中专家并合并结果"]
+    D --> E["四条候选答案"]
+    E --> F["Verifier 选出最终答案"]
 ~~~
 
-每层都有自己的观察：
+排查时分别记录：
 
-- Long context：输入 token、位置切片、cache、TTFT 和任务正确性。
-- MoE：expert selection、accepted/dropped tokens、all-to-all 和负载。
-- Reasoning：candidate、oracle@k、selection、tool calls、tokens 和最终成功。
+- 长上下文：输入长度、答案所在位置、缓存、首 token 延迟和任务正确性；
+- MoE：每个专家收到与实际执行的 token 数、丢弃或改派数量、跨设备通信和负载；
+- 推理过程：每条候选、集合中是否存在正确答案、最终选择、工具调用、token 用量和任务结果。
 
 最后答案正确，不能反推每一层都正确；最终失败，也不能只凭输出判断是哪一层造成。
 
-## 统一的证据阶梯
+## 看到什么证据，能下多强结论 { #evidence-strength }
 
-| 层级 | 例子 | 能回答什么 |
+| 证据 | 例子 | 能回答什么 |
 |---|---|---|
 | 论文/技术报告 | 方法与受控实验 | 作者在固定设置下主张什么 |
-| Config/code markers | expert 数、position fields、生成选项 | 静态实现候选 |
-| 机制样例 | 本仓库提供的 routing、sampling 与 cache 参考实现 | 局部数学与状态机 |
-| Target runtime | 真实 cache、routing、candidate trace | 指定实现实际做了什么 |
-| Workload evaluation | 任务、硬件、负载和成本 | 候选系统是否值得发布 |
+| 模型配置与源码 | 专家数量、位置字段、生成选项 | 代码具备哪些实现入口 |
+| 可运行的机制样例 | 本仓库提供的路由、采样与缓存参考实现 | 局部公式和状态变化是否一致 |
+| 目标运行环境 | 真实缓存、路由和候选记录 | 指定版本实际走了哪条路径 |
+| 目标负载评测 | 任务、硬件、流量和成本 | 这套方案是否值得发布 |
 
 不能把一篇论文、一个 config 字段和一个通用 toy 拼成目标模型已验证。
 
@@ -103,7 +145,7 @@ cost
 
 ### 4. 保留完整分母
 
-Timeout、OOM、truncation、invalid output、dropped token、tool error 和 verifier failure 都进入统计。
+请求超时、显存不足、输入截断、输出无效、token 被丢弃、工具报错和 verifier 选择失败都要进入分母。
 
 ### 5. 解释边界
 
@@ -134,7 +176,7 @@ MoE 仍需存储/分片总权重，并承担 routing、expert imbalance、all-to
 
 三组结果分别回答下面的问题，因此分开报告：
 
-- 更多 candidate 是否提高 oracle，verifier 能否选对？
+- 候选变多后，正确答案是否更常出现在候选集合中，verifier 又能否把它选出来？
 - 输入更长后，答案证据是否仍能被找到和整合？
 - Capacity 改变后，哪些 tokens 被接受、丢弃或 reroute？
 
