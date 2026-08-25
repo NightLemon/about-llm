@@ -156,7 +156,7 @@ nav:
           - 方法、统计与发布决策（进阶）: quality/evaluation-methodology.md
           - Agent 仿真与红队: quality/agent-evaluation.md
       - 安全、隐私与治理: quality/safety.md
-      - Opaque Reasoning 工件与轨迹安全: quality/reasoning-artifact-security.md
+      - Reasoning Block 的保存与发布: quality/reasoning-artifact-security.md
       - 法规与社会影响: quality/governance-impact.md
       - 治理工件模板: quality/governance-templates.md
   - 前沿:

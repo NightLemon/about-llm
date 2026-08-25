@@ -1,15 +1,15 @@
-# Opaque Reasoning 工件与轨迹安全
+# 看不见的 Reasoning Block
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：云 API、Agent runtime、轨迹发布、隐私与安全工程师。
+- **适合读者**：使用云 API、开发 Agent runtime，或需要保存和公开会话记录的工程师。
 - **先修**：[云 API 契约](../models/cloud-api-contracts.md)、[Agent runtime](../applications/agent-runtime.md)与基本认证加密概念。
-- **首次阅读**：对象边界 → 论文案例 → 四类属性 → 上下文绑定 → 发布门禁 → 事故响应。
-- **完成信号**：能解释为什么“签名有效”不代表当前用户、会话和模型有权重放，并通过[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
-- **卡住时**：先把一个多轮响应画成 visible text、opaque block、可信身份和后续请求四个对象。
+- **首次阅读**：导出会话 → 识别 opaque block → 分析一次错误重放 → 绑定使用上下文 → 安全发布。
+- **完成信号**：能解释为什么“密文验证成功”不等于“当前用户有权使用”，并通过[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
+- **卡住时**：先只画四个对象：可见文字、看不见的 block、当前请求的可信身份、准备公开的会话副本。
 
 </div>
 
@@ -17,185 +17,186 @@
 [Cloud API 项目](../practice/projects/cloud-api-contracts.md) · [生产检查表](../practice/production-checklist.md)
 { .doc-nav }
 
-## 从一份“已经脱敏”的轨迹说起
+## 从一次会话导出开始
 
-假设团队为了复现 Agent bug，把一段会话导出到公开 issue。Visible text 里的姓名和邮箱都替换掉了，
-但序列化对象里还保留着一个客户端看不懂的 `encrypted_reasoning` block。维护者把它当成普通签名字段，
-认为既然没人能直接阅读，就不算敏感数据。
+一位工程师正在排查 Agent bug。他准备把会话记录贴到公开 issue，于是先替换了可见文字中的姓名和邮箱。
+导出的响应大致还有两类内容：
 
-这个判断漏掉了两个问题：Provider 可能在后续请求中再次处理这个 block；另一个兼容模型也可能接受它。
-因此，“客户端看不懂”只描述可见性，不说明谁有权保存、转发或重放。
+```text
+assistant response
+├── text: "我会先检查订单状态……"
+└── encrypted_reasoning: <客户端无法阅读的一段数据>
+```
 
-模型 API 中的 opaque reasoning block 可能同时是：
+第二项就是本章关注的 **opaque reasoning block**：客户端能保存并在后续请求中原样带回，但通常无法解释其内部内容。
+不同供应商的字段名和协议语义并不相同；上面的名字只用于说明对象边界。
 
-- 客户端保存、随后原样回传的模型状态；
-- 含用户内容、系统信息或模型中间推理的数据工件；
-- 能影响后续生成和工具选择的不可信输入；
-- 带密码学完整性，但未必带当前调用上下文授权的 bearer-like artifact。
+工程师不能因为“自己看不见”就把它当成无害元数据。它可能包含用户内容、模型状态或中间推理，也可能影响后续生成和
+工具选择。只要供应商仍会处理它，保存、转发和重放就都是有权限边界的操作。
 
-必须分开回答四个问题：
+Adapter 按 block 类型解析响应以后，这份会话有两种去向：
 
-| 属性 | 回答的问题 | 常见误判 |
+- **继续原会话**：只在供应商协议允许的用户、会话和模型中回传原 block。
+- **准备公开副本**：新建一个只含允许字段的对象，移除 opaque 和未知 block，再扫描可见内容中的秘密与个人信息。
+
+本章会跟着同一个 block 走完这两条路径：先看它为什么可能被拿到错误上下文重放，再看公开会话时为什么应该默认移除它。
+
+## “安全”其实是四个不同问题
+
+面对一段看不懂的数据，先不要笼统地问“它是否安全”。把问题拆开：
+
+| 属性 | 通俗问题 | 在本例中仍可能出现的误判 |
 |---|---|---|
-| Confidentiality | 未持有解密能力的人能否直接读内容？ | base64、签名字段或不可读文本就是安全加密 |
-| Integrity | 内容或元数据被修改后能否检测？ | MAC/AEAD 有效就代表来源、用途都可信 |
-| Provenance | 谁在何时、由哪个模型和 API 产生它？ | 无密钥 hash 或客户端记录的 model id 能认证来源 |
-| Authorization | 当前主体、租户、会话、位置和模型能否使用它？ | 服务端能解密就应接受重放 |
+| 保密性（confidentiality） | 没有解密能力的人能直接读到内容吗？ | base64、签名或乱码不等于加密 |
+| 完整性（integrity） | 内容或已绑定的元数据被修改后能发现吗？ | 验证通过不代表使用位置正确 |
+| 来源（provenance） | 谁在何时、通过哪个模型和 API 生成了它？ | 普通 hash 和客户端自报的 model id 不能认证来源 |
+| 使用授权（authorization） | 当前用户、租户、会话和模型能使用它吗？ | 服务端能解密不代表当前请求有权重放 |
 
-最重要的不变量是：
+密码学只能保护协议实际绑定的内容。假如用户、会话和允许使用的模型没有被绑定，密文保持完整也无法替这些信息提供授权。
 
-> **密码学验证成功只回答协议实际绑定的字段。没有进入认证上下文的 identity、session、position 或 audience，不会因密文完整而自动获得保护。**
+## 一个已经修复的历史案例
 
-## 2026 年的历史失效案例
+Panfilov 等人的[论文](https://arxiv.org/abs/2608.09867)于 2026 年 8 月 10 日提交。作者测试了 2026 年 7 月初
+可访问的 Anthropic、OpenAI 和 Google 推理 API。
 
-[Stealing Reasoning Traces from Proprietary LLM APIs](https://arxiv.org/abs/2608.09867) 于 2026-08-10 提交。
-论文研究了 2026 年 7 月初可访问的 Anthropic、OpenAI 和 Google reasoning API。作者报告，客户端收到并回传的
-opaque reasoning block 在部分供应商生态中可以跨会话、跨用户或跨模型使用。实验把较强模型产生的 block
-交给兼容但防护较弱的模型，再诱导后者输出恢复内容。
+论文报告，某些客户端收到的 opaque block 可以跨会话、跨用户或跨兼容模型使用。研究中的一种方法把较强模型产生的
+block 交给兼容模型，再诱导后者输出可能来自该 block 的内容。
 
-论文区分两类攻击者：
+论文讨论了两种风险：
 
-1. **第一方攻击者**自己调用强模型取得 block，再用较弱 sibling model 尝试提取推理、绕过 anti-distillation 或获得最终回答没有显示的有害信息。
-2. **第三方攻击者**从公开 Agent/session trajectory 取得他人的 block，尝试恢复隐私数据，或让受害者继续执行植入 opaque block 的共享轨迹。
+1. 调用者拿自己获得的 block 做模型蒸馏，或尝试恢复最终回答没有显示的内容。
+2. 第三方从公开的 Agent 会话中取得别人的 block，用它恢复隐私数据，或把隐藏指令带回后续工作流。
 
-作者收集了 6,708 条公开 trajectory，并处理 315,320 个重建 reasoning block。论文报告 1,028 个 block（0.3%）
-和 328 条 trajectory（4.9%）至少包含一个经第二阶段分类为真实的隐私工件。排除 benchmark 后，作者得到
-704 个去重工件，其中 64 个只存在于 reasoning block，没有出现在解析后的可见轨迹中。
+公开会话扫描给出了以下结果：
 
-这些数字来自两阶段 LLM labeling、去重和人工 taxonomy。它们描述一次非穷尽的公开数据扫描，不能解释为
-所有 Agent 日志的总体泄露率。
+| 论文报告的数量 | 含义 |
+|---|---|
+| 6,708 条会话、315,320 个重建 block | 本次非穷尽扫描处理的数据规模 |
+| 1,028 个 block（0.3%） | 经第二阶段分类后，至少含一个真实隐私条目的 block |
+| 328 条会话（4.9%） | 至少含一个上述 block 的会话 |
+| 704 个去重隐私条目 | 排除 benchmark 后得到的条目 |
+| 其中 64 个只在 reasoning 中出现 | 解析后的可见会话里没有这些条目 |
 
-!!! warning "时效与可复现性边界"
-    论文作者在发布前向受影响供应商、Microsoft 和 Hugging Face 披露问题。Reproducibility statement 写明：
-    截至 2026 年 8 月，供应商实施缓解后，文中原攻击方法已经不能复现。供应商内部密码学实现没有公开；
-    本章只把论文当作特定历史版本的架构案例，不能据此声称当前端点仍然脆弱，也不提供真实供应商提取脚本。
+这些数字经过两阶段 LLM 标注、去重和人工分类。它们描述的是一批公开数据，不能当成所有 Agent 日志的总体泄露率。
 
-论文用 extracted token count 与 API-reported thinking token count 的接近程度作为保真证据，并展示了定性样例。
-研究者没有 ground-truth plaintext reasoning，所以只能比较恢复长度和定性样例，无法逐 token 确认它就是模型的
-真实内部轨迹。
-论文附录讨论的开放模型蒸馏迹象也没有建立因果关系。
+论文作者在发布前向相关供应商、Microsoft 和 Hugging Face 披露了问题。论文的可复现性声明写明：截至 2026 年
+8 月，供应商采取缓解措施后，原攻击流程已经无法复现。
 
-## 根因：内容被认证，上下文没有被认证
+因此，本章只把它当作历史架构案例。这里不判断当前端点是否存在同类漏洞，也不会提供针对真实供应商的提取脚本。
 
-论文把观察到的客户端 opaque payload 抽象成认证加密 envelope。简化后的失败设计是：
+论文用恢复 token 数、API 报告的 thinking token 数和定性样例判断恢复效果。由于缺少逐 token 的真实明文对照，
+这些证据无法确认恢复内容与模型内部轨迹完全相同。
+
+附录中的开放模型蒸馏迹象属于相关性观察，没有建立因果关系。
+
+## 跟着同一个 block 看一次错误重放
+
+先看一个简化的弱协议。它使用认证加密（AEAD），但只把供应商、格式和密钥编号放进认证上下文：
 
 ```text
 AEAD(key, nonce, reasoning, AAD={provider, format, key_id})
 ```
 
-它可以保证 ciphertext 或已绑定 header 被修改时验证失败，却没有回答：
+攻击者保持密文不变，只把原 block 放进另一个请求。服务端仍然能验证密文以及 `provider`、`format` 和 `key_id`。
+这些验证结果没有覆盖下面的问题：
 
-```text
-authenticated subject 是否相同？
-tenant 是否相同？
-session/branch 是否相同？
-它是否紧跟正确的 predecessor？
-当前 model 是否在允许 audience 中？
-是否过期、被撤销或已经消费？
-```
+- 当前登录用户是不是原用户？
+- 是否仍在原租户、会话和分支中？
+- 这个 block 前面是不是正确的上一条消息？
+- 当前模型是否属于允许的模型集合？
+- block 是否过期、被撤销或已经使用过？
 
-于是一个合法 block 可能像 bearer token 一样被拿到别处继续使用。攻击并不需要破解 AEAD；它利用的是服务端愿意在错误上下文中为攻击者处理合法 ciphertext。
+验证成功只说明那几个已认证字段正确。它没有证明当前请求有权使用这段数据。合法 block 因而可能像 bearer token 一样，
+谁拿到，谁就能把它提交给仍然接受它的端点。
 
 ```mermaid
-flowchart LR
-  U1["Subject A / session A"] --> P["Provider API"]
-  P --> E["Opaque reasoning envelope"]
-  E --> L["Client log / agent trajectory"]
-  L --> U2["Subject B / session B"]
-  U2 --> D["Compatible decoder model"]
-  D --> X["Recovered data or hidden instruction"]
+flowchart TD
+  S1["用户 A / 会话 A<br/>取得合法 block"] --> L["会话被记录或公开"]
+  L --> S2["用户 B / 会话 B<br/>原样提交同一 block"]
+  S2 --> V["服务端只验证内容与少量 header"]
+  V --> X["验证通过<br/>但使用上下文错误"]
 ```
 
-只检查 visible text 的脱敏器看不到 opaque block 内部。更危险的是，共享 trajectory 的接收方也看不到其中是否携带了会影响后续行为的隐藏指令。
+这也是为什么只清理可见文字不够：脱敏程序既看不到 block 内部，也无法判断共享会话中是否藏着会影响后续行为的内容。
 
-## Context-bound envelope
+## 修复：把“谁在什么地方使用”也纳入协议
 
-若继续使用客户端代管的无状态设计，envelope 至少要把可信控制面上下文放入 AEAD associated data，或绑定到等价的服务端认证状态：
+一种做法是把使用范围写进 AEAD 的 associated data（AAD，参与认证但不需要加密的数据）。另一种做法是让服务端保存
+等价状态。无论选择哪一种，当前请求都必须与签发时的可信上下文匹配。
+
+一个较完整的认证上下文可以包含：
 
 ```text
-AAD = canonical(
-  schema_version,
-  provider,
-  key_id,
-  artifact_id,
-  authenticated_subject,
-  tenant,
-  session,
-  branch,
-  predecessor_digest,
-  model_audience,
-  issued_at,
-  expires_at
-)
+schema version + provider + key id + artifact id
+authenticated subject + tenant
+session + branch + predecessor digest
+allowed model audience
+issued at + expires at
 ```
 
-这些值不能来自 Prompt、request body 中模型可编辑的字段，也不能由共享 trajectory 自报。
-`authenticated_subject`、tenant 和 policy context 应来自可信 gateway；允许模型集合、key status 和 replay state
-应由 provider/control plane 决定。
+这些值有两个来源，不能混在一起：
 
-### 为什么仍需要状态
+| 信息 | 应从哪里取得 |
+|---|---|
+| 当前用户和租户 | 已认证的 gateway / IAM 上下文 |
+| 当前会话、分支和上一条消息 | 服务端会话状态 |
+| 允许的模型、密钥状态 | provider 的控制面 |
+| block 自己声明的签发范围 | 经过认证的 claims |
 
-AEAD context binding 能拒绝元数据篡改和错误上下文，但同一合法 envelope 在完全相同的上下文中仍可能被重复提交。
-要实现 one-time consumption，服务端还需维护 consumed identity、sequence 或等价 replay ledger。
-Bloom filter、TTL cache 和单进程 set 各自存在丢失、误判或多副本一致性问题；生产实现必须明确 durable scope。
+消费 block 时，服务端先验证密文和 claims 没有被改，再把 claims 与当前可信上下文逐项比较。不能让 Prompt、普通
+request body 或共享会话自报“我就是原用户”。
 
-Nonce 唯一性是另一项独立要求。AES-GCM 等 AEAD 在同一 key 下复用 nonce 会破坏安全保证；nonce 应由 CSPRNG
-产生，并在供应商规模上控制唯一性。Artifact replay ledger 不能替代 nonce uniqueness，后者也不能替代
-authorization。
+### 认证上下文仍不能阻止同位置重复使用
 
-### Fork、compaction 与模型切换
+假设同一个 block 在完全相同的用户、会话和模型中连续提交两次。两次的密码学验证都会成功。若协议要求一次性消费，
+服务端还要记录 `(key_id, artifact_id)` 已经使用过，并在第二次提交时拒绝。
 
-把 block 绑定到完整 transcript 最简单，却会破坏合法的历史压缩、会话 fork 和模型降级。论文建议使用 session + predecessor chain，并讨论在 compaction 后保留 Merkle root，使剩余 span 仍可验证。工程上需要先定义：
+这张“已消费清单”需要明确保存范围和故障语义。单进程 `set`、有过期时间的 cache 和 Bloom filter 都可能在重启、
+多副本或误判时产生不同结果，不能直接当成持久、多区域的重放保护。
 
-- fork 是否继承 fork point 之前的 chain state；
-- compact 后允许哪些 block 继续使用；
-- 模型切换是显式 audience，还是必须重新签发；
-- 是否保证相对顺序、完整连续性，还是只保证 surviving span；
-- 历史格式的兼容窗口何时结束。
+### 加密 nonce 是另一回事
 
-任何取舍都要写成协议和负例，不能依赖“模型通常能理解正确顺序”。
+AES-GCM 等 AEAD 还要求同一密钥下的 nonce 不重复。生产系统通常用密码学安全随机数生成器（CSPRNG）产生 nonce，
+并按实际规模设计唯一性控制。
 
-## 纵深防御
+不要把两本账混为一谈：nonce 账本防止签发时重复使用加密 nonce；消费账本防止同一业务 block 被再次使用。
+二者都不能替代用户和会话授权。
 
-| 层 | 最低控制 | 仍未解决的问题 |
-|---|---|---|
-| 架构 | 服务端保存 reasoning，客户端只持随机 state id | provider 存储、访问、删除和可用性成本 |
-| 密码学 | subject/session/predecessor/audience context binding | 合法上下文中的模型转录行为 |
-| Replay | consumed ledger、顺序、撤销和异常速率 | 多区域一致性和故障恢复 |
-| Key 生命周期 | key id、轮换、retired key 拒绝、有限迁移窗口 | 旧会话失效与企业 archive 迁移 |
-| 模型 | 后训练拒绝 reasoning transcription/jailbreak | 行为防御可被规避，不能替代协议控制 |
-| 监控 | 同一 artifact 跨 context/model、解密错误和批量提交告警 | 监控本身可能接触敏感数据 |
-| 数据发布 | 默认移除 reasoning/signature/未知 opaque block | 已公开副本和下游镜像 |
+### 会话分叉和历史压缩需要显式规则
 
-跨模型完全隔离是清晰的默认值；若业务确实需要降级或路由，应把允许的 model audience 明确写入认证上下文，而不是让共享 key 的所有模型隐式兼容。
+把 block 绑定到完整会话最容易理解，但会阻止正常的历史压缩、分支和模型切换。真实协议需要明确回答：
 
-## 发布轨迹前逐类处理 block
+- 新分支能否继承分叉点之前的 block？
+- 压缩历史后，哪些 block 仍然有效？
+- 切换模型时，是在原 `model audience` 内继续使用，还是重新签发？
+- 协议保证完整连续的历史，还是只保证保留下来的片段顺序？
+- 旧格式什么时候停止接受？
 
-Provider adapter 不应把 response 粗暴压成一个字符串。至少区分：
+论文建议使用 session 与 predecessor chain，并讨论在压缩后保留 Merkle root。具体系统可以采用其他方案，但不能把
+顺序和继承规则留给模型猜测。
 
-- visible text；
-- tool proposal/result；
-- citation 或媒体；
+## 公开会话时，不要修改原始响应再直接发布
+
+Provider adapter 应先保留 block 的类型，不要一开始就把整个响应压成字符串。至少区分：
+
+- 可见文字；
+- 工具调用与结果；
+- 引用和媒体；
 - reasoning summary；
-- opaque reasoning/signature block；
-- unknown provider-specific block。
+- opaque reasoning 或 signature block；
+- 当前 adapter 不认识的供应商字段。
 
-Text-only adapter 遇到其他 block 时应明确失败。若业务需要多种 block，就保留 typed metadata 与受控原始 bytes，
-但不应把它们写入普通日志、异常、metrics label 或公开样例。未知 block 不能被静默丢弃后假装响应完整，
-也不能自动回传给另一个 endpoint、模型或主体。
+准备公开副本时，从空对象开始，只复制允许发布的字段。这比“先复制原始 JSON，再用正则擦掉已知敏感文字”更可靠：
 
-公开 trajectory 前使用 allowlist projection，而不是“先保存所有字段，再用正则擦除可见文本”：
+1. 按发布 schema 新建会话对象，不直接复用供应商响应。
+2. 默认不复制 reasoning、thinking、signature 和未知 block。
+3. 分别扫描可见 Prompt、工具参数与结果、回答、引用和 metadata 中的 secret 与个人信息。
+4. 审计报告只记录位置、类别和不可逆 fingerprint，不抄录命中的秘密。
+5. 为公开副本记录用途、访问级别、用户同意、保留时间和删除负责人。
+6. 只有字段检查、内容扫描和人工或策略审批都通过，才能发布。
 
-1. 从 provider 原始响应生成新的发布对象，不原样复制 raw JSON。
-2. 默认禁止 `thinking`、`reasoning`、`signature`、`thinkingSignature` 和未知 opaque field。
-3. 对 visible prompt、tool observation、response 和 metadata 分别执行 secret/PII 检查。
-4. 报告 detector、span 和 fingerprint，不把命中明文复制进审计报告。
-5. 绑定用途、访问级别、consent、TTL、删除和撤回 owner。
-6. 发布门禁要求 `opaque_reasoning_block_count == 0`；例外必须由具体 artifact、用途和审批绑定。
-
-有限 regex 或 LLM judge 没有命中，不证明轨迹不含秘密。数据最小化和字段 allowlist 比事后扫描更强。
-
-本仓库提供一个发布投影 gate：只要发现未知或敏感 block，就停止发布并返回失败原因。
+仓库提供的 `trajectory-release-gate` 只负责第一道字段检查。它验证一份**已经重新构造好的发布对象**，不是原始供应商
+响应的自动脱敏器。
 
 ~~~powershell
 python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
@@ -203,74 +204,95 @@ python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
   --output artifacts/cloud-api/trajectory-release-report.json
 ~~~
 
-输入按预定 JSON/JSONL 结构解析，并检查重复字段与非法数值。顶层固定为
-`schema_version + trajectory_id + turns`，turn 只允许
-`turn_id + role + blocks`，block 只允许 `text`、`tool_call`、`tool_result` 和 `citation`。
+输入只能包含预定的会话、轮次和 block 字段。允许的 block 类型是 `text`、`tool_call`、`tool_result` 和 `citation`。
+如果出现以下情况，命令会以退出码 1 停止发布：
 
-Reasoning/thinking/signature/encrypted 类型、同名嵌套工具参数、未知 block 和 Schema drift 都会使退出码为 1。
-报告只输出数组位置、固定类别和规范化的已知禁用名，不回显 text、tool arguments、未知类型或任意字段名。
+- 出现 reasoning、thinking、signature 或 encrypted 类型；
+- 工具参数中嵌套同类字段；
+- 出现未知 block；
+- 缺少必需字段、增加未知字段或 JSON 结构不符合约定。
 
-安全样例应得到 `opaque_reasoning_block_count: 0`、`unknown_block_count: 0` 与 `passed: true`。
-这一步只检查 block 类型。报告同时给出 `secret_pii_scan_performed: false`，说明尚未扫描 secret 和 PII。
-当前门禁不读取 opaque 内容，
-也不检查 visible text、tool arguments/result 和 citation 中的 secret、PII、版权或 consent；这些需要独立检测器
-和人工治理流程。
+报告只写数组位置和固定的拒绝类别，不回显文本、工具参数或未知字段名。安全样例应得到：
 
-## 如果那份轨迹已经公开
+```text
+passed: true
+opaque_reasoning_block_count: 0
+unknown_block_count: 0
+secret_pii_scan_performed: false
+```
 
-发现 reasoning artifact 泄露时，至少分开处理：
+最后一行非常重要：这个程序没有扫描允许字段中的 secret、个人信息、版权内容或用户同意状态。`passed: true` 只说明
+发布对象符合这道字段门禁，不能单独批准公开。
 
-1. **Containment**：停止发布和自动 replay，隔离 raw trajectory 与下游镜像。
-2. **Revocation**：轮换暴露的用户凭据；由 provider 撤销 artifact/key/session，旧 key 进入 retired 状态。
-3. **Scope**：按 subject、tenant、session、artifact id、key id、模型和发布时间定位影响范围。
-4. **Deletion**：覆盖 raw/parsed logs、cache、backup policy、评测集、训练数据、replay buffer 和公开副本。
-5. **Notification**：按合同、法规和组织流程通知 provider、平台、数据主体和责任人。
-6. **Recovery**：只对验证所有权的 archive 做重新签发；迁移窗口有明确终止日期。
-7. **Regression**：把实际失效上下文转成不含真实秘密的测试样例。
+## 运行仓库中的重放对照实验
 
-删除本地文件不能撤销已经克隆、镜像或进入训练衍生物的内容；key rotation 也不能收回攻击者已经恢复的 plaintext。
-
-## Reasoning summary 不是审计证据
-
-论文还展示 summary 与恢复轨迹不一致的样例，例如 summary 呈现为顺序推导，而恢复内容先写出答案再尝试推导。由于恢复内容本身没有完整 ground truth，这不能把某个 summary 判定成普遍不忠实，但足以说明：
-
-- summary 是模型生成的另一个输出，不是密码学 receipt；
-- 流畅、简洁和步骤完整不证明忠实；
-- final answer 正确不证明 summary 描述了真实计算路径；
-- 监督应优先使用可执行 verifier、claim-source mapping 和外部状态，而不是依赖隐藏或可见 CoT 自述。
-
-评测 summary 时分开记录 final correctness、summary-answer consistency、summary-evidence entailment、敏感内容泄露和 verifier agreement。
-
-## 运行本仓库的离线示例
-
-运行：
+第二个程序把“只认证内容”和“同时认证使用上下文”放在一起比较：
 
 ~~~powershell
 python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
   --output artifacts/cloud-api/reasoning-replay-matrix.json
 ~~~
 
-这个示例使用 `cryptography` 的 AES-256-GCM、固定虚构 key/nonce、虚构 plaintext 和内存 ledger。
-它先构造 content-only envelope，展示错误 subject、tenant、session 和 model 上下文仍会被接受，
-此时 `unsafe_acceptance_count` 应为 4。随后改用 context-bound envelope，分别验证 exact context、scope drift、
-wrong predecessor、expiry、retired key、claims tamper 和第二次消费。
+实验使用 `cryptography` 提供的 AES-256-GCM，以及仓库准备的虚构 key、nonce 和明文。它先生成一个只认证少量内容的
+envelope，再把同一密文放到错误用户、租户、会话和模型下消费。这四种情况会被弱协议接受，所以
+`unsafe_acceptance_count` 应为 4。
 
-输出不含 plaintext reasoning 或 ciphertext，只给 case、预期/实际接受状态和稳定拒绝原因。完整步骤见[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
+随后，程序使用绑定上下文的 envelope，检查以下情况：
 
-这次运行只检查本仓库为教学设计的协议是否满足以下局部不变量：
+| 请求变化 | 预期结果 |
+|---|---|
+| 用户、租户、会话、分支或模型变化 | 拒绝 |
+| 上一条消息摘要不匹配 | 拒绝 |
+| 尚未生效或已经过期 | 拒绝 |
+| 密钥已经停用 | 拒绝 |
+| claims 或密文被修改 | 认证失败 |
+| 同一 block 第二次消费 | 重放被拒绝 |
+| 所有上下文完全匹配，且首次消费 | 接受 |
 
-- 不解析或生成任何真实供应商 signature/thinking block；
-- 不访问网络，不调用模型，不尝试绕过当前 provider 缓解；
-- 内存 nonce/replay ledger 不 durable、不跨进程或区域；
-- 固定 key 不是生产 key custody、KMS/HSM、轮换或来源认证证据；
-- predecessor digest 不是完整 Merkle compaction/fork 协议；
-- trajectory release gate 只接受本仓库严格投影，不是 raw provider response sanitizer，也没有执行 secret/PII 检测；
-- 通过本地矩阵不证明真实 API 已实现同样绑定。
+完整的预测和修改练习见[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
+
+### 这两个程序能说明什么
+
+| 已经实际检查 | 仍然没有证明 |
+|---|---|
+| 本仓库设计的弱协议会接受四种错误上下文 | 任何当前供应商端点仍有论文中的漏洞 |
+| 本仓库的强协议会比较用户、租户、会话、顺序、模型和时间 | 真实供应商使用相同字段或相同修复 |
+| 单进程账本拒绝 nonce 重复和第二次消费 | KMS/HSM、持久化、多进程或多区域正确性 |
+| 发布门禁拒绝已知敏感类型和未知字段 | 原始响应已被安全脱敏，或可见内容没有秘密 |
+
+实验不解析或生成真实供应商 block，不访问网络，也不会输出虚构明文或密文。它验证的是本仓库教学协议的局部行为。
+
+## 如果会话已经公开
+
+发现公开轨迹中含有 opaque reasoning block 时，可以按以下顺序处理：
+
+1. **先止血**：停止新的发布和自动重放，隔离原始会话及可控的下游副本。
+2. **撤销可使用的能力**：轮换暴露的用户凭据；与 provider 协作撤销相关 artifact、session 或 key。
+3. **确定范围**：按用户、租户、会话、artifact id、key id、模型和发布时间查找副本。
+4. **传播删除**：覆盖日志、cache、备份策略、评测集、训练数据、replay buffer 和公开镜像。
+5. **完成通知**：根据合同、法规和组织流程通知平台、provider、数据主体与负责人。
+6. **恢复合法会话**：只为能够验证所有权的归档重新签发，并为迁移窗口设置结束日期。
+7. **留下回归测试**：用不含真实秘密的固定样例复现这次失效边界。
+
+删除本地文件不能收回别人已经克隆或镜像的内容。轮换密钥也不能抹去攻击者此前恢复出的明文；这两类残余风险要分别记录。
+
+## Reasoning summary 也不是审计记录
+
+论文展示过 summary 与恢复内容不一致的样例，例如 summary 写成顺序推导，而恢复内容表现为先得到答案、再尝试解释。
+由于恢复内容没有完整明文真值，这不能证明某个 summary 一定不忠实，却足以提醒我们：
+
+- summary 是模型生成的另一份文本，不是密码学收据；
+- 表达流畅、步骤完整不等于忠实复述了实际计算；
+- 最终答案正确也不能证明 summary 描述了真实路径；
+- 审核关键动作应依赖可执行验证、主张与来源的映射以及外部状态。
+
+评测 summary 时，分别记录答案正确性、summary 与答案是否一致、summary 是否得到证据支持、敏感内容泄露和外部验证结果，
+不要把它们压成一个“解释质量”分数。
 
 ## 自测
 
-1. 为什么 AEAD tag 有效仍可能发生跨用户重放？
-2. `subject_id` 放进未认证 JSON header 与放进 AAD 有什么区别？
-3. 为什么 model audience、expiry 和 predecessor 都通过，却仍要消费账本？
-4. 为什么只清理 visible text 不能安全发布原始 API trajectory？
-5. 论文哪些结论属于 2026 年 7 月实证，哪些截至 2026 年 8 月已经有时效变化？
+1. 为什么 AES-GCM tag 验证成功后，仍可能发生跨用户重放？
+2. 客户端在普通 JSON 里写入 `subject_id`，为什么不等于把身份放进 AAD？
+3. 为什么用户、会话、模型、过期时间和上一条消息都匹配后，仍可能需要消费账本？
+4. 为什么发布程序应该新建 allowlist 对象，而不是在原始 API 响应上删除几个已知字段？
+5. 论文的哪些结果属于 2026 年 7 月的历史实验？截至 2026 年 8 月，哪些结论已经有时效变化？
