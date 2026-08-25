@@ -44,7 +44,7 @@ Agent 难学，不是因为工具调用的 JSON 很复杂，而是因为一次�
 | ACL | 订单归属、租户和 capability 通过 | 不能 |
 | Approval | 用户批准该执行 identity | 不能 |
 | Execution | 远端受理，但本地超时并保持 `pending` | 不能 |
-| Idempotency | 原 call 被 fence，重放没有再次调用远端 | 不能 |
+| Idempotency | 原调用被拦截（fence），重放没有再次调用远端 | 不能 |
 | Verifier | 查询退款服务，找到匹配的 accepted receipt | 可以建立“已受理”证据 |
 | Recovery | 对账入账，重启后复用 cached receipt | 可以报告已受理，不能报告已到账 |
 
@@ -104,8 +104,19 @@ recovery.replay_after_reconciliation.status    = cached
 recovery.provider_effect_count                 = 1
 ```
 
-这里的 Planner、订单库和退款服务都是进程内模拟器。程序真实执行 Draft 2020-12 schema、ACL policy、
-approval binding、SQLite claim/reconciliation 和恢复后的 cache replay。
+这四个状态词回答的是四个不同问题：
+
+- `failed`：这次函数调用有没有拿到可确认的结果？没有；
+- `pending`：本地账本能否确定外部动作的终态？还不能；
+- `passed`：查询到的退款记录是否与原动作一致？一致；
+- `cached`：恢复后再读同一调用时，是否复用了已确认记录？是。
+
+日志和监控应保留这种命名空间，例如 `attempt.status`、`ledger.state` 和 `verification.status`。如果全部压成
+一个顶层 `status`，排障人员很容易把“本地超时”误读成“外部退款失败”。
+
+脚本中的 Planner 是写在文件里的固定提案，订单库和退款服务也在本地进程中模拟。真正参与运行的是 JSON
+Schema 验证、资源权限检查、审批字段比对、SQLite 占位与对账，以及恢复后的结果复用。这样既能观察
+控制链，又不会制造一笔真实退款。
 
 ## 阶段 0：Observation 不是事实大杂烩
 
@@ -220,8 +231,17 @@ Policy 再检查三件事：
 subject + task + call_id + execution_fingerprint + expiry
 ```
 
-`execution_fingerprint` 不只包含模型参数，还绑定 tool/version、可信 subject/tenant、server-resolved resource
-及其版本、policy version 和 policy decision。金额、订单、主体或 policy 漂移后，旧审批不能继续使用。
+`execution_fingerprint` 把已经通过权限检查的具体动作压成一个摘要。计算摘要前，程序会整理四组内容：
+
+```text
+动作：tool 名称、版本、副作用等级、所需 capability、模型提议的参数
+主体：task、subject、tenant
+资源：服务端解析出的 resource type、ID、tenant 和 version
+授权：policy version、allow/deny 结果和 reason code
+```
+
+金额、订单、主体、资源版本或权限规则发生变化时，摘要也会变化，旧审批随即失效。这里绑定的是眼前这个
+动作，不是一句可以反复使用的“我同意退款”。
 
 脚本把已批准的 300 元改成 299 元，再携带旧 grant 执行。结果是
 `approval_rejected / approval_execution_mismatch`，provider 调用次数仍为零。这个负例说明系统验证的不是
@@ -232,7 +252,7 @@ subject + task + call_id + execution_fingerprint + expiry
 
 ## 阶段 5：本地超时，但退款可能已经受理
 
-Runtime 在调用退款服务前，先向 SQLite ledger 原子 claim：
+Runtime 在调用退款服务前，先在 SQLite ledger 中原子写入一条占位记录（claim）：
 
 ```text
 call_id = refund-order-1001-attempt-1
@@ -267,8 +287,11 @@ call is pending; reconcile external state before retry
 
 Handler 没有再次运行；provider request attempt 和 effect count 都保持为 1。
 
-这不是 exactly-once。它证明的是：在这个 SQLite claim 路径中，已知 pending 的同一 identity 被 fence。
-如果进程在 claim 前崩溃、provider 不支持 idempotency、两个系统之间发生分区，仍需要更完整的协议和运维处理。
+这里的“拦截”有很窄的含义：本地已经存在 `pending` 记录时，相同 call ID 和相同动作再次进入 Runtime，
+会在 Handler 之前停下。因此，这一次重放没有制造第二笔退款。
+
+它还不是 exactly-once 保证。进程可能在写入占位记录前崩溃，远端服务也可能不遵守幂等键；多节点竞争和
+网络分区还会带来新的故障窗口。真实系统需要把这些情况写进服务契约、并发测试和对账流程。
 
 ## 阶段 7：Verifier 查询业务事实
 
@@ -319,17 +342,21 @@ Verifier 对照订单、金额、原因、identity 和目标状态后给出 `pas
 如果 provider 查询显示没有退款，operator 可以把旧 call 标记为 `abandoned`，但新的尝试必须使用新 call ID
 和新审批。如果退款发生后又完成补偿，则应记录 `compensated`，不能删除原始 attempt。
 
-## 四种 identity 不要混用
+## 系统在什么时候认为“还是同一件事” { #identity }
 
-| Identity | 本例用途 | 它没有证明什么 |
-|---|---|---|
-| `task_id` | 串起一次用户目标和 Agent 状态 | 不代表某个副作用只执行一次 |
-| Proposal fingerprint | 绑定 tool name 与模型参数 | 不包含当前主体、资源版本和 policy |
-| Execution fingerprint | 绑定 proposal、主体、资源、tool 与 policy | 普通 hash 不认证来源，也不证明 effect 已发生 |
-| Provider idempotency key | 让远端识别同一 effect request | provider 是否真正 honor 仍需契约与实测 |
+这条链上有四种“相同”，它们回答的问题不同：
 
-`call_id` 在本例同时作为本地 ledger key 和 provider idempotency key，是可信 orchestrator 的设计选择，
-不是让模型自由生成一个 UUID 就能获得的保证。
+1. **同一个用户任务**：`task_id` 把售后目标和多轮 Agent 状态串起来。一项任务可以包含多次外部调用，
+   所以任务相同不表示退款只执行了一次。
+2. **同一个模型提案**：proposal fingerprint 由工具名称和参数计算。它可以发现模型是否改了金额，
+   但还没有包含当前用户、订单版本和权限结论。
+3. **同一个获准动作**：execution fingerprint 再加入主体、服务端解析的资源、工具版本和权限结论。
+   审批和本地账本使用的是这一层。
+4. **同一个远端副作用请求**：provider idempotency key 交给退款服务识别重试。远端是否真的按该键去重，
+   仍要通过服务契约和故障实验确认。
+
+本例由可信控制面生成 `call_id`，并同时把它用作本地账本键和远端幂等键。模型随手生成一个 UUID 不会自动
+获得幂等保证；关键在于谁生成这个标识、哪些请求复用它，以及远端怎样处理重复请求。
 
 ## 失败应归到哪一层
 
@@ -363,13 +390,15 @@ Verifier 对照订单、金额、原因、identity 和目标状态后给出 `pas
 动手实验见[实验 6：追踪一次 Agent 退款](../practice/labs/lab-6-agent-lifecycle.md)。更完整的 framework、
 MCP、A2A、outbox 和轨迹评测的验证程序见 [Safe Agent 项目](../practice/projects/safe-agent.md)。
 
-## 这个实验证明了什么
+## 把结果放回真实系统 { #evidence-boundary }
 
-在这个固定样例中，程序确实执行了 closed schema、资源级 ACL、审批绑定、SQLite claim、pending replay fence、
-provider query verifier 和 reconciliation；恢复后 provider effect count 仍为 1。
+这个本地样例能回答一个具体问题：退款服务先受理、响应随后丢失时，控制面可以保留 `pending`，拦住盲目重试，
+再通过独立查询拿到退款记录并完成对账。运行结束时，远端模拟器只记录了一笔退款。
 
-它没有调用真实 LLM、支付服务、IAM 或审批服务，也没有覆盖并发节点、消息 broker、签名 grant、真实网络分区、
-provider SLA 或灾难恢复。单次 effect count 为 1 不能外推成 exactly-once 或生产安全。
+接入真实系统后，先要验证模型输出、支付服务的幂等契约，以及身份和审批接口。随后还要在多节点并发、
+消息队列、网络分区与灾难恢复场景中重新演练这条链。
+
+当前固定故障中的副作用计数为 1，只说明这条路径按预期工作。它不是覆盖所有故障窗口的 exactly-once 证明。
 
 ## 自测
 
