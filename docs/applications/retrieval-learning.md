@@ -24,6 +24,20 @@ RAG 不只是在向量库里调用 `search()`。Dense retriever 的相似度来�
 - 分开测量表示模型、exact search、ANN 和 reranker 的误差；
 - 运行一个 NumPy 对照示例，并区分公式检查与真实 retriever 质量评测。
 
+## 先认识贯穿本页的四个候选
+
+沿用 [RAG 请求 A](rag-request-lifecycle.md)：“为什么要先做 ACL 权限过滤？”把候选文档抽象成四类：
+
+| 候选 | 内容与标签 | 训练时希望发生什么 |
+|---|---|---|
+| (d^+) | 直接说明“先授权，再检索和重排”；已标正例 | 分数升高 |
+| (d_{easy}) | 讨论 SFT 数据，与问题无关 | 分数降低，通常很容易区分 |
+| (d_{hard}) | 同样频繁出现 RAG、ACL 和重排，但没有回答顺序 | 学会区分“词很像”和“真正回答问题” |
+| (d_{para}) | 用另一种说法给出同一正确答案，却漏掉正例标签 | 本应升高，单正例训练却会错误压低 |
+
+本页的 NumPy 实验用二维向量表示这四种关系。它没有把真实文本送入 encoder，但能让你直接观察：候选集合和标签
+怎样改变 loss 与梯度。读每个方法时，都问一句：它会怎样给这四个候选打分？
+
 ## 1. 先把检索拆成四层
 
 一次 dense retrieval 至少包含四个不同对象：
@@ -33,7 +47,10 @@ RAG 不只是在向量库里调用 `search()`。Dense retriever 的相似度来�
 3. **候选域**：哪些文档参与训练分母，线上又有哪些文档经过授权后可见；
 4. **搜索算法**：exact matrix search，或 HNSW、IVF、PQ 等 ANN 近似。
 
-因此“Recall 下降”不能直接推出“embedding 变差”。它可能来自：目标文档未摄取、ACL 过滤、query/document encoder 漂移、ANN 没找回 exact top-k、reranker 截断或 qrels 不完整。先固定层次，才有可解释实验。
+因此，Recall 下降有多种可能原因：目标文档没有摄取，ACL 把它挡住，查询/文档编码器发生漂移，ANN 没有找回
+精确 top-k，重排器截断了候选，或者 qrels 本身不完整。
+
+只有先确定损失发生在哪一层，才能判断是不是 embedding 模型的问题。
 
 ## 2. Bi-encoder 与 Cross-encoder
 
@@ -47,7 +64,10 @@ q=g_\theta(x),\qquad d=h_\phi(y),\qquad s(x,y)=q^\top d.
 
 若使用 cosine，相当于先做 L2 normalization 再点积。document vector 可离线计算并建立 ANN index，所以一次 query 不必重新运行全部文档编码器。这是大规模第一阶段召回的关键计算性质。
 
-“两个 encoder”不表示一定有两套不同参数。可以共享参数，也可以用不同 query/document encoder；选择改变的是归纳偏置、存储和更新契约。模型 identity 至少应绑定两侧 checkpoint、tokenizer、pooling、normalization 和最大长度。
+“分别编码”不等于一定使用两套参数。Query 与 document encoder 可以共享参数，也可以各用一套；这项选择会改变
+模型的归纳偏置、存储和更新方式。
+
+保存模型身份时，至少记录两侧 checkpoint、tokenizer、pooling、normalization 和最大长度。
 
 ### 2.2 Cross-encoder：让 token 在打分前交互
 
@@ -57,7 +77,10 @@ q=g_\theta(x),\qquad d=h_\phi(y),\qquad s(x,y)=q^\top d.
 s(x,y)=f_\psi([x; y]).
 \]
 
-它允许 query token 与 document token 在多层 attention 中交互，通常比单个向量点积表达力强；代价是每个 query-document pair 都要前向，无法把最终 pair score 预计算成一个通用 document vector。因此常见漏斗是：bi-encoder 召回数百条，cross-encoder 只重排授权后的几十条。
+这种结构让 query token 与 document token 在多层 Attention 中直接交互，通常比单个向量点积表达力更强。
+
+代价是每一对 query 和 document 都要单独运行模型，最终分数也不能预先保存成通用文档向量。因此，常见系统先用
+bi-encoder 召回数百条，再让 cross-encoder 重排其中已经授权的几十条。
 
 两者不是“旧模型与新模型”，而是不同计算预算下的打分分解。把 cross-encoder 放到百万文档全量扫描，或只用 bi-encoder 处理极细粒度否定和数字差异，都可能选错层。
 
@@ -70,7 +93,10 @@ Transformer 输出 token hidden states，检索器还需把它们变为定长表
 - 使用最后一个有效 token；
 - 学习 attention pooling。
 
-Pooling 是模型契约，不是可随意替换的后处理。Mean pooling 若把 padding 算入分母，会让长度改变向量尺度；last-token pooling 若取到左/右 padding，会直接读错位置。若训练时点积、上线时改成 cosine，score ordering 也可能改变。
+Pooling 是训练契约的一部分，不能在上线时随意替换。做平均 pooling 时，补齐位置不应进入平均值；做末 token
+pooling 时，要根据左/右 padding 找到真正的最后一个有效 token。
+
+训练时若使用点积，上线时临时改成 cosine，文档的排序也可能改变。
 
 L2 normalization 使点积只比较方向，但会移除 norm 携带的信息。它是否正确取决于训练目标，不能因为“向量库默认 cosine”就临时添加。
 
@@ -114,9 +140,14 @@ L2 normalization 使点积只比较方向，但会移除 norm 携带的信息。
 
 ### 4.3 Temperature 不只是采样温度
 
-\(\tau>0\) 控制训练 softmax 的尖锐程度。较小 \(\tau\) 放大 score gap 和对 score 的梯度尺度；当正例已经最高时常降低当前 loss，但也可能造成饱和、梯度集中或数值问题。它与生成时 sampling temperature 使用相似数学缩放，却属于不同协议和数据分布。
+\(\tau>0\) 控制训练 softmax 的尖锐程度。减小 \(\tau\) 会放大分数差，也会放大 loss 对原始分数的梯度尺度。
+当正例已经排第一时，当前 loss 往往下降，但梯度也可能过度集中或出现数值问题。
 
-调 temperature 时必须同时固定：是否 normalize、batch/candidate size、loss reduction 和 optimizer learning rate。否则不能把差异单独归因于 \(\tau\)。
+这里的 temperature 用于检索器训练。生成模型的 sampling temperature 使用相似的缩放形式，但作用对象和数据分布
+完全不同。
+
+比较 temperature 时，还要固定向量是否归一化、batch 与候选集大小、loss 聚合方式和优化器学习率。否则，结果差异
+不能只归因于 \(\tau\)。
 
 ## 5. Negative 决定模型学会区分什么
 
@@ -126,9 +157,14 @@ L2 normalization 使点积只比较方向，但会移除 norm 携带的信息。
 
 ### 5.2 In-batch negatives
 
-[In-batch negatives](../reference/glossary.md#term-in-batch-negatives) 把同一 batch 中其他 query 的正例当作当前 query 的负例。一个 batch 有 \(B\) 对样本时，不额外编码即可形成最多 \(B\times B\) score matrix。
+[In-batch negatives](../reference/glossary.md#term-in-batch-negatives) 把同一批次中其他 query 的正例，当作当前 query
+的负例。一个批次有 \(B\) 对样本时，不额外编码就能形成最多 \(B\times B\) 的分数矩阵。
 
-它的代价是 batch composition 成为目标的一部分：同源问句、重复文档、多语种比例和跨设备 all-gather 都会改变负例分布。Distributed training 中还必须说明远端 document embeddings 是否保留梯度、global positive index 如何重映射，以及 padding/重复项如何 mask。
+代价是批次组成会直接改变训练目标。同源问句、重复文档和多语种比例都会改变负例分布；跨设备收集向量后，候选域
+还会进一步扩大。
+
+分布式训练必须另外说明：远端 document embedding 是否保留梯度，全局正例下标怎样重映射，以及 padding 和重复项
+怎样从候选分母中 mask 掉。
 
 ### 5.3 Hard negative
 
@@ -150,14 +186,19 @@ L2 normalization 使点积只比较方向，但会移除 norm 携带的信息。
 
 ### 5.5 Negative mining 与泄漏
 
-[Negative mining](../reference/glossary.md#term-negative-mining) 用 BM25、旧 dense retriever 或 reranker 从大库寻找训练负例。Mining 输入必须只使用训练 split 可以获得的信息。
+[Negative mining](../reference/glossary.md#term-negative-mining) 使用 BM25、旧版 dense retriever 或 reranker，从大库中
+寻找训练负例。挖掘过程只能使用训练 split 可以获得的信息。
 
-若先在完整 corpus/query 集上调 mining threshold、用 test qrels 排除 false negatives，或根据 test metric 反复选择 miner，就发生了 model-selection leakage。
-正确流程是：先按独立单位 split，再在 train 内 mining；validation 只选配置；test 只做最终冻结评测。保存 miner identity、index version、top-k、过滤规则和每条负例来源。
+以下做法都会造成模型选择泄漏：在完整 corpus/query 集上调挖掘阈值，使用测试集 qrels 排除 false negative，或者根据
+测试指标反复选择 miner。
+
+正确顺序是先按独立单位切分数据，再只在训练集内挖掘负例。验证集用于选择配置，测试集只运行最终冻结评测。
+实验还要保存 miner 身份、索引版本、top-k、过滤规则和每条负例的来源。
 
 ## 6. DPR-style 训练管道
 
-[DPR](../reference/glossary.md#term-dpr) 是理解 dense passage retrieval 的一个清晰样板：query encoder 与 passage encoder 产生向量，使用点积和对比损失，以正 passage、batch 内其他 positives 以及 BM25 等来源的 negatives 训练。
+[DPR](../reference/glossary.md#term-dpr) 是理解稠密段落检索的一个清晰样板。查询编码器与段落编码器分别产生向量，
+再用点积和对比损失训练。候选通常包含正段落、同批次其他查询的正例，以及 BM25 等方法挖掘的负例。
 
 把方法名还原为数据流：
 
@@ -167,11 +208,19 @@ question -> query encoder -> q -------------------+
 positive / mined passages -> passage encoder -> d -+
 ```
 
-真正影响复现的通常不是“是否叫 DPR”，而是：positive 如何选、passage 如何切、negative 来自哪一版 index、encoder 是否共享、长度截断、pooling、normalization、temperature、batch size 和 reduction。只报模型名称而不保存这些字段，无法复现训练目标。
+“使用 DPR”这个名称不足以复现实验。还要记录：
+
+- 正例怎样选择，passage 怎样切分；
+- 负例来自哪一版索引；
+- 两个 encoder 是否共享参数；
+- 长度截断、pooling 与 normalization；
+- Temperature、batch size 和 loss 聚合方式。
 
 ## 7. Late interaction 与 ColBERT
 
-单向量 bi-encoder 在编码后丢失了 token 级匹配结构；cross-encoder 又太昂贵。[Late interaction](../reference/glossary.md#term-late-interaction) 取中间路线：query/document 分别编码成多个 token vectors，检索时才进行轻量交互。
+单向量 bi-encoder 在编码后丢失了 token 级匹配结构，cross-encoder 对每个候选做联合前向又太昂贵。
+[Late interaction](../reference/glossary.md#term-late-interaction) 取中间路线：查询和文档各自保留多个 token 向量，
+到检索时再执行轻量交互。
 
 [ColBERT](../reference/glossary.md#term-colbert) 的代表性 MaxSim score 为：
 
@@ -179,13 +228,19 @@ positive / mined passages -> passage encoder -> d -+
 s(q,d)=\sum_i\max_j q_i^\top d_j.
 \]
 
-每个 query token 找最匹配的 document token，再跨 query token 求和。它保留比单向量更多的词项级证据，同时仍能预计算 document token vectors；代价是索引更大、候选生成与压缩更复杂，MaxSim 也可能让多个 query token 重复匹配同一 document token。
+每个 query token 先找分数最高的 document token，再把这些最高分相加。这样既保留了词项级匹配，也仍能预先计算
+文档 token 向量。
+
+代价是索引更大，候选生成与压缩更复杂。MaxSim 还允许多个 query token 重复匹配同一个 document token，解释分数时
+要注意这一点。
 
 “Late”指交互发生在独立编码之后，不表示文档直到最后才读取。实际 ColBERT 系统还涉及特殊标记、归一化、残差压缩和多阶段索引；本仓库 toy 只验证 MaxSim 公式。
 
 ## 8. Learned sparse retrieval 与 SPLADE
 
-Dense retrieval 把语义压进低维连续向量；传统 BM25 使用可解释的词项稀疏向量。[Learned sparse retrieval](../reference/glossary.md#term-learned-sparse-retrieval) 学习词表维度上的非负稀疏权重，尝试同时获得 lexical index 的可部署性与神经语义扩展。
+Dense retrieval 把语义压进低维连续向量，传统 BM25 则使用词项稀疏向量。
+[Learned sparse retrieval](../reference/glossary.md#term-learned-sparse-retrieval) 在词表维度上学习非负稀疏权重，
+试图同时保留倒排索引的可部署性和神经模型的语义扩展能力。
 
 [SPLADE](../reference/glossary.md#term-splade) 的常见 max-pooling 形式可写成：
 
@@ -193,7 +248,10 @@ Dense retrieval 把语义压进低维连续向量；传统 BM25 使用可解释�
 w_j(x)=\max_i \log(1+\operatorname{ReLU}(z_{ij})),
 \]
 
-其中 \(z_{ij}\) 是 token \(i\) 对词表项 \(j\) 的 MLM-head logit。输入没出现的词项也可能获得权重，形成 learned expansion。训练还需对 query/document 表示施加稀疏度或 FLOPS 正则；只做上式并不会自动得到高效稀疏索引。
+其中 \(z_{ij}\) 是第 \(i\) 个 token 对词表项 \(j\) 的 MLM head logit。输入中没有出现的词也可能得到权重，
+这就是学习到的词项扩展。
+
+训练时还要对 query 和 document 表示施加稀疏度或 FLOPS 正则。只有上面的 pooling 公式，并不会自动得到高效索引。
 
 它与 BM25 的关键区别不是“都能倒排”：BM25 权重由词频、文档频率和长度规则确定；SPLADE 权重由模型与训练数据学习。与 dense vector 的区别也不是“一个可解释、一个不可解释”这么绝对，而是表示空间、索引执行和训练约束不同。
 
@@ -211,11 +269,19 @@ w_j(x)=\max_i \log(1+\operatorname{ReLU}(z_{ij})),
 2. `ANN recall@k`：ANN 结果相对 exact top-k 的重合或覆盖；
 3. `end-to-end Recall@k`：线上授权、过滤、ANN 和 rerank 后相对 qrels 的召回。
 
-若第 1 项差，优先看表示与训练数据；第 1 项好而第 2 项差，调索引；候选好但 rerank 后变差，检查 cross-encoder、截断与授权后候选 identity。三个数共用“recall”一词，但 estimand 不同。
+三个指标对应三种排查方向：
+
+- Model Recall 差：检查表示模型、标签和训练数据；
+- Model Recall 好而 ANN recall 差：检查索引参数和近似算法；
+- 大候选集有答案，重排后却消失：检查 cross-encoder、截断和授权后的候选身份。
+
+它们都叫 recall，但测量对象不同。
 
 ## 10. Reranker、Distillation 与训练漏斗
 
-Cross-encoder 可作为线上 reranker，也可作为教师给大量 query-document pairs 打 soft score，再 [distillation](../reference/glossary.md#term-distillation) 到 bi-encoder。教师分数不是 gold：它可能有位置、长度、语言和训练域偏差。
+Cross-encoder 可以直接用作线上 reranker，也可以充当教师，为大量 query-document 对生成软分数，再通过
+[distillation](../reference/glossary.md#term-distillation) 训练 bi-encoder。教师分数不是人工真值；它可能包含位置、
+长度、语言和训练域偏差。
 
 训练时应分开比较：
 
@@ -233,7 +299,8 @@ Cross-encoder 可作为线上 reranker，也可作为教师给大量 query-docum
 - **embedding pooling** 把 token representations 聚合成向量；
 - **qrels pooling** 汇总多个检索系统的高排名结果，交给人标注以扩大 judging pool。
 
-后者会产生 system-dependent missing labels：未进入 pool 的文档通常是 unjudged，不应自动等同于 non-relevant。比较一个与 pooling systems 非常不同的新模型时，未标注文档更多，指标可能对它不公平。
+Qrels pooling 会产生依赖既有系统的漏标：没有进入候选池的文档通常只是“未判断”，不应自动算作“不相关”。
+如果新模型与组成候选池的旧系统差异很大，它找出的未标注文档会更多，离线指标可能因此对它不公平。
 
 评测协议应固定：
 
@@ -267,8 +334,10 @@ corpus_version, chunker_version, qrels_version
 - miner/index/checkpoint identity；
 - validation 使用 exact 还是 ANN search。
 
-单张消费级 GPU 可从小 batch + gradient accumulation 开始，但 accumulation 不会自动增加同一次 forward 的 in-batch negative 数。
-若每个 micro-batch 独立算 loss，候选分母仍只是 micro-batch；要扩大负例域，需要显式 embedding cache、跨 batch memory 或其他算法，并处理 stale embeddings 与梯度语义。
+单张消费级 GPU 可以从小 batch 和梯度累积开始，但梯度累积不会自动增加同一次前向中的 in-batch negative 数。
+每个 micro-batch 若独立计算 loss，候选分母仍然只包含当前 micro-batch。
+
+要扩大负例域，需要显式使用 embedding cache、跨 batch memory 或其他算法，同时处理过期 embedding 和梯度语义。
 
 ## 13. 运行一个可手算的 NumPy 例子 { #exact-control }
 
@@ -294,9 +363,14 @@ python -m pytest tests/test_retriever_learning.py -q
 
 ### 这个例子说明什么，还不能说明什么
 
-本仓库准备的 embeddings 和 qrels 足以检查当前公式实现，以及改变 negative、temperature 或正例集合时的
-梯度方向。它没有运行 Transformer、真实 DPR/ColBERT/SPLADE checkpoint、ANN index 或 GPU，也没有训练
-encoder 参数。模型质量、训练收敛、真实 false-negative 比例、索引性能和生产安全仍需在目标数据与系统上验证。
+本仓库准备的二维 embedding 和 qrels 可以检查公式实现，也能观察负例、temperature 和正例集合怎样改变梯度方向。
+
+实验范围止于 CPU 上的数组计算。以下工作都需要另外执行：
+
+- 加载真实 Transformer 或 DPR、ColBERT、SPLADE checkpoint；
+- 构建 ANN 索引并在 GPU 上运行；
+- 训练 encoder 参数并评估收敛；
+- 在目标数据上测量 false negative、索引性能、模型质量和生产安全。
 
 ## 14. 常见错误结论
 
@@ -308,7 +382,8 @@ encoder 参数。模型质量、训练收敛、真实 false-negative 比例、�
 
 **“Cross-encoder 比 bi-encoder 准，所以直接替换即可。”** 它们的计算复杂度和预计算能力不同，通常处于检索漏斗的不同层。
 
-**“ANN recall 低就是 embedding 不好。”** ANN recall 是相对 exact ranking 的近似误差；先分开测 model recall 与 ANN recall。
+**“ANN recall 低就是 embedding 不好。”** ANN recall 衡量近似搜索相对精确排序丢失了多少候选。表示质量应由
+model recall 单独衡量。
 
 **“SPLADE 是可学习的 BM25。”** 两者都可使用 inverted index，但权重生成、扩展、正则和训练目标不同。
 
