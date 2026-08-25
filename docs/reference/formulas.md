@@ -53,6 +53,7 @@
 | 全局 batch | \(B_{micro}\times accumulation\times DP\) | 不乘 TP/PP |
 | 粗略训练 FLOPs | \(C\approx6ND\) | dense decoder 的预算近似 |
 | Scaling law | \(L\approx L_\infty+aN^{-\alpha}+bD^{-\beta}\) | 参数依实验而变 |
+| Compute-optimal 增长率 | \(N^*\propto C^{\beta/(\alpha+\beta)},\ D^*\propto C^{\alpha/(\alpha+\beta)}\) | 只适用于同一可分离幂律拟合与 \(C=kND\) 口径 |
 | KV 元素/序列 | \(2LTH_{kv}D\) | 再乘 batch 与元素字节 |
 | 单序列 KV block 数 | \(\lceil T/S\rceil\) | block size 为 \(S\)；tail 空 slot 为 \((S-T\bmod S)\bmod S\) |
 | 物理 block 碎片 | \(N_{allocated}S-N_{physical\ token\ values}\) | 共享 prefix 的 logical tokens 会重复计数，不能代入物理项 |

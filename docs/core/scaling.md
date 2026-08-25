@@ -7,13 +7,19 @@
 
 - **适合读者**：训练预算、模型规划和实验决策负责人。
 - **先修**：对数、回归、FLOPs 口径和基本实验设计。
-- **首次阅读**：四种尺度 → power law → compute-optimal → 可信拟合 → 决策流程。
+- **首次阅读**：四种口径 → 幂律拟合 → 计算最优点 → 可信外推 → 决策流程。
 - **完成信号**：能给出预算账本，并标注拟合区间与不能外推的范围。
 - **卡住时**：回到[机器学习与深度学习](../foundations/ml-dl.md)的实验设计部分。
 
 </div>
 
-Scaling law 不是“模型越大越聪明”的口号，而是对**特定模型族、数据混合、训练目标和规模区间**做出的经验拟合。它可用于预算、外推和实验设计，但不能替代下游评测，也不能把历史拟合常数当作自然定律。
+**学习入口**：[预训练](../training/pretraining.md) · [分布式训练](../systems/distributed-training.md) ·
+[评测统计](../foundations/evaluation-statistics.md) · [推理优化](../systems/inference-optimization.md)
+{ .doc-nav }
+
+Scaling law（规模化规律）描述的是：在**特定模型族、数据混合、训练目标和规模区间**内，
+loss 怎样随参数、数据和计算量呈现可拟合的趋势。它可以帮助分配预算和设计小型试验；
+模型是否真的更有用，仍要通过下游任务评测。拟合区间或实验条件改变后，系数也需要重新验证。
 
 ## 1. 先区分四种尺度
 
@@ -60,7 +66,15 @@ flops = estimate_dense_training_flops(
 assert flops == 1.2e20
 ```
 
-它不会把这个结果描述为实际 GPU 消耗。
+把代码中的数字展开：
+
+\[
+6\times 10^9\times 20\times10^9
+=1.2\times10^{20}\ \text{FLOPs}.
+\]
+
+这相当于 120 EFLOP 的**工作量**，不是每秒 120 EFLOP 的吞吐率。`20e9 / 1e9 = 20` 只是本例选择的
+20 tokens/parameter；它来自输入参数，不是函数推导出的通用最优比例。实际 GPU 用时还要知道有效吞吐和停机开销。
 
 ## 3. 损失的经验幂律
 
@@ -94,7 +108,7 @@ L(N,D)
 \[
 \log(L-L_\infty)
 =
-\log a-alpha\log N.
+\log a-\alpha\log N.
 \]
 
 因此 log-log 图斜率约为 \(-\alpha\)。但 \(L_\infty\) 估错会让直线弯曲；在多个项同时主导时也不能直接从两点读指数。
@@ -136,23 +150,64 @@ N^*\propto C^{\frac{\beta}{\alpha+\beta}},
 D^*\propto C^{\frac{\alpha}{\alpha+\beta}}.
 \]
 
-这只是**所假设 loss model 内部**的最优点。若系数来自不同 tokenizer、数据混合、上下文长度或架构，代入同一个解析式没有意义。
+### 4.1 沿一条固定预算曲线手算
 
-可执行版本：
+先用一个无量纲小例子看清取舍。设 \(C=100\)、\(k=1\)，并令 \(a=b=\alpha=\beta=1\)、
+\(L_\infty=0\)。预算约束给出 \(D=100/N\)，于是：
+
+\[
+L(N)=\frac{1}{N}+\frac{1}{D}
+=\frac{1}{N}+\frac{N}{100}.
+\]
+
+| 参数量 \(N\) | Token 数 \(D=100/N\) | 参数不足项 \(1/N\) | 数据不足项 \(1/D\) | 总 loss |
+|---:|---:|---:|---:|---:|
+| 1 | 100 | 1.00 | 0.01 | 1.01 |
+| 2 | 50 | 0.50 | 0.02 | 0.52 |
+| 5 | 20 | 0.20 | 0.05 | 0.25 |
+| **10** | **10** | **0.10** | **0.10** | **0.20** |
+| 20 | 5 | 0.05 | 0.20 | 0.25 |
+| 50 | 2 | 0.02 | 0.50 | 0.52 |
+| 100 | 1 | 0.01 | 1.00 | 1.01 |
+
+表中 loss 完全由假设公式算出，并不是训练模型得到的观测值。
+从左向右增加参数时，参数不足项持续下降，但可用 token 被挤压，数据不足项持续上升。
+本例在 \(N=D=10\) 处平衡两项；这就是导数为零背后的直觉。
+
+同一组数字可以直接交给仓库函数：
 
 ```python
 from about_llm.scaling import compute_optimal_under_power_law
 
 estimate = compute_optimal_under_power_law(
-    compute_flops=1e20,
-    parameter_coefficient=a,
-    data_coefficient=b,
-    parameter_exponent=alpha,
-    data_exponent=beta,
+    compute_flops=100,
+    parameter_coefficient=1,
+    data_coefficient=1,
+    parameter_exponent=1,
+    data_exponent=1,
+    flops_per_parameter_token=1,
 )
+assert estimate.num_parameters == 10
+assert estimate.training_tokens == 10
+assert estimate.modeled_loss == 0.2
 ```
 
-函数要求全部输入为有限正数，并在 docstring 中明确禁止把外推结果当通用处方。`tests/test_scaling.py` 用对称解析案例和预算恒等式检查实现。
+这里把 \(k\) 设为 1 只是为了手算；训练预算回到 `6ND` 口径时应使用 \(k=6\)。函数要求输入为有限正数，
+`tests/test_scaling.py` 会同时检查解析最优点和预算恒等式。
+
+### 4.2 算力增加 16 倍时怎样分配
+
+系数 \(a,b\) 决定当前最优点落在哪里，指数 \(\alpha,\beta\) 决定增加算力后参数与数据增长多快。
+例如 \(\alpha=0.4,\beta=0.3\) 时，算力增加 16 倍会得到：
+
+| 数量 | 算力指数 | 增长倍数 |
+|---|---:|---:|
+| 参数量 \(N^*\) | \(\beta/(\alpha+\beta)=3/7\) | \(16^{3/7}\approx3.281\) |
+| Token 数 \(D^*\) | \(\alpha/(\alpha+\beta)=4/7\) | \(16^{4/7}\approx4.876\) |
+| 预算乘积 \(N^*D^*\) | 1 | \(3.281\times4.876\approx16\) |
+
+所以“算力 16 倍”并不自动意味着参数和数据各 4 倍；只有两个指数相同时才会这样分配。
+这些倍数仍属于同一套拟合模型。换 tokenizer、数据混合、上下文长度或架构后，需要重新取得系数和指数。
 
 ## 5. 如何取得可信拟合
 
@@ -213,13 +268,17 @@ Dense 模型每个 token 通常使用绝大部分层参数。MoE 模型有：
 - **training FLOPs**：受 top-k routing、capacity、dropped tokens 和重算影响；
 - **memory/communication**：即使专家未对当前 token 激活，总权重仍要存储或分片，all-to-all 也有成本。
 
-不能用 active parameters 解释 checkpoint 内存，再用 total parameters 解释同一模型的 compute efficiency，而不说明口径。MoE 与 dense 的 loss scaling 也不能只按一个参数数值直接比较。
+MoE 的存储和计算使用不同口径。Checkpoint 大小与分片主要受总参数量影响；单个 token 的主干计算更接近
+激活参数量，再加上路由与通信成本。比较 MoE 和 dense 模型时，应同时列出总参数、激活参数和每 token FLOPs，
+不能让一个“参数量”数字承担三种含义。
 
 ## 8. 上下文长度改变成本模型
 
 在标准 full attention 中，单层 attention score 的计算/存储随序列长度包含二次项，而线性投影和 MLP 更接近按 token 线性增长。于是序列很短时 `6ND` 可能较好，序列很长时 attention 项不可忽略。
 
-训练 token 总数相同并不代表成本相同：更多短序列和更少长序列具有不同 padding、packing 和 attention 成本。长上下文模型还可能使用局部/稀疏 attention、sequence parallel 或 checkpointing，必须按真实 kernel 重新估算。
+相同数量的训练 token 可以被组织成许多短序列，也可以组成少量长序列。两者的 padding、packing 和 Attention
+成本不同。长上下文训练还可能使用局部或稀疏 Attention、序列并行和激活重计算，因此最终预算要按实际序列分布
+与执行 kernel 重新估算。
 
 ## 9. 从 loss 到能力的非线性
 
@@ -288,7 +347,14 @@ t\approx
 
 其中 \(P_{peak}\) 必须与计算精度和 FLOP 计数口径一致，MFU 是模型 FLOPs 利用率的某种定义。该式忽略启动、评测、checkpoint 和故障时间，只适合粗略核算。
 
-扩大 GPU 数量不会让时间无限按比例下降：collective latency、带宽、负载不均、pipeline bubble、data loader 和小矩阵效率都会降低 strong-scaling efficiency。分布式系统应同时报告 model FLOPs、hardware FLOPs（若可得）、tokens/s、有效 token 和 wall clock。
+增加 GPU 可以缩短固定训练任务，但加速通常达不到设备数量的倍数。损失主要来自三处：
+
+- Collective 通信需要启动时间和带宽；
+- 负载不均、流水线空泡和数据等待会让部分设备空闲；
+- 切分后矩阵变小，kernel 效率可能下降。
+
+报告结果时，分别给出模型 FLOPs、硬件 FLOPs（若能可靠取得）、每秒 token、有效 token 和实际墙钟时间。
+固定任务的强扩展效率应由这些实测量计算。
 
 ## 13. 决策流程
 
@@ -317,3 +383,9 @@ t\approx
 4. 设计至少四个 \((N,D)\) 点的 isoFLOP 实验，并说明如何选择学习率。
 5. 使用 `about_llm.scaling` 让 compute 增加 16 倍，验证参数和 token 的理论增长指数。
 6. 为一个月请求量 100 万与 10 亿的产品分别讨论 training-optimal 与 lifecycle-optimal 可能如何变化。
+
+运行本章的预算、最优点、增长指数和非法输入对账：
+
+~~~powershell
+python -m pytest tests/test_scaling.py -q
+~~~
