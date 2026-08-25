@@ -17,6 +17,13 @@ from about_llm.finetuning import (
     prepare_assistant_mask_features,
     validate_sft_training_readiness,
 )
+from about_llm.finetuning.training_runtime import (
+    cuda_memory_snapshot,
+    normalize_trainer_metrics,
+    reset_cuda_peak_memory,
+    training_runtime_identity,
+    write_strict_json,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--chat-template-path", type=Path)
     parser.add_argument("--data-preflight-only", action="store_true")
+    parser.add_argument("--tokenization-preflight-only", action="store_true")
     parser.add_argument("--num-parameters", type=int, required=True)
     parser.add_argument("--num-layers", type=int, required=True)
     parser.add_argument("--hidden-size", type=int, required=True)
@@ -40,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-linears-per-layer", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--epochs", type=float, default=1.0)
+    parser.add_argument("--max-steps", type=int, default=-1)
     parser.add_argument("--estimate-only", action="store_true")
     args = parser.parse_args()
     numeric = (
@@ -57,6 +66,10 @@ def parse_args() -> argparse.Namespace:
     )
     if any(value <= 0 for value in numeric):
         parser.error("all numeric arguments must be positive")
+    if args.max_steps == 0 or args.max_steps < -1:
+        parser.error("max-steps must be -1 or a positive integer")
+    if args.data_preflight_only and args.tokenization_preflight_only:
+        parser.error("choose at most one preflight-only mode")
     if not args.estimate_only and (
         args.train_jsonl is None
         or args.readiness_json is None
@@ -66,6 +79,71 @@ def parse_args() -> argparse.Namespace:
             "training requires --train-jsonl, --readiness-json, and --output-dir"
         )
     return args
+
+
+def _training_run_report(
+    *,
+    args: argparse.Namespace,
+    readiness_fingerprint: str,
+    assistant_mask_fingerprint: str,
+    final_labels_fingerprint: str,
+    target_modules: list[str],
+    compute_dtype: str,
+    status: str,
+    optimizer_step_count: int,
+    trainable_parameter_count: int,
+    total_parameter_count: int,
+    trainer_metrics: dict[str, object],
+    runtime: dict[str, object],
+    memory_before: dict[str, object],
+    memory_after: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "report_version": "about-llm.qlora-training-run.v1",
+        "status": status,
+        "model": {"model_id": args.model_id, "revision": args.revision},
+        "data": {
+            "readiness_manifest_fingerprint": readiness_fingerprint,
+            "assistant_mask_manifest_fingerprint": assistant_mask_fingerprint,
+            "final_labels_fingerprint": final_labels_fingerprint,
+        },
+        "runtime": runtime,
+        "training": {
+            "quantized_base": "bitsandbytes-nf4-double-quant",
+            "bnb_compute_dtype": compute_dtype,
+            "target_modules": target_modules,
+            "rank": args.rank,
+            "alpha": args.alpha,
+            "max_length": args.max_length,
+            "per_device_batch_size": args.micro_batch_size,
+            "gradient_accumulation_steps": args.gradient_accumulation,
+            "learning_rate": args.learning_rate,
+            "epochs": args.epochs,
+            "max_steps": args.max_steps,
+            "gradient_checkpointing": True,
+            "seed": 42,
+        },
+        "outcome": {
+            "optimizer_step_count": optimizer_step_count,
+            "trainable_parameter_count": trainable_parameter_count,
+            "total_parameter_count": total_parameter_count,
+            "trainer_metrics": trainer_metrics,
+        },
+        "torch_cuda_allocator": {
+            "measurement_window": (
+                "Immediately before Trainer.train() until it returned or raised "
+                "torch.OutOfMemoryError; model and Trainer initialization happened earlier."
+            ),
+            "before_train": memory_before,
+            "after_train": memory_after,
+        },
+        "evidence_boundary": (
+            "This report records one local Trainer configuration, terminal status, "
+            "Trainer metrics, and process-local torch CUDA allocator counters. It does "
+            "not include driver-wide GPU use, authenticate model or data provenance, "
+            "establish model quality, or predict another workload."
+        ),
+    }
 
 
 def main() -> None:
@@ -96,34 +174,15 @@ def main() -> None:
     readiness = load_sft_training_readiness(args.readiness_json)
     audit = validate_sft_training_readiness(records, readiness)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    (args.output_dir / "sft-data-audit.json").write_text(
-        json.dumps(audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    (args.output_dir / "sft-training-readiness.json").write_text(
-        json.dumps(readiness.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
+    write_strict_json(args.output_dir / "sft-data-audit.json", audit.to_dict())
+    write_strict_json(
+        args.output_dir / "sft-training-readiness.json", readiness.to_dict()
     )
     if args.data_preflight_only:
         return
 
-    import torch
-    from datasets import Dataset
-    from peft import LoraConfig, prepare_model_for_kbit_training
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from trl import SFTConfig, SFTTrainer
+    from transformers import AutoTokenizer
 
-    if not torch.cuda.is_available():
-        raise RuntimeError("QLoRA training requires CUDA; use --estimate-only on CPU")
-    compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-    quantization = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_compute_dtype=compute_dtype,
-    )
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id, revision=args.revision, trust_remote_code=False
     )
@@ -161,10 +220,26 @@ def main() -> None:
         max_length=args.max_length,
     )
     mask_audit = mask_preparation.audit_report
-    (args.output_dir / "sft-template-mask-audit.json").write_text(
-        json.dumps(mask_audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
+    write_strict_json(
+        args.output_dir / "sft-template-mask-audit.json", mask_audit.to_dict()
+    )
+    if args.tokenization_preflight_only:
+        return
+
+    import torch
+    from datasets import Dataset
+    from peft import LoraConfig, prepare_model_for_kbit_training
+    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+    from trl import SFTConfig, SFTTrainer
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("QLoRA training requires CUDA; use --estimate-only on CPU")
+    compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    quantization = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=compute_dtype,
     )
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
@@ -197,6 +272,7 @@ def main() -> None:
         gradient_accumulation_steps=args.gradient_accumulation,
         learning_rate=args.learning_rate,
         num_train_epochs=args.epochs,
+        max_steps=args.max_steps,
         gradient_checkpointing=True,
         bf16=compute_dtype is torch.bfloat16,
         fp16=compute_dtype is torch.float16,
@@ -223,14 +299,71 @@ def main() -> None:
         collate=trainer.data_collator,
         pad_token_id=int(tokenizer.pad_token_id),
     )
-    (args.output_dir / "sft-final-label-audit.json").write_text(
-        json.dumps(label_audit.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
+    write_strict_json(
+        args.output_dir / "sft-final-label-audit.json", label_audit.to_dict()
     )
-    trainer.train()
+
+    total_parameter_count = sum(
+        parameter.numel() for parameter in trainer.model.parameters()
+    )
+    trainable_parameter_count = sum(
+        parameter.numel()
+        for parameter in trainer.model.parameters()
+        if parameter.requires_grad
+    )
+    if not 0 < trainable_parameter_count < total_parameter_count:
+        raise RuntimeError("QLoRA training requires a non-empty strict trainable subset")
+
+    device = trainer.args.device
+    runtime = training_runtime_identity(
+        torch, ("transformers", "trl", "peft", "accelerate", "bitsandbytes")
+    )
+    reset_cuda_peak_memory(torch, device)
+    memory_before = cuda_memory_snapshot(torch, device)
+    try:
+        train_output = trainer.train()
+    except torch.OutOfMemoryError:
+        write_strict_json(
+            args.output_dir / "sft-training-run.json",
+            _training_run_report(
+                args=args,
+                readiness_fingerprint=readiness.manifest_fingerprint,
+                assistant_mask_fingerprint=mask_audit.manifest_fingerprint,
+                final_labels_fingerprint=label_audit.labels_fingerprint,
+                target_modules=targets,
+                compute_dtype=str(compute_dtype),
+                status="cuda_out_of_memory",
+                optimizer_step_count=int(trainer.state.global_step),
+                trainable_parameter_count=trainable_parameter_count,
+                total_parameter_count=total_parameter_count,
+                trainer_metrics={},
+                runtime=runtime,
+                memory_before=memory_before,
+                memory_after=cuda_memory_snapshot(torch, device),
+            ),
+        )
+        raise
     trainer.save_model()
     tokenizer.save_pretrained(args.output_dir)
+    write_strict_json(
+        args.output_dir / "sft-training-run.json",
+        _training_run_report(
+            args=args,
+            readiness_fingerprint=readiness.manifest_fingerprint,
+            assistant_mask_fingerprint=mask_audit.manifest_fingerprint,
+            final_labels_fingerprint=label_audit.labels_fingerprint,
+            target_modules=targets,
+            compute_dtype=str(compute_dtype),
+            status="completed",
+            optimizer_step_count=int(trainer.state.global_step),
+            trainable_parameter_count=trainable_parameter_count,
+            total_parameter_count=total_parameter_count,
+            trainer_metrics=normalize_trainer_metrics(train_output.metrics),
+            runtime=runtime,
+            memory_before=memory_before,
+            memory_after=cuda_memory_snapshot(torch, device),
+        ),
+    )
 
 
 if __name__ == "__main__":

@@ -34,6 +34,23 @@ messages → token IDs → labels → loss → adapter
 
 这两条记录只是教学样例。它们能检查训练链路是否连通，不能证明 Qwen 已经完成微调或模型质量有所提升。
 
+如果你使用 RTX 3070 Laptop 和 Qwen3-0.6B，请先按教学页第 1 步生成
+`artifacts/sft-prepare/sft-training-readiness.json`。然后运行目标 tokenizer 预检：
+
+```powershell
+python projects/single-gpu-finetuning/train_trl_sft.py `
+  --model-id Qwen/Qwen3-0.6B `
+  --revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --train-jsonl projects/single-gpu-finetuning/train.example.jsonl `
+  --readiness-json artifacts/sft-prepare/sft-training-readiness.json `
+  --chat-template-path projects/single-gpu-finetuning/qwen3-0.6b-c1899de-generation-aware-sft.jinja `
+  --output-dir artifacts/qwen3-sft-tokenization-preflight `
+  --max-length 512 `
+  --tokenization-preflight-only
+```
+
+完整的一步训练命令、三个输出报告和显存数字的含义见[项目教学页](../../docs/practice/projects/single-gpu-finetuning.md#run)。
+
 ## 完整主线
 
 需要做一个真实项目时，按下面的顺序推进：
@@ -77,8 +94,10 @@ messages → token IDs → labels → loss → adapter
 | `preference*.example.jsonl` | Preference 数据、判断和 readiness 样例 |
 | `governance-policy.example.json` | 来源、许可和风险标签的示例决策规则 |
 | `qwen2.5-generation-aware-sft.jinja` | 标出 assistant generation span 的教学模板 |
+| `qwen3-0.6b-c1899de-generation-aware-sft.jinja` | 为固定 Qwen3 revision 标出 assistant 监督区间 |
 | `*.control.json` | 固定实验所使用的输入和身份 |
 | `*.recorded-report.json` | 已录制结果，可在没有目标权重时离线核对 |
+| `sft-training-run.json` | 记录单次训练终态、步数、依赖版本、参数量和进程内 CUDA 显存 |
 | `artifacts/`、`outputs/` | 本地运行生成的报告、Adapter 和训练工件 |
 
 正式发布包至少要绑定底座版本、tokenizer、对话模板、生成配置、数据身份、训练配置和 Adapter 文件。
