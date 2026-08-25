@@ -1,36 +1,54 @@
-# Gemini 生产接入：身份、预算、观测与迁移
+# Gemini 生产接入：跟一次请求走到发布与回滚
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：准备把 Gemini 接入真实业务、建立发布门禁和回滚方案的工程师。
-- **先修**：读过 [Gemini 总览](gemini.md)，并选定 Interactions 或 `generateContent`。
-- **首次阅读**：身份 → retry/outcome → usage budget → evaluation → rollout。
-- **完成信号**：能写出带 model/API/platform identity 的发布工件，并解释超时后为何不一定能安全重试。
-- **卡住时**：先完成 text-only smoke，再一次只增加 streaming、tool、state 或多模态中的一项。
+- **适合读者**：准备把 Gemini 接入真实业务，并建立发布门禁和回滚方案的工程师。
+- **先修**：读过 [Gemini 总览](gemini.md)，并已经选择 Interactions 或 `generateContent`。
+- **首次阅读**：发送前检查 → 预算预留 → 一次调用 → 结果验证 → 费用结算 → 灰度与回滚。
+- **完成信号**：能解释请求超时后为什么不一定能安全重试，并能画出一次任务的费用和结果账本。
+- **卡住时**：先只看同步纯文本请求，再逐项加入流式、工具、状态或图片。
 
 </div>
 
 **章节导航**：[总览](gemini.md) · [Interactions API](gemini-interactions.md) · [generateContent 与多模态](gemini-generate-content.md) · [证据台账](../evidence/gemini-controls.md)
 { .doc-nav }
 
-生产接入的核心不是“请求成功过一次”，而是让每个结论都绑定明确身份、分母和故障边界。下面从可复现配置开始，逐步走到评测、灰度和回滚。
+总览中的任务是：维修人员上传设备告警截图，系统识别错误码、指出证据位置，并生成维修工单建议。
 
+在本地演示里，只要打印出一段答案就像成功了。生产系统还要知道图片属于谁、这次调用用了哪个接口和型号、
+超时后供应商是否已经执行、费用该记多少，以及工单建议是否真的获准执行。
 
-## 平台与 endpoint 身份
+把一次任务展开，会得到下面的生命周期：
 
-至少把部署配置拆成四组：
+```text
+接收图片与问题
+→ 固定身份和业务请求
+→ 检查权限、能力与输入
+→ 预留本次调用的预算
+→ 发起一次供应商调用
+→ 接收协议终态或记录未知结果
+→ 解析有类型的输出
+→ 验证错误码、证据和工具建议
+→ 结算本次调用
+→ 发布任务结果
+→ 持续观测，必要时回滚
+```
 
-| 组 | 典型字段 | 漂移风险 |
-|---|---|---|
-| 产品 | Gemini API / Google Cloud 托管 surface | auth、区域、治理和 endpoint 不同 |
-| 接口 | Interactions / `generateContent` | object graph、状态和事件不同 |
-| 模型 | exact model id / alias / preview | 能力、默认值和下线策略不同 |
-| 运行 | API version、SDK version、region、tier | 字段、配额、保留和错误语义不同 |
+生产质量来自这条链路能被复现、对账和恢复，而不是某一次请求碰巧返回了正确文字。
 
-不要让 `provider="gemini"` 同时承担这些身份。一个更可审计的配置应至少包括：
+## 发送前：冻结这次调用的身份 {#freeze-identity}
+
+同一个 Gemini 型号可能通过不同平台和接口访问。先把一次调用拆成四组身份：
+
+- **产品平台**：记录 Gemini API 或 Google Cloud 托管入口。平台漂移会改变认证、区域和数据治理。
+- **API**：记录 Interactions 或 `generateContent` 及其版本。接口漂移会改变请求对象、状态和流式事件。
+- **模型**：记录请求型号、别名性质和响应版本字段。型号漂移会改变能力、默认值或下线策略。
+- **运行环境**：记录 SDK、区域、账号层级和检查日期。环境漂移会改变字段、配额、保留或错误语义。
+
+可以把它们写进部署配置：
 
 ```yaml
 platform: gemini-api
@@ -39,351 +57,388 @@ api_version: v1
 endpoint_origin: https://generativelanguage.googleapis.com
 model_id: deployment-owned-exact-id
 region_or_location: platform-defined
-checked_at: 2026-08-15
+account_tier: deployment-owned
 storage_mode: explicit
+sdk_version: pinned-by-deployment
+checked_at: YYYY-MM-DD
 ```
 
-这只是配置形状，不是已运行配置；教材不写入真实密钥、项目号或当前型号榜单。
+这仍只是配置形状。真实发布还要附上能力探测、评测报告和回滚决定。
 
-### alias、preview 与固定 revision
+闭源 API 往往无法像开放权重仓库那样固定 commit。若请求型号是可漂移别名，应保存请求时的精确字符串、
+响应回报的版本字段、供应商请求标识和检查日期。它们能帮助追查变化，却不能自行认证供应商内部权重。
 
-闭源 API 常无法像开放权重仓库那样固定 commit。生产身份至少要保存：
+### 同一个业务对象，两套发送格式
 
-- 请求中的 exact model id；
-- 响应中的 model/version 字段（若该 surface 提供）；
-- API/SDK 版本；
-- 首次与最近验证时间；
-- provider request/interaction id；
-- capability probe 结果；
-- 评测 artifact 与 rollout decision id。
-
-如果 model id 是会漂移的 alias，必须承认它不是 immutable revision。响应字段也只能证明 provider 回报了什么，不能自行认证权重来源。
-
-## Canonical Core 与两套 wire model
-
-业务层可以共享一个窄 canonical core：
+业务层先形成一份稳定任务：
 
 ```text
-CanonicalRequest
-├── conversation turns / content blocks
+CanonicalTask
+├── tenant / subject / device
+├── text + image digest
 ├── system policy
-├── output contract
-├── tool proposals
-├── generation budget
-└── trace / tenant / data-policy identity
+├── expected output schema
+├── allowed tool proposals
+├── generation and cost budget
+└── trace / retention policy
 ```
 
-但 wire adapter 必须分开：
+随后才由接口适配器生成供应商请求：
 
 ```text
-canonical request
+CanonicalTask
 ├── Interactions adapter
-│   └── interaction + input/steps + previous_interaction_id
+│   └── interaction input、steps、previous_interaction_id
 └── generateContent adapter
-    └── contents/parts + systemInstruction + generationConfig
+    └── contents/parts、systemInstruction、generationConfig
 ```
 
-归一化只应覆盖业务确实共享的语义。以下信息不能在 adapter 中静默丢弃：
+重试时应复用已经冻结的业务对象和身份。若每次调用都重新读取可变的系统提示、工具列表或型号别名，同一个
+逻辑任务可能在第二次尝试中悄悄换了语义。
 
-- step/part 的原始类型与顺序；
-- tool call/result identity；
-- thought/signature 等 continuation artifact；
-- prompt/candidate safety feedback；
-- model version、response/interaction id；
-- usage 的分项与计量口径；
-- provider terminal 与 transport EOF；
-- unknown extension fields 的受控原始投影。
+两套适配器可以共享图片校验、租户身份和内部结果类型，但不能静默丢掉供应商特有的 step、part、终态、
+用量或未知扩展字段。方便的纯文本属性只适合做显式标注的有损视图。
 
-“返回一段 text”是有损 convenience view，不是完整响应模型。
+## 发送前：确认目标环境真的支持所需能力 {#capability-preflight}
 
-## Safety surface 的版本漂移
+告警任务需要图片输入、结构化结果和工具建议。平台、API 版本、型号或账号层级不同，能力也可能不同。
 
-2026-08-15 核对时，Interactions overview 的 limitation 文本与 API reference 可见字段对 custom safety surface 存在需要按版本解释的差异。正确工程动作不是选一页当永久真相，而是：
+发布前用最小请求逐项探测，而不是把全部能力塞进一次大请求：
 
-1. 固定 `v1` 或 `v1beta`；
-2. 固定 SDK 版本与生成的 wire request；
-3. 在目标 endpoint 做 capability probe；
-4. 保存 accepted/rejected response 与 checked_at；
-5. 将 unsupported field 视为显式能力差异；
-6. 发布前用目标模型重跑安全与 over-refusal gate。
-
-provider safety filter 只是 defense-in-depth。应用仍需：
-
-- 输入/文件/URL 安全；
-- 数据和工具授权；
-- 输出政策；
-- 业务 verifier；
-- 人工升级；
-- abuse monitoring；
-- incident/rollback。
-
-## Retry、幂等与 outcome uncertainty
-
-每个失败先回答三个问题：
-
-1. `retryable?`：协议/错误策略允许重试吗？
-2. `replay safe?`：相同业务动作可安全重复吗？
-3. `outcome known?`：能证明 provider 未接受/执行吗？
-
-| 场景 | outcome | 默认动作 |
+| 探测项 | 成功时保存什么 | 失败时怎样处理 |
 |---|---|---|
-| target/preflight 失败 | known not sent | 修配置，不记 provider usage |
-| connect 前明确失败 | likely not sent，按实现证据 | 可有限重试 |
-| 已发送后 timeout/reset | uncertain | 不自动重放副作用任务 |
-| HTTP/provider 明确 terminal error | 按固定 allowlist | 保存 request id 后决定 |
-| partial stream 已发布 | externally visible | 默认不 replay |
-| background id 已取得 | 可查询 | 先 get/reconcile，不新建 |
+| 同步纯文本 | 请求、响应、型号和用量 | 停止发布并检查身份 |
+| 图片输入 | MIME、大小、固定图片与有类型响应 | 标记不支持，不能静默删图 |
+| 流式文本 | 事件顺序、协议终态与传输结束 | 使用对应接口的独立解析器 |
+| 工具建议 | 调用标识、参数和停止状态 | 工具能力关闭或阻止发布 |
+| 结构化输出 | 实际发送的 schema 与响应 | 走预先设计的降级路径 |
+| 状态与后台任务 | 创建、查询、取消和保留行为 | 不借用另一接口的状态机 |
 
-SSE 断开不等于 cancel；client cancel 不等于 server stop；server stop 不等于零 usage/费用。
+探测结果要绑定平台、API、型号、区域、账号和日期。一个页面写着“支持图片”，并不能证明当前账号、区域和
+请求形状已经接受这张图。
 
-## Usage、费用与预算账本
+安全配置也属于能力探测。官方概览、参考页和不同 API 版本可能出现表述或字段差异。生产代码应固定目标
+版本，保存实际发送的请求和接受或拒绝的响应，再用目标型号重跑正常任务与过度拒答评测。
 
-`GenerateContentResponse.usageMetadata` 与 Interactions usage object 的字段和口径不同。接入时按 API surface 保存原始分项，不要只抽取 input/output 两个总数。
+供应商过滤器只是纵深防御的一层。图片安全、设备 ACL、工单审批、输出政策和事件响应仍由应用负责。
 
-预算流程应覆盖每一次 attempt：
+## 发送前：先检查图片和业务权限 {#input-preflight}
+
+维修截图进入模型前，至少完成：
+
+1. 从可信会话解析租户、用户和设备，而不是相信请求体自报字段。
+2. 检查用户是否有权读取该设备并创建对应类型的工单。
+3. 根据 magic bytes 解码并核对 MIME、大小、分辨率和页数。
+4. 去除或隔离 EXIF、文件名、隐藏层等不需要的元数据。
+5. 为实际字节、解析器版本和业务请求生成稳定摘要。
+6. 给 OCR 和图中文字标记低信任来源，防止其覆盖系统指令。
+7. 确定原图、派生文本、供应商文件和缓存的保留与删除策略。
+
+通过这些检查只表示“允许把这份输入交给目标流程”，不表示模型答案必然正确。
+
+## 发送前：预留一次尝试可能花掉的预算 {#reserve-budget}
+
+逻辑任务可能因为重试产生多次供应商调用。预算账本应以 **attempt（调用尝试）** 为单位，而不是等最终成功
+后只记一笔。
 
 ```text
-exact request identity
-  → conservative input estimate + output cap
-  → reserve before send
-  → one reservation per attempt
-  → settle | cancel-before-send | uncertain
-  → provider billing reconciliation
+冻结的请求身份
+→ 保守估算输入 + 最大输出
+→ 发送前原子预留
+→ 每次尝试各有一笔 reservation
+→ 结算 | 明确未发送后取消 | 结果未知时保留
+→ 与供应商账单对账
 ```
 
-价格快照要独立版本化，并记录平台、模型、模态、cache、thinking、tool、batch/tier、区域和生效时间。provider-reported usage 用于近实时控制，最终仍需与 billing export 对账。
+仓库有一组与供应商无关的固定算术：
 
-本地 reservation 展示的是预算代码如何记账；供应商最终收取多少仍以真实 usage 和账单为准。仓库使用的
-固定算术样例及其适用范围见[证据台账](../evidence/gemini-controls.md#budget-control)。
+- 预计输入 60 token，最大输出 10 token；
+- 样例单价为输入每百万 1 美元、输出每百万 2 美元；
+- 发送前预留 80 micro-USD；
+- 固定响应回报实际输入 58、输出 4；
+- 按样例价格结算 66 micro-USD。
 
-## 生产 adapter 的目录与能力协商
-
-建议拆分：
+计算过程是：
 
 ```text
-integrations/gemini/
-├── canonical.py
-├── identity.py
-├── interactions_request.py
-├── interactions_response.py
-├── interactions_stream.py
-├── generate_content_request.py
-├── generate_content_response.py
-├── generate_content_stream.py
-├── multimodal.py
-├── tools.py
-├── errors.py
-├── retry.py
-├── usage.py
-├── governance.py
-└── fixtures/
+预留 = 60 × 1 + 10 × 2 = 80 micro-USD
+结算 = 58 × 1 +  4 × 2 = 66 micro-USD
 ```
 
-不要用一个 `if provider == "gemini"` 的巨大 parser 同时处理两个 object graph。
+这组数字验证的是整数算术和本地账本。
 
-## 用 capability probe 阻止静默降级
+真实成本需要另外保存价格快照。快照要绑定平台、型号与模态，也要写清缓存、thinking、工具和服务层级的
+计价方式；区域和生效时间同样不可省略。供应商用量则来自目标接口的真实响应。
 
-同一字段可能因 API 版本、平台、模型或账号能力而不同。发布前对目标 endpoint 运行最小 probe，并保存 accepted/rejected response 与核对时间。
+供应商响应中的用量适合做近实时控制，最终仍要与账单导出对账。若图片、缓存或工具有独立计量项，就保存
+原始分项，不要强行压成“输入 token + 输出 token”两个数字。
 
-| 能力 | Interactions | `generateContent` | 发布动作 |
-|---|---|---|---|
-| typed steps / server state | 按目标版本验证 | 不借用该对象图 | adapter 缺失则阻止发布 |
-| text streaming | 验证 step lifecycle | 验证 candidate/finish lifecycle | 使用独立 parser |
-| multimodal input | model/API dependent | model/API dependent | 对每种 MIME 单独 probe 与评测 |
-| function calling | surface-specific | surface-specific | proposal 仍进入本地授权层 |
-| safety / structured output | version/capability dependent | version/capability dependent | 不支持时显式拒绝或降级 |
-| usage / billing | 保存原始 usage | 保存原始 usage | 与价格快照和账单对账 |
+固定样例和代码入口见[证据台账](../evidence/gemini-controls.md#budget-control)。
 
-能力协商失败应阻止发布或进入预先设计的降级路径，不能静默删除字段后继续请求。
+## 发送后：先判断结果是否已知，再决定重试 {#outcome-before-retry}
 
-## 观测与隐私
+一次调用失败后，按顺序问三个问题：
 
-最小生产 trace 可记录：
+1. 协议和错误策略是否允许重试？
+2. 同一个业务动作是否可以安全重复？
+3. 能否证明供应商没有接受或执行前一次请求？
 
-- internal request/attempt id；
-- provider response/interaction id；
-- platform/API/version/model/region/tier；
-- request/template/tool/schema fingerprints；
-- part/step type 与大小，不默认记录内容；
-- lifecycle timestamps；
-- finish/status/error taxonomy；
-- usage 分项与 budget terminal；
-- store/cache/file policy；
-- verifier/rollout decision；
-- redaction/projection version。
+| 场景 | 当前知道什么 | 默认处理 |
+|---|---|---|
+| 本地检查失败 | 请求没有发出 | 修正配置，可取消预留 |
+| 连接前明确失败 | 根据传输证据判断大概率未发送 | 在限额内重试 |
+| 发送后超时或连接重置 | 供应商结果未知 | 保留预算，不自动重放副作用任务 |
+| 收到明确协议错误 | 有供应商终态和错误信息 | 按固定允许列表决定 |
+| 已向用户发布部分流 | 外部已经看见部分结果 | 通常不自动重放 |
+| 已取得后台任务标识 | 可以查询原任务 | 先查询和对账，不创建新任务 |
 
-默认不记录：
+流连接断开，只说明客户端不再收到事件。供应商是否继续运行，需要取消接口、状态查询或合同语义来确认。
+客户端发出取消请求也不等于供应商已经停止；即使最终停止，已经发生的计算和费用仍可能存在。
 
-- API key/authorization；
-- raw media；
-- thought/signature；
-- tool secret；
-- 敏感 prompt/result；
-- 可跨租户复用的 file/interaction id。
+工单创建尤其不能因为“模型调用超时”就再次执行。模型生成的是建议，真正的业务副作用还要使用独立的
+幂等标识、执行记录和查询接口。
 
-hash 不是匿名化。低熵 prompt、文件名和短 ID 仍可被猜测；需要 keyed fingerprint、权限与 retention policy。
+### 每次重试都要单独占用预算
 
-## Evaluation unit 与分母
+仓库另一个固定样例先遇到 500，再收到 200。两次调用各自预留和结算，最终合计 146 micro-USD；若任务硬
+上限为 140，第二次尝试会在发送前被阻止。
 
-模型/API 迁移评测的最小单位是 task attempt，不是 text response。建议保存：
+重试策略和预算策略需要共同决定下一步。第二次尝试只有在协议允许、剩余预算充足且业务副作用可安全重放时
+才能继续。
+
+## 接收响应：区分传输结束、协议终态和业务成功 {#three-terminals}
+
+告警任务至少有三层终点：
+
+```text
+传输层：HTTP body 或 SSE 连接结束
+协议层：Interaction 状态，或 candidate 的 finish reason
+业务层：错误码、证据位置和工单建议通过验证
+```
+
+只有连接结束，没有协议终态，可能是截断。供应商报告 `completed` 或 `STOP`，也只表示接口生命周期结束；
+图片是否读对、schema 是否有效、设备是否获授权，还需要应用验证。
+
+Interactions 流按照交互对象与步骤事件推进。`streamGenerateContent` 则以候选、内容片段、结束原因和用量
+推进。两者可以共享底层 SSE 解码，上层状态机仍要分开。
+
+完整解析器至少保存：
+
+- 原始响应或经过允许列表筛选的有类型投影；
+- interaction、response、step、candidate 和工具调用标识；
+- part/step 的类型、顺序和未知类型处理结果；
+- 协议终态、传输终点和时间戳；
+- 型号版本、用量和安全反馈；
+- 解析器版本与有损投影标记。
+
+## 验证结果：从模型输出走到业务决定 {#verify-result}
+
+假设模型返回错误码 E-17、一个矩形证据框和“创建维修工单”的工具建议。发布前依次检查：
+
+1. 输出能否按预期 schema 解析，是否存在重复字段、未知字段或非法数值。
+2. 错误码是否真的出现在授权图片的证据框内。
+3. 设备标识是否由服务端解析，并属于当前租户。
+4. 工具名称、schema 版本、参数和业务范围是否允许。
+5. 该动作是否需要人工审批，审批是否绑定相同参数与设备版本。
+6. 工具执行是否带幂等标识，返回结果是否通过独立查询验证。
+7. 最终面向用户的文字是否与实际执行结果一致。
+
+模型的 function call 是候选动作，不是授权。工具返回成功字符串也不是副作用已经发生的充分证据。工单
+系统的记录和查询结果才是业务层的依据。
+
+如果图片被阻止、没有候选、只返回工具 part、证据框越界或 schema 无效，应记录具体失败类型。把这些情况
+都变成空字符串，会让评测和运营误以为请求成功但模型回答为空。
+
+## 完成一次任务：同时结算费用和结果 {#task-result}
+
+生产评测的最小单位不是一段文本，而是一次完整任务。可以保存：
 
 ```text
 TaskResult
-├── task/case/slice identity
-├── all attempts
-├── provider/transport/parse/tool/verifier outcomes
-├── final publish outcome
+├── task / case / slice identity
+├── frozen deployment and request identity
+├── all provider attempts
+├── transport / protocol / parse outcomes
+├── image evidence verification
+├── tool proposal / approval / effect outcome
+├── final publish decision
 ├── latency timestamps
-├── usage/cost
-└── evidence artifacts
+├── usage / reservation / settlement
+└── retained evidence artifacts
 ```
 
-至少报告：
+有了这份对象，团队才能分别报告：
 
-- all-attempt provider success；
-- parse success；
-- tool proposal/authorization/effect success；
-- task success；
-- citation/grounding；
-- safety violation 与 over-refusal；
-- multimodal counterfactual consistency；
-- latency（offered 与 success-conditional 分开）；
-- usage/cost per attempted 与 successful task；
-- background completion/cancel/reconciliation；
-- unknown/unjudged/pending 分母。
+- 供应商调用成功率；
+- 协议与 schema 解析成功率；
+- 错误码、证据框和拒答质量；
+- 工具建议、授权与实际副作用成功率；
+- 尝试任务和成功任务的延迟与成本；
+- 安全违规、过度拒答和未知结果；
+- 后台任务的完成、取消和对账情况。
 
-只在成功响应上算质量会隐藏 blocked、timeout、parse failure 和 tool failure。
+只在最终有文本的样本上计算质量，会隐藏安全阻止、超时、解析错误和工具失败。延迟也应同时报告所有收到的
+任务与成功任务条件下的分布，不能只保留最快的成功样本。
 
-### paired migration protocol
+## 可观测性：记录身份和状态，减少记录内容 {#observability}
 
-迁移 Interactions 前后应固定：
+告警截图可能包含设备编号、地理位置或内部信息。默认 trace 记录元数据，而不是原始内容：
 
-- case set/split；
-- platform/region/account；
-- exact model identity；
-- system/tool/schema；
-- media bytes/file versions；
-- generation budget；
-- evaluator/rubric；
-- timeout/retry；
-- usage/cost口径；
-- store/cache/history policy。
+- 内部任务与 attempt 标识；
+- 供应商 interaction 或 response 标识；
+- 平台、API、型号、区域和账号层级；
+- 请求模板、工具 schema、图片字节和策略的受控摘要；
+- part/step 类型与大小；
+- 生命周期时间戳、终态和错误分类；
+- 用量分项与预算状态；
+- 存储、文件和缓存策略；
+- 验证与发布决定；
+- 脱敏和投影版本。
 
-如果 API surface 不能保持某字段，应把它记录为 treatment difference，而不是假装同条件比较。
+API key、原始图片、敏感 prompt、工具 secret、thought/signature 和可跨租户复用的文件标识默认不进入普通
+日志。
 
-## 生产 rollout / rollback bundle
+普通 hash 也不是匿名化。低熵设备编号、文件名和短标识可能被枚举，应结合 keyed fingerprint、权限控制、
+最短保留期和访问审计。
 
-发布工件至少包含：
+## 发布：先比较任务，再逐步扩大流量 {#rollout}
 
-- adapter/version manifest；
-- official docs checked_at 与 capability probe；
-- model/API/platform identity；
-- eval dataset/report；
-- raw/typed parser 固定样例；
-- error/retry/cancel matrix；
-- tool/ACL/approval policy；
-- budget/pricing snapshot；
-- logging/redaction/retention review；
-- canary/shadow observation；
-- rollback trigger 与旧 adapter；
-- incident owner 与 reconciliation runbook。
+接口或型号迁移前，用同一组告警任务做配对比较。至少固定：
 
-推荐顺序：
+- 数据集、切分和关键风险样本；
+- 平台、区域和账号；
+- 型号与生成预算；
+- 系统规则、工具 schema 和媒体字节；
+- 超时、重试和预算策略；
+- 状态、文件、缓存与保留选择；
+- 评价规则和人工复核流程。
+
+若两套 API 无法保持某项条件，例如 Interactions 引入服务端状态，就把它记录为处理差异。不要把不相同的
+实验包装成“只替换了接口”。
+
+推荐按下面顺序发布：
 
 ```text
-offline contract
-  → restricted real smoke
-  → paired shadow
-  → low-volume canary
-  → staged rollout
-  → steady-state gate
+离线契约测试
+→ 受限真实冒烟
+→ 影子流量配对
+→ 小比例金丝雀
+→ 分阶段扩大
+→ 稳态门禁
 ```
 
-回滚不只切 model id。还要恢复 API surface、state ownership、stored interaction/file/cache policy、tool result compatibility 与 parser version。
+每一步都要预先写明通过阈值、观察时长和停止条件。关键分母包括任务成功、安全、证据正确、工具副作用、
+未知结果、延迟和每成功任务成本。
 
-## 故障定位树
+## 回滚：恢复整个协议，而不只是型号 {#rollback}
+
+回滚工件至少包含：
+
+- 新旧适配器与 API 版本；
+- 新旧型号和能力探测记录；
+- 状态由谁保存，以及旧会话怎样处理；
+- 已创建的 interaction、文件和缓存怎样查询或删除；
+- 工具调用与结果能否被旧版本理解；
+- 预算 reservation 和未知 attempt 怎样对账；
+- 日志、脱敏和解析器版本；
+- 回滚触发器、负责人和事件手册。
+
+如果只把 `model_id` 切回旧值，新的服务端状态、文件引用或工具结果可能继续留在系统里。真正的回滚要恢复
+API 对象、状态所有权、数据政策和解析行为。
+
+## 故障定位：先找层级，再评价模型 {#troubleshooting}
 
 ```text
 失败
-├── identity/preflight
-│   ├── platform/API/version/model
-│   └── auth/region/capability
-├── transport
-│   ├── connect/TLS/timeout
-│   └── HTTP/SSE framing
-├── provider protocol
-│   ├── Interaction step/status
-│   └── candidate/part/finish
-├── application
-│   ├── parse/schema
-│   ├── state/history/signature
-│   ├── tool/ACL/effect
-│   └── quality/safety/citation
-└── economics/governance
-    ├── usage/budget/billing
-    └── storage/delete/logging
+├── 身份与发送前检查
+│   ├── 平台 / API / 版本 / 型号
+│   └── 认证 / 区域 / 能力 / 图片
+├── 传输
+│   ├── 连接 / TLS / 超时
+│   └── HTTP / SSE framing
+├── 供应商协议
+│   ├── Interaction step / status
+│   └── candidate / part / finish
+├── 应用
+│   ├── 解析 / schema / 状态
+│   ├── 图片证据 / 质量 / 安全
+│   └── 工具 / ACL / 副作用
+└── 经济与治理
+    ├── 用量 / 预算 / 账单
+    └── 存储 / 删除 / 日志
 ```
 
-先确认 identity 和层级，再看模型输出。否则会把 endpoint 配错、状态丢失或 parser 有损误判成“模型能力下降”。
+先确认失败位于哪一层。端点配错、图片解码失败或解析器丢失非文本 part，都可能表面上像“模型能力下降”。
 
-## 单张消费 GPU 与 Gemini API
+## 单张消费级 GPU 能参与哪里
 
-Gemini 闭源 API 本身不在本地 GPU 部署。单张消费 GPU 可以用于：
+Gemini 闭源 API 本身不在本地 3070 等消费级 GPU 上运行。本地显卡仍可以承担：
 
-- 本地 OCR/ASR/媒体抽取 baseline；
-- embedding/reranker/RAG；
-- 输入去敏与输出 verifier；
+- OCR、ASR 或媒体预处理基线；
+- 图片去敏与恶意内容检查；
+- embedding、reranker 和权限感知 RAG；
 - 小模型 fallback；
-- synthetic/counterfactual 媒体生成；
-- 离线评测与可视化。
+- 输出 schema、引用或事实验证；
+- 反事实图片生成与离线评测。
 
-这些本地组件的 GPU 指标不能归因给 Gemini；远端 latency/usage 也不能解释本地 GPU 性能。
+这些组件的显存和吞吐属于本地流程，不能归因给 Gemini。反过来，远端 API 的延迟和用量也不能解释本地
+GPU 性能。
 
-## 真实接入最小 smoke runbook
+## 取得真实账号后怎样做第一次冒烟 {#real-smoke}
 
-只有用户提供账号、合法权限与预算后才执行：
+只有在拥有合法账号、权限和预算后，才运行真实调用：
 
-1. 固定 platform/API version/model/region；
-2. 使用最小权限 secret，不写入仓库；
-3. 设置请求数、token、费用、媒体大小与总时限上限；
-4. 先 text-only non-tool case；
-5. 保存 redacted request/response/headers/ids/usage；
-6. 验证错误、timeout 与 credential redaction；
-7. 再分别验证 streaming、state、tool、多模态；
-8. 每项独立 artifact，不互借成功；
-9. 删除测试 interaction/file/cache；
-10. 与 dashboard/billing export 对账。
+1. 固定平台、API 版本、型号、区域和存储选择。
+2. 使用最小权限 secret，并确保它不写入仓库和日志。
+3. 设置请求数、输出、费用、图片大小和总时限上限。
+4. 先运行同步、纯文本、无工具任务。
+5. 保存脱敏后的请求、响应、标识、终态和用量。
+6. 验证错误、超时、credential 脱敏和预算结算。
+7. 再分别加入流式、状态、工具和图片，每次只增加一种复杂度。
+8. 删除实验创建的 interaction、文件和缓存，并记录 API 返回结果。
+9. 与控制台和账单导出对账。
 
-即使该 smoke 成功，也只得到 L4 单账号/区域/API/model/workload 证据，不得到代表性质量、容量、生产 SLO 或长期兼容性。
+一次冒烟只能说明该时刻、账号、区域、API、型号和输入组合的行为。代表性质量、容量和长期可靠性仍需要
+成组评测、压测和持续观测。
 
-## 常见错误
+## 仓库当前能证明到哪里 {#repository-evidence}
 
-- 把 Gemini 产品、Gemini API 和 Vertex AI 当作同一个 endpoint；
-- 因同属 Gemini 就混用 Interactions API 与 `generateContent` 的字段和事件；
-- 迁移到 `previous_interaction_id` 后忘记重新发送 interaction-scoped 配置；
-- 忽略默认存储与删除策略，直接处理敏感会话；
-- 只解析第一个 candidate 的第一个 text part；
-- 把无 candidate 的安全阻止解析成空答案成功；
-- 信任媒体 MIME、文件 id 或图片中的文字指令；
-- 只做主题识别，没有反事实证明模型使用了目标模态；
-- 把长窗口/文件上传当作 RAG、ACL 和引用系统的替代品。
+仓库当前为 `generateContent` 的纯文本子集提供离线 request builder、response parser 和单候选流式状态机。
+它还提供供应商无关的 HTTP、重试和预算固定样例。
 
-## 面试追问
+它尚未执行 Google Gen AI SDK、真实账号、Google 端点、图片、工具、文件、缓存或 Interactions parser。
+所以本章中的告警任务是一条生产设计主线，不是已经录制的 Gemini 多模态调用。
 
-1. Interactions API 与 `generateContent` 的状态和 adapter 边界为什么不能混写？
-2. `previous_interaction_id` 带来哪些状态归属、删除和配置继承问题？
-3. contents/parts 相比纯文本 messages 怎样改变存储、解析与安全设计？
-4. 如何证明视觉问答不是从文件名、OCR 线索或文字先验猜出？
-5. 多模态提示注入如何跨提取器、模型和工具执行层隔离？
-6. Gemini API 与 Vertex AI 选型要看哪些非模型因素？
-7. 文件缓存和长上下文为什么不能替代权限感知 RAG？
+可运行的第一步是：
+
+```powershell
+python -m about_llm.integrations.cloud_api_cli verify `
+  --contracts projects/cloud-api-contracts/contracts.example.jsonl
+
+python projects/cloud-api-contracts/usage_budget_toy.py
+```
+
+运行后先确认报告中的 `network_performed: false`，再阅读[证据台账](../evidence/gemini-controls.md)里的字段与
+适用范围。
+
+## 面试时怎样回答
+
+如果面试官问“怎样把 Gemini 接入生产”，沿一次任务回答：
+
+1. 固定平台、接口、版本、型号、区域、账号和数据政策。
+2. 把业务请求与两套供应商对象分开，由专用适配器映射。
+3. 发送前检查权限、输入和目标能力，并按 attempt 预留预算。
+4. 超时后先判断结果是否已知、动作能否安全重放，再决定重试。
+5. 分开传输终点、供应商终态和业务验证结果。
+6. 工具调用只作为建议，经过 ACL、审批、幂等与副作用验证后再执行。
+7. 同时结算任务结果和费用，用配对评测、影子流量与金丝雀逐步发布。
+8. 回滚时恢复适配器、状态、文件、工具结果和预算账本，而不只是切换型号。
 
 ## 一手资料
 
-- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，GA、状态、steps、后台执行与存储边界；核对日期 2026-08-15。
-- Google，[Interactions API reference](https://ai.google.dev/api/interactions-api)，resource、status、methods、steps 与 API version；核对日期 2026-08-15。
-- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step/terminal lifecycle；核对日期 2026-08-15。
-- Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、`systemInstruction`、candidates、prompt feedback 与 usage；核对日期 2026-08-15。
-- Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前入口、`output_text` 有损边界与 stateless step preservation；核对日期 2026-08-15。
-- Google Cloud，[Agent Platform model overview](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models)，云平台模型、访问与治理导航；核对日期 2026-08-15。
-- 目标 model page、SDK reference、data retention 与区域文档；生产部署时的最高优先级证据。
+- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，接口定位、状态、后台执行与存储边界；核对日期 2026-08-15。
+- Google，[Interactions API 参考文档](https://ai.google.dev/api/interactions-api)，资源、状态、方法与步骤；核对日期 2026-08-15。
+- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step 生命周期；核对日期 2026-08-15。
+- Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、candidates、反馈与用量；核对日期 2026-08-15。
+- Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前文本入口和有损文本视图；核对日期 2026-08-15。
+- 目标型号、SDK、数据保留、区域与价格页面；真实部署时需要重新核对。
