@@ -7,178 +7,397 @@
 
 - **适合读者**：需要比较系统、解释不确定性并维护发布门禁的评测与算法工程师。
 - **先修**：[评测总览](evaluation.md)、均值、比例和置信区间的基本直觉。
-- **首次阅读**：先跟一次新旧系统比较，再按需深入 cluster、multiple testing 和 judge。
-- **完成信号**：能在看结果前写清 estimand、比较单位、业务阈值和停止规则。
-- **卡住时**：先只保留逐 case 差值，不要急着计算 p-value。
+- **首次阅读**：跟着文中的客服助手走完一次新旧版本比较，再按需深入聚类、多重检验和模型裁判。
+- **完成信号**：能在看结果前写清目标人群、比较单位、业务阈值和停止规则，并能从逐条结果解释发布决定。
+- **卡住时**：先只画出“旧版对、新版错”和“旧版错、新版对”两组，不急着计算 p-value。
 
 </div>
 
-客服助手的 baseline 在 30 条 case 中答对 22 条，candidate 答对 24 条。能不能发布？
+客服助手的旧版本在 30 条问题中答对 22 条，新版本答对 24 条。新版本多答对了两条，能发布吗？
 
-`24 > 22` 只告诉我们这个样本上的计数。发布还取决于两条新增正确答案来自哪里，
-原先正确的 case 是否退化，高风险切片有没有失败，30 条是否来自 30 个独立用户，
-以及 candidate 的延迟和费用怎样变化。
+先把两个总数拆开：
 
-本章从这个决策向后展开评测方法。具体实现、固定样例、artifact schema 和 HMAC 证据链集中在
-[评测门禁项目](../practice/projects/evaluation-gate.md)与[准确性台账](../evidence/accuracy-ledger.md)，
-避免教学主线变成字段说明书。
+| 同一条问题上的结果 | 数量 | 我们要追问什么 |
+|---|---:|---|
+| 两个版本都答对 | 20 | 这些能力是否稳定保留？ |
+| 只有旧版答对 | 2 | 新增的退化发生在哪里？ |
+| 只有新版答对 | 4 | 改进是否来自目标场景？ |
+| 两个版本都答错 | 4 | 是否仍有发布前必须修复的问题？ |
+
+新版的样本成功率确实高了 \(2/30\)，约 6.7 个百分点。可是两条退化中有一条是跨账户退款信息泄露，
+而发布规则不允许出现任何权限退化。当前决定因此是**暂不发布**：先修复权限问题，再在没有参与调试的数据上重测。
+
+这是本章贯穿始终的示意案例，不是仓库记录的真实模型实验。它让我们看到评测的核心：
+发布决定来自逐条证据、风险和事前规则，不来自一个更漂亮的平均分。
+
+```mermaid
+flowchart LR
+  subgraph E["先把问题变成可评分记录"]
+    direction TB
+    D["写清发布问题"] --> C["准备 case 与风险切片"] --> M["按任务结果评分"]
+  end
+  subgraph J["再把分数变成发布决定"]
+    direction TB
+    P["比较逐条差值"] --> U["估计不确定性"] --> G["检查门禁"] --> R["发布、继续实验或回滚"]
+  end
+  M --> P
+```
+
+具体命令、样例文件和评测工件（artifact）格式集中在
+[Evaluation Gate 项目](../practice/projects/evaluation-gate.md)。本页先把每一步为什么存在讲清楚。
 
 ## 第一步：先写发布问题
 
-评测计划的第一行不是指标名称，而是它支持的决策：
+评测计划的第一行应是它支持的决策，而不是指标名称。客服助手可以这样写：
 
 ```text
 Decision:
-  是否用 candidate 替换当前客服 baseline？
+  是否用新版客服助手替换当前版本？
 
 Population:
-  中文售后会话中的首轮事实问答，不含人工已接管会话。
+  中文售后会话中的首轮事实问答，不含已由人工接管的会话。
 
 Primary estimand:
-  在目标请求分布上，candidate − baseline 的任务成功率差。
+  在目标请求分布上，新版与旧版的任务成功率之差。
 
 Meaningful effect:
-  至少提升 2 percentage points，且关键切片不退化。
+  至少提升 2 个百分点，而且关键风险切片不退化。
 
 Hard guardrails:
-  越权、未经支持的高风险答案、schema 失败和严重安全错误。
+  不允许越权、无依据的高风险回答、输出结构错误和严重安全错误。
 ```
 
-Population、任务、失败代价、基线和最小有意义改善要在运行前固定。
-若 0.2 分变化不会改变产品决定，就没有必要围绕它无限调 Prompt。
+这里的 **estimand** 是评测真正要估计的量。上面的目标不是“这 30 条题多对几条”，而是“目标请求分布上的
+成功率平均改善多少”。目标人群、任务、失败代价、旧版本和最小有意义改善，都应在运行前确定。
 
-这里还要区分 Minimum Meaningful Effect 和统计分析能检测到的 Minimum Detectable Effect。
-前者来自业务价值，后者受样本量、方差、显著性水平和方法影响。统计功效不足时应增加合适样本，
-不能把业务阈值改小来迎合现有结果。
+还要区分两个容易混淆的阈值：
 
-## 一条 case 要能回到真实失败
+- **Minimum Meaningful Effect** 来自产品价值：改善小于多少就不值得承担迁移成本？
+- **Minimum Detectable Effect** 来自实验设计：在给定样本量、方差和错误率要求下，多小的变化才有机会被发现？
 
-最小 case schema 可以包含：
+统计功效不足时，应增加合适的样本或改进实验设计。为了迎合现有结果而降低业务阈值，会让评测失去决策意义。
+
+## 第二步：让每条 case 都能回到真实失败
+
+一条评测样例通常需要保存以下信息：
 
 ```text
 case_id
-input + context / environment
-reference / rubric / gold state
-gold evidence
-slices + risk
-source + license
-created_at + version
-annotator metadata
+输入，以及模型作答时可见的上下文或环境
+参考答案、评分规则或期望的业务终态
+支持参考判断的证据
+所属切片与风险等级
+来源、许可、创建时间和版本
+标注过程信息
 ```
 
-`case_id` 在系统版本之间保持稳定，便于配对和回归。Input、reference 或 slice 变化时，
-case semantic identity 应变化；不能只保留同一个名字，让比较器误以为它还是原 case。
+`case_id` 要在新旧版本之间保持稳定，这样比较程序才能把同一道题配成一对。如果输入、参考答案或切片含义改变，
+这条样例的语义身份也应改变；只保留原名字，会让程序把两道不同的问题误当成同一道。
 
-开放任务允许多个等价答案或 rubric。结构化抽取则可以保存唯一 parsed value、字段容差和业务状态。
-Case 还要保留来源与许可，避免 benchmark 变成失去治理的数据副本。
+开放问答可以接受多个等价答案，或使用明确的评分规则。结构化抽取则可以保存唯一解析值、字段容差和期望的业务状态。
+来源与许可也应保留，否则评测集会逐渐变成无法治理的数据副本。
 
-## 不同 case 集合回答不同问题
+### 不同 case 集合回答不同问题
 
-客服评测通常需要几组数据：
+客服助手通常需要几组数据：
 
-| 集合 | 用途 | 报告时怎样解释 |
+| 集合 | 它回答的问题 | 报告方式 |
 |---|---|---|
-| 代表性集 | 估计主要目标流量表现 | 按采样或目标流量权重聚合 |
-| 能力挑战集 | 刻意覆盖困难和长尾 | 观察能力边界，不称为线上发生率 |
-| 安全 / policy 集 | 检查不可接受行为 | 独立 hard gate |
-| 回归集 | 保存事故和重要 bug | 防止已知失败再次出现 |
-| 私有 holdout | 限制开发过拟合 | 减少查看次数，保留最终判断 |
-| 时间后移集 | 检查 freshness 与漂移 | 与旧 snapshot 分开报告 |
+| 代表性集 | 主要流量上的平均表现怎样？ | 按采样设计或目标流量权重聚合 |
+| 能力挑战集 | 困难、稀有问题能做到什么程度？ | 用来观察能力边界，不冒充线上发生率 |
+| 安全与策略集 | 是否出现不可接受的行为？ | 作为独立的强制门禁 |
+| 回归集 | 已知事故和重要缺陷是否再次出现？ | 逐条追踪，不与代表性集混成平均分 |
+| 私有留出集 | 团队是否已经对开发集过拟合？ | 减少查看次数，留给阶段性判断 |
+| 时间后移集 | 新数据和新政策下是否发生漂移？ | 与旧时间快照分开报告 |
 
-总体平均很容易掩盖退化。切片应来自产品风险和失败假设，例如语言、地区、长度、用户层级、来源、
-高风险意图、多跳、否定与数字。关键切片事前指定；探索性发现要在新数据上复验。
+贯穿案例中的跨账户泄露属于安全与策略集。即使它只有一条，也应按严重风险逐条审查；把它混入 30 条的平均分，
+只会得到“退化 3.3 个百分点”这种没有表达事故代价的数字。
 
-小切片同时展示样本数、原始分子分母和区间。高风险切片即使很小，也可以逐例审查，
-而不是用一个小样本百分数制造精确感。
+切片应来自产品风险和失败假设，例如语言、地区、输入长度、用户层级、来源、高风险意图、多跳、否定和数字。
+关键切片在运行前指定。运行后发现的新切片属于探索性发现，需要用新数据复验。
 
-## 指标先声明比较对象
+小切片报告样本数、原始分子分母和区间。这样读者会看到“1/2”，而不是被“50%”制造的精确感误导。
 
-“Exact match” 不是单一含义。至少有四层：
+## 第三步：按任务结果选择评分方法
 
-| 层 | 比较对象 | 适合什么 |
+指标的作用是把一次可观察结果变成分数。选择指标前，先问“什么差异会改变产品决定”。
+
+### 同叫 Exact match，也可能在比较不同东西
+
+| 比较层次 | 实际比较的对象 | 适合的任务 |
 |---|---|---|
-| Byte identity | 固定 encoding / serialization 后的 bytes | 文件、wire artifact 和完整性 |
-| Literal string exact | Decoded code-point sequence | 大小写、空格、标点都重要的文本协议 |
-| Normalized exact | 经过明确 Unicode、大小写和空白规则的文本 | 允许表面变体的短答案 |
-| Token F1 | 固定 tokenizer 后的 token overlap | 抽取覆盖和有多个局部匹配的答案 |
+| 字节一致 | 固定编码和序列化后的 bytes | 文件、网络传输内容和完整性检查 |
+| 字符串逐字一致 | 解码后的字符序列 | 大小写、空格和标点都重要的文本协议 |
+| 归一化后一致 | 按明确规则处理 Unicode、大小写和空白后的文本 | 允许表面写法不同的短答案 |
+| Token F1 | 固定分词规则下的词元重合程度 | 局部抽取或允许部分覆盖的答案 |
 
-每次 normalization 都可能吞掉真实错误。仓库的 normalized exact 使用 NFKC、`casefold()`、`strip()`
-和 whitespace collapse；token F1 在同样归一化后抽取 ASCII word 或单个中日韩统一表意文字。
-
-例如：
+归一化会主动忽略一部分差异，因此也可能吞掉真实错误。仓库的归一化规则依次执行 NFKC、无语言区域依赖的
+大小写折叠、首尾清理和连续空白合并。Token F1 随后抽取 ASCII 单词或单个中日韩统一表意文字。
 
 ```text
 LLM-2026 -> llm-2026
-literal / normalized / token-F1 = 0 / 1 / 1
+逐字一致 / 归一化一致 / Token F1 = 0 / 1 / 1
 
 {"answer":42} -> {"answer": 42}
-literal / normalized / token-F1 = 0 / 0 / 1
+逐字一致 / 归一化一致 / Token F1 = 0 / 0 / 1
 ```
 
-第一个例子说明 case-folding 不适合大小写复制任务；第二个说明 token F1 忽略 JSON 标点和结构。
-指标由任务契约选择，不能在看完分数后换成最有利的口径。
+第一个例子说明，大小写折叠不适合要求精确复制大小写的任务。第二个例子说明，Token F1 看不到 JSON 的标点和结构。
+指标应由任务契约决定，不能在看完结果后换成最有利的口径。
 
-### JSON 要把 syntax、schema、value 和业务规则分开
+### JSON 要分四层检查
 
-结构化评测可以分四步：
+结构化输出从外到内依次检查：
 
-1. JSON 解析：检查 duplicate key、`NaN` 和 `Infinity`；
-2. Schema：检查类型、required、额外字段和本地 references；
-3. Value：比较 canonical parsed value，object key order 与 whitespace 可忽略；
-4. Domain policy：验证账户、库存、金额、权限和当前业务状态。
+1. **语法**：能否解析，是否包含重复字段名、`NaN` 或 `Infinity`；
+2. **Schema**：字段类型、必填字段、额外字段和本地引用是否符合约定；
+3. **值**：解析后的标准值是否正确，此时对象字段顺序和无意义空白可以忽略；
+4. **业务规则**：账户、库存、金额、权限和当前业务状态是否允许这次操作。
 
-`{"amount": 100, "currency": "USD"}` 可以 schema-valid，也可以与唯一 gold value 相等，
-但仍可能引用错误账户或已失效汇率。开放任务有多个等价对象时，单一 gold value exact 也不合适。
+`{"amount": 100, "currency": "USD"}` 可以通过 Schema，也可以恰好等于参考值，却仍然引用了错误账户或失效汇率。
+对于有多个等价对象的开放任务，要求它等于唯一参考对象同样不合理。
 
-仓库的 JSON Schema metric 把无效 expected schema 当作 case 配置错误，把 malformed model output 记为失败；
-`format` 目前是 annotation，不做 coercion，也不应用 `default`。这些行为都属于 metric revision。
+仓库把无效的预期 Schema 视为样例配置错误，把无法解析的模型输出记为作答失败。`format` 只作为注释使用，
+检查程序不会自动转换类型，也不会替模型补上 `default`。这些规则都是指标版本的一部分。
 
-### Citation 也有 identity 与语义两层
+### Citation 要分别检查“指到哪里”和“是否支持”
 
-Source ID 合法、quote 与指定 span 逐字一致，可以证明模型指向了某段 source bytes。
-它还没有回答 claim 是否被该段证据支持。
+来源编号合法、引文与指定文本片段逐字相同，只能说明模型指向了某段来源文本。它还没有回答这段文本是否支持结论。
 
-固定反例中，claim “The moon is cheese.” 精确引用 `Earth is round.` 里的 `Earth`。
-Span identity 可以通过，而 semantic verdict 应为 unsupported。完整 citation 评测需要分别保存：
+例如，结论 `The moon is cheese.` 可以精确引用 `Earth is round.` 中的 `Earth`。文本位置检查会通过，
+语义判断仍应是“不支持”。完整的引用评测至少保存：
 
 ```text
-source / ACL / snapshot provenance
-claim segmentation
-source ID + exact span
-supported / contradicted / insufficient verdict
-answer completeness
-final publication decision
+来源、访问权限与快照来源
+待检查的 claim
+来源编号和精确文本片段
+支持、反驳或证据不足
+答案是否覆盖了所有重要 claim
+最终能否对用户展示
 ```
 
-### 任务指标比通用文本相似更接近决策
+### 能查业务状态时，不要让 Judge 猜
 
-分类使用 F1 或 AUROC，检索使用 Recall / nDCG，代码使用测试或 pass@k，
-RAG 检查检索、claim 和 citation，Agent 检查业务状态与副作用。
+分类任务可以使用 F1 或 AUROC，检索任务常用 Recall 或 nDCG，代码任务则可以直接运行测试。
 
-ROUGE、BLEU、token F1 和 embedding similarity 可以补充文本覆盖，
-但语义相反的句子也可能拥有很高 overlap 或 embedding similarity。使用前要检查它们与人工或业务目标的关系。
+RAG 需要分别检查检索结果、回答主张和引用；Agent 要进一步查询工具调用和业务副作用。
 
-## 当系统给出置信度时，先定义事件
+ROUGE、BLEU、Token F1 与向量相似度可以补充衡量文本覆盖，但高重合度仍可能对应语义相反的句子。
 
-概率 \(p_i\) 必须在观察 label 前产生，并对应明确事件，例如“这次结构化抽取是否完全正确”。
-最终 label 为 \(y_i\in\{0,1\}\) 时，Brier score 是：
+LLM-as-judge 是让另一个模型按评分规则评价输出。它适合帮助性、风格和复杂开放问题，却看不到隐藏数据库状态。
+跨账户退款是否发生、权限是否正确，应由权威业务状态或执行记录判断，而不是让模型根据回复文本猜测。
+
+一套可审查的模型裁判协议包括：
+
+1. 分开评价正确性、完整性、相关性、风格和安全性；
+2. 为通过/失败或每个分数等级写清锚点和边界例子；
+3. 固定裁判模型版本、提示词、解析程序和采样参数；
+4. 在由两人独立标注并解决分歧的参考子集上校准；
+5. 检查混淆情况、关键切片，以及位置、篇幅和风格偏差；
+6. 允许回答“信息不足”，并加入提示注入的对照样例。
+
+成对比较常比孤立地打 1 到 5 分更稳定，但仍可能偏爱排在前面的答案、较长的答案或与裁判风格相近的答案。
+交换 A/B 顺序并加入内容完全相同的 A=A 样例，可以暴露一部分不一致。
+
+裁判结果应作为独立记录附在被评答案旁边。每个判断保存评分协议版本、证据快照、标注批次和时间；
+无法判断时明确写 `unjudged`。被评答案是不可信输入，因此裁判不应拥有工具权限或读取密钥。
+
+### 人工评测也要保留分歧
+
+正式标注前，可以先用 20 到 50 条试标来修订评分规则。呈现顺序应随机，并尽可能隐藏答案来自哪个系统。
+每位标注者的原始胜、负、平、无效判断，以及理由和信心，都要保留。
+
+讨论后的最终赢家不能覆盖原始分歧。计算一致性前，先检查每条样例的评分人数、两种呈现顺序、重复分配、未知样例和
+评分规则版本。仓库随后可以计算原始成对一致率、固定评分人数下的 Fleiss' \(\kappa\)，以及位置效应的区间。
+
+固定样例只检查这些统计量算得是否符合定义。标注是否真的随机和盲化、标注者是否胜任、评分规则是否测到了目标能力，
+仍需由实际流程提供证据。高一致性表示大家用当前规则得到了相近判断，不表示这套规则一定测得对。
+
+## 第四步：先看逐 case 差值，再看平均分
+
+回到 30 条客服问题。对每一条保存旧版输出、新版输出、分数、终态和错误类型，然后分成四格：
+
+```text
+两个版本都对：20
+只有旧版对：2
+只有新版对：4
+两个版本都错：4
+```
+
+只有新版答对的 4 条解释了它新增的能力，只有旧版答对的 2 条暴露了回归。净改善为
+
+\[
+\frac{4-2}{30}=\frac{2}{30}\approx 6.7\text{ percentage points}.
+\]
+
+这个算法保留了配对关系。若只比较 `24/30` 和 `22/30`，读者看不到一条高风险退化换来了几条低风险改进。
+
+聚合方式由决策决定。均值回答平均表现，中位数和分位数描述分布，失败率直接对应失败事件。
+Macro average 让每个类别等权；micro average 让高频样例拥有更大权重。两者回答的是不同产品问题。
+
+质量、延迟和成本通常适合放在 Pareto 图上分别观察。权限错误和严重安全错误则是强制门禁，
+不应与帮助性加权成一个“综合 87.3 分”。若业务确实定义了效用函数，也应公开权重、单位和敏感性分析。
+
+### 随机系统要保存每一次运行
+
+温度采样、Agent 工具环境和远程服务都可能引入变化。同一条 case 可以重复运行，再根据实际产品形态报告
+单次成功率、平均成功率、最差表现或 pass@k。Pass@k 表示给 \(k\) 次机会时至少成功一次，不能冒充用户只调用一次时的成功率。
+
+新旧系统可以共享随机种子和请求顺序，但远程服务未必严格复现。每次原始运行都应保留，不能只挑最好的一次。
+
+比较延迟时，先固定请求集合、并发、客户端位置和预热方式。报告分别展示首 token 延迟（TTFT）、
+后续 token 间隔（TPOT）和端到端延迟（E2E）的中位数与尾部，同时给出错误、取消以及输入输出长度。
+
+成本使用相同工作量作分母，并计入模型调用、计算资源、检索、工具、存储、人工和失败重试。
+
+## 第五步：解释差异有多不确定
+
+让两个系统回答同一条 case，并定义逐条差值：
+
+\[
+d_i=s_i^{new}-s_i^{old}.
+\]
+
+配对差值会抵消一部分“这道题本来就更难”的变化，也让每次得失都可以回看原始输出。
+
+### Paired bootstrap 给出差值的区间
+
+如果每条 case 可以近似看成独立抽样单位，就有放回地重采样整对新旧结果，并在每次重采样后计算平均差。
+所有重采样差值形成的分布，可以用来构造当前设计下的不确定性区间。
+
+区间包含 0，可能因为效果很小，也可能因为样本不足。区间不包含 0，也仍需与事前写下的最小有意义改善比较。
+仓库的 `paired_bootstrap` 固定随机种子，并限制临时索引矩阵的大小；它计算的不是 BCa 区间。
+代表性、独立性和小样本覆盖性质，必须由实验设计另外说明。
+
+### Randomization test 检查“交换标签后还能有多极端”
+
+在“新旧标签可以交换”的 sharp null 下，每个非零差值 \(d_i\) 都可以翻转正负号。若共有 \(m\) 个非零配对，
+精确计算会枚举 \(2^m\) 种符号组合，得到零假设下的参考分布。
+
+~~~powershell
+python projects/evaluation-gate/paired_randomization_toy.py
+~~~
+
+固定样例有 4 个 `+1` 和 1 个 `0`，观测平均差是 0.8。若事前只关心新版是否更好，精确 p-value 是 `1/16`；
+若事前关心任一方向的变化，双侧 p-value 是 `2/16`。
+
+P-value 表示在当前零假设和检验规则下，出现至少同样极端结果的概率。它既不是“零假设为真的概率”，
+也不说明改善达到了业务阈值。单侧还是双侧，必须在看到变化方向前决定。
+
+### 同一用户贡献多条 case 时，以用户为单位
+
+假设 30 条问题只来自 8 位用户。同一用户的措辞和问题难度往往相关，把每一行当成独立用户会制造虚假的样本量。
+
+令用户 \(g\) 有 \(n_g\) 条差值 \(d_{gi}\)，总 case 数为 \(N\)，用户数为 \(G\)。两个常见目标量是：
+
+\[
+\hat\Delta_{case}=\frac{1}{N}\sum_{g=1}^{G}\sum_{i=1}^{n_g}d_{gi},
+\qquad
+\hat\Delta_{user}=\frac{1}{G}\sum_{g=1}^{G}
+\frac{1}{n_g}\sum_{i=1}^{n_g}d_{gi}.
+\]
+
+- Case-weighted 估计“随机请求平均改善多少”，请求多的用户权重更高。
+- Equal-cluster 估计“随机用户平均改善多少”，每位用户权重相同。
+
+它们是两个产品问题，不能在看完结果后挑更好看的一个。
+
+聚类 bootstrap 每次有放回地抽取 \(G\) 位完整用户。按请求加权时，分母随抽中的用户请求数变化；
+按用户等权时，则先计算每位用户的平均差。随机化检验也要让同一用户的所有差值一起翻转符号。
+
+运行仓库里的透明反例：
+
+~~~powershell
+python projects/evaluation-gate/clustered_bootstrap_toy.py
+python projects/evaluation-gate/clustered_randomization_toy.py
+~~~
+
+样例中，用户 A 有 5 条 `+1`，用户 B 有 1 条 `-1`：
+
+| 分析问题 | 观测效果与 p-value |
+|---|---|
+| 错把每条请求当独立单位 | 平均差 `4/6`，单侧 `p=7/64` |
+| 按用户成组翻转，但请求等权 | 平均差 `4/6`，单侧 `p=2/4` |
+| 按用户成组翻转，而且用户等权 | 平均差 `0`，双侧 `p=1` |
+
+结果不同，是因为独立单位和目标量不同。聚类方法不会必然让 p-value 变大或变小。
+它要求用户定义稳定、用户之间的组合假设合理，并且样本中有足够多且有代表性的用户。
+
+用户很少时，程序可以枚举所有有序重采样，从而消除模拟误差。枚举不会创造更多独立用户，
+也不会自动修复百分位区间在小样本下的覆盖问题。报告仍要给出用户数、每位用户的 case 数、
+最大用户的敏感性分析和原始抽样方式。
+
+### 同时试很多指标时，记录完整检验族
+
+同时检查 \(m\) 个指标、切片或提示词时，即使所有零假设都成立，逐项按 0.05 判断也更容易撞上至少一个误报。
+Holm step-down 方法先排序 p-values：\(p_{(1)}\le\cdots\le p_{(m)}\)，再计算
+
+\[
+\tilde p_{(i)}=\min\left(
+1,
+\max_{1\le j\le i}\{(m-j+1)p_{(j)}\}
+\right).
+\]
+
+式中的累计最大值保证调整后的结果随排序位置单调。只要各项原始 p-value 在对应零假设下有效，
+Holm 就能在任意依赖结构下控制整个检验族至少出现一次假阳性的概率。
+
+~~~powershell
+python projects/evaluation-gate/holm_correction_toy.py
+~~~
+
+输入 `[0.04, 0.01, 0.03, 0.20]` 后，按原输入顺序得到 `[0.09, 0.04, 0.09, 0.20]`。
+因此在 \(\alpha=0.05\) 时，只有原索引 1 被拒绝。
+
+Holm 无法修复本来就无效的 p-value，也无法挽回事后挑选检验族、反复用测试集调参或看到显著就停止的问题。
+报告要保留检验族定义、全部原始与调整后结果、效果大小和业务阈值。
+
+### 反复偷看同一个实验，要使用序贯设计
+
+多重检验处理同一时点的多个假设；序贯检验处理同一假设被反复查看。每周都按 0.05 检验一次，
+一旦显著就停止，会让整个实验的假阳性概率升高。
+
+~~~powershell
+python projects/evaluation-gate/sequential_peeking_toy.py
+~~~
+
+固定查看时点为 `[10,20,30,40,50]`。在这个独立公平符号的离散样例中，每次都用 0.05 并在首次拒绝时停止，
+精确算出的总体拒绝概率约为 `0.1010`；只在最终 \(n=50\) 查看一次时约为 `0.03284`。
+
+如果事前规定最多查看五次，并用 Bonferroni 将 0.05 平分为每次 0.01，同一例子的总体错误率约为 `0.01522`。
+
+正式实验还有几类序贯方法可选：
+
+- group-sequential boundary 预先安排观察时点和判断边界；
+- alpha spending 规定错误率预算怎样随信息量支出；
+- always-valid p-value 和 e-process 支持按对应协议持续观察；
+- confidence sequence 给出随观察更新的区间序列。
+
+选择前要先理解每种方法的假设和停止规则。
+
+这个小程序只处理没有平局的独立公平符号。线上 A/B 还要预先写下随机化单位、最大样本或时长、主要指标、
+保护指标、逐步放量方案、异常停止条件和每次查看的记录。
+
+## 可选分支：系统能拒答时，评测置信度
+
+如果客服助手会根据置信度拒答或转人工，就要先定义这个概率对应的事件。例如 \(p_i\) 可以表示
+“这次结构化抽取完全正确的概率”，而且必须在看到最终标签前产生。标签 \(y_i\in\{0,1\}\) 时，Brier score 为：
 
 \[
 \operatorname{Brier}=\frac{1}{N}\sum_{i=1}^{N}(p_i-y_i)^2.
 \]
 
-它越低越好，同时反映 calibration 与 discrimination。不同 base rate、任务和时间窗之间，
-需要与各自基线一起比较。
+分数越低越好。它同时受校准程度与区分能力影响，因此跨任务、基础发生率或时间窗口比较时，要带上各自基线。
 
-Equal-width Expected Calibration Error（ECE）把概率区间分桶：
+Equal-width Expected Calibration Error（ECE）把概率区间等宽分桶：
 
 \[
 \operatorname{ECE}=\sum_b\frac{|B_b|}{N}
 \left|\operatorname{acc}(B_b)-\operatorname{conf}(B_b)\right|.
 \]
 
-ECE 对 bin 数和边界敏感，有限样本下也可能有偏。报告应包含 binning、count、reliability diagram 和关键切片，
-而不只是一位小数。
+ECE 会受桶数量和边界影响，有限样本下也可能有偏。报告时应附上分桶方法、每桶数量、可靠性图和关键切片，
+而不是只展示一位小数。
 
 ```python
 import math
@@ -194,24 +413,26 @@ assert math.isclose(result.brier_score, 0.0925)
 assert math.isclose(result.expected_calibration_error, 0.275)
 ```
 
-Token log-prob、模型自述“90% 有把握”、多次回答一致和 judge 分数都不会自然成为任务成功概率。
-它们可以作为 predictor 的输入，再在目标分布上校准。
+Token log-prob、模型自述的“90% 有把握”、多次回答一致程度和裁判分数，都不会自然成为任务成功概率。
+可以把它们作为预测器的输入，再在目标请求分布上校准。
 
-### Risk–coverage 回答“少答一些是否更可靠”
+### Risk–coverage 看“少答一些是否更可靠”
 
-系统可以根据 confidence \(c_i\) abstain 或升级人工。Threshold \(\tau\) 下：
+系统按置信度 \(c_i\) 决定是否回答。阈值为 \(\tau\) 时：
 
 \[
-\operatorname{coverage}(\tau)=\frac{\#\{i:c_i\ge\tau\}}{N},
+\operatorname{coverage}(\tau)=
+\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[c_i\ge\tau],
 \qquad
 \operatorname{risk}(\tau)=1-
-\frac{\sum_{i:c_i\ge\tau}y_i}{\#\{i:c_i\ge\tau}}.
+\frac{\sum_{i=1}^{N}\mathbf{1}[c_i\ge\tau]y_i}
+{\sum_{i=1}^{N}\mathbf{1}[c_i\ge\tau]}.
 \]
 
-降低 risk 通常会降低 coverage，并增加人工处理。比较系统时展示整条曲线，
-或固定业务 coverage 后比较 risk；总体曲线还要按语言、风险和用户群切片。
+提高阈值通常会降低错误风险，也会减少自动回答并增加人工处理。比较系统时可以展示整条 risk–coverage 曲线，
+也可以固定业务覆盖率后比较风险。总体曲线还应按语言、风险和用户群拆分。
 
-仓库实现把相同 confidence 的样本一起接受，避免输入顺序改变曲线：
+仓库把置信度相同的样例作为一组同时接受，避免输入顺序改变曲线：
 
 ```python
 from about_llm.evaluation import risk_coverage_curve
@@ -227,261 +448,72 @@ assert [(p.accepted_count, p.coverage) for p in curve] == [
 ]
 ```
 
-## 先看逐 case 差值，再看聚合
+## 第六步：把错误分析写进发布门禁
 
-回到 30 条客服 case。先生成四组：
-
-```text
-both correct
-baseline only correct
-candidate only correct
-both wrong
-```
-
-`candidate only` 里的两条新增成功，可能被 `baseline only` 里的高风险退化抵消。
-逐 case 结果能直接定位这种交换；只看 24 和 22 看不到。
-
-每条 case 保存 raw output、各指标、终态和错误分类。聚合时根据决策选择 mean、median、quantile、failure rate 和分布。
-Macro average 让类别等权，micro average 让高频 case 权重更高，两者对应不同用户问题。
-
-质量、延迟和成本更适合用 Pareto front 展示。权限和严重安全错误通常是 hard gate，
-不应与帮助性加权成一个“综合 87.3 分”。若业务确实定义 utility，权重、单位和敏感性分析也要公开。
-
-## 新旧系统为什么要配对
-
-让 baseline 和 candidate 回答同一 case，定义：
-
-\[
-d_i=s_i^{candidate}-s_i^{baseline}.
-\]
-
-配对差值消除了“这条 case 本来就更难”的一部分方差，也让每个 win/loss 可以回看原始输出。
-
-### Bootstrap 区间回答效果的不确定性
-
-若 case 可近似视为独立抽样单位，可以有放回重采样 case，并对每次样本计算平均差。
-Percentile interval 描述当前设计和重采样假设下 effect estimate 的不确定性。
-
-区间包含 0 可能是效果小，也可能是样本不足；区间不含 0 仍要与最小有意义 effect 比较。
-仓库 `paired_bootstrap` 固定 seed，并限制临时 index matrix 大小。它不是 BCa interval，
-也没有替真实数据建立独立性、代表性或小样本 coverage。
-
-### Randomization test 回答 sharp null 下有多极端
-
-在配对标签可交换的 sharp null 下，将每个非零 \(d_i\) 的符号翻转，形成 null distribution。
-若有 \(m\) 个非零 pair，exact 路径枚举 \(2^m\) 个 sign assignments。
-
-~~~powershell
-python projects/evaluation-gate/paired_randomization_toy.py
-~~~
-
-固定 5 对 score 中，4 个差值为 `+1`，1 个为 `0`，observed mean difference 为 0.8。
-事前指定 `greater` 时 exact p-value 为 `1/16`；two-sided 为 `2/16`。
-
-P-value 描述当前 null 与检验设计下，至少同样极端结果的概率。它不是 null 为真的 posterior probability，
-也不表示效果达到了业务阈值。`greater`、`less` 和 `two-sided` 要在看方向前确定。
-
-## 独立单位是用户时，不能把每行当一个人
-
-假设 30 条 case 只来自 8 个用户，同一用户的提问方式和难度高度相关。
-逐行 bootstrap 或 sign flip 会把相关记录当成额外独立信息。
-
-令 cluster \(g\) 有 \(n_g\) 条差值 \(d_{gi}\)，总 case 数为 \(N\)，cluster 数为 \(G\)。
-两个常见 estimands 是：
-
-\[
-\hat\Delta_{case}=\frac{1}{N}\sum_{g=1}^{G}\sum_{i=1}^{n_g}d_{gi},
-\qquad
-\hat\Delta_{cluster}=\frac{1}{G}\sum_{g=1}^{G}
-\frac{1}{n_g}\sum_{i=1}^{n_g}d_{gi}.
-\]
-
-- Case-weighted 回答“随机请求平均改善多少”，大用户因贡献更多请求而权重更高。
-- Equal-cluster 回答“随机用户平均改善多少”，每个用户等权。
-
-它们是两个产品问题，不是看完结果后任选的统计技巧。
-
-Cluster bootstrap 每次有放回抽 \(G\) 个完整 cluster。Case-weighted statistic 的分母随抽中 cluster sizes 改变；
-equal-cluster 则平均抽中的 cluster means。Cluster randomization test 也要给同一 cluster 的全部差值共享一个 sign。
-
-运行透明反例：
-
-~~~powershell
-python projects/evaluation-gate/clustered_bootstrap_toy.py
-python projects/evaluation-gate/clustered_randomization_toy.py
-~~~
-
-固定样例中 user A 有 5 条 `+1`，user B 有 1 条 `-1`：
-
-| 分析问题 | Observed effect / p-value |
-|---|---|
-| 逐 case sign flip | mean `4/6`，greater `p=7/64` |
-| Case-weighted cluster sign flip | mean `4/6`，greater `p=2/4` |
-| Equal-cluster sign flip | mean `0`，two-sided `p=1` |
-
-结果不同，因为 independent unit 和 estimand 变了。Cluster 方法不会自动让 p-value 变大或变小。
-它仍要求 cluster 定义稳定、cluster 间的组合假设合理，并需要足够多且有代表性的 clusters。
-
-少量 cluster 时可以枚举全部 ordered resamples，消除 Monte Carlo 误差；
-它不会制造更多独立用户，也不会修复 percentile interval 的小样本 coverage。
-报告还应包含 cluster count、size 分布、最大 cluster sensitivity 与抽样设计。
-
-## 同时试很多指标时，要记录完整 family
-
-若同时检查 \(m\) 个 metric、slice 或 Prompt，即使所有 null 都成立，逐项按 0.05 判断也更容易出现至少一个误报。
-Holm step-down 先将 p-values 排序为 \(p_{(1)}\le\cdots\le p_{(m)}\)：
-
-\[
-\tilde p_{(i)}=min\left(
-1,
-\max_{1\le j\le i}\{(m-j+1)p_{(j)}\}
-\right).
-\]
-
-Running maximum 保证 adjusted values 随 rank 单调。只要 component p-values 在各自 null 下有效，
-Holm 在任意依赖结构下控制 family-wise error rate。
-
-~~~powershell
-python projects/evaluation-gate/holm_correction_toy.py
-~~~
-
-固定输入 `[0.04, 0.01, 0.03, 0.20]` 得到 input-order adjusted
-`[0.09, 0.04, 0.09, 0.20]`，所以 \(\alpha=0.05\) 时只拒绝原索引 1。
-
-Holm 不能修复无效 p-value、事后挑 family、测试集调参或可选停止。
-报告应保留 family 定义、全部原始/adjusted p-values、effect 和业务阈值，不能只展示显著项。
-
-## 多次偷看同一实验，是另一类问题
-
-Multiple testing 处理同一时点的多个 hypotheses；sequential testing 处理同一 hypothesis 被反复查看。
-每周用固定样本检验一次，一旦 `p <= 0.05` 就停止，会提高总体假阳性率。
-
-~~~powershell
-python projects/evaluation-gate/sequential_peeking_toy.py
-~~~
-
-固定 looks 为 `[10,20,30,40,50]`。在这个样例的 i.i.d. fair-sign null 下，
-每次用 0.05 并在首次拒绝时停止，exact familywise rejection probability 约为 `0.1010`；
-只在最终 \(n=50\) 查看一次约为 `0.03284`。
-
-若事前确认最多五次 look，并用 Bonferroni 把 0.05 分成每次 0.01，
-同一离散样例的 familywise error 约为 `0.01522`。正式实验也可按设计使用 group-sequential boundary、
-alpha spending、always-valid p-value / e-process 或 confidence sequence。
-
-这个 toy 只处理无 tie、i.i.d. fair signs。线上 A/B 还要固定随机化单位、最大样本/时长、
-主要指标、guardrails、流量 ramp、异常停止和完整 look ledger。
-
-## 随机系统要保存每一次运行
-
-Temperature、Agent 工具环境和 provider 都会引入随机性。每条 case 可以重复运行，
-根据产品决策报告 pass@1、平均成功、worst-case 或 pass@k。
-
-Pass@k 表示给 \(k\) 次机会至少一次成功，不能和单次生产成功率混用。
-比较系统时可以共享 seed 和请求顺序，但远程 provider 未必严格可复现；原始 runs 全部保存，不能只挑最好一次。
-
-延迟比较固定 workload、并发、客户端位置和 warmup，报告 TTFT、TPOT、E2E 的 p50/p95/p99，
-并同时展示错误、取消和输入/输出长度。成本包含 token/API、GPU/CPU、检索、工具、存储、人工和失败重试。
-
-## Judge 是测量仪器，不是答案来源
-
-LLM-as-judge 适合帮助性、风格和复杂 rubric，但它看不到隐藏数据库状态，
-无法凭文本判断权限或副作用是否真的发生。如果任务可以直接运行或查询权威业务状态，优先使用这些确定性检查。
-
-一套 judge protocol 至少包括：
-
-1. 把 correctness、completeness、relevance、style 和 safety 分开；
-2. 为 1–5 或 pass/fail 写锚点和边界样例；
-3. 固定 judge model、revision、Prompt、parser、temperature；
-4. 在双人独立标注和 adjudication 的 gold subset 上校准；
-5. 检查 precision/recall、confusion、position、verbosity 与关键切片；
-6. 允许 `insufficient_information`，并加入 Prompt injection 对照样例。
-
-Pairwise judgment 常比绝对分数稳定，但仍有 position、verbosity、self-preference 和 style bias。
-交换 A/B 顺序并加入 A=A case，可以发现一部分不一致。
-
-Judge 输出作为独立 artifact 附在系统输出旁边。每个 claim 保存 verdict、protocol revision、annotator/batch、
-evidence snapshot 和时间；未判断写 `unjudged`。被评答案是不可信输入，judge 没有工具权限或 secret。
-
-## 人工评测也需要完整原始判断
-
-先用 20–50 条 pilot 修订 rubric，再开始正式标注。随机化呈现顺序并尽可能盲化来源，
-记录 annotator、assignment batch、时间、confidence、reason 和原始 `win/loss/tie/invalid`。
-
-Adjudicated winner 不能替代原始 disagreement。完整性 gate 先检查每 case 的 rater 数、两种顺序覆盖、
-重复 annotator-case、未知 case 和 rubric mismatch，再计算 agreement 或位置诊断。
-
-仓库 `evaluate-judgments` 提供 raw pairwise agreement、固定 rater 数前提下的 Fleiss' \(\kappa\)，
-以及按 case 重采样的 position-effect interval。固定样例只检查计算口径。真实分配是否随机、盲化是否有效、
-annotator 是否胜任和 rubric 是否正确，都要在标注流程中另行验证。
-
-高 agreement 说明标注者按当前 rubric 一致，不等于 rubric 测到了目标 construct。
-法律、医疗和其他复杂领域还需要合格专家，并为标注者设计隐私与安全流程。
-
-## 从错误分析走到 release gate
-
-先对新旧系统的 win/loss/tie 建立可行动 taxonomy：
+新旧版本的得失应落到可行动的错误类别，例如：
 
 ```text
-retrieval miss
-wrong ACL / filter
-context dropped by budget
-unsupported claim
-schema invalid
-tool parameter / business state error
-timeout / outcome unknown
+检索没有找到关键文档
+权限或过滤条件错误
+上下文因预算不足被截掉
+回答包含无证据支持的 claim
+结构化输出无法解析
+工具参数或业务状态错误
+请求超时，最终结果未知
 ```
 
-每个重要修复加入 regression case，但代表性集与回归集分开聚合，
-避免事故样本不断积累后让“平均分”失去线上解释。
+修复重要缺陷后，把它加入回归集。代表性集与回归集仍分开聚合，否则事故样例不断积累后，平均分将不再代表线上分布。
 
-一个透明门禁可以要求：
+贯穿案例可以使用下面这张门禁表：
 
-- Primary effect 的区间下界达到事前阈值；
-- 关键切片下降不超过容忍度；
-- 权限、安全、schema 和高风险回答满足 hard gates；
-- p95 TTFT / TPOT 与每成功任务成本在预算；
-- 没有新增严重错误，cases、outputs、scores 和配置齐全。
+| 检查项 | 当前观察 | 判断 |
+|---|---|---|
+| 主要任务成功率 | 新版多对 `2/30`，还需结合区间与 2 个百分点阈值 | 等待完整统计结果 |
+| 权限与高风险行为 | 出现 1 条跨账户信息泄露，容忍度为 0 | **失败** |
+| 关键切片 | 逐条检查分子、分母和退化原因 | 等待审查 |
+| 延迟与成本 | 还没有在匹配工作量下测量 | 证据不足 |
+| 评测记录 | case、原始输出、评分和配置必须能重新核对 | 等待验证 |
 
-Gate 返回全部失败原因，而不是只给一个红绿灯。离线通过后再进入 shadow 和 canary。
-正式 A/B 按用户等合适单位随机，预先固定主要指标、guardrails、样本量、时长和停止规则。
+即使主要指标的区间最终通过，权限门禁也已经给出“暂不发布”。门禁应返回全部失败原因，而不只是一个红绿灯。
+修复后先在留出数据上重跑离线评测，再进入 shadow 或 canary。线上 A/B 要按用户等合适单位随机，并预先确定
+主要指标、保护指标、样本量、时长和停止规则。
 
-公开 benchmark 可能进入训练，团队也会反复调 dev。使用私有 holdout、时间后移数据、参数化 case 和 source-level
-near-duplicate 检查；每次查看 test 都会带来信息，次数与决策应进入实验记录。
+公开 benchmark 可能已经进入训练，团队也会反复针对开发集调参。私有留出集、时间后移数据、参数化样例和
+按来源检查近重复，可以降低这种过拟合风险。每次查看测试集都会泄露信息，因此查看次数和据此做出的决定也要记录。
 
-## Artifact 让“评测的是 A，比较的也是 A”
+## 第七步：让证据能被重新核对
 
-每次 run 保存：
+一次评测运行至少保存：
 
 ```text
-system / model / prompt / index / tool / policy revisions
-ordered case semantics
-raw outputs + terminal failures
-metric name + metric/scorer revisions
-scores + slices
-usage / latency / environment
-judge / human protocol
+系统、模型、提示词、索引、工具和策略版本
+有顺序的 case 语义
+原始输出与所有终态
+指标名称、评分程序版本和分数
+切片、用量、延迟与运行环境
+模型裁判或人工标注协议
 ```
 
-Run manifest 将 ordered cases、answers、results 和 metric revisions 绑定起来。
-Comparison artifact 再保存 paired unit、cluster key/weighting、bootstrap/randomization config、
-质量/安全/延迟阈值、统计结果与所有失败原因。
+运行清单（run manifest）把 case、答案、分数和指标版本绑定在一起。比较记录再保存新旧系统的配对单位、
+用户等聚类键、重采样配置、质量与性能阈值、统计结果以及所有失败原因。
 
-这里有四层不同保证：
+验证这些记录时，可以分清四个问题：
 
-1. **输入检查**：schema、duplicate key 和 non-finite number 合法；
-2. **Identity check**：当前 bytes 与 manifest / comparison 中记录一致；
-3. **Recomputation**：重新评分并按固定配置重建统计结果；
-4. **Authentication / history**：HMAC 或其他认证链，加上外部 trusted head 检测回滚与截断。
+1. **输入是否合法**：Schema、重复字段名和非有限数是否符合约定；
+2. **文件是否还是原文件**：当前 bytes 是否与清单记录的 fingerprint 一致；
+3. **结果能否重新算出**：重新评分后，统计结果和门禁判断是否一致；
+4. **历史是否可信**：认证链和仓库外保存的可信链头，能否发现改写、回滚或截断。
 
-无密钥 SHA-256 只能发现已记录内容漂移。它不认证 `system_id`，也不证明模型/provider 真实执行。
-HMAC chain 认证的是相对共享密钥的记录；artifact rehash 才检查引用文件，外部 trusted head 才能发现合法前缀回滚。
+无密钥 SHA-256 可以发现“当前文件与已记录摘要不同”，却不能证明 `system_id` 是谁，也不能证明远程模型真的执行过。
+HMAC 链能验证记录来自持有共享密钥的一方；重新哈希引用文件才能检查文件内容；仓库外的可信链头才能发现
+有人保留合法前缀却删除了后续发布记录。
 
-仓库提供 `verify-comparison` 的 artifact-only 检查和 `verify-evidence` 的本地复算，
-并让机器输出明确区分是否重开 cases、重算 scores/statistics、认证 artifact 或重放 model execution。
-具体 schema、固定样例、HMAC 字段和 HTML renderer 适用范围见[准确性台账](../evidence/accuracy-ledger.md)。
+仓库的 `verify-comparison` 核对现有比较记录，`verify-evidence` 则重新打开 case 与答案并复算分数和统计量。
+机器输出会明确说明它是否重读输入、重新评分、验证认证信息或重放模型执行。具体字段和固定样例见
+[准确性台账](../evidence/accuracy-ledger.md)。
 
-校准数据还要保存 probability 产生时间、predictor version、最终 label、label protocol 和 slice。
-先看到结果再填写“置信度”，已经不再是前瞻概率评测。
+校准数据还要保存概率产生时间、预测器版本、最终标签、标签协议和切片。先看到结果再填写“置信度”，
+已经不是前瞻概率评测。
 
 ~~~powershell
 python -m about_llm.evaluation.cli calibrate `
@@ -492,25 +524,25 @@ python -m about_llm.evaluation.cli calibrate `
 
 ## 回到 24 比 22
 
-现在可以回答开头的问题：
+现在可以完整回答开头的问题：
 
-1. 先列出 30 条 case 的 paired win/loss，而不只比较两个总数；
-2. 核对 case 是否代表目标流量，多个 case 是否来自同一用户或文档；
-3. 比较 primary effect 与 2 percentage-point 业务阈值，并报告区间；
+1. 先查看 30 条 case 的配对得失，而不是只比较两个总数；
+2. 核对样例是否代表目标流量，以及多条记录是否来自同一用户；
+3. 比较主要效果的区间与事前写下的 2 个百分点业务阈值；
 4. 单独检查安全、权限和关键切片；
-5. 联合比较延迟、成本与所有 terminal outcomes；
-6. 验证 run/comparison artifact 完整后，再进入 shadow 或 canary。
+5. 在匹配工作量下比较延迟、成本和所有失败终态；
+6. 重新核对评测记录后，再决定进入 shadow、canary 还是继续修复。
 
-`24/30` 可能支持发布，也可能只是某个小样本上的暂时领先。
-评测方法的作用不是把它包装成一个更复杂的小数，而是让每个发布判断都能回到 case、假设和失败代价。
+本例已经发现一条零容忍的权限退化，所以结论是暂不发布。`24/30` 没有被统计学“判成无效”；
+它只是发布决策所需证据中的一部分。评测方法的价值，是让每个判断都能回到具体 case、实验假设和失败代价。
 
 ## 面试追问
 
-**新模型平均高 1%，是否上线？** 看 paired effect、业务阈值、区间、关键切片、安全、延迟和成本，
-再通过 shadow/canary 验证真实分布。
+**新模型平均高 1%，是否上线？** 先说明逐条配对效果、业务阈值和不确定性，再检查关键切片、安全、延迟与成本。
+离线通过后，仍要用 shadow 或 canary 验证真实分布。
 
-**如何验证 LLM judge？** 使用独立人工 gold，固定 judge 协议，检查 confusion、切片偏差、顺序交换、自洽与注入控制，
-并保留 raw judgment。
+**如何验证 LLM judge？** 使用独立人工参考集，固定裁判协议，查看混淆和切片偏差，交换答案顺序，加入相同答案与
+提示注入样例，并保留每一次原始判断。
 
-**为什么测试集越大不一定越好？** 重复、相关、错标签和错分布只会让数字看起来更稳定。
-独立抽样单位、代表性、标签质量与高风险覆盖比原始行数更重要。
+**为什么测试集越大不一定越好？** 重复、相关、错标签和错分布会让错误结论显得更稳定。
+独立抽样单位、代表性、标签质量与高风险覆盖，比原始数据行数更重要。
