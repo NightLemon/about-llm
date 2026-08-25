@@ -6,10 +6,10 @@
 **学习导航**
 
 - **适合读者**：需要实现工具调用、授权、审批与故障恢复的 Agent 工程师。
-- **先修**：先读[一次 Agent 退款任务](agent-task-lifecycle.md)，理解 proposal、approval 和 verifier。
-- **首次阅读**：事故现场 → 执行身份 → pending 窗口 → reconciliation → outbox。
+- **先修**：先读[一次 Agent 退款任务](agent-task-lifecycle.md)，理解动作提议、审批和完成验证。
+- **首次阅读**：先运行退款实验，再依次理解 `pending`、执行身份、对账和事务发件箱。
 - **完成信号**：面对工具超时，能判断何时可重试、何时必须查询远端状态。
-- **卡住时**：运行[实验 6](../practice/labs/lab-6-agent-lifecycle.md)，观察完整 JSON trace。
+- **卡住时**：运行[实验 6](../practice/labs/lab-6-agent-lifecycle.md)，只观察一次状态怎样变化。
 
 </div>
 
@@ -28,6 +28,33 @@
 1. 模型提出的动作，怎样变成一个被授权且不会漂移的具体执行？
 2. 本地不知道远端结果时，怎样避免第二笔退款？
 3. 进程重启以后，系统从哪里继续，最后又凭什么告诉用户“退款成功”？
+
+## 先运行：看失败怎样变成已确认 { #run }
+
+从仓库根目录运行：
+
+```powershell
+python projects/safe-agent/refund_lifecycle.py
+```
+
+这是一个离线模拟，不会调用真实模型或支付服务。第一次阅读不必逐字段看完整 JSON，先找到下面五个阶段：
+
+| 阶段 | 本地看到什么 | 远端退款次数 |
+|---|---|---:|
+| 跨租户反例 | 权限拒绝，Handler 没有执行 | 0 |
+| 合法退款执行 | Handler 收到超时，本地账本保持 `pending` | 1 |
+| 立即重放 | 账本阻止 Handler 再次执行，要求先对账 | 1 |
+| 独立查询 | 回执中的订单、金额、原因和状态全部匹配 | 1 |
+| 对账后重放 | 命中已确认结果，返回退款单号 | 1 |
+
+输出中的 `execution.status` 是 `failed`，表示这次本地 Handler 调用没有拿到成功响应；
+它不表示退款没有发生。与此同时，`local_ledger_state` 是 `pending`，而模拟支付服务的 `provider_effect_count` 已经是 1。
+
+随后，验证器按同一个幂等键查询支付服务。回执匹配后，账本才进入完成状态，最终回答是：
+
+> 退款已由支付服务确认受理，退款单号 refund-provider-7001。
+
+接下来的章节都在解释：为什么这五个阶段能够保证 Handler 只尝试一次，并让未知结果最终得到确认。
 
 ## 先看事故发生在哪个窗口
 
@@ -51,28 +78,29 @@ sequenceDiagram
 `pending` 不是“失败”的别名。它表示执行权已经被领取，但系统还没有足够证据把业务结果写成成功或失败。
 这个中间状态是恢复协议的起点。
 
-## Tool contract 不是一张函数说明
+## 工具契约不只是一张函数说明 { #tool-contract }
 
 一个可执行工具至少要回答下面这些问题：
 
-| 契约部分 | 退款例子 | Runtime 为什么需要它 |
+| 契约部分 | 退款例子 | 运行时为什么需要它 |
 |---|---|---|
-| 参数 Schema | `order_id`、`amount_cents`、`reason` | 在接触业务系统前拒绝畸形 proposal |
+| 参数格式 | `order_id`、`amount_cents`、`reason` | 在接触业务系统前拒绝畸形动作提议 |
 | 资源解析 | `order-1001 → tenant-shop-a/order@7` | 权限判断必须依赖服务端事实 |
 | 所需能力 | `refund:request` | 模型不能给自己增加权限 |
-| 副作用等级 | irreversible | 决定是否暂停等待审批 |
-| 幂等协议 | provider 接受稳定 key 并可查询 | 决定 timeout 后能否安全恢复 |
-| 返回与错误 | receipt、retryable、稳定错误码 | 让 loop 根据机器状态继续，而不是猜文本 |
-| 预算 | timeout、速率、费用 | 防止一个任务无限消耗资源 |
+| 副作用等级 | 不可逆 | 决定是否暂停等待审批 |
+| 幂等协议 | 支付服务接受稳定幂等键并可查询 | 决定超时后能否安全恢复 |
+| 返回与错误 | 回执、是否可重试、稳定错误码 | 让控制循环根据明确状态继续，而不是猜文本 |
+| 预算 | 超时时间、速率、费用 | 防止一个任务无限消耗资源 |
 
 参数应使用窄类型、枚举和 closed object。`options: object`、任意 URL、SQL 或 shell 字符串会把关键语义推迟到
 handler 内部，审计者也无法知道审批时用户究竟同意了什么。
 
-返回值同样要过边界。Runtime 先把 handler 返回编码为严格 JSON，再保存与调用方对象脱离的快照。
-这可以阻止后续修改原对象而悄悄改变 cache 或 ledger。大正文、文件和模型工件更适合写入 artifact store，
-工具只返回受控 handle、hash 和摘要。
+返回值同样要经过边界检查。Handler 可能返回一个仍可修改的 Python 对象，运行时会先把它编码成严格 JSON，
+再保存一份独立快照。这样，调用方后来修改原对象时，缓存和调用账本不会跟着变化。
 
-## 模型只提交 Proposal
+长文本、文件和模型工件更适合写入受控文件存储。工具结果只返回文件引用、哈希和必要摘要。
+
+## 模型只提交动作提议 { #proposal }
 
 Planner 可以根据对话生成：
 
@@ -94,11 +122,13 @@ Planner 可以根据对话生成：
 可退款状态。Prompt injection 防线也遵循同一原则：网页、邮件和工具结果都作为不可信 observation，权限决策
 留在模型外。
 
-仓库的 `JSONSchemaToolContract` 使用 Draft 2020-12 validator，并让 Planner 描述与 Runtime 校验从同一份冻结
-Schema 派生。完整的 keyword、format、`$ref` 和大小限制放在
-[Safe Agent 项目页](../practice/projects/safe-agent.md)；首次阅读先抓住“同源、版本化、执行时再验证”三个要求。
+仓库的 `JSONSchemaToolContract` 按 JSON Schema Draft 2020-12 校验参数。
+规划器看到的工具说明和运行时使用的验证器，都从同一份固定 Schema 生成。
 
-## 一次执行按什么顺序通过 Runtime
+完整关键字、`format`、`$ref` 和大小限制见 [Safe Agent 项目页](../practice/projects/safe-agent.md)。
+第一次阅读只需记住三个要求：两端来自同一份 Schema；Schema 有版本；执行前必须再次验证。
+
+## 一次执行怎样通过运行时 { #runtime }
 
 退款 proposal 进入 Runtime 后依次经过：
 
@@ -120,12 +150,12 @@ Cache replay 也要重新通过当前 ACL。用户被撤权以后，同一个 `c
 
 Runtime 中最容易混淆的不是状态，而是 identity：
 
-| Identity | 绑定内容 | 用途 |
+| 标识 | 绑定内容 | 用途 |
 |---|---|---|
 | `call_id` | 一次逻辑动作 | 把重放认作同一次尝试 |
-| Proposal fingerprint | tool + 规范化参数 | 判断模型提案是否改变 |
-| Execution fingerprint | proposal + task/subject/tenant + tool/resource/policy version | 绑定真正获授权的执行 |
-| Provider idempotency key | 远端 effect request | 让远端识别重复提交 |
+| 动作提议 fingerprint | 工具和规范化参数 | 判断模型提案是否改变 |
+| 执行 fingerprint | 动作提议、任务、用户、租户，以及工具、资源和规则版本 | 绑定真正获授权的执行 |
+| 远端幂等键 | 远端业务动作请求 | 让远端识别重复提交 |
 
 只有 `call_id` 和 execution fingerprint 都相同，Runtime 才能考虑复用旧结果。若订单从 `order@7` 变成
 `order@8`，或者 tool/policy 已升级，旧 approval 即使参数文本没变也必须失效。
@@ -133,7 +163,7 @@ Runtime 中最容易混淆的不是状态，而是 identity：
 Fingerprint 是稳定比较手段，不是授权或加密。低熵订单号的 hash 仍可能被猜中，敏感 payload 仍要最小化、
 加密并限制访问。
 
-## Approval 批准的是执行，不是一句自然语言
+## 审批批准的是执行，不是一句自然语言 { #approval }
 
 用户看到“确认退款”时，审批服务至少要绑定：
 
@@ -141,8 +171,10 @@ Fingerprint 是稳定比较手段，不是授权或加密。低熵订单号的 h
 subject + task + call_id + execution_fingerprint + expiry
 ```
 
-UI 应显示订单、金额、原因、接收方和不可逆后果。Runtime 在真正执行前重新计算 execution fingerprint；
-参数、订单版本、主体、tool 或 policy 任一变化，旧 grant 都不能继续使用。
+审批界面应显示订单、金额、原因、接收方和不可逆后果。
+
+真正执行前，运行时会重新计算执行 fingerprint。参数、订单版本、用户、工具或权限规则只要有一项变化，
+旧批准记录就会失效。
 
 Checkpoint 与 approval 是两件工件。Checkpoint 说明任务暂停在哪里、已经花了多少预算；approval 说明谁在什么
 时间授权了哪一个 execution。恢复 checkpoint 不能顺便把审批变成永久布尔值。
@@ -176,7 +208,7 @@ ledger = pending
 工程上更诚实的目标通常是 `at-least-once delivery + idempotent effect`，或者
 `at-most-once attempt + reconciliation`。不要用“有 SQLite/Redis 锁”推出通用 exactly-once。
 
-## Ledger 怎样保存不确定性
+## 调用账本怎样保存不确定性 { #ledger }
 
 一条调用至少需要区分：
 
@@ -188,14 +220,15 @@ ledger = pending
 | `abandoned` | 操作者确认旧动作不再继续 | 新意图使用新 `call_id` |
 | `compensated` | 原 effect 发生，随后执行了补偿 | 保留两次业务动作的记录 |
 
-Timeout 后保持 `pending`，是为了阻止重启进程再次进入 handler。Verifier 用可信 idempotency key 查询退款服务，
-核对订单、金额、原因和 provider 状态；匹配后才把 receipt 写成 `completed`。此后 replay 命中 cache，
-provider effect count 仍是 1。
+超时后保持 `pending`，可以阻止重启进程再次进入 Handler。验证器使用可信的幂等键查询退款服务，
+再逐项核对订单、金额、原因和支付服务状态。
+
+只有回执全部匹配，账本才写成 `completed`。此后的重复调用会读取已确认结果；远端退款次数仍然是 1。
 
 `abandoned` 和 `compensated` 都不是删除历史。补偿本身是一次新业务动作，可能失败、收费，也可能无法撤回已经
 传播的信息。
 
-## Transactional outbox 解决哪一段问题
+## 事务发件箱解决哪一段问题 { #transactional-outbox }
 
 当“修改本地业务状态”和“稍后向远端发送 effect”必须一起成立时，可把业务行与 outbox row 写进同一个数据库事务：
 
@@ -206,13 +239,13 @@ pending --claim lease--> claimed --ack receipt--> delivered
                              +--terminal----> dead_letter
 ```
 
-Outbox 保证本地事务提交后，待发送记录不会丢失。它不把远端 provider 纳入本地事务。Worker 在远端成功、
-本地 ack 前崩溃，lease 到期后仍可能重投；所以每次投递必须复用稳定 `effect_id`，provider 也必须真正 honor
-这个 idempotency key。
+发件箱保证本地事务提交后，待发送记录仍然存在，但远端服务并没有加入这个本地事务。
+如果工作进程在远端成功、本地确认前崩溃，租约到期后，同一条记录会被重新投递。
+因此，每次投递都要复用稳定的 `effect_id`，远端服务也必须按照这个值执行幂等处理。
 
 Dead letter 不是“多试几次”的队列。操作者要根据 runbook 判断是修正后产生新事件、执行补偿，还是保留失败终态。
 
-## Timeout、取消和重试怎样决定
+## 超时、取消和重试怎样决定 { #timeout }
 
 | 观察 | 能否自动重试 | 原因 |
 |---|---|---|
@@ -233,30 +266,31 @@ optimistic version 控制并发；模型输出的步骤顺序本身不提供互�
 工具读取资源时返回 version/ETag，后续更新携带 `if_match`。发生冲突时重新 observation 和 replan。
 由于 execution identity 已改变，旧 approval 也随之失效。
 
-## Sandbox、秘密与审计
+## 沙箱、秘密与审计 { #sandbox }
 
 Runtime 的安全边界还包括：
 
 - 代码、shell 和浏览器工具限制文件根、网络域、CPU、内存、时间与输出大小；
 - secret 由工具代理注入，不进入 prompt 或普通 observation；
 - 高敏工具使用独立 worker 与凭据；
-- trace 记录 task/call、主体、tool/policy revision、proposal、授权、审批、claim、远端 request ID 与状态变化；
+- 轨迹记录任务与调用 ID、用户、工具与规则版本、动作提议、授权、审批、领取结果、远端请求 ID 和状态变化；
 - 敏感 payload 单独加密并按 retention 删除，高基数 call ID 留在 trace 而非指标 label。
 
-这些措施不能互相替代。输出扫描可能发现泄漏，却不能代替最小权限；沙箱限制代码执行，也不能判断退款是否获授权。
+这些措施各自解决不同问题。输出扫描用于发现可能的泄漏，最小权限负责限制数据和能力；
+沙箱约束代码能够做什么，退款授权则由身份、资源和审批规则判断。
 
 ## 在仓库里运行两种恢复
 
-先运行退款主线：
+前面的退款主线执行了封闭参数校验、资源级权限检查、审批绑定、SQLite 调用领取，以及支付服务回执查询。
+规划器和支付服务都是进程内模拟器，因此适合观察控制流和状态变化。
+
+修改这条链路后，运行对应测试：
 
 ```powershell
-python projects/safe-agent/refund_lifecycle.py
 python -m pytest tests/test_agent_refund_lifecycle.py -q
 ```
 
-它真实执行 closed Schema、资源级 ACL、approval binding、SQLite claim、provider query verifier 与 reconciliation。
-Planner 和 provider 都是进程内模拟器。这个运行可以检查控制流和状态变化；线上支付系统还需要真实身份、
-网络、签名、账务和对账验证。
+真实支付系统还要继续验证服务身份、网络错误、签名、账务和对账流程。
 
 再运行 outbox 的 ack-before-crash 场景：
 
@@ -265,8 +299,8 @@ python projects/safe-agent/outbox_demo.py `
   --database artifacts/agent/outbox-demo-001.db
 ```
 
-预期会看到两次 provider request 使用同一个 idempotency key，而模拟 provider 只产生一个 effect，最终状态为
-`delivered`。完整测试矩阵、SQLite 固定故障样例以及每个字段适用于哪些结论，见
+预期会看到两次远端请求继续使用同一个幂等键。模拟服务只产生一个业务效果，最终投递状态为 `delivered`。
+完整测试矩阵、SQLite 固定故障样例以及每个字段适用于哪些结论，见
 [Safe Agent 项目页](../practice/projects/safe-agent.md)和[项目控制台账](../evidence/project-controls.md)。
 
 ## 自测
