@@ -9,7 +9,7 @@
 - **先修**：[治理生命周期](governance-impact.md)和一个具体系统用途。
 - **首次阅读**：Use-Case Record → Impact Assessment → Control Evidence → Release Decision。
 - **完成信号**：能用真实 owner、revision 和 evidence 填写工件，而不是复制占位文本。
-- **卡住时**：回到[治理、法规与社会影响](governance-impact.md)确定风险和责任边界。
+- **卡住时**：回到[一次招聘筛选的治理闭环](governance-impact.md)确定风险和责任边界。
 
 </div>
 

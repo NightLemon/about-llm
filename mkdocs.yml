@@ -158,7 +158,7 @@ nav:
           - Agent 仿真与红队: quality/agent-evaluation.md
       - 安全、隐私与治理: quality/safety.md
       - Reasoning Block 的保存与发布: quality/reasoning-artifact-security.md
-      - 法规与社会影响: quality/governance-impact.md
+      - 一次招聘筛选的治理闭环: quality/governance-impact.md
       - 治理工件模板: quality/governance-templates.md
   - 前沿:
       - 多模态: frontier/multimodal.md
