@@ -8,7 +8,7 @@
 - **适合读者**：正在设计 Prompt、结构化输出、应用接口或回归评测的工程师。
 - **先修**：[生成与解码](../core/generation.md)中的输入、采样和停止基础。
 - **首次阅读**：跟完合同抽取案例，再看工具调用、上下文和变更流程。
-- **完成信号**：能为一个抽取任务写输入/输出契约，并用失败 case 验证它。
+- **完成信号**：能运行本章的合同案例，解释错误输出在哪一层被拦下，并为自己的抽取任务写出同类契约。
 - **卡住时**：先把模型当成会偶尔答错的外部 API，不必先研究复杂 Prompt 技巧。
 
 </div>
@@ -50,8 +50,9 @@ JSON 可以解析，主体和日期也正确，但原文没有给出币种。模
 +\text{chat template}.
 \]
 
-Provider 或本地 tokenizer 会把 role、special tokens、tool schema 和 generation prompt 序列化成 token IDs。
-两组肉眼相同的 messages，换一个 chat template 后可能成为不同输入。
+无论调用云服务还是本地模型，对话最终都要被序列化成 token ID。序列化内容包括消息角色、特殊标记、工具定义，
+以及提示模型开始回答的标记。具体格式由 chat template（对话模板）决定。因此，两组肉眼相同的消息换一个模板后，
+模型实际收到的 token 也可能不同。
 
 仓库的 `render_chat` 使用 checkpoint 自带模板；模板缺失时直接报错，以免悄悄套用错误格式：
 
@@ -103,8 +104,11 @@ rendered = render_chat(
 本例只允许抽取原文明确陈述的值。日期规范化为 ISO 8601；币种只能来自合同正文或已提供附件；
 多个候选冲突时返回 `conflict`，不自行选择。
 
-规则应该足够具体，让工程师能为每条规则写出正例和反例。如果同一 Prompt 同时要求“任何字段都不能空”
-和“没有证据就不要猜”，冲突必须先由产品决策解决。
+冲突字段本身也返回 `null`，但 `evidence` 至少保留两个位置不同、候选值也不同的原文片段。例如正文写 CNY、
+附件写 USD 时，系统不替业务选择其中一个；它用 `status: "conflict"` 把“有相互矛盾的证据”和“原文完全没写”区分开。
+
+规则应该具体到能写出正例和反例。比如，“任何字段都必须有值”和“缺少证据时返回空值”无法同时成立。
+产品需要先选定一种行为，本例选择后者。
 
 ### 4. 信息不足时怎样做
 
@@ -144,13 +148,18 @@ rendered = render_chat(
 text[start_char:end_char] == quote
 ```
 
-这个等式可以确认 quote 的 provenance，却无法单独判断它是否真的支持字段含义。
-例如 quote 中出现“报价为 100 CNY”并不自动证明“合同结算币种为 CNY”。语义规则仍需 case、代码或人工复核。
+这个等式只确认引文确实来自原文，也就是完成来源追踪（provenance）。字段含义还要单独核对。
+例如，“报价为 100 CNY”包含币种代码，却未必在描述合同的结算币种。这层判断需要业务规则、标注样例或人工复核。
+
+字符区间采用 Python 常见的左闭右开表示：`start_char` 指向第一个字符，`end_char` 指向引文之后的位置。
 
 ## Prompt-only JSON 只是第一条基线
 
-“只输出 JSON”可能得到 Markdown fence、额外解释、错误类型或被截断对象。它适合做简单 baseline，
-生产接口通常还会使用 provider structured output、grammar 或 JSON Schema constrained decoding。
+“只输出 JSON”仍可能得到 Markdown 代码块、额外解释、错误类型或被截断的对象。它适合做第一条基线。
+
+生产接口还会在解码阶段限制可选 token。云服务常把这项能力称为 structured output（结构化输出）。
+
+本地运行时可以按 grammar 或 JSON Schema 做约束解码（constrained decoding）。
 
 约束解码会屏蔽无法形成合法前缀的 token，因此能保证实现所覆盖的语法。它仍可能稳定地产生下面这个对象：
 
@@ -174,11 +183,45 @@ text[start_char:end_char] == quote
 
 ### 有限 repair，而不是一直问到成功
 
-若模型漏了 `status`，应用可以把具体 validation error 返回模型并允许一次修复。每轮都重新运行完整验证，
-并记录 initial output、错误、repair count 和 final status。
+若模型漏了 `status`，应用可以把具体校验错误返回模型，并允许一次修复。每一轮都要重新运行完整验证，
+同时记录首次输出、每轮错误、修复次数和最终状态。
 
 修复次数与 token 需要上限。如果错误没有收敛，系统返回明确失败或转人工。只统计最终成功率，
 会隐藏前面多次调用的延迟、成本和错误输出。
+
+## 亲手看一次错误怎样被拦下 { #contract-walkthrough }
+
+现在把开头那次错误输出交给一个小型验证程序。它不调用语言模型，也不需要 API key；仓库准备了五份输出，
+目的是一次只改变一个关键条件，让我们看清每层检查在做什么：
+
+```powershell
+python projects/cloud-api-contracts/prompt_contract_walkthrough.py
+```
+
+输出中的四个布尔字段对应四个问题：
+
+1. `strict_json_valid`：能否解析为唯一含义的 JSON 对象。重复字段和 `NaN` 会在这里失败；
+2. `closed_shape_valid`：必填字段、字段类型、日期格式和额外字段是否符合本例约定；
+3. `exact_spans_valid`：每段 quote 是否真的等于原文对应字符区间；
+4. `field_semantics_valid`：在本例有限的规则中，每个非空值是否有且只有一段能够直接支持它的 quote。
+
+五份输出会得到下面的结果：
+
+| 输出发生了什么 | 最先暴露问题的位置 | 最终处理 |
+|---|---|---|
+| 填了 `CNY`，却没有币种 evidence | 字段与证据的对应关系 | `reject` |
+| 引用了“结算币种见附件 A”，但 quote 中没有 `CNY` | 字段值是否受 quote 支持 | `reject` |
+| 漏掉必填的 `status` | 输出结构 | `repair_or_reject` |
+| 同一个 JSON 写了两个 `status` | JSON 解析 | `reject` |
+| 把币种改为 `null`，状态改为 `insufficient_evidence` | 四层全部通过 | `accept` |
+
+`repair_or_reject` 不是“验证程序已经修好了”。它表示调用方可以把明确的结构错误发给模型，最多允许一次受限修复；
+如果任务不允许二次调用，或者修复后仍不通过，就直接拒绝。任何修复结果都必须从第一层重新检查。
+
+这个验证程序只处理很窄的一组规则。它能发现引文中根本没有 `CNY`，不能理解所有合同条款。
+遇到“历史报价为 100 CNY”时，还需要更具体的业务规则、标注样例或人工审核，才能判断它是否在描述结算币种。
+
+运行成功只说明这五份准备好的输出符合本例规则。它没有调用模型，也没有测量法律抽取能力。
 
 ## Few-shot 示例用来画决策边界
 
@@ -211,8 +254,10 @@ text[start_char:end_char] == quote
 几十个低相关 chunk 会增加 distractor、冲突、Prompt injection 和成本。先确认 answer-bearing 文档是否被召回，
 再测模型是否利用了进入 context 的证据，以及引用是否真的支持输出字段。
 
-总窗口还要容纳 system/developer instructions、chat template、tool schema、对话历史、few-shot、检索文档、
-当前输入和输出预留。截断顺序是产品决策；如果静默丢掉规则、最新需求或 evidence，任务语义已经改变。
+输入窗口不只装用户问题。系统和开发者指令、对话模板、工具定义、历史消息、few-shot 示例、检索文档，
+以及为回答预留的空间都会占用 token。
+
+内容超长时，产品要明确先删哪一部分。静默丢掉判定规则、最新需求或证据，相当于悄悄换了任务。
 
 对话历史也应按状态管理。最近原文、结构化业务状态和带 source pointer 的摘要可以长期保留；
 旧指令、错误 tool result 和已经撤销的偏好应失效。摘要是模型生成的数据，需要保存来源和更新时间。
@@ -235,9 +280,11 @@ tokenizer 成本和截断也要分语言测量。翻译后的 Prompt 是一个�
   -> business verifier
 ```
 
-Secret 不应出现在 tool description；URL、path 和 SQL 不交给模型自由拼接；文档内容也不能替调用者选择高权限工具。
-自然语言中的 `confirmed=true` 不是可信审批。高风险动作应该先生成可读 preview，
-再由外部审批服务绑定 canonical arguments 与执行身份。
+密钥不能写进工具说明，URL、文件路径和 SQL 也不应交给模型自由拼接。文档内容只能作为参考，
+不能替调用者选择高权限工具。
+
+自然语言中的 `confirmed=true` 不能充当审批。高风险动作要先生成可读预览，再由外部审批服务把规范化参数、
+执行身份和这次批准绑定在一起。
 
 详细状态机见[一次 Agent 退款任务](agent-task-lifecycle.md)。那里会真实走过权限、超时、pending、验证和恢复。
 
@@ -246,8 +293,9 @@ Secret 不应出现在 tool description；URL、path 和 SQL 不交给模型自�
 聊天协议通常区分 system、developer、user 和 tool roles，具体优先级依平台实现。
 层级可以提高行为一致性，却无法安全地容纳本不该暴露的 secret，也不能授权数据库或付款操作。
 
-Prompt 可以标注 provenance、提醒模型忽略文档中的指令，并让它指出可疑内容。这些措施能减少一部分行为错误。
-真正的安全边界仍由 pre-ranking ACL、secret isolation、tool allowlist、参数验证、审批、sandbox 和 egress policy 实现。
+Prompt 可以标明每段内容的来源，提醒模型把文档中的命令视为不可信文本，并要求它指出可疑内容。
+这些提示能减少一部分行为错误。真正的安全边界在模型之外：检索前访问控制（ACL）、密钥隔离、工具白名单、
+参数验证、人工审批、沙箱和出站网络策略共同限制系统实际能做什么。
 
 例如文档中出现：
 
@@ -281,24 +329,28 @@ flowchart LR
 
 第一版回归集不必很大，但要能覆盖任务决策边界。合同抽取可以从约 30 条人工复核 case 起步，包含：
 
-| 切片 | 要观察的失败 |
-|---|---|
-| 典型合同 | 字段抽取、日期规范化与 evidence span |
-| 字段缺失 | 是否返回 `null` 和 `insufficient_evidence` |
-| 多值冲突 | 是否选择了未经规则允许的候选 |
-| OCR / 损坏输入 | 是否伪造完整字段 |
-| 长输入 | 关键证据是否被截断 |
-| 对抗文本 | 文档指令是否改变任务或选择工具 |
-| 多语言 | locale、字段含义和 tokenizer 成本 |
-| Tool failure | 是否越权、盲目重试或误报完成 |
+| 切片 | 要观察的失败 | 主要指标 |
+|---|---|---|
+| 典型合同 | 字段或日期抽错，引文位置错误 | 字段准确率、引用正确率 |
+| 字段缺失 | 猜出一个原文没有的值 | 语义有效率、正确拒答率 |
+| 多值冲突 | 擅自选择一个候选 | 冲突状态准确率 |
+| OCR / 损坏输入 | 把乱码补成完整字段 | 无证据字段率 |
+| 长输入 | 关键证据被截断 | 有证据字段准确率 |
+| 对抗文本 | 文档中的命令改变任务或工具选择 | 有害服从率、工具决策准确率 |
+| 多语言 | locale 改变字段含义或成本 | 分语言字段准确率、token 数 |
+| Tool failure | 越权、盲目重试或误报完成 | 不安全动作率、修复次数 |
 
-指标与失败要一一对应：field accuracy、schema validity、semantic validity、citation correctness、
-benign refusal、harmful compliance、tool decision、repair count、token、TTFT、端到端延迟与成本。
-只有 schema-valid rate，无法发现本例虚构 `CNY` 的错误。
+结构有效率只回答“对象长得是否正确”，发现不了开头虚构 `CNY` 的错误。所有切片还要记录首 token 延迟（TTFT）、
+端到端延迟和成本，避免用质量提升掩盖不可接受的运行代价。
 
-比较两个 Prompt 时，在同一 case 上做 paired comparison，并固定 model revision、chat template、generation config、
-retrieval 和 tool artifact。采样任务需要多个 seed 或重复运行并报告不确定性。
-反复查看的集合已经变成 dev set；最终发布还要保留 hidden 或 time-fresh case。
+比较两个 Prompt 时，让每条样例分别经过两个版本，也就是做 paired comparison（配对比较）。两边要使用相同的：
+
+- 模型、tokenizer 与对话模板版本；
+- 生成参数和随机性设置；
+- 检索结果、工具定义与策略版本。
+
+开启采样时，应换多个随机种子或重复运行，并报告结果波动。反复查看过的集合已经成为开发集；
+发布前还需要一份未参与调试的隐藏集，或按时间新收集的样例。
 
 ## 版本化的是整次调用，不只是一段文字
 
@@ -332,13 +384,19 @@ fingerprint = artifact_fingerprint(
 )
 ```
 
-SHA-256 说明这些 JSON 字段在 canonical serialization 下相同。它不会自动发现漏记组件，
-也不认证来源或保证远程模型可以 bitwise replay。Secret 不进入 manifest。
+SHA-256 在这里只回答一个问题：列入对象的字段经过规范化序列化后是否完全相同。完整的工件身份还依赖三件事：
+开发者列全影响结果的组件，可信系统认证来源，目标服务提供可重放能力。版本清单只保存身份信息，密钥放在独立的
+凭据系统中。
 
-Prompt/prefix cache 会改变 latency 和成本，因此 benchmark 分别报告 cold、warm 和 hit rate。
-自管 KV cache 的 identity 至少包含可信 tenant/visibility domain、policy revision、
-model/tokenizer/template/adapter、position/RoPE、KV dtype 与 exact rendered token prefix。
-Provider-managed cache 的隔离、保留和计费方式则按目标版本契约核对。
+Prompt cache 或 prefix cache 会改变延迟和成本，因此基准测试要分别记录冷启动、缓存命中后的性能和命中率。
+自管 KV cache 的缓存身份至少包括：
+
+- 租户或其他可信可见范围，以及访问策略版本；
+- 模型、tokenizer、对话模板和 adapter 版本；
+- 位置编码或 RoPE 设置，以及 KV 数据类型；
+- 模板渲染后完全一致的 token 前缀。
+
+使用云服务管理的缓存时，再按该服务当前文档核对租户隔离、保留时间和计费规则。
 
 ## 一次修改怎样安全发布
 
@@ -357,11 +415,15 @@ Provider-managed cache 的隔离、保留和计费方式则按目标版本契约
 
 ## 当前仓库能验证到哪里
 
-仓库已经覆盖 chat-template 强制渲染、云 API 离线 contract、JSON Schema metric、RAG citation/ACL、
-Agent tool validation 和 canonical artifact fingerprint。它没有在所有真实云模型上系统运行同一套 Prompt benchmark，
-也无法代替目标 provider 对 instruction hierarchy、structured output 和 caching 的当前契约。
+仓库目前可以直接运行这些检查：
 
-因此本章提供的是可执行设计方法，不是一条跨模型永久有效的 Prompt 配方。
+- 使用 checkpoint 自带的对话模板渲染消息；
+- 离线验证三类云 API 的请求和响应映射；
+- 检查 JSON Schema、RAG 引用与访问权限；
+- 验证 Agent 工具参数，并为显式列出的工件字段生成指纹。
+
+仓库尚未在所有真实云模型上运行同一套 Prompt 基准。指令层级、结构化输出和缓存行为也会随云服务版本变化，
+需要在接入目标服务时重新核对。因此，本章给出的是可执行的设计方法，而不是一条永久适用于所有模型的配方。
 
 ## 自测与实践
 

@@ -18,9 +18,11 @@ python projects/cloud-api-contracts/budgeted_retry_demo.py `
 ```
 
 输出会显示第一次 attempt 保守记为 `uncertain`，第二次按实际 usage 结算。完整解释见
-[教学页](../../docs/practice/projects/cloud-api-contracts.md#run)。随后可运行三个最小组件实验：
+[教学页](../../docs/practice/projects/cloud-api-contracts.md#run)。随后可运行几个较小的组件实验：
 
 ```powershell
+python projects/cloud-api-contracts/prompt_contract_walkthrough.py
+
 python -m about_llm.integrations.cloud_api_cli verify `
   --contracts projects/cloud-api-contracts/contracts.example.jsonl `
   --output artifacts/cloud-api/contracts.json
@@ -31,8 +33,9 @@ python -m about_llm.integrations.cloud_api_cli retry-matrix `
 python projects/cloud-api-contracts/usage_budget_toy.py
 ```
 
-它们依次回答：三种 Provider 协议怎样映射为共同业务对象；哪些失败可以安全重放；一次调用怎样先预留最大费用，再根据
-实际 usage 结算或进入 uncertain。
+它们依次回答：模型输出怎样经过 JSON、结构、原文位置和字段证据检查；三种 Provider 协议怎样映射为共同业务对象；
+哪些失败可以安全重放；一次调用怎样先预留最大费用，再根据实际 usage 结算或进入 uncertain。
+Prompt Contract 实验的逐步解释见 [Prompt Engineering 与输出契约](../../docs/applications/prompting.md#contract-walkthrough)。
 
 ## 一次逻辑调用的状态
 
@@ -127,6 +130,7 @@ python projects/cloud-api-contracts/budgeted_retry_demo.py `
 
 | 你想理解什么 | 入口 |
 |---|---|
+| 结构化抽取怎样从错误输出走到可接受结果 | `prompt_contract_walkthrough.py` |
 | 三种 text API 怎样映射共同对象 | `cloud_api_cli verify` |
 | Replay-safe、deadline 与 `Retry-After` | `cloud_api_cli retry-matrix` |
 | JSON HTTP 的 origin、redirect、timeout 与解析边界 | `execute_json_request` 及 `tests/test_cloud_http.py` |
@@ -215,7 +219,8 @@ python -m pytest `
   tests/test_cloud_stream.py `
   tests/test_usage_budget.py `
   tests/test_sqlite_usage_budget.py `
-  tests/test_budgeted_cloud.py -q
+  tests/test_budgeted_cloud.py `
+  tests/test_prompt_contract.py -q
 
 python scripts/check_docs.py
 python scripts/check_content_accuracy.py
