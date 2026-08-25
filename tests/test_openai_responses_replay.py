@@ -77,6 +77,32 @@ def test_fixed_fixture_replays_text_tool_usage_and_exact_input_identity() -> Non
     assert payload["scope"]["http_sse_or_websocket_transport_executed"] is False
 
 
+def test_fixed_fixture_recorded_fingerprints_and_scope_are_stable() -> None:
+    payload = replay_response_event_file(FIXTURE).to_dict()
+
+    assert payload["input"] == {
+        "sha256": "sha256:f2947212c1f67adf6f35bc976264db28c30abe1a32310daa284df42ca5a54686",
+        "size_bytes": 3208,
+    }
+    assert payload["event_projection_fingerprint"] == (
+        "sha256:9cc5964da2517f2076a1c624c2636bd8ca75077b89f024c7710b1b720cbd713e"
+    )
+    assert payload["receipt_fingerprint"] == (
+        "sha256:c4829c19895dcb4013141da3d11b5dc9befee8189210a0901f0cb14c19942579"
+    )
+    assert payload["scope"] == {
+        "complete_responses_api_surface_supported": False,
+        "http_sse_or_websocket_transport_executed": False,
+        "model_output_quality_or_safety_proved": False,
+        "openai_sdk_or_remote_api_executed": False,
+        "provider_identity_usage_or_billing_authenticated": False,
+        "sdk_shaped_event_replay_executed": True,
+        "sequence_and_item_lifecycle_checked": True,
+        "strict_json_duplicate_nonfinite_unknown_event_field_rejection": True,
+        "terminal_output_and_usage_reconciled": True,
+    }
+
+
 def test_sequence_numbers_are_a_contiguous_local_replay_contract() -> None:
     events = _fixture_events()
     events[5]["sequence_number"] = 99
@@ -353,4 +379,3 @@ def test_state_snapshots_caller_events_before_later_mutation() -> None:
     receipt = state.finish()
 
     assert receipt.model == original["response"]["model"]
-

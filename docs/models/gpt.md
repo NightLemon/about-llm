@@ -13,12 +13,14 @@
 
 </div>
 
-先把型号表放到一边，跟一次响应走完主线。用户问“上海天气怎样”，模型先输出一小段文本，随后提出
-`lookup_weather({"city":"上海"})`。在 Responses 里，这不是一条可以直接取出的字符串，而是多个 typed item
-和一串有生命周期的事件：message、function call、arguments delta、done 和 terminal response。
+先把型号表放到一边，跟一次响应走完主线。用户问“上海天气怎样”，模型先给出 `天气：晴。`，随后提出工具调用
+`lookup_weather({"city":"上海"})`。
 
-如果 adapter 只取 `output[0].content[0].text`，工具调用会悄悄消失；如果看到 function call 就直接执行，
-模型生成的参数又会绕过 Schema、ACL 和审批。本章用这个例子连接 GPT 的自回归核心、产品 API 和工程 runtime。
+在 Responses 里，这不是一条字符串，而是两个独立的输出项：一条 message 和一条 function call。流式传输时，
+每个输出项还会经历 added、delta、done，最后整个 response 才进入终态。
+
+如果 adapter 只读取第一段 text，工具调用会消失。反过来，如果应用看到 function call 就立刻执行，模型生成的参数
+又会绕过 Schema、ACL 和审批。本章用同一个天气请求连接 GPT 的自回归核心、产品 API 和工程 runtime。
 
 ## 先把三种证据放进不同抽屉
 
@@ -28,9 +30,10 @@
 2. **当前产品契约**：官方 model catalog 与 Responses API reference 在某个检查日期公开的型号、请求对象、输出对象和事件类型；
 3. **本地可执行结果**：本仓库用一份自编 JSONL 检查解析、状态迁移和对账规则。
 
-三类材料分别回答不同问题：旧论文解释公开过的研究方法，接口文档说明当前协议，本地 replay 检查我们自己的
-解析和状态机。当前闭源产品的内部结构、真实服务执行、模型质量、账单和生产可靠性，都需要与问题匹配的
-新证据。
+旧论文解释公开过的研究方法，接口文档说明当前协议，本地 replay 检查仓库自己的解析和状态机。三类证据各自回答
+一个问题，不能互相替代。
+
+当前闭源产品的内部结构、真实服务执行、模型质量、账单和生产可靠性，需要另外收集与问题匹配的证据。
 当前产品信息属于**时间敏感**事实，本页最近核对日期为 **2026-08-19**。
 
 ## 自回归公式只描述了系统的一层
@@ -73,7 +76,10 @@ flowchart LR
 - GPT-2 展示扩大无监督语言建模后出现的任务迁移能力；
 - GPT-3 系统性展示把说明和示例放入上下文的 zero/one/few-shot 使用方式。
 
-In-context learning 改变的是当前条件上下文，不是对模型参数做一次隐式梯度更新。论文结果还绑定当时的数据、模型、提示与评测协议；不能把 GPT-3 的架构表复制成当前 API 模型说明，也不能把 benchmark few-shot 提升等价为生产任务可靠性。
+In-context learning 改变的是当前请求的条件上下文，模型参数并没有因此执行一次隐式梯度更新。
+
+论文结果还绑定当时的数据、模型、提示与评测协议。GPT-3 的架构表不能直接作为当前 API 模型说明；论文中的
+few-shot benchmark 提升，也不能直接回答生产任务是否可靠。
 
 ### InstructGPT：续写与遵循意图不是同一个问题
 
@@ -83,11 +89,21 @@ RLHF 不是一个跨时代固定的配方。当前产品是否使用某个 rewar
 
 ## 型号目录是带日期的产品快照
 
-截至 **2026-08-19**，OpenAI 官方 model catalog 把 GPT-5.6 Sol、Terra、Luna 作为通用起点：Sol 面向复杂专业任务，
-Terra 平衡智能与成本，Luna 面向成本敏感的高吞吐 workload。目录还包含面向特定任务的专用条目，
-并把最新模型的使用入口指向 Responses API 与官方 SDK。本教材不维护完整型号榜。
+截至 **2026-08-19**，OpenAI 官方 model catalog 给出的通用起点是：
 
-这是产品目录快照，不是架构披露，也不是永久选型结论。型号、alias、价格、上下文窗口、最大输出、模态与工具支持都可能变化。本教材因此不复制价格表；实际选型要保存具体 model page、检查日期、账号/区域可用性和一份目标 workload 评测。
+| 型号 | 目录中的定位 |
+|---|---|
+| GPT-5.6 Sol | 复杂专业工作与推理、代码任务 |
+| GPT-5.6 Terra | 在智能与成本之间取平衡 |
+| GPT-5.6 Luna | 成本敏感的高吞吐工作负载 |
+
+目录还包含特定任务模型，并把当前使用入口指向 Responses API 与官方 SDK。本教材不维护完整型号榜。
+
+这只是带日期的产品目录，不是内部架构披露，也不能永久替代选型实验。型号、alias、价格、上下文窗口、最大输出、
+模态和工具支持都可能变化。
+
+实际选型时，保存具体 model page、检查日期和账号/区域可用性，再用目标 workload 评测。价格表则直接以运行时的
+官方页面和账单为准。
 
 一个可审计配置至少记录：
 
@@ -109,8 +125,11 @@ Terra 平衡智能与成本，Luna 面向成本敏感的高吞吐 workload。目
 
 ## 从 messages/choices 迁移时，数据模型也要改
 
-Chat Completions 常以 `messages → choices` 为主要心智模型。Responses 把一次调用建模为带状态的 `response`，
-其 `output` 可以包含多个 typed item；message item 还可以包含多个 typed content part，tool call 则是独立 item。
+Chat Completions 常以 `messages → choices` 为主要心智模型。Responses 则把一次调用建模为带状态的 `response`：
+
+- `output` 可以包含多个带类型的 item；
+- Message item 可以包含多个 content part；
+- Tool call 是与 message 并列的独立 item。
 
 ```text
 response
@@ -133,15 +152,22 @@ def parse_response(payload: dict) -> str:
     return payload["output"][0]["content"][0]["text"]
 ```
 
-这段代码暗中假设：只有一个 output item，它一定是 message，第一段一定是 text，没有 refusal、tool 或 reasoning，
-而且响应已经完整。生产 adapter 至少应保留 response id、model、status、每个 item 的 type/id/index、
-content type、call id、原始 arguments、usage 和 terminal reason。
+这段代码暗中做了四个假设：
+
+1. 只有一个 output item；
+2. 这个 item 一定是 message；
+3. 第一段内容一定是 text；
+4. 响应已经完整，没有 refusal、tool 或 reasoning item。
+
+生产 adapter 至少应保留 response 的 id、model 和 status，以及每个 item 的 type、id、index。Content type、call id、
+原始 arguments、usage 和 terminal reason 也不能被压进一个字符串。
 
 ### Structured Outputs 解决的是哪一层
 
-JSON mode 的目标是有效 JSON；Structured Outputs 在受支持的 JSON Schema 子集内约束结构。二者都不保证值为真、
-引用存在、金额合理或工具调用有权限。调用方还要分别处理 refusal 与 `incomplete`：遇到安全拒绝或输出上限终止，
-不能假定已经得到完整业务对象。
+JSON mode 的目标是生成有效 JSON。Structured Outputs 进一步在受支持的 JSON Schema 子集内约束结构。
+
+这两项能力只处理语法和结构。字段值是否真实、引用是否存在、金额是否合理，以及工具调用是否有权限，都要由应用检查。
+调用方还要单独处理 refusal 与 `incomplete`；安全拒绝或输出上限终止时，业务对象并不完整。
 
 推荐顺序是：
 
@@ -158,7 +184,10 @@ terminal status
 
 ### Tool call 是候选动作，不是执行证明
 
-Responses 中的 function call arguments 仍是模型生成文本。即使它恰好解析成 JSON object，也只证明语法可解析。生产 runtime 要重新检查类型、资源归属、身份、权限、预算、审批、幂等键与前置状态，再把受控结果提交给 handler。
+Responses 中的 function call arguments 仍是模型生成的文本。解析成 JSON object，只说明语法可解析。
+
+生产 runtime 还要依次检查类型、资源归属、身份、权限、预算、审批、幂等键和前置状态。全部通过后，才能把受控参数
+提交给 handler。
 
 若 arguments 不是有效 JSON object，adapter 会保留原字符串，并把 `arguments_is_strict_object` 设为 `false`。
 后续策略可以明确报错，或者把它送入独立的修复流程；修复后的对象不能冒充原参数已经通过校验。
@@ -171,7 +200,8 @@ Responses 中的 function call arguments 仍是模型生成文本。即使它恰
 
 ## Streaming 要重建状态，不是只拼字符串
 
-流式处理不是“从每个 chunk 取一点 text”。网络 byte chunk、SSE event 与 Responses typed event 是三层不同对象：
+流式处理不是“从每个 chunk 取一点 text”。这里至少有三层对象：网络收到的任意字节块、SSE event，以及带明确类型的
+Responses event。
 
 ```text
 arbitrary network bytes
@@ -181,8 +211,8 @@ arbitrary network bytes
 → application update
 ```
 
-官方 streaming guide 与 streaming-events reference 展示了 response、output item、content part、
-text/refusal/function arguments 和 terminal 事件。一个典型的 text + function-call 路径可以写成：
+官方 streaming guide 与 event reference 分别定义 response、output item、content part，以及 text、refusal、
+function arguments 和终态事件。一个典型的“文本 + 工具调用”路径可以写成：
 
 ```text
 response.created
@@ -219,7 +249,12 @@ response.completed
 - `incomplete`：响应终止但不完整，需保留 `incomplete_details` 的 reason；
 - `failed`：响应失败，需保留稳定 error code 与受控错误信息。
 
-EOF 本身不是成功终态。缺 terminal event、item 尚未 done、content 只有 delta 没有 done，或 terminal 后又出现事件，都应视为协议失败。
+EOF 只表示本地字节流结束，不代表服务端成功完成响应。以下情况都属于协议失败：
+
+- 没有 terminal event；
+- Item 尚未 done；
+- Content 只有 delta，没有 done；
+- Terminal event 之后又出现新事件。
 
 ### `sequence_number` 的本地严格规则
 
@@ -249,9 +284,11 @@ python projects/cloud-api-contracts/openai_responses_replay.py `
 | event projection | `sha256:9cc5964da2517f2076a1c624c2636bd8ca75077b89f024c7710b1b720cbd713e` |
 | receipt | `sha256:c4829c19895dcb4013141da3d11b5dc9befee8189210a0901f0cb14c19942579` |
 
-样例使用 `model: gpt-reviewed-snapshot` 这个自定义标签，避免让人误以为运行了真实 model id。收据会明确记录
-本次执行范围：
-重放 SDK-shaped events，检查 sequence/item lifecycle，并对账 terminal output 与 usage。
+样例使用自定义标签 `model: gpt-reviewed-snapshot`，表示它没有运行真实 model id。收据记录的执行范围只有三项：
+
+- 重放形状与 SDK event 相似的固定输入；
+- 检查 sequence 与 item lifecycle；
+- 对账 terminal output 和 usage。
 
 它没有执行 HTTP/SSE/WebSocket transport、OpenAI SDK 或远程 API。
 
@@ -293,9 +330,11 @@ python -m pytest tests/test_openai_responses_replay.py -q
 这份离线报告说明当前 parser 和 state machine 能处理前面列出的事件，并在输入损坏时停止。它使用本仓库准备的
 固定输入，没有连接 OpenAI API，也没有运行真实模型。
 
-真实接入还要验证 provider 身份、账号认证、网络、SSE framing、SDK、backpressure、取消、usage、计费、
-模型质量和生产可靠性。当前样例也只覆盖 Responses API 的一小部分，没有包含全部 input/output item、tool、
-音频/图像、web/file/computer use、error event 和状态续接。
+真实接入还要验证 provider 身份、账号认证、网络、SSE framing、SDK、backpressure、取消、usage 和计费。
+模型质量与生产可靠性需要各自的评测和运行证据。
+
+当前样例只覆盖 Responses API 的一个小子集。其他 input/output item、tool、音频/图像、web/file/computer use、
+error event 和状态续接仍需按实际产品逐项接入。
 
 ## 从 reference 走向生产 adapter
 
@@ -323,22 +362,27 @@ flowchart TD
 
 ### 日志与工件
 
-建议保存 raw event artifact 的加密访问控制版本，以及不含敏感值的审计投影。投影可以包含 provider、
-API surface/version、model id、response/request id、event type/index、terminal status/reason、usage、latency、
-parser revision、Prompt/tool Schema fingerprint 和输入 artifact hash。
+建议把原始事件工件放进加密且受访问控制的存储，同时生成一份不含敏感值的审计投影。投影可以记录：
 
-不要把 API key、完整 prompt、敏感 output、reasoning plaintext、tool secret 或任意被拒绝字段直接写进普通日志。无密钥 SHA-256 只绑定 bytes，不认证 provider 或调用者，也不提供保密性。
+- Provider、API surface/version 和 model id；
+- Response/request id、event type/index；
+- Terminal status/reason、usage 和 latency；
+- Parser revision、Prompt/tool Schema fingerprint 和输入 artifact hash。
+
+普通日志不应包含 API key、完整 Prompt、敏感 output、reasoning plaintext、tool secret 或被策略拒绝的字段。
+无密钥 SHA-256 只能绑定 bytes；它不能认证 provider 或调用者，也不能加密内容。
 
 ### 重试、取消和费用
 
-2xx stream 开始后出现截断，远端 outcome 和 usage 可能仍然未知。自动重放可能重复生成、重复工具候选或重复计费。
-生产策略要按具体 endpoint 核对 replay/idempotency 语义，并为每次 attempt 独立 reserve 和 reconcile；
-关闭本地 response 也不能证明服务端已经停止计算或计费。
+2xx stream 开始后如果连接截断，远端 outcome 和 usage 可能仍然未知。自动重放可能造成重复生成、重复工具候选或重复计费。
+
+生产策略要按具体 endpoint 核对 replay 和 idempotency 语义。每次 attempt 都要单独预留并核销预算；关闭本地 response，
+也不能证明服务端已经停止计算或计费。
 
 旧 text-only SSE reference 与新 typed replay 的关系是：
 
-- `OpenAICompatibleTextStream` 覆盖 OpenAI-compatible Chat Completions 的单 choice text delta/usage/finish reason/`[DONE]`；
-- `OpenAIResponsesEventReplay` 覆盖一组独立审核的 Responses SDK-shaped typed events；
+- `OpenAICompatibleTextStream` 覆盖 Chat Completions 风格的单 choice 文本增量、usage、finish reason 和 `[DONE]`；
+- `OpenAIResponsesEventReplay` 覆盖一组单独审核的 Responses typed events；
 - 二者都不执行真实网络，也不能互借“完整协议兼容”结论。
 
 ## 模型选型与升级评测
@@ -388,12 +432,12 @@ temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格
 
 ### 可写进简历的诚实版本
 
-> 为 OpenAI Responses 设计 typed-event 离线 replay：在一组包含 15 个 event、2 个 item 的固定样例上校验
-> response/item/content 生命周期，重建 text 与 function arguments，并对 delta/done/terminal output、
-> 12+9=21 usage，并用输入/收据 fingerprint 发现内容变化；16 个测试覆盖错序、未知字段、refusal、
-> incomplete/failed、截断与非有限 JSON。
+> 为 OpenAI Responses 设计 typed-event 离线 replay。在包含 15 个 event、2 个 item 的固定样例上，重建 text 与
+> function arguments，并对账 response/item/content 生命周期、delta/done/terminal output 和 12+9=21 usage。
+> 输入、事件投影与收据 fingerprint 用于发现漂移；16 个测试覆盖错序、未知字段、refusal、incomplete/failed、
+> 截断和非有限 JSON。
 
-紧接着应说明：样例只模仿 SDK 的事件形状，没有调用 OpenAI SDK 或真实 API，也没有覆盖完整 Responses surface。
+紧接着应说明：样例只模仿 SDK 的事件形状，没有调用 OpenAI SDK 或真实 API，覆盖的也只是 Responses 的一个子集。
 如果候选人能解释本地 replay 与真实网络、计费、质量和安全验证的区别，这个项目就比只展示一次成功 API 调用
 更有说服力。
 
