@@ -27,14 +27,52 @@
 3. **边界**：指出成立条件、代价和常见反例。
 4. **验证**：给一个最小实验或生产指标。
 
-以“GQA 为什么能降低推理成本”为例：
+## 一场追问怎样逐层展开 { #gqa-walkthrough }
 
-> GQA 让多个 query heads 共享较少的 KV heads，因此主要减少 KV Cache 容量和 decode 时读取 KV 的带宽。理想 KV payload 约为
-> \(2LBTH_{kv}d_{head}s\)，其中 2 对应 K/V，\(s\) 是元素字节数。
-> 它不会同比减少 query projection、模型权重或所有临时内存，质量也可能变化。
-> 我会在固定模型、batch 和序列长度下比较峰值显存、TPOT、吞吐和任务质量。
+以“GQA 为什么能降低推理成本”为例。
 
-这个回答先给因果链，再给不能外推的部分，最后说明怎样证伪。不要一上来罗列 MHA、MQA、GQA 的定义。
+**面试官**：GQA 为什么更省？
+
+**你，先用 30 秒回答**：GQA 让一组查询头（query heads）共享较少的 K/V heads。
+
+标准稠密 KV Cache 的理想容量与 \(H_{kv}\) 成正比，因此它最直接地减少缓存容量，以及 decode
+时读取 K/V 的数据量。
+
+模型权重、Q/O 投影和 MLP 不会按同一比例缩小，所以不能从 KV 缩小倍数直接推出端到端加速倍数。
+
+这时已经完成“结论—机制—边界”。如果面试官追问“能不能算一个例子”，再上白板。
+
+标准 dense K/V 的理想 payload 是：
+
+\[
+M_{KV}=2LBTH_{kv}d_hs,
+\]
+
+其中 2 代表 K 和 V，\(L\) 是层数，\(B\) 是活动序列数，\(T\) 是每条序列缓存的 token 数，
+\(d_h\) 是 head dimension，\(s\) 是每个元素的字节数。
+
+假设 \(L=32\)、\(B=1\)、\(T=4096\)、\(d_h=128\)，并用 BF16 保存 K/V：
+
+| Attention 设置 | \(H_{kv}\) | 理想 KV payload |
+|---|---:|---:|
+| MHA | 32 | 2 GiB |
+| GQA | 8 | 0.5 GiB |
+
+这组设置让理想 KV payload 缩小 4 倍。它没有计算 block allocator、对齐、workspace 和临时 tensor，
+也没有描述质量变化。
+
+**面试官继续追问**：那吞吐会提高 4 倍吗？
+
+**你**：不能这样推。只有 K/V projection、缓存容量和相关读取接近这个缩放；Q/O projection、MLP、权重读取、
+调度和其他运行时开销仍然存在。最终收益还取决于 batch、序列长度、kernel 和硬件。
+
+**面试官最后追问**：怎样验证？
+
+**你**：固定 checkpoint、请求长度分布、并发和硬件，先确认真实 cache layout，再同时测峰值显存、TPOT、吞吐和
+任务质量。若只测短 Prompt 或只看显存，无法回答长上下文 decode 和质量取舍。
+
+这就是一条完整的回答链：先用一句话指出主因，再按追问加入算术、反例和实验。不要一上来横向罗列
+MHA、MQA、GQA 的全部定义。
 
 ## 深度怎样控制
 
@@ -81,9 +119,13 @@
 
 ### 3. MHA、MQA 与 GQA 怎样取舍？
 
-**30 秒回答**：减少 KV heads 会降低 KV Cache 与 decode 带宽；MHA 表达最自由，MQA 最省 KV，GQA 位于两者之间。最终取舍要同时看质量、显存和 TPOT。
+**30 秒回答**：MHA 为每个查询头保留独立 K/V head，MQA 让所有查询头共享一组 K/V，GQA 位于两者之间。
+减少 \(H_{kv}\) 会降低 K/V 投影、KV Cache 和 decode 时的 K/V 读取量。最终仍要同时比较质量、显存和 TPOT。
 
-**展开时说明**：KV 公式只估理想 payload，不含 block allocator、对齐、量化 scale、workspace 和临时 tensor。遇到 MLA 或未知 attention layout 时，不应套标准 GQA 公式。
+**展开时说明**：KV 公式只估算理想 K/V 数组，不含分页分配器、内存对齐、量化 scale、工作区和临时张量。
+遇到 MLA 或未知 cache layout 时，应先确认实际存储结构，不能套用标准 GQA 公式。
+
+完整的数值追问见[开头的 GQA 白板示范](#gqa-walkthrough)。
 
 ### 4. Prefill 与 decode 为什么瓶颈不同？
 
@@ -116,29 +158,35 @@
 对线性层 \(y=Wx\)，LoRA 冻结 \(W\)，学习低秩更新
 \(\Delta W=(\alpha/r)BA\)。若 \(W\in\mathbb{R}^{d_{out}\times d_{in}}\)，新增参数约为 \(r(d_{in}+d_{out})\)。
 
-**边界**：参数少不自动意味着显存按同一比例下降。activation、optimizer、quantization buffer、target modules 和 sequence length 仍会影响峰值。
+**边界**：可训练参数少，不表示峰值显存按同一比例下降。训练激活、优化器状态、量化缓冲区、适配的层数和序列长度
+都会占用显存。
 
 ### 9. QLoRA 为什么不等于“用 4-bit 做全部训练”？
 
-**30 秒回答**：QLoRA 通常把冻结的 base weights 以低比特存储，在计算时反量化到计算 dtype，并训练较高精度的 LoRA adapters。梯度和 optimizer state 并非都变成 4-bit。
+**30 秒回答**：QLoRA 通常以低比特保存冻结的基础权重，计算时再反量化到 BF16 或 FP16 等计算精度。
+训练更新的是较高精度的 LoRA adapter；梯度和优化器状态并非全部变成 4-bit。
 
 **怎样验证**：打印每类参数的 storage dtype、compute dtype、`requires_grad`、optimizer state 和峰值显存，不要只看加载参数 `load_in_4bit=True`。
 
 ### 10. assistant-only loss 怎样避免监督错位？
 
-**30 秒回答**：先用目标 chat template 渲染并 tokenize，再构造只覆盖 assistant content 的 labels；system、user、padding 和不应学习的控制 token 设为 ignore index。
+**30 秒回答**：先用目标对话模板（chat template）渲染并分词，再让监督标签只覆盖 assistant 回复。
+系统消息、用户消息、补齐位置及不应学习的控制 token 全部设为 ignore index。
 
 **怎样验证**：打印最终 token ID、解码片段、label mask 和有效监督 token 数。只检查原始文本边界不够，因为模板和 tokenizer 会改变位置。
 
 ### 11. 可变长度 micro-batch 怎样做正确 gradient accumulation？
 
-**30 秒回答**：每个 micro-batch 累积 loss sum 与有效 token count，在整个 optimizer update window 结束时按全局 token 数归一化。平均各 micro-batch mean 会让短 batch 权重过大。
+**30 秒回答**：每个微批次累积损失总和与有效监督 token 数。等整个参数更新窗口结束，再除以全局有效 token 数。
+直接平均各微批次的 mean loss，会让短批次获得过高权重。
 
-**分布式追问**：若 DDP reducer 对 \(D\) 个 rank 的梯度取 mean，全局 token mean 需要让每个 rank backward \((D/N)S_r\)。还要在完整累计后 unscale、clip 和 step。
+**分布式追问**：设 \(D\) 个进程一共有 \(N\) 个有效 token，本进程的损失总和为 \(S_r\)。
+若 DDP 会平均各进程的梯度，本进程应反向传播 \((D/N)S_r\)。完整累计后再执行反缩放、梯度裁剪和参数更新。
 
 ### 12. DPO 与 PPO/RLHF 的训练信号有何不同？
 
-**30 秒回答**：DPO 直接从 chosen/rejected 对和 reference policy 构造偏好目标；PPO 通常从当前 policy 采样，用 reward/value 估计 advantage，再以 ratio clip 和 KL 约束更新。
+**30 秒回答**：DPO 从 chosen/rejected 样本对和参考策略直接构造偏好目标。PPO 通常从当前策略采样，
+再用奖励与价值估计 advantage，并通过概率比裁剪和 KL 约束限制更新幅度。
 
 **边界**：DPO 简单不代表数据无偏，PPO reward 上升也不代表人类效用改善。两者都需要 held-out preference、任务 verifier、安全回归和分布漂移检查。
 
@@ -178,7 +226,8 @@ ACL 必须进入 retrieval query，或者在候选进入共享排序、缓存和
 
 ### 17. 怎样避免 Agent 重复转账或重复发消息？
 
-不能只让模型“记住不要重复”。应为逻辑动作生成稳定 identity，持久化 proposal/approval/attempt/effect 状态，并让外部系统支持 idempotency key 或可查询 receipt。
+不能只让模型“记住不要重复”。应为逻辑动作生成稳定 ID，并持久化提议、审批、尝试和外部效果四阶段状态。
+外部系统还要支持幂等键（idempotency key）或可查询的执行回执。
 
 超时后的 outcome 可能是 `unknown`。此时先 reconcile，不能把 timeout 写成失败后直接重放。Transactional outbox 改善本地投递可靠性，也不能一般性地保证远端 exactly-once。
 
@@ -204,19 +253,22 @@ ACL 必须进入 retrieval query，或者在候选进入共享排序、缓存和
 
 ### 21. LLM-as-judge 有哪些偏差，怎样校准？
 
-Judge 可能有 position、verbosity、style、自偏好和 prompt sensitivity。先保留双顺序判断、tie 和原始理由，再与盲化人工标注或确定性 verifier 对照。
+Judge 常见位置、篇幅、风格、自偏好和 Prompt 敏感性等偏差。先把候选顺序交换后再评一次，并保留平局与原始理由。
+然后与盲化人工标注或确定性验证程序对照。
 
 报告 agreement、混淆矩阵和按语言/长度/难度的切片。高总体一致率不能掩盖某个关键 slice 的系统误判。
 
 ### 22. 为什么比较模型要用 paired design？
 
-同一 case 上比较 baseline 与 candidate，可以消除大量 case 难度差异。先计算逐 case difference，再报告 effect size、区间和失败切片。
+在同一个 case 上比较基线与候选系统，可以消除大量题目难度差异。先计算每条 case 的成对差值，
+再报告效应大小、置信区间和失败切片。
 
 Paired bootstrap 用于估计差异的不确定性；randomization/sign-flip test 检验交换标签后的零假设。`p < 0.05` 不说明提升足够大、指标有效或用户受益。
 
 ### 23. 怎样防止测试集被反复调参污染？
 
-把 train/dev/test 权限和用途分开；Prompt、threshold 和错误规则只在 dev 上迭代，最终 test 只在预注册 gate 执行。每次查看 test 都会泄露信息，应记录访问与决策。
+把训练集、开发集和最终测试集的权限与用途分开。Prompt、阈值和错误规则只在开发集上迭代；
+最终测试集只按事先登记的发布判据执行。每次查看最终测试结果都会泄露信息，因此要记录访问和后续决策。
 
 还要按用户、thread、来源或 problem family 分组切分，并检查 exact、near-duplicate、语义改写和时间穿越。Hash 相同门禁只覆盖字节身份。
 
@@ -226,19 +278,54 @@ Paired bootstrap 用于估计差异的不确定性；randomization/sign-flip tes
 
 发布 gate 可以同时要求 overall non-inferiority、关键 slice 不退化和故障率上限。若数据不足，保持 canary 或收集更多样本，不应把不确定写成“无影响”。
 
-### 25. pass@k、oracle@k 与线上成功率有什么区别？
+### 25. pass@k、oracle@k、selected@k 与线上成功率有什么区别？
 
-pass@k / oracle@k 问 k 个候选中是否至少有一个正确；线上系统还必须用实际 verifier 选出并返回它。候选相关性和 verifier 错误会让 selected@k 远低于 oracle@k。
+先把四个问题分开：
 
-增加 k 也会增加 token、延迟和发现 verifier 漏洞的机会。应联合报告 oracle、selected、单次成功率、成本和 tail latency。
+| 指标 | 它实际询问什么 |
+|---|---|
+| pass@k | 在常见代码评测中，从同一题的 \(n\) 个采样里给 \(k\) 次机会，至少一个通过测试的估计概率 |
+| oracle@k | 当前 \(k\) 个候选中，是否存在一个满足正确性判据的候选 |
+| selected@k | 系统生成 \(k\) 个候选后，真实选择器最终挑出的那个是否正确 |
+| 线上成功率 | 在真实流量、超时、费用和失败终态下，最终交付是否成功 |
+
+同一题有 \(n\) 个采样、其中 \(c\) 个通过验证时，常用 pass@k 估计是：
+
+\[
+\operatorname{pass@k}
+=1-\frac{\binom{n-c}{k}}{\binom{n}{k}},
+\qquad 1\le k\le n.
+\]
+
+例如 \(n=10\)、\(c=2\)、\(k=2\) 时，pass@2 是 \(17/45\approx0.378\)。这个组合估计采用常见的
+独立同分布采样解释，并把测试通过当作“正确”判据；它不是线上用户只请求一次时的成功率。
+
+Oracle 只判断正确候选是否存在。选择器还必须在看不到 oracle 答案时把它找出来，所以在同一候选集合和判据下，
+selected@k 不会高于 oracle@k。验证程序漏判、候选高度相关或选择策略偏置，都会改变实际收益。
+
+增加 \(k\) 还会增加 token、延迟、费用和验证程序的攻击面。
+
+报告至少包含：pass@1、oracle@k、selected@k、实际 \(k\)、采样设置和验证判据；性能侧再给出成本与尾延迟。
 
 ## 推理与生产系统
 
 ### 26. p95 TTFT 突然升高，怎样排查？
 
-先拆分 offered load、queue、prefill、调度和网络时间。检查到达率、并发、prompt 长度、batch policy、KV 压力、cache hit、GPU 利用率和错误/取消分母。
+**30 秒回答**：先确认请求入口和统计口径有没有变化，再把 TTFT 拆成客户端排队、网关/网络、服务端排队、
+tokenization、prefill 和首 token 回传。只有 dispatch 之后的时间变慢，才继续把重点放在 tokenizer、调度和 GPU。
 
-只看成功请求的 p95 会隐藏 rejected 和 timeout。对比同一 workload 下的时间序列，并确认指标定义和采样没有变化。
+按症状继续追：
+
+| 同时观察到什么 | 优先检查什么 |
+|---|---|
+| Offered rate 上升，服务队列变长 | Admission、并发上限、长短请求混排和副本健康 |
+| Prompt 变长，dispatch TTFT 上升 | Tokenization、chunked prefill 和 prefill kernel |
+| KV 接近容量，出现抢占或重算 | Block 使用、最大长度、并发和调度策略 |
+| TPOT 也变慢 | Decode batch、权重/KV 带宽、kernel 和功耗 |
+| 客户端 TTFT 高，服务端 trace 正常 | 网关、网络、客户端队列和流式缓冲 |
+
+只看成功请求的 p95 会隐藏 rejected、timeout 和排队失败。对比同一 workload 下的时间序列，并同时保存
+all-attempt 分母、输入长度、终态和 offered-to-first-token 时间。
 
 ### 27. 4-bit 模型为什么不一定更快？
 
@@ -256,13 +343,22 @@ connect 前的明确失败与发送后 timeout 不同。后者可能已经生成
 
 不证明。连接关闭、应用 task 取消、backend iterator 停止、GPU work 结束、KV 释放和停止计费是不同层级。
 
-验收时用同一 request ID 关联客户端、server task、scheduler、allocator 和 usage。至少报告 disconnect-to-work-stop 与 disconnect-to-resource-release latency。
+验收时用同一个 request ID 关联客户端请求、服务端任务、调度器、内存分配器和计费用量。
+至少分别报告“断连到计算停止”和“断连到资源释放”两段延迟。
 
 ### 30. 模型版本相同，为什么请求仍未必可重放？
 
-结果还依赖 tokenizer、template、generation config、seed/RNG、runtime、kernel、adapter、tool、retrieval index、缓存和 provider routing。闭源 alias 甚至可能在 model ID 不变时漂移。
+模型名称只覆盖了输入身份的一小部分。一次结果还取决于：
 
-先定义你需要的是字节级、token 级、指标级还是业务决策级重放，再保存相应 artifact。不要用一个 config hash 代表未被序列化的全部外部状态。
+| 层次 | 需要绑定的内容 |
+|---|---|
+| 模型输入 | Tokenizer、chat template、完整消息、工具 schema 和生成参数 |
+| 模型工件 | Checkpoint revision、adapter、量化格式与加载配置 |
+| 执行环境 | Runtime、kernel、硬件、随机数状态和并行拓扑 |
+| 外部状态 | Retrieval index、权限策略、缓存、工具结果和 Provider routing |
+
+闭源 alias 甚至可能在 model ID 不变时切换实际版本。先说明目标是字节级、token 级、指标级还是业务决策级重放，
+再保存对应工件。一个 config hash 只能覆盖被明确序列化的字段，不能代表遗漏的外部状态。
 
 ## 代码题怎样准备
 

@@ -16,6 +16,22 @@ def test_kv_cache_example_is_exactly_one_gibibyte() -> None:
     assert value == 1024**3
 
 
+def test_gqa_whiteboard_example_scales_with_kv_head_count() -> None:
+    common = {
+        "num_layers": 32,
+        "head_dim": 128,
+        "tokens": 4096,
+        "batch_size": 1,
+        "bytes_per_element": 2,
+    }
+    mha = estimate_kv_cache_bytes(num_kv_heads=32, **common)
+    gqa = estimate_kv_cache_bytes(num_kv_heads=8, **common)
+
+    assert mha == 2 * 1024**3
+    assert gqa == 512 * 1024**2
+    assert mha == 4 * gqa
+
+
 def test_kv_cache_scales_with_batch_and_rejects_invalid_dimensions() -> None:
     one = estimate_kv_cache_bytes(num_layers=2, num_kv_heads=2, head_dim=4, tokens=8)
     four = estimate_kv_cache_bytes(
