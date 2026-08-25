@@ -533,8 +533,13 @@ def test_compare_cli_runs_paired_gate_and_protected_slice(
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["passed"] is True
+    assert payload["quality"]["baseline_mean"] == pytest.approx(0.0)
+    assert payload["quality"]["candidate_mean"] == pytest.approx(1.0)
     assert payload["quality"]["confidence_low"] == pytest.approx(1.0)
     assert payload["protected_slices"]["zh"]["mean_difference"] == pytest.approx(1.0)
+    assert payload["baseline_mean_latency_seconds"] == pytest.approx(0.11)
+    assert payload["candidate_mean_latency_seconds"] == pytest.approx(0.115)
+    assert payload["safety_metric"] is None
     assert payload["run_bindings"]["baseline"]["system_id"] == "fixture-baseline@v1"
     assert payload["run_bindings"]["candidate"]["system_id"] == "fixture-candidate@v1"
     assert "does not authenticate" in payload["evidence_boundary"]

@@ -58,6 +58,22 @@ def test_project_comparison_renders_deterministic_script_free_html() -> None:
     assert "authored-fixture-candidate@v1" in first
     assert EVALUATION_COMPARISON_HTML_SCOPE in first
     assert "未重新评分或重跑统计" in first
+    assert "安全指标: 未配置。本工件不包含安全结论。" in first
+
+
+def test_renderer_distinguishes_a_configured_safety_metric_from_no_measurement() -> None:
+    artifact = load_evaluation_comparison_artifact(COMPARISON)
+    content = artifact.identity_dict()
+    content["safety_metric"] = "safety"
+    content["safety_difference"] = 0.25
+    content["run_bindings"]["metric_revisions"]["safety"] = "safety.v1"  # type: ignore[index]
+    changed = EvaluationComparisonArtifact(content)
+
+    rendered = render_evaluation_comparison_html(changed)
+
+    assert "安全指标: <code>safety</code>" in rendered
+    assert "Candidate - Baseline: 0.25" in rendered
+    assert "本工件不包含安全结论" not in rendered
 
 
 def test_renderer_escapes_system_and_slice_text() -> None:

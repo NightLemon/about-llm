@@ -4,8 +4,9 @@
 [评测方法](../../quality/evaluation-methodology.md) · [评测测量学](../../quality/evaluation-measurement.md)
 { .doc-nav }
 
-假设团队比较客服系统的 baseline 和 candidate。Candidate 在演示中回答得更流畅，但有两条中文退款 case 退化，
-平均延迟也略高。现在要做的不是挑几条漂亮答案，而是给出一个别人能够重算的发布结论。
+假设团队正在比较技术知识助手的 baseline（当前版本）和 candidate（候选版本）。仓库样例里，候选版本答对了当前版本
+答错的两道中文问题，但平均延迟略高。到底该不该发布，不能只凭“答案看起来更好”，而要把质量、切片、延迟和
+证据范围放进同一次可重算的决定。
 
 这个项目把一次决定拆成五层：
 
@@ -25,7 +26,7 @@ flowchart LR
 在看到 candidate 结果前固定：
 
 - 决策：这个 gate 控制全量发布、canary 还是继续实验？
-- 系统身份：base/model、Prompt、RAG index、tools 与 runtime revision；
+- 系统身份：当前版和候选版所用的模型、Prompt、RAG 索引、工具与运行时版本；
 - Case 与抽样单位：请求、用户、文档还是完整 task；
 - Estimand：candidate − baseline 的哪个平均差；
 - 主指标与方向：越高越好还是越低越好；
@@ -38,6 +39,16 @@ flowchart LR
 ## 端到端主线 { #run }
 
 ### 第 1 步：给两套 recorded answers 打分
+
+先看清这个小实验比较的原始输出：
+
+| 问题 | 期望答案 | Baseline | Candidate | 延迟变化 |
+|---|---|---|---|---:|
+| RAG 是什么？ | 检索增强生成 | 一种参数高效微调方法 | 检索增强生成 | 0.100 → 0.105 秒 |
+| KV Cache 缓存什么？ | 每层历史 token 的 key 和 value | 模型的全部权重 | 每层历史 token 的 key 和 value | 0.120 → 0.125 秒 |
+
+这些答案由仓库预先写入文件，运行下面的命令不会调用模型。这样做的目的，是先把评分和发布判断本身讲清楚；
+它不能证明名为 `deployed-candidate@exact-revision` 的真实系统产生过这些答案。
 
 从仓库根目录运行：
 
@@ -61,14 +72,25 @@ python -m about_llm.evaluation.cli score `
   --system-id deployed-candidate@exact-revision
 ```
 
-CLI 不调用模型或付费 API。它消费已保存输出，并把有序 case、answers、逐例 results、metric/scorer revision 与
-`system_id` 绑定到 run manifest。`system_id` 是调用者提供的标签，不是模型来源认证。
+评分命令读取保存好的答案，并把以下内容写入运行清单：有序样例、答案文件、逐例分数、指标版本、评分器版本和
+`system_id`。其中 `system_id` 只是调用者填写的标签，不能认证模型来源。
 
-默认的 normalized exact match 会折叠部分大小写、标点和空白差异，token F1 又会忽略一部分结构。
-需要逐字复制时加 `--metric literal_exact_match`；需要 JSON 正确时使用 JSON parser/schema/value metric，
-不要从三个分数中事后挑最高的叫“准确率”。
+默认的 normalized exact match（规范化精确匹配）会折叠部分大小写、标点和空白差异。Token F1 只比较 token
+重叠，可能忽略输出结构。
+
+任务要求逐字复制时，使用 `literal_exact_match`。任务要求 JSON 时，分别检查能否解析、是否符合 Schema，
+以及字段值是否正确。指标要在看到结果前选定，不能事后挑最高分充当“准确率”。
 
 先打开两侧 `results.jsonl`，找出同一个 `case_id` 上的改善与退化。总体均值只是一层汇总，不能代替逐例调查。
+
+当前固定样例会得到：
+
+| 系统 | Exact match | Token F1 | 平均延迟 |
+|---|---:|---:|---:|
+| Baseline | 0.000 | 0.062 | 0.110 秒 |
+| Candidate | 1.000 | 1.000 | 0.115 秒 |
+
+第二道错误答案与参考答案共享少量 token，所以 Baseline 的 Token F1 不是零；这不表示它回答正确。
 
 ### 第 2 步：做 paired comparison
 
@@ -89,8 +111,23 @@ python -m about_llm.evaluation.cli compare `
   --output artifacts/evaluation/gate.json
 ```
 
-同一 case 上的两个结果组成一对，比较的是逐 case difference。输出 `comparison.v2` 保存 resampling unit、
-bootstrap 参数、阈值、slice、manifest identity、统计结果和每个失败原因。
+同一道题在两个系统上的结果组成一对，先算每一对的分数差，再对这些差值做比较。输出的 `comparison.v2` 会保存
+重采样单位、bootstrap 参数、门槛、受保护切片、运行清单身份、统计结果和失败原因。
+
+这次运行的结果是 `passed: true`。判断过程可以直接复算：
+
+| 门槛 | 实际结果 | 判断 |
+|---|---|---|
+| 总体质量差的 95% bootstrap 区间下界至少为 0 | Exact match 均值差与区间下界都是 +1.000 | 通过 |
+| 中文切片的区间下界至少为 0 | 两条样例都属于 `zh`，区间下界同样为 +1.000 | 通过 |
+| 平均延迟增幅不能超过 10% | 从 0.110 升到 0.115 秒，增幅约 4.5% | 通过 |
+
+这次比较只配置了质量和延迟门槛。结果中的 `safety_metric: null` 表示安全尚未进入本次测量。
+正式发布若要求安全门槛，需要提供相应的逐例分数，并用 `--safety-metric` 指定指标。
+
+质量区间会显示为 `[1.0, 1.0]`，因为两条样例的配对差值都恰好是 +1，怎样有放回抽取仍是同一个均值。
+这个区间描述的是“从当前两条样例重采样”会怎样，样例对真实流量的代表性仍然未知。因此，本例只演示计算链；
+生产发布还需要按目标流量抽样的评测集。
 
 进程退出码也属于接口：
 
@@ -102,7 +139,7 @@ bootstrap 参数、阈值、slice、manifest identity、统计结果和每个失
 
 CI 不能把 1 和 2 合并。前者是在有效评测下拒绝发布，后者表示评测本身坏了。
 
-### 第 3 步：先验 comparison，再重算证据图
+### 第 3 步：先检查 comparison，再重算整条证据链
 
 只检查 comparison 自身：
 
@@ -140,8 +177,8 @@ python -m about_llm.evaluation.cli render-comparison-html `
   --output artifacts/evaluation/comparison.html
 ```
 
-HTML 是 deterministic、自包含的派生视图，适合 code review 或发布会议。Canonical decision 仍是 JSON comparison；
-页面颜色、四舍五入值和截图都不能反向替代 verifier。
+HTML 是从同一份 JSON 确定性生成的自包含页面，适合代码评审或发布会议。发布决定仍以 JSON comparison 和
+验证回执为准；页面颜色、四舍五入值和截图只是阅读视图。
 
 ### 第 5 步：故意改坏一份证据
 
@@ -176,13 +213,14 @@ python -m about_llm.evaluation.cli score `
   --metric json_value_exact
 ```
 
-观察五种差别：Object key order/whitespace、错误 value、duplicate key、`NaN` 和 array order。
+观察五种差别：对象字段顺序与空白、错误字段值、重复字段、`NaN`，以及数组元素顺序。
 
 - `json_schema` 回答结构是否符合 closed contract；
 - `json_value_exact` 比较拒绝重复字段和非法数值后得到的 canonical value；
 - 两者都不验证数据库 ID、权限、事实或实时业务状态。
 
-Parser 拒绝 duplicate key 与 `NaN/Infinity`。Object key 顺序和空白可忽略，array order 与 scalar type 仍保留。
+解析器会拒绝同名字段以及 `NaN/Infinity` 这类非法 JSON 数值。对象字段顺序和空白可以忽略；
+数组元素顺序和标量类型仍属于值的一部分。
 
 ## Citation span：指到文本不代表文本支持结论
 
@@ -197,10 +235,11 @@ python -m about_llm.evaluation.cli score `
   --metric citation_evidence_span
 ```
 
-Metric 检查 source membership、zero-based/end-exclusive offsets 与 exact quote。一个 claim 即使把 `Earth is round.`
-中的 `Earth` 定位得完全正确，也可能错误地声称“The moon is cheese.”。
+这个指标检查三件事：来源是否在允许列表中、字符位置是否采用从零开始且不含右端点的区间、引文是否与原文逐字一致。
+即使它把 `Earth is round.` 中的 `Earth` 定位得完全正确，答案仍可能错误地声称“The moon is cheese.”。
 
-所以 span metric 证明的是 evidence identity，不是 entailment、claim correctness、source truth 或 ACL provenance。
+因此，span metric 只证明引文位置。它不会判断引文能否推出结论、结论是否正确、来源本身是否真实，
+也不会证明来源经过了正确的 ACL 授权。
 
 ## 固定 Qwen 运行：观察真实模型，不把七条样例当成总体
 
@@ -214,13 +253,17 @@ python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
   --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
 ```
 
-它以 CPU FP32、batch 1、greedy 真实调用 `GenerationMixin.generate()`，保留 raw output、token identity 与
-EOS/length terminal。固定 cases 包含中英文算术/事实、空证据拒答、大小写复制和 JSON，故意展示 literal exact、
-normalized exact 与 token F1 会给出不同结论。
+脚本真实调用 `GenerationMixin.generate()`。运行条件固定为 CPU FP32，每批只放一条样例。
 
-这七条 case 由本仓库编写，用来观察固定模型路径；它们不是代表性 benchmark，也没有 baseline/candidate、
-统计功效、GPU/vLLM 或真实流量。
-精确 snapshot/hash、逐例结果和证据等级保留在[项目控制台账](../../evidence/project-controls.md)。
+解码采用 greedy decoding，也就是每一步选择最高分 token。报告保存原始输出、token 身份，
+以及因为 EOS 还是长度上限而停止。
+
+七条固定样例覆盖中英文算术与事实、空证据拒答、大小写复制和 JSON。它们让你比较逐字匹配、规范化匹配和
+Token F1 为什么可能给出不同分数。
+
+这七条样例由本仓库编写，只用来观察固定模型的执行路径。它们没有覆盖代表性抽样、两系统对照、统计功效、
+GPU/vLLM 运行或真实流量。精确模型快照、文件哈希、逐例结果和证据等级保留在
+[项目控制台账](../../evidence/project-controls.md)。
 
 ## 先用反例确认自己测的是什么 { #measurement-control }
 
@@ -232,12 +275,15 @@ python -m pytest tests/test_evaluation_measurement.py -q
 Toy 先给出一个反直觉例子：两位 rater 对四条样本完全一致，Cohen's κ=1，但相对外部 criterion 全部判断错误。
 这说明 reliability 回答“是否稳定一致”，criterion validity 回答“是否接近外部标准”。
 
-随后它为 fixed-horizon paired sign test 计算 exact rejection threshold、power 与所需 informative pairs。
-要注意：informative pairs 是去掉 tie 后的数量，不是总 cases；MDE 是在固定 alpha、power 和模型下的设计分辨力，
-也不是 minimum meaningful business effect。
+随后它计算固定样本量配对符号检验的精确拒绝阈值、统计功效，以及需要多少个 informative pairs。
+符号检验会忽略两系统打平的样例，因此 informative pairs 指去掉平局后真正提供方向信息的配对数。
 
-在真实实验前填写[measurement plan](../../quality/evaluation-measurement.md#measurement-plan)，固定 construct、
-operationalization、criterion、sampling unit、effect、power 与 missingness。
+MDE（minimum detectable effect，最小可检测效应）是在给定显著性水平、功效和统计模型下，实验设计有能力发现的
+差异。业务上多大的差异值得发布，则需要产品先定义；两者不是同一个数。
+
+真实实验前先填写 [measurement plan](../../quality/evaluation-measurement.md#measurement-plan)。其中要说明：
+准备测量的概念（construct）、怎样把它变成可观察指标、用什么外部标准校验、抽样单位是什么、目标效应和统计功效
+是多少，以及缺失样例怎样处理。
 
 ## 同一用户贡献多条 case 时
 
@@ -262,8 +308,8 @@ python -m about_llm.evaluation.cli compare `
 `case` weighting 估计随机请求的平均差；`equal` 先算每个 cluster mean，估计随机用户/文档的平均差。
 它们是两个问题，不是看到哪个区间更好就选哪个。
 
-以下小例子给出可以手算或完整枚举的参考结果，分别检查 cluster bootstrap、paired/cluster randomization、
-Holm correction 和 sequential peeking：
+以下小例子都给出可以手算或完整枚举的参考结果。它们依次检查聚类 bootstrap、配对与聚类随机化检验、
+Holm 多重比较校正，以及反复查看中间结果带来的错误率膨胀：
 
 ```powershell
 python projects/evaluation-gate/clustered_bootstrap_toy.py
@@ -273,8 +319,8 @@ python projects/evaluation-gate/holm_correction_toy.py
 python projects/evaluation-gate/sequential_peeking_toy.py
 ```
 
-它们用于检查公式与假设，没有自动进入 comparison release decision。若生产门禁依赖这些方法，就把 hypothesis family、
-look schedule、原始/调整后 p-value 和 effect threshold 写入版本化工件。
+这些脚本只检查公式和假设，不会自动改变前面的发布决定。如果生产门禁采用其中一种方法，版本化工件还要记录：
+一起检验的假设集合、查看中间结果的时间表、原始与校正后的 p-value，以及预先设定的效应门槛。
 
 ## 可选：Calibration 与选择性回答
 
@@ -285,8 +331,10 @@ python -m about_llm.evaluation.cli calibrate `
   --output artifacts/evaluation/calibration.json
 ```
 
-输出包含 Brier score、equal-width ECE、非空 bins 和 risk-coverage curve。ECE 依赖分桶方案；模型自述的“90%
-信心”也不会自动成为可校准概率。用于 abstention 时，同时报告 coverage、risk、样本数和关键 slice。
+输出包含 Brier score、等宽分桶 ECE、实际有样本的分桶，以及 risk-coverage curve（风险—覆盖率曲线）。
+ECE 会随分桶方案变化，模型自述的“90% 信心”也不是天然可校准的概率。
+
+若置信度用于决定是否回答，需要同时报告回答覆盖率、已回答样例的风险、样本数和关键切片。
 
 ## 可选：认证 release history
 
@@ -295,7 +343,7 @@ $env:PYTHONPATH = "src"
 python projects/evaluation-gate/authenticated_release_ledger_toy.py
 ```
 
-Ledger 用 HMAC-SHA256 绑定连续 sequence、artifact bytes、decision、key ID 与前一条 MAC。理解验证范围：
+账本用 HMAC-SHA256 把连续序号、工件字节、发布决定、密钥 ID 和前一条 MAC 绑定起来。验证结果要按下面的范围理解：
 
 | 验证结果 | 能说明什么 |
 |---|---|
@@ -303,8 +351,8 @@ Ledger 用 HMAC-SHA256 绑定连续 sequence、artifact bytes、decision、key I
 | Rehashed artifacts | 当前引用 bytes 与 ledger identity 相同 |
 | External trusted head matched | 能发现合法前缀截断或历史回滚 |
 
-公开的样例 key 不是生产 secret。HMAC 也不提供公钥不可否认性、真实时间或 key custody；生产系统仍需 KMS/HSM、
-轮换/吊销、可信时间与外部 immutable anchor。
+样例密钥公开在仓库中，只能用于教学。HMAC 依赖共享密钥，无法提供公钥签名式的不可否认性，也不记录可信时间。
+生产系统还需要 KMS/HSM 管理密钥托管与轮换，用可信时间记录顺序，并把链头保存到外部不可变位置。
 
 ## 最终验收
 
@@ -330,7 +378,8 @@ python -m pytest `
 - 一个故意失败的 tamper test；
 - 最终发布判断，以及不超过五行的证据边界。
 
-本地重算可以发现 artifact 漂移和计算链不一致，HMAC/rehash/trusted head 可以提高文件链与历史回滚的可检测性。
-它们都不证明样本代表真实流量、metric 具有 construct validity、模型当时真实执行、统计假设成立或上线会产生因果收益。
+本地重算可以发现工件漂移和计算链不一致。HMAC、重新计算哈希和核对外部可信链头，则提高了文件篡改与历史回滚的
+可检测性。完成这些检查后，仍需另外回答五个问题：样例能否代表真实流量，指标是否测到目标概念，记录的模型是否
+真的执行过，统计假设是否成立，以及上线能否产生预期业务收益。
 
 完整代码位于 [projects/evaluation-gate](https://github.com/NightLemon/about-llm/tree/main/projects/evaluation-gate)。

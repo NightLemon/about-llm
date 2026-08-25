@@ -54,6 +54,7 @@ def render_evaluation_comparison_html(
         for name, revision in metric_revisions.items()
     )
     cluster_details = _cluster_details(bootstrap, quality)
+    safety_summary = _safety_summary(content)
     report = f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -111,8 +112,7 @@ def render_evaluation_comparison_html(
       <tbody>{_result_row(content["quality_metric"], quality, overall=True)}</tbody>
     </table>
     <ul>
-      <li>Safety metric: <code>{_h(content["safety_metric"])}</code>;
-          difference: {_number(content["safety_difference"])}</li>
+      {safety_summary}
       <li>Baseline mean latency: {_number(content["baseline_mean_latency_seconds"])} s</li>
       <li>Candidate mean latency: {_number(content["candidate_mean_latency_seconds"])} s</li>
     </ul>
@@ -236,6 +236,16 @@ def _cluster_details(
         + _result_details(quality)
         + f"; quantile=<code>{_h(quality['quantile_method'])}</code>; "
         + f"effective seed={_optional_number(quality['seed'])}。</p>"
+    )
+
+
+def _safety_summary(content: Mapping[str, Any]) -> str:
+    metric = content["safety_metric"]
+    if metric is None:
+        return "<li>安全指标: 未配置。本工件不包含安全结论。</li>"
+    return (
+        f"<li>安全指标: <code>{_h(metric)}</code>; "
+        f"Candidate - Baseline: {_number(content['safety_difference'])}</li>"
     )
 
 
