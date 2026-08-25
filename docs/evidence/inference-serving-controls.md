@@ -25,7 +25,7 @@
 
 | 教材结论 | 主要实现或测试 | 判定依据为什么独立于被测实现 | 仍未证明 |
 |---|---|---|---|
-| 标准单序列工作量为 (P+O-1) positions | `tests/test_continuous_batching.py` | 手算总量与逐轮 conservation 对账 | Padding、speculation、真实 kernel work 或计费 |
+| 单序列工作量为 \(P+O-1\)；A/B/C 四轮共处理 10 个位置 | `tests/test_continuous_batching.py` | 手算 `3+3+2+2=10`，再与请求总量 `7+6-3=10` 对账 | Padding、speculation、真实 kernel work 或计费 |
 | KV 字节随层、KV heads、head dim、长度和 dtype 增长 | `tests/test_inference_memory.py` | 公式 fixture 与边界输入 | Runtime 对齐、workspace、allocator 或峰值 VRAM |
 | Shared partial tail append 必须 COW | `tests/test_kv_allocator.py` | append 前后 block/refcount 独立断言 | vLLM allocator、CUDA 并发或 eviction |
 | 容量不足不能留下半更新状态 | `tests/test_kv_allocator.py`、`tests/test_paged_kv_torch.py` | 异常前后 allocator 与 tensor 全量比较 | 异步 CUDA 故障的事务回滚 |

@@ -7,7 +7,7 @@
 
 - **适合读者**：已经理解 Transformer，希望把模型计算、调度、KV Cache 和流式服务连起来的开发者。
 - **先修**：[推理基础](inference.md)中的 prefill、decode 与 KV Cache。
-- **首次阅读**：先跟随请求 A 走完全程，再看请求 B 如何进入同一个 batch，最后阅读失败与取消路径。
+- **首次阅读**：先跟随请求 A 走完全程，再看 A、B、C 怎样共享计算预算，最后阅读失败与取消路径。
 - **完成信号**：能画出一次请求的状态、KV 长度、输出 token 和四个计时时刻怎样随调度轮次变化。
 - **卡住时**：先忽略多请求和分页，只保留“prefill 一次，decode 多次”的单请求时间线。
 
@@ -15,7 +15,7 @@
 
 很多推理术语单独看并不难。真正容易迷路的地方，是不知道它们在一次请求的什么时刻出现。
 
-本章只跟踪两个请求。请求 A 先到，请求 B 稍后到。我们会反复问四个问题：
+本章先单独跟踪请求 A，再让稍后到达的 B、C 加入调度。我们会反复问四个问题：
 
 1. 请求现在处于什么状态？
 2. 本轮模型实际处理了哪些 token position？
@@ -46,9 +46,8 @@ flowchart LR
 - **引擎层**决定请求何时进入 GPU、每轮执行哪些序列，以及 KV 占多少容量。
 - **模型层**执行 Transformer forward，产生 logits，再由采样器选出 token。
 
-HTTP 请求进入服务以后，还要经历排队、调度和模型执行；模型产生 token 后，又要经过解码、缓冲和网络发送，
-客户端才会收到字节。两段过程应使用不同时间戳观测。
-这三个时刻必须分别记录。
+HTTP 请求进入服务以后，要先排队、调度并执行模型。模型选出 token 后，还要经过文本解码、缓冲和网络发送，
+客户端才会收到字节。因此，“请求发出”“首 token 到达”和“响应结束”不是同一个时刻；后文会用四个时间戳把它们记清楚。
 
 ## 请求 A：从 prompt 到三个输出 token
 
@@ -79,8 +78,8 @@ max_new_tokens = 3
 
 ### Prefill：四个输入位置产生第一个输出
 
-Scheduler 接纳 A 后，Model Runner 对四个 prompt position 做一次 causal forward。
-各层产生的 K/V 被写入缓存，最后一个 prompt position 的 logits 用于选择 `y1`。
+调度器接纳 A 后，模型运行器把 `x1` 到 `x4` 一次送入因果语言模型。每一层都会把这四个位置的 key 和 value
+写入 KV Cache；模型再读取最后一个位置的 logits，从候选 token 中选出 `y1`。
 
 ```text
 模型处理: x1  x2  x3  x4
@@ -106,8 +105,8 @@ Prefill 结束时，用户可以收到第一个输出 token `y1`。但 `y1` 自�
 
 达到长度上限后，请求完成。因为不再需要用 `y3` 预测下一个 token，所以本例无需计算 `y3` 的 K/V。
 
-若 prompt 长度为 (P)，输出长度为 (O\ge1)，且没有 prefix reuse、speculation 或 beam，
-这份账本中的 forward positions 是：
+设输入长度为 \(P\)，输出长度为 \(O\ge1\)。在不使用前缀复用、投机解码和 beam search 时，
+模型实际处理的位置数是：
 
 \[
 P + O - 1.
@@ -151,53 +150,96 @@ B: [0, 1]    block 1 保持不变
 
 可以在 [Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md) 中亲自观察这次状态变化。
 
-## 请求 B 到来后，batch 不再是固定名单 { #request-b }
+## 请求 B、C 到来后，batch 不再是固定名单 { #request-b }
 
-请求 A 完成 prefill 后，请求 B 到达。B 的 prompt 有两个 token，期望输出两个 token。
+现在把单请求时间线放进一个很小的调度器。A 在边界 0 到达；B 和 C 在边界 1 到达：
 
 ```text
-A: prompt=4, output=3
-B: prompt=2, output=2
+A: arrival=0, prompt=[x1,x2,x3,x4], output=[y1,y2,y3]
+B: arrival=1, prompt=[b1,b2],       output=[z1,z2]
+C: arrival=1, prompt=[c1],          output=[w1]
 ```
 
-静态 batching 可能先组成一批，再等待批内所有序列结束。Continuous batching 则在调度边界加入新请求、
-移除已完成请求，让 batch 的成员随时间变化。
+调度器最多同时保留 2 条序列，每轮最多处理 4 个 token position，并且一条请求每轮最多 prefill 3 个位置。
+它先给已经进入 decode 的请求各留一个位置，再保证每条 prefill 请求至少前进一步，最后把剩余预算按先到先服务的顺序分完。
 
-下面只展示一种教学策略：decode-ready 请求每轮先获得一个位置，剩余 token budget 用于 chunked prefill。
-本仓库的 CPU 调度示例采用这套策略，方便逐轮手算。不同 vLLM 版本可能采用其他优先级和抢占规则。
+这里的“第 0 轮”表示区间 `[0,1)`。模型在区间内工作，输出在右侧边界 1 变得可见。其余轮次同理。
 
-| 调度轮次 | 新 admission | prefill 工作 | decode 工作 | 边界上可见输出 |
-|---:|---|---|---|---|
-| 0 | A | A 的一段 prompt | — | 取决于 prefill 是否完成 |
-| 1 | B | A 或 B 的剩余 prompt | 已完成 prefill 的请求 | 新首 token 或后续 token |
-| 2+ | 视容量而定 | 未完成的 prompt chunk | 所有被选中的 decode-ready 请求 | 各请求独立前进 |
+| 区间 | 左边界新接纳 | 本轮模型处理的位置 | 使用预算 | 右边界可见输出 | 本轮结束、下轮接纳前 |
+|---|---|---|---:|---|---|
+| `[0,1)` | A | A prefill `x1,x2,x3` | 3/4 | — | A 仍在 prefill；B、C 到达 |
+| `[1,2)` | B | A prefill `x4`；B prefill `b1,b2` | 3/4 | A:`y1`；B:`z1` | A、B 运行；C 等待 |
+| `[2,3)` | — | A decode `y1`；B decode `z1` | 2/4 | A:`y2`；B:`z2` | B 完成；A 运行；C 等待 |
+| `[3,4)` | C | A decode `y2`；C prefill `c1` | 2/4 | A:`y3`；C:`w1` | A、C 完成 |
 
-表格故意不写死每轮数字，因为结果还取决于 `max_batch_tokens`、序列上限和 prefill chunk。
-真正需要掌握的是 Scheduler 每轮都在回答下面四个问题：
+第二轮最容易读错：A 的最后一个 prompt 位置和 B 的两个 prompt 位置一共只占 3 个计算位置，
+却同时产生了 `y1` 和 `z1`。首个输出来自 prompt 最后一个位置的 logits，不需要再占一个 decode 位置。
 
-1. 哪些 waiting 请求可以 admission？
-2. 哪些 running 请求本轮获得计算位置？
-3. Token budget 和 KV block 是否同时足够？
-4. 完成、取消或被抢占的请求如何释放或重建状态？
+C 展示了 continuous batching（连续批处理）的核心：它在 B 完成、空出序列槽位后立刻进入下一轮，
+不必等待 A 也结束。A 的 prompt 被拆成 `3+1` 两段，则是 chunked prefill（分块预填充）。
 
-### Prefill 与 decode 不必永远二选一
+### 把 token 工作量对上
 
-有的精简实现一轮只做 prefill 或只做 decode；有的 runtime 支持 chunked prefill，
-把 prompt 片段和 decode token 放进同一批工作中。策略还可能随版本变化。
+三个请求各自处理的位置数为：
 
-因此“continuous batching”只说明 batch 成员能动态变化，不能单独推出：
+```text
+A: 4 + 3 - 1 = 6
+B: 2 + 2 - 1 = 3
+C: 1 + 1 - 1 = 1
+总计:              10
+```
 
-- prefill 是否优先；
-- 一轮是否混合 prefill 与 decode；
-- 抢占选择谁；
-- 首 token 在哪个调度边界可见；
-- 是否支持 prefix cache、priority 或 speculative decoding。
+逐轮相加同样得到 `3+3+2+2=10`。四轮一共有 `4×4=16` 个 token 槽位，所以这个固定样例的槽位利用率是
+`10/16=62.5%`。它只是离散调度账本，不是 GPU utilization，也不能换算成真实延迟。
 
-阅读实现或分析 trace 时，必须把这些策略逐项写清楚。
+可以直接运行仓库中的 CPU 参考实现，核对接纳、prefill、decode、首 token 和完成边界：
+
+~~~bash
+python projects/inference-serving/continuous_batching_toy.py
+~~~
+
+同一份输出还把排队与生成时间分开了。这里的单位是离散调度步，不是秒：
+
+| 请求 | 到达 | 接纳 | 首 token | 完成 | 排队步数 | 从到达到首 token |
+|---|---:|---:|---:|---:|---:|---:|
+| A | 0 | 0 | 2 | 4 | 0 | 2 |
+| B | 1 | 1 | 2 | 3 | 0 | 1 |
+| C | 1 | 3 | 4 | 4 | 2 | 3 |
+
+C 的首 token 等了 3 步，其中前 2 步在队列中，真正进入引擎后只用 1 步。这正是后文为什么要把 queue time
+与模型服务时间分开。C 只有一个输出 token，因此没有“首 token 之后的平均每 token 时间”（TPOT）。
+
+### 再把 KV 的增长对上
+
+下面继续使用每块 2 个 token 的设定，并假设三个请求不共享前缀、完成后立即释放活动引用。
+表中的块数由 `ceil(KV 长度 / 2)` 手算，表示当前逻辑内容至少需要多少块；它不指定物理 block id，
+也不假设真实引擎何时预留显存或保留 prefix cache。
+
+| 边界 | 本轮新写入 KV 的位置 | 释放前的逻辑 KV 长度 | 至少需要的块数 | 完成请求释放后的活动块 |
+|---:|---|---|---:|---:|
+| 1 | A:`x1,x2,x3` | A=3 | 2 | 2 |
+| 2 | A:`x4`；B:`b1,b2` | A=4，B=2 | 2+1=3 | 3 |
+| 3 | A:`y1`；B:`z1` | A=5，B=3 | 3+2=5 | 3 |
+| 4 | A:`y2`；C:`c1` | A=6，C=1 | 3+1=4 | 0 |
+
+边界 3 上，B 刚产生最后一个输出 `z2`，因此无需再为 `z2` 计算 K/V；B 的活动块随后释放。
+边界 4 同理，A 的 `y3` 和 C 的 `w1` 都是最后一个输出，完成清理后不再有活动块。
+
+CPU 参考实现只验证调度和 token 守恒，并没有实现 KV allocator。物理块、引用计数和写时复制请在
+[Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)中观察；真实 Qwen3 请求的 block trace 则在
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)中生成。
+
+### 真实引擎的策略可能不同
+
+上面的结果对应一套明确的教学策略。Continuous batching 只表示 batch 成员可以在调度边界变化，
+并没有规定 prefill 与 decode 谁优先。有的实现把两者分开执行，有的实现允许 prompt 分块与 decode 混在一轮。
+
+因此，阅读一个真实 runtime 时还要确认：每轮 token 预算、序列上限、prefill 分块、抢占顺序、前缀缓存和优先级。
+这些选择共同决定首 token 在哪一轮出现，也决定容量不足时由谁让出资源。
 
 ## Model Runner 实际准备什么
 
-Scheduler 选择的是请求和工作量，Model Runner 要把它们变成模型能执行的张量。常见工作包括：
+调度器只决定“这轮算谁、算几个位置”。模型运行器（Model Runner）还要把这个决定变成模型可以执行的张量：
 
 1. 收集本轮 token ids、positions 和每条序列的长度。
 2. 生成 slot mapping 或 block table，让新 K/V 写到正确物理位置。
@@ -210,7 +252,7 @@ GQA 允许多个 query heads 共享较少的 K/V heads，从而降低 KV 容量�
 
 ### 在 nano-vLLM 中对照这条路径
 
-固定 nano-vLLM commit 的 `LLMEngine.step()` 恰好把本章三个引擎动作排在一起：
+本项目选定的 nano-vLLM 版本把一次调度轮次写在 `LLMEngine.step()` 中，顺序正好对应本章的三步：
 
 ```text
 Scheduler.schedule()
@@ -218,14 +260,13 @@ Scheduler.schedule()
 -> Scheduler.postprocess(seqs, token_ids, is_prefill)
 ```
 
-`ModelRunner` 再根据 `is_prefill` 选择 `prepare_prefill()` 或 `prepare_decode()`，执行自带的
-`Qwen3ForCausalLM`，最后交给 `Sampler`。Transformers 在这条路径中提供 config 和 tokenizer，
-并没有用 `AutoModel.generate()` 完成 forward。
+`ModelRunner` 根据 `is_prefill` 选择 `prepare_prefill()` 或 `prepare_decode()`，随后执行 nano-vLLM 自带的
+`Qwen3ForCausalLM`，并把 logits 交给 `Sampler`。Transformers 在这里负责读取模型配置和 tokenizer；
+实际 forward 不是由 `AutoModel.generate()` 完成的。
 
-[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md) 会在真实 Qwen3-0.6B/CUDA 运行中临时包装
-`Scheduler.schedule()`，但仍调用 upstream `LLMEngine.step()`。报告把本轮 phase、scheduled tokens、
-sequence status、cached tokens、block references 和执行路径放在同一条记录中。先用本章建立状态机，
-再用实验回答“这一次具体为什么走到这个分支”。
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md) 在真实 Qwen3-0.6B/CUDA 运行中观察
+`Scheduler.schedule()`，但不会替换原来的 `LLMEngine.step()`。报告逐轮列出计算阶段、token 数、
+sequence 状态和 KV block 占用。先理解本章的四轮手算，再去回答“真实请求为什么走到这个分支”。
 
 ## 从 logits 到用户可见文本
 
@@ -246,8 +287,9 @@ logits
 顺序是协议的一部分。两个服务即使都接受 `temperature` 和 `top_p`，也可能因默认值、processor 顺序、
 tokenizer 或 tie-break 不同而产生不同分布。
 
-Stop string 可能跨 token 或 SSE chunk。客户端即使已经截掉 stop 文本，服务端仍可能继续 forward。
-模型停止、KV 释放和计费终止是后续的独立事件，需要服务端 trace 才能确认。
+停止字符串不一定恰好对应一个 token，也可能被拆到两次流式发送中。如果只有客户端停止显示文字，
+服务端仍可能继续生成。要判断算力和显存是否真的停止消耗，需要分别观察服务端何时识别停止条件、
+何时释放 KV，以及何时结束本次请求的计量。
 
 ## 四个时刻怎样变成指标
 
@@ -288,8 +330,16 @@ TTFT 不是纯 prefill 时间。它还可能包含客户端排队、网关、服
 2. 后端是否已经停止继续生成？
 3. Sequence、KV block 和并发 permit 是否已经释放？
 
-这三件事不会自动同时发生。Python task 收到取消，不足以证明已经进入的 GPU kernel 可中断；
-HTTP response 关闭，也不足以证明 runtime 已经 abort 对应 sequence。
+以请求 A 已经返回 `y1`、用户随后关闭连接为例，取消通常要经过三道边界：
+
+| 边界 | 可以观察到什么 | 此时还不能推出什么 |
+|---|---|---|
+| 网关发现连接断开 | HTTP 响应关闭，客户端协程结束 | 推理引擎已经收到取消 |
+| 引擎接受 `abort(A)` | A 不再进入后续调度轮次 | 正在执行的 GPU kernel 已被中途打断 |
+| 运行器回到安全边界并清理 | A 从活动序列中消失，KV 引用归零，并发名额归还 | — |
+
+因此，看到 Python task 被取消只证明了第一层附近的状态。要确认资源已经释放，还要在同一个 request id 下看到
+引擎终态、后续不再调度以及 KV/并发账本回到预期值。
 
 ## 把本章映射到仓库代码
 
@@ -325,11 +375,12 @@ HTTP response 关闭，也不足以证明 runtime 已经 abort 对应 sequence�
 
 ## 自测
 
-1. 画出 (P=3,O=4) 时每轮输入、输出和 KV 长度。为什么总工作是 6 个 position？
+1. 画出 \(P=3,O=4\) 时每轮输入、输出和 KV 长度。为什么总工作是 6 个 position？
 2. 两条序列共享一个未满尾块时，一条序列 append 为什么不能原地写？
-3. Continuous batching 与“prefill 优先”是什么关系？前者是否必然推出后者？
-4. 客户端只记录 `started_at` 会漏掉哪一段等待？
-5. 收到 `CancelledError` 后，还需要什么证据才能说明模型停止并释放 KV？
+3. 在 A/B/C 的四轮账本中，C 为什么要等到边界 3？总工作量为什么是 10 而不是 11？
+4. Continuous batching 与“prefill 优先”是什么关系？前者是否必然推出后者？
+5. 客户端只记录 `started_at` 会漏掉哪一段等待？
+6. 收到 `CancelledError` 后，还需要什么证据才能说明模型停止并释放 KV？
 
 下一步先完成 [Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)，
 再进入[推理优化](inference-optimization.md)学习怎样根据 TTFT、TPOT、容量和吞吐选择优化。
