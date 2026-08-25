@@ -129,7 +129,7 @@ python -m pip install -c constraints/ci.txt -e ".[agents]"
 | Observation 的信息价值与 hard constraint | `decision_theory_toy.py` |
 | Recorded trajectory 怎样进入发布 gate | `python -m about_llm.agents.cli evaluate ...` |
 
-框架、MCP 和 A2A 的学习顺序见[项目路线 D–G](../../docs/practice/projects/safe-agent.md#framework-tool-adapters)。
+框架、决策理论、MCP 和 A2A 的学习顺序见[项目扩展实验](../../docs/practice/projects/safe-agent.md#framework-tool-adapters)。
 精确输入、结果和适用范围保存在[项目实验台账](../../docs/evidence/project-controls.md)，避免把 transport round trip
 误写成业务权限、安全或生产互操作已经完成。
 
