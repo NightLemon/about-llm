@@ -159,7 +159,7 @@ nav:
       - 安全、隐私与治理: quality/safety.md
       - Reasoning Block 的保存与发布: quality/reasoning-artifact-security.md
       - 一次招聘筛选的治理闭环: quality/governance-impact.md
-      - 治理工件模板: quality/governance-templates.md
+      - 治理工件：从用途到发布决定: quality/governance-templates.md
   - 前沿:
       - 多模态: frontier/multimodal.md
       - 推理、长上下文与 MoE:
