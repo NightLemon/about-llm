@@ -116,6 +116,7 @@ python -m about_llm.rag.cli evaluate-extractive `
 | 你想理解什么 | 入口 |
 |---|---|
 | 一次授权问答怎样变成 answer/abstain | `rag_request_walkthrough.py` |
+| 一份来源怎样切片、更新并按 ACL 读取 | `rag_ingestion_walkthrough.py` |
 | BM25、ACL 与来源编号 | `rag.cli retrieve` |
 | Dense retriever 的 InfoNCE、negative 与 MaxSim | `retriever_learning_toy.py` |
 | Recorded reranker 怎样绑定 query 和 chunk | `rag.cli rerank-recorded` |
@@ -123,7 +124,7 @@ python -m about_llm.rag.cli evaluate-extractive `
 | Exact-span 回答与引用 | `rag.cli answer-extractive`、`rag.cli audit` |
 | Recall/nDCG 与拒答如何分开评测 | `rag.cli evaluate`、`rag.cli evaluate-extractive` |
 | Recorded claims 与 supplied verdict 怎样进入 gate | `rag.cli evaluate-answers`、`rag.cli audit-traces` |
-| 版本化摄取、删除与 SQLite 授权读取 | `rag.cli store-upsert/store-retrieve/store-delete` |
+| 自己操作版本化摄取、删除与 SQLite | `rag.cli store-upsert/store-retrieve/store-delete` |
 | 备份、校验与恢复 | `rag.cli store-backup/store-verify-backup/store-restore` |
 | Localhost ASGI 服务、认证和背压 | `serve_extractive.py`、`rag_service_control.py` |
 | 固定 Qwen 的真实生成失败 | `run_qwen_rag_control.py` |

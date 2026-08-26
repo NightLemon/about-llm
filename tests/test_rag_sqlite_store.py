@@ -124,6 +124,23 @@ def test_explicit_delete_requires_current_version(tmp_path: Path) -> None:
         assert store.visible_chunks(tenant_id="tenant-a", principals=("engineering",)) == ()
 
 
+def test_zero_chunk_update_cannot_implicitly_delete_existing_source(tmp_path: Path) -> None:
+    with SQLiteChunkStore(tmp_path / "rag.db") as store:
+        store.upsert_source(_source("Keep me."), expected_current_version=None)
+        with pytest.raises(ValueError, match="produced no chunks"):
+            store.upsert_source(
+                _source("# Heading only", version="v2"),
+                expected_current_version="v1",
+            )
+        assert store.current_version(tenant_id="tenant-a", source_id="guide") == "v1"
+        assert [
+            chunk.text
+            for chunk in store.visible_chunks(
+                tenant_id="tenant-a", principals=("engineering",)
+            )
+        ] == ["Keep me."]
+
+
 def test_database_trigger_failure_rolls_back_delete_and_version(tmp_path: Path) -> None:
     path = tmp_path / "rag.db"
     with SQLiteChunkStore(path) as store:

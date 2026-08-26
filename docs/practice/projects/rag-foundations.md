@@ -33,6 +33,7 @@ flowchart LR
 | 路径 | 先解决什么 | 是否需要模型/GPU |
 |---|---|---|
 | 请求 walkthrough | 权限、召回、重排、packing、引用、拒答 | 否 |
+| 摄取 walkthrough | 稳定片段 ID、增量更新、版本冲突、ACL 读取 | 否 |
 | 持久化与服务 | 版本、删除、备份、认证、deadline | 否 |
 | 目标 tokenizer packing | 完整 Prompt token 预算 | 需要 tokenizer，可离线 |
 | 固定 Qwen 运行 | 真实模型的引用与拒答失败 | 需要本地约 1 GB snapshot，不需要 GPU |
@@ -260,6 +261,19 @@ python -m about_llm.rag.cli pack-tokenized `
 Caller 提供的 revision 与无密钥 hash 不认证实际模型来源；最大 context 也不能从 tokenizer 自动猜出。
 
 ## 路径四：版本化摄取与 SQLite
+
+先让项目中的 `rag-security` 来源经历一次真实更新：
+
+~~~powershell
+python projects/rag-foundations/rag_ingestion_walkthrough.py
+~~~
+
+按顺序比较 `version_1.chunks`、`version_2.chunks`、`incremental_plan` 和 `sqlite`。
+未改的引用段保持相同片段 ID，但由于来源版本和顺序变化仍要更新；被编辑的段落获得新 ID，旧 ID 被删除。
+匿名主体看不到私有片段，`engineering` 可以读取更新后的三个片段。完整讲解见
+[数据摄取、切分与索引生命周期](../../applications/rag-ingestion.md)。
+
+理解这份固定结果后，再用 CLI 创建自己的数据库：
 
 创建全新数据库：
 

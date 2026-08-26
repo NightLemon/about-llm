@@ -176,7 +176,7 @@ def split_markdown(source: SourceDocument, *, max_chars: int = 1200) -> list[Sou
 def plan_incremental_update(
     existing: Iterable[SourceChunk], desired: Iterable[SourceChunk]
 ) -> IngestionPlan:
-    """Return explicit index writes/deletes; never infer deletion from an empty batch."""
+    """Diff two complete snapshots; callers must reject failed or partial crawls first."""
     existing_chunks = list(existing)
     desired_chunks = list(desired)
     old = {chunk.chunk_id: chunk for chunk in existing_chunks}
