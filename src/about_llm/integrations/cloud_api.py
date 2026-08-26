@@ -276,24 +276,34 @@ def build_gemini_request(
 
 
 def parse_gemini_response(value: Mapping[str, Any]) -> ChatResponse:
-    try:
-        candidate = value["candidates"][0]
-        parts = candidate["content"]["parts"]
-        texts = [part["text"] for part in parts if "text" in part]
-    except (KeyError, IndexError, TypeError) as error:
-        raise ValueError("invalid Gemini generateContent response") from error
-    if not isinstance(candidate, Mapping) or not isinstance(parts, list) or not all(
-        isinstance(part, Mapping) for part in parts
-    ):
+    candidates = value.get("candidates")
+    if not isinstance(candidates, list) or len(candidates) != 1:
+        raise ValueError(
+            "Gemini text response requires exactly one candidate; "
+            "inspect promptFeedback for a blocked prompt"
+        )
+    candidate = candidates[0]
+    if not isinstance(candidate, Mapping):
         raise ValueError("invalid Gemini generateContent response")
-    texts = [part.get("text") for part in parts if "text" in part]
-    if not texts:
-        raise ValueError("Gemini response contains no text part")
-    if not all(isinstance(text, str) and text for text in texts):
-        raise ValueError("Gemini text part must contain non-empty string text")
+    content = candidate.get("content")
+    if not isinstance(content, Mapping):
+        raise ValueError("invalid Gemini generateContent response")
+    parts = content.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise ValueError("Gemini text response requires at least one part")
+    texts: list[str] = []
+    for part in parts:
+        if not isinstance(part, Mapping):
+            raise ValueError("invalid Gemini generateContent response")
+        if set(part) != {"text"}:
+            raise ValueError("non-text Gemini part is outside this adapter")
+        text = part.get("text")
+        if not isinstance(text, str) or not text:
+            raise ValueError("Gemini text part must contain non-empty string text")
+        texts.append(text)
     usage = _optional_mapping(value.get("usageMetadata"), label="Gemini usageMetadata")
     return ChatResponse(
-        text="".join(cast(str, text) for text in texts),
+        text="".join(texts),
         model=_optional_str(value.get("modelVersion")),
         input_tokens=_optional_int(usage.get("promptTokenCount")),
         output_tokens=_optional_int(usage.get("candidatesTokenCount")),

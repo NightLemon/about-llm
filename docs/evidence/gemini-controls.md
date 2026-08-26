@@ -119,14 +119,14 @@ GenerateContentResponse
 
 `parse_gemini_response()`：
 
-- 只读取 `candidates[0]`；
-- 只拼接其中含 `text` 的 parts；
-- 无 text part 时 fail closed；
+- 要求恰好一个 candidate；零 candidate 时提示检查 `promptFeedback`；
+- 要求 candidate 至少包含一个 part，且每个 part 只能包含非空 `text`；
+- 多 candidate、非 text part 或混合 text/function part 都会停止并报错；
 - 读取 `modelVersion`；
 - 读取 `promptTokenCount` / `candidatesTokenCount`；
 - 读取第一个 candidate 的 `finishReason`。
 
-它不会保真返回：
+它不支持：
 
 - 第二及后续 candidates；
 - `promptFeedback`；
@@ -139,7 +139,8 @@ GenerateContentResponse
 - cache/tool/thought/total token 明细；
 - unknown parts。
 
-因此它是 narrow text projection，不是完整 `GenerateContentResponse` adapter。真实生产 adapter 应把有损行为变成显式类型或拒绝，而不是静默吞字段。
+因此它是 text-only projection，不是完整 `GenerateContentResponse` adapter。当前实现选择拒绝无法保真表达的结果；
+真实生产 adapter 也可以增加明确的 part/candidate 类型，但不能静默吞字段。
 
 ## `streamGenerateContent` 与 Interactions stream 不可混写
 

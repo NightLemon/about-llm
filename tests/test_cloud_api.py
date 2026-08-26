@@ -110,6 +110,39 @@ def test_gemini_maps_assistant_role_and_usage_names() -> None:
     assert response.input_tokens == 3 and response.output_tokens == 4
 
 
+@pytest.mark.parametrize(
+    "candidates, message",
+    [
+        ([], "exactly one candidate"),
+        (
+            [
+                {"content": {"parts": [{"text": "first"}]}},
+                {"content": {"parts": [{"text": "second"}]}},
+            ],
+            "exactly one candidate",
+        ),
+        (
+            [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "I will call a tool."},
+                            {"functionCall": {"name": "lookup"}},
+                        ]
+                    }
+                }
+            ],
+            "non-text Gemini part",
+        ),
+    ],
+)
+def test_gemini_text_projection_rejects_lossy_candidate_shapes(
+    candidates: list[object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_gemini_response({"candidates": candidates})
+
+
 def test_cloud_contracts_reject_ambiguous_coercions_and_invalid_endpoints() -> None:
     with pytest.raises(ValueError, match="absolute HTTP"):
         build_anthropic_request(
