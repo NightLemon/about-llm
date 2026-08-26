@@ -82,3 +82,39 @@ def test_demo_server_requires_token_from_environment_not_cli(
     app = module.build_app(args)
     assert app.docs_url is None
     assert "secret-token" not in repr(app)
+
+
+def test_service_control_traces_authorization_timeout_and_capacity_recovery() -> None:
+    module = _load(CONTROL, "rag_service_control_walkthrough")
+    payload = module.run_control()
+
+    assert payload["health"]["status_code"] == 200
+    assert payload["engineering"]["source_ids"] == [
+        "public-security",
+        "engineering-citations",
+    ]
+    assert payload["anonymous"]["source_ids"] == ["public-security"]
+    assert payload["negative_cases"] == {
+        "body_tenant_injection_status": 422,
+        "body_tenant_injection_code": "invalid_request",
+        "missing_auth_status": 401,
+        "missing_auth_code": "unauthorized",
+    }
+
+    pressure = payload["pressure"]
+    assert pressure["execution_timeout"] == {
+        "status_code": 504,
+        "code": "execution_timeout",
+    }
+    assert pressure["while_background_thread_runs"] == {
+        "status_code": 503,
+        "code": "queue_saturated",
+    }
+    assert pressure["after_background_thread_finishes"] == {
+        "status_code": 200,
+        "action": "answer",
+    }
+    assert payload["scope"][
+        "execution_timeout_while_sync_thread_continued_observed"
+    ] is True
+    assert payload["scope"]["permit_held_until_background_work_completed"] is True

@@ -6,6 +6,7 @@ import asyncio
 import json
 import sys
 import tempfile
+import threading
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,9 @@ from about_llm.rag.ingestion import SourceDocument
 from about_llm.rag.service import (
     AuthContext,
     PersistentExtractiveRAGService,
+    RAGQueryRequest,
+    RAGQueryResponse,
+    RAGServiceConfig,
     StaticBearerAuthResolver,
     create_rag_app,
 )
@@ -67,12 +71,8 @@ def _request_ids() -> Any:
     return next_id
 
 
-async def _execute(database: Path) -> dict[str, Any]:
-    service = PersistentExtractiveRAGService(
-        database,
-        request_id_factory=_request_ids(),
-    )
-    resolver = StaticBearerAuthResolver(
+def _auth_resolver() -> StaticBearerAuthResolver:
+    return StaticBearerAuthResolver(
         {
             "engineering-token": AuthContext(
                 subject_id="engineering-user",
@@ -86,9 +86,127 @@ async def _execute(database: Path) -> dict[str, Any]:
             ),
         }
     )
-    app = create_rag_app(service, resolver)
+
+
+class _BlockedRAGService(PersistentExtractiveRAGService):
+    """Hold one sync request until the queue-saturation state has been observed."""
+
+    def __init__(self, database: Path) -> None:
+        super().__init__(
+            database,
+            config=RAGServiceConfig(
+                max_concurrency=1,
+                queue_timeout_seconds=0.02,
+                execution_timeout_seconds=0.03,
+            ),
+            request_id_factory=_request_ids(),
+        )
+        self.block_work = True
+        self.work_started = threading.Event()
+        self.release_work = threading.Event()
+        self.permit_released = threading.Event()
+
+    def _query_sync(
+        self,
+        request: RAGQueryRequest,
+        auth: AuthContext,
+        request_id: str,
+    ) -> RAGQueryResponse:
+        if not self.block_work:
+            return super()._query_sync(request, auth, request_id)
+        self.work_started.set()
+        if not self.release_work.wait(timeout=2):
+            raise RuntimeError("service control did not release blocked work")
+        return super()._query_sync(request, auth, request_id)
+
+    def _release_after_background_work(
+        self,
+        work: asyncio.Task[RAGQueryResponse],
+    ) -> None:
+        super()._release_after_background_work(work)
+        self.permit_released.set()
+
+
+async def _execute_pressure(database: Path) -> dict[str, Any]:
+    service = _BlockedRAGService(database)
+    app = create_rag_app(service, _auth_resolver())
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-    async with httpx.AsyncClient(transport=transport, base_url="http://control") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer engineering-token"}
+        try:
+            first = await client.post(
+                "/v1/rag/query",
+                headers=headers,
+                json={"query_id": "slow-1", "query": "RAG 权限过滤"},
+            )
+            started = await asyncio.to_thread(service.work_started.wait, 1)
+            if not started:
+                raise AssertionError("blocked synchronous work did not start")
+            second = await client.post(
+                "/v1/rag/query",
+                headers=headers,
+                json={"query_id": "slow-2", "query": "RAG 权限过滤"},
+            )
+        finally:
+            service.release_work.set()
+        released = await asyncio.to_thread(service.permit_released.wait, 1)
+        if not released:
+            raise AssertionError("background work did not release the concurrency permit")
+        service.block_work = False
+        service.config = RAGServiceConfig(
+            max_concurrency=1,
+            queue_timeout_seconds=0.10,
+            execution_timeout_seconds=1.0,
+        )
+        recovered = await client.post(
+            "/v1/rag/query",
+            headers=headers,
+            json={"query_id": "recovered", "query": "RAG 权限过滤"},
+        )
+
+    if (first.status_code, first.json()["error"]["code"]) != (
+        504,
+        "execution_timeout",
+    ):
+        raise AssertionError("execution-timeout fixture changed")
+    if (second.status_code, second.json()["error"]["code"]) != (
+        503,
+        "queue_saturated",
+    ):
+        raise AssertionError("queue-saturation fixture changed")
+    if recovered.status_code != 200:
+        raise AssertionError("service capacity did not recover")
+    return {
+        "config": {
+            "max_concurrency": 1,
+            "queue_timeout_seconds": 0.02,
+            "execution_timeout_seconds": 0.03,
+            "synchronous_work_gate": "released_after_second_request_was_rejected",
+            "recovery_execution_timeout_seconds": 1.0,
+        },
+        "execution_timeout": {
+            "status_code": first.status_code,
+            "code": first.json()["error"]["code"],
+        },
+        "while_background_thread_runs": {
+            "status_code": second.status_code,
+            "code": second.json()["error"]["code"],
+        },
+        "after_background_thread_finishes": {
+            "status_code": recovered.status_code,
+            "action": recovered.json()["action"],
+        },
+    }
+
+
+async def _execute(database: Path) -> dict[str, Any]:
+    service = PersistentExtractiveRAGService(
+        database,
+        request_id_factory=_request_ids(),
+    )
+    app = create_rag_app(service, _auth_resolver())
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         health = await client.get("/health/ready")
         query = {
             "query_id": "service-control-q1",
@@ -153,12 +271,15 @@ async def _execute(database: Path) -> dict[str, Any]:
             "missing_auth_status": missing_auth.status_code,
             "missing_auth_code": missing_auth.json()["error"]["code"],
         },
+        "pressure": await _execute_pressure(database),
         "scope": {
             "real_fastapi_starlette_httpx_asgi_dispatch_executed": True,
             "real_sqlite_persistence_reopened_per_query": True,
             "authorization_context_resolved_outside_json_body": True,
             "authorization_filtered_before_bm25_scoring": True,
             "deterministic_extractive_non_llm_answer_executed": True,
+            "execution_timeout_while_sync_thread_continued_observed": True,
+            "permit_held_until_background_work_completed": True,
             "real_tcp_tls_reverse_proxy_or_remote_identity_executed": False,
             "learned_retriever_reranker_or_llm_executed": False,
             "multi_process_global_admission_or_production_slo_proved": False,

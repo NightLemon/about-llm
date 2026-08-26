@@ -7,35 +7,91 @@
 
 - **适合读者**：要把 RAG baseline 做成多用户服务的平台、后端与算法工程师。
 - **先修**：[请求生命周期](rag-request-lifecycle.md)、[摄取](rag-ingestion.md)与[引用/拒答](rag-generation.md)。
-- **首次阅读**：边界 → 更新 → 服务 → 可观测性 → 评测发布 → 故障恢复。
-- **完成信号**：能为身份、索引版本、缓存、终态、删除和回滚画出一条完整证据链。
-- **卡住时**：先用单进程、单 tenant、SQLite/BM25 检查正确性，再替换分布式组件。
+- **首次阅读**：先跟着一次正常请求和一次超时请求，再把观察到的状态放回控制面、数据面和证据面。
+- **完成信号**：能解释为什么 HTTP 已返回 504，服务容量却仍未恢复，以及哪个时刻才可以释放并发许可。
+- **卡住时**：只看 `rag_service_control.py` 输出中的 `engineering`、`negative_cases` 和 `pressure`。
 
 </div>
+
+**实践导航**：[请求生命周期](rag-request-lifecycle.md) ·
+[数据摄取](rag-ingestion.md) ·
+[RAG Foundations](../practice/projects/rag-foundations.md) ·
+[生产检查表](../practice/production-checklist.md)
+{ .doc-nav }
 
 离线 Demo 只需要回答一次问题。生产 RAG 必须在文档变化、权限变化、流量波动、
 模型失败和依赖故障时，持续给出可解释且不越权的终态。
 
-生产化的核心不是换成更大的向量库，而是让每个边界都有 identity、状态、门禁和恢复方式。
+生产化的核心不是换成更大的向量库，而是让身份、状态、发布条件和恢复方式在每个边界都清楚可见。
+
+## 先观察一次正常请求和一次超时
+
+运行本地服务控制程序：
+
+~~~powershell
+python projects/rag-foundations/rag_service_control.py
+~~~
+
+它会临时创建 SQLite 数据库，通过 FastAPI、Starlette 和 HTTPX 的内存 ASGI 调用链发送请求。
+先看正常路径：
+
+| 请求 | HTTP 结果 | 可以读取的来源 | 说明 |
+|---|---:|---|---|
+| `engineering-token` | 200 | `public-security`、`engineering-citations` | 认证身份带有 `engineering` 权限 |
+| `anonymous-token` | 200 | `public-security` | 同一问题也不能越过 ACL |
+| 匿名请求在正文中加入 `tenant_id=tenant-b` | 422 | 无 | 请求 schema 不接受客户端自报租户 |
+| 不带凭证 | 401 | 无 | 认证失败发生在检索之前 |
+
+两个成功请求都有服务端生成的 `request_id` 和不同的工件指纹。它们回答同一个问题，
+但授权上下文不同，所以候选、上下文和最终工件也不同。
+
+### 504 返回后，后台工作还没有结束
+
+程序随后把服务改成一个容易观察的压力场景：
+
+| 设置 | 值 |
+|---|---:|
+| 最大并发 | 1 |
+| 排队等待上限 | 0.02 秒 |
+| 请求执行上限 | 0.03 秒 |
+| 模拟同步工作 | 保持运行，直到第二个请求被拒绝 |
+| 恢复验证的执行上限 | 1.0 秒，用来单独检查容量是否已经释放 |
+
+状态变化如下：
+
+```text
+慢请求取得唯一许可并进入后台线程
+-> 0.03 秒后，HTTP 返回 504 execution_timeout
+-> 后台线程继续运行，许可仍被占用
+-> 第二个请求等待 0.02 秒后返回 503 queue_saturated
+-> 后台线程结束，完成回调释放许可
+-> 第三个请求返回 200
+```
+
+这段过程揭示了两个不同的终态：客户端看到的请求终态已经是 504，但服务内部工作的终态仍是“运行中”。
+若收到超时就立即释放许可，第二个请求也会进入线程池，服务报告的可用容量便会大于真实容量。
+
+这个控制程序的证据范围是单进程中的身份解析、SQLite 读取、ASGI 路由和许可生命周期。
+TCP、TLS、反向代理、远端身份系统和多进程部署属于目标环境验证；生产 SLO 还需要真实流量和依赖数据。
 
 ## 先把系统分成三个平面
 
 ```mermaid
 flowchart TB
   subgraph CP["控制面"]
-    SRC["Source registry"] --> ING["Parse / chunk / embed"]
-    ING --> IDX["Versioned indexes"]
-    IDX --> REL["Validation / release / rollback"]
+    SRC["来源登记"] --> ING["解析 / 切片 / 向量化"]
+    ING --> IDX["带版本的索引"]
+    IDX --> REL["验证 / 发布 / 回滚"]
   end
   subgraph DP["在线数据面"]
-    API["Gateway + trusted identity"] --> RET["Authorized retrieval"]
-    RET --> RR["Rerank + packing"]
-    RR --> GEN["Generator"]
-    GEN --> PUB["Publication policy"]
+    API["网关与可信身份"] --> RET["按权限检索"]
+    RET --> RR["重排与上下文组装"]
+    RR --> GEN["生成器"]
+    GEN --> PUB["发布策略"]
   end
   subgraph EP["证据面"]
-    TRACE["Trace / metrics / evaluation"]
-    AUDIT["Security audit / incident evidence"]
+    TRACE["追踪 / 指标 / 评测"]
+    AUDIT["安全审计与事故证据"]
   end
   REL --> RET
   DP --> TRACE
@@ -49,21 +105,26 @@ flowchart TB
 
 把三者混在一个进程和一套数据库中，初期可以工作，但安全与恢复边界仍要在设计中明确。
 
+刚才的控制程序主要观察数据面：身份怎样决定可见片段，超时和排队怎样产生不同终态。
+它也留下少量证据面信息，例如服务端请求 ID、工件指纹和原因代码。控制面只负责准备固定 SQLite 数据，
+并没有演示索引发布与回滚；这一部分由[摄取 walkthrough](rag-ingestion.md)继续说明。
+
 ## 请求路径：可信身份必须先到
 
 一次请求至少需要：
 
 ```text
-request_id
-authenticated subject
-tenant_id
-principals / entitlements
-authorization policy revision
-query + conversation state
-deadline and budget
+服务端请求 ID
+已经认证的用户身份
+租户 ID
+用户角色或授权集合
+权限策略版本
+问题与对话状态
+截止时间与资源预算
 ```
 
-Query、top-k 和生成参数可以来自请求；tenant 与 principals 不能来自未验证 body。
+问题、`top_k` 和生成参数可以来自请求；租户和用户角色必须来自可信认证结果。
+控制程序中的正文租户注入返回 422，正是在验证这条边界。
 
 请求 A 在生产环境中的顺序仍然是：
 
@@ -127,7 +188,7 @@ create -> update -> supersede -> revoke -> delete -> purge evidence
 
 ## 索引一致性不是一个布尔值
 
-一个 source 可能同时存在于 object store、metadata DB、sparse index、vector index 和 cache。
+同一份来源可能同时存在于对象存储、元数据数据库、关键词索引、向量索引和缓存中。
 
 跨存储通常没有单个 ACID 事务。常见选择是：
 
@@ -179,6 +240,16 @@ cancelled
 
 每个终态有唯一 reason code。HTTP status、业务 action 与模型 finish reason 是不同层，不能混成一个字段。
 
+本页控制程序观察到的组合是：
+
+| HTTP 状态 | 业务结果或错误码 | 含义 |
+|---:|---|---|
+| 200 | `answer` | 请求完成，并通过当前逐字回答策略 |
+| 401 | `unauthorized` | 缺少或无法识别认证凭证 |
+| 422 | `invalid_request` | 请求正文试图加入 schema 不允许的字段 |
+| 503 | `queue_saturated` | 在排队上限内没有取得并发许可 |
+| 504 | `execution_timeout` | HTTP 停止等待，但后台同步工作仍可能继续 |
+
 Public response 可以包含：
 
 ```json
@@ -193,20 +264,23 @@ Public response 可以包含：
 
 不要返回内部 ACL、原始越权候选、被 reject 的 raw output 或完整审计对象。
 
-## Deadline、取消与并发
+## 超时、取消与并发
 
 客户端超时或断连，不等于后台工作已经停止。
 
 对每一层分别问：
 
 - HTTP handler 是否停止等待？
-- Retriever/reranker/model 调用是否支持 cooperative cancellation？
-- 线程、GPU sequence 或远端请求是否仍在运行？
-- 并发 permit 何时释放？
-- Usage 与费用最终是否已知？
+- 检索、重排和模型调用是否支持协作取消？
+- 线程、GPU 序列或远端请求是否仍在运行？
+- 并发许可何时释放？
+- 最终用量与费用是否已经确定？
 
-如果同步数据库或模型工作在线程中执行，取消 coroutine 不能杀死线程。
-Permit 应在后台工作真正结束后释放，否则系统会报告虚假的可用容量。
+本项目把同步 SQLite 和 BM25 工作交给后台线程，并使用 `asyncio.shield` 避免 HTTP 超时直接取消任务对象。
+超时时，服务先返回 504，再给后台任务注册完成回调。只有线程真正结束，回调才释放并发许可。
+
+压力场景中的 504 → 503 → 200 就是这段控制流的外部证据。它仍不能证明远端模型请求已取消，
+因为远端 SDK、服务端队列和计费系统各有自己的终态。
 
 并发控制要覆盖 retrieval、rerank 和 generation 各自瓶颈，不能只限制 HTTP request 数。
 
@@ -233,8 +307,8 @@ Unsigned SHA-256 可以发现 bytes 漂移，不能认证谁产生了工件，�
 
 ## 可观测性：先定义 attempt 分母
 
-每个用户请求可能触发 rewrite、multiple retrieval、rerank、生成 retry 或 judge。
-业务 request 与 provider attempt 要分别计数。
+一个用户请求可能触发查询改写、多轮检索、重排、生成重试和质量判断。
+因此要分别统计“用户发起了多少个业务请求”和“各个下游服务实际尝试了多少次调用”。
 
 至少监控：
 
@@ -324,8 +398,8 @@ retry and failed attempts
 
 恢复演练应在新位置执行，验证 schema、row/chunk identity、索引可读性和固定 query。
 
-单个 SQLite backup 成功，只说明当前固定场景的本地快照路径可以工作。
-它不证明远端 vector store、object store、cache 和流量切换的 RPO/RTO。
+单个 SQLite 备份成功，只说明当前固定场景的本地快照路径可以工作。
+远端向量库、对象存储、缓存和流量切换仍要分别演练，才能评价恢复点目标（RPO）和恢复时间目标（RTO）。
 
 ## 常见事故与第一检查点
 
@@ -355,14 +429,14 @@ retry and failed attempts
 
 ## 可运行入口
 
-[RAG Foundations](../practice/projects/rag-foundations.md) 提供单机 reference：
+[RAG Foundations](../practice/projects/rag-foundations.md) 提供单机参考实现：
 
-- Markdown split 与 stable chunk；
-- Authorization-first BM25、rerank 与 packing；
-- Exact-span answer、citation 与拒答；
-- SQLite upsert/delete/backup/restore；
-- Persistent extractive ASGI service；
-- 固定 Qwen 原始失败、policy replay 与 guarded runtime 验证。
+- Markdown 切片与稳定片段 ID；
+- 先授权再执行的 BM25、重排与上下文组装；
+- 逐字回答、引用和拒答；
+- SQLite 更新、删除、备份和恢复；
+- 带持久化存储的抽取式 ASGI 服务；
+- 固定 Qwen 原始失败、发布策略回放和真实门禁运行。
 
 先运行：
 
@@ -371,7 +445,8 @@ python projects/rag-foundations/rag_request_walkthrough.py
 python projects/rag-foundations/rag_service_control.py
 ~~~
 
-它们是帮助理解流程的本地程序，不是生产部署模板。具体适用范围见
+第一条展示检索到发布的内容状态，第二条展示身份、HTTP 和容量状态。它们都是帮助理解流程的本地程序，
+不是生产部署模板。具体适用范围见
 [RAG 证据页](../evidence/rag-answer-controls.md)。
 
 ## 系统设计面试回答顺序
@@ -389,6 +464,6 @@ python projects/rag-foundations/rag_service_control.py
 
 1. 控制面有权读全部 corpus，为什么数据面仍要按请求重新授权？
 2. ACL 收紧后，只等待 response cache TTL 有什么风险？
-3. 为什么 `client cancelled` 不能自动记为后端工作已停止？
+3. 为什么 HTTP 已返回 504，第二个请求仍应得到 503，而不是立即进入后台线程？
 4. Index alias 切换成功为什么不能作为质量发布依据？
 5. 每成功任务成本为什么要把失败 attempt 计入分子？

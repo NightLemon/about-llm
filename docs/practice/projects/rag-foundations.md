@@ -365,6 +365,10 @@ python projects/rag-foundations/rag_service_control.py
 这个验证程序真实走过 FastAPI、Starlette 和 HTTPX 的内存 ASGI 调用链。它还会关闭并重新打开 SQLite，
 检查本地持久化是否仍能读取。
 
+先比较 `engineering` 和 `anonymous`：同一问题会因权限不同而使用不同来源。再看 `pressure`：第一个慢请求返回
+`504 execution_timeout` 后，后台线程继续占用唯一许可；第二个请求因此得到 `503 queue_saturated`。
+线程结束并释放许可后，第三个请求恢复为 200。这个顺序说明 HTTP 终态与后台工作终态不能混为一谈。
+
 这个过程不创建 TCP/TLS 服务。JWT/OAuth、多 worker 全局容量和远端取消也需要单独验证。
 
 ## 路径七：保留真实模型的第一次失败

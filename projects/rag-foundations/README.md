@@ -126,7 +126,7 @@ python -m about_llm.rag.cli evaluate-extractive `
 | Recorded claims 与 supplied verdict 怎样进入 gate | `rag.cli evaluate-answers`、`rag.cli audit-traces` |
 | 自己操作版本化摄取、删除与 SQLite | `rag.cli store-upsert/store-retrieve/store-delete` |
 | 备份、校验与恢复 | `rag.cli store-backup/store-verify-backup/store-restore` |
-| Localhost ASGI 服务、认证和背压 | `serve_extractive.py`、`rag_service_control.py` |
+| Localhost ASGI 服务、认证、超时和背压 | `serve_extractive.py`、`rag_service_control.py` |
 | 固定 Qwen 的真实生成失败 | `run_qwen_rag_control.py` |
 | 无证据预拒答与有证据后引用检查 | `replay_qwen_rag_publication_policy.py`、`run_qwen_guarded_rag_control.py` |
 
@@ -231,13 +231,16 @@ metrics label。
 python -m pytest `
   tests/test_rag.py `
   tests/test_rag_ingestion.py `
+  tests/test_rag_ingestion_walkthrough.py `
   tests/test_rag_sqlite_store.py `
   tests/test_rag_citations.py `
   tests/test_rag_reranking.py `
   tests/test_rag_cli.py `
   tests/test_rag_answer_eval.py `
   tests/test_rag_trace.py `
-  tests/test_rag_generation_policy.py -q
+  tests/test_rag_generation_policy.py `
+  tests/test_rag_service.py `
+  tests/test_rag_service_control.py -q
 
 python scripts/check_docs.py
 python scripts/check_content_accuracy.py
