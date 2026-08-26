@@ -28,11 +28,19 @@
 
 ## 怎样使用代码
 
-学习时先运行页面给出的单个脚本。例如，刚读完 tokenizer 后可以执行：
+学习时先运行页面给出的单个脚本。例如，刚读完 tokenizer 后可以先观察教学 Byte BPE 怎样构造语言模型输入：
 
 ```powershell
-python projects/transformers-basics/train_byte_bpe.py
+python projects/transformers-basics/trace_language_model_sample.py
 ```
+
+如果已经缓存固定 Qwen3 版本，再运行：
+
+```powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+```
+
+比较教学 ID 与目标模型 ID。两条命令回答完不同问题后，再进入注意力或推理 runtime。
 
 接着改一个输入或一处实现，并运行离它最近的测试：
 

@@ -1,113 +1,144 @@
-# 仓库地图：想学一个主题时，应该从哪里进去
+# 仓库地图：遇到一个问题时，下一步打开哪里
 
 **相关导航**：[如何使用](how-to-use.md) · [学习路径](learning-paths.md) · [知识地图](knowledge-map.md) ·
 [环境配置](environment.md) · [工程项目索引](../practice/project-index.md)
 { .doc-nav }
 
-这个仓库同时放了教材、实验、可复用实现和端到端项目。它们不是同一内容的四份拷贝，而是回答四种问题：
+这个仓库同时包含教材、实验、代码和工程项目。第一次使用时不用先记目录结构，只需判断自己下一步想做什么：
 
-```text
-docs/      我为什么需要这个机制，它在什么条件下成立？
-notebooks/ 我能否亲眼看到一个最小现象？
-src/       这个机制怎样实现成可测试模块？
-projects/  怎样把模块组成一次可交付的工程任务？
-```
-
-第一次学习一个主题时，通常按这个顺序走；定位 bug 时则经常从 project trace 反向进入 `src/` 与测试。
-
-## 四层内容各自承担什么责任
-
-### 教材层：`docs/`
-
-正文负责建立直觉、因果链、公式和工程取舍。关键章节会给出“完成信号”和下一步实验，但不会把所有固定输入、
-hash 与测试排列组合塞进主线。精确验证结果集中在 `docs/evidence/`。
-
-### 实验层：`notebooks/` 与 `docs/practice/labs/`
-
-实验让读者观察一个现象，例如 token merge、causal mask、训练 loss、检索排序或量化误差。
-Notebook 应能 Restart & Run All；核心逻辑放在 `src/` 或 `projects/`，避免隐藏在不可测试的长单元格中。
-
-### 实现层：`src/about_llm/`
-
-`from_scratch/` 优先使用透明、可手算的参考实现；其他模块提供明确接口、错误类型和可组合状态。
-教学实现不会冒充生产 kernel，工程模块也不会在 import 时下载模型、访问网络或初始化 GPU。
-
-### 项目层：`projects/`
-
-项目围绕一次交付组织：输入契约、运行命令、artifact、测试、故障注入和验收。LangChain、LlamaIndex、Provider SDK
-等框架放在 adapter 边界，核心数据/权限/状态语义保持可独立验证。
-
-## 按主题找入口
-
-| 想学什么 | 先读 | 再运行 | 完成信号 |
-|---|---|---|---|
-| Tokenization | [Tokenizer](../core/tokenization.md) | 实验 1 / tokenizer tests | 能解释 round-trip、merge 与 chat-template identity |
-| Transformer | [Transformer](../core/transformer.md) | `transformers-basics` | 能手算 shape，并对账 causal/cache 不变量 |
-| 生成 | [生成基础](../core/generation-basics.md) | 实验 0A/0B | 能复算采样并说明停止原因 |
-| 推理服务 | [请求生命周期](../systems/inference-request-lifecycle.md) | `inference-serving` | 能分解 queue、prefill、decode 与 KV 容量 |
-| RAG | [一次 RAG 请求](../applications/rag.md) | `rag-foundations` | 能追踪 ACL、检索、packing、引用与拒答 |
-| Agent | [一次退款任务](../applications/agent-task-lifecycle.md) | `safe-agent` / 实验 6 | 能处理 timeout unknown、幂等与 reconciliation |
-| SFT/QLoRA | [SFT 数据闭环](../training/sft-data-pipeline.md) | `single-gpu-finetuning` | 能审计 final labels、训练、重载与 held-out gate |
-| JAX | [JAX/Optax](../training/jax-optax.md) | `jax-minigpt` | 能解释 PyTree、JIT、PRNG 与完整 resume state |
-| 评测 | [评测总览](../quality/evaluation.md) | `evaluation-gate` | 能从 recorded answers 重建发布决定 |
-| Cloud API | [云 API 契约](../models/cloud-api-contracts.md) | `cloud-api-contracts` | 能判断 partial、retry、usage 与 uncertain outcome |
-
-项目目录与完整命令可从[项目索引](../practice/project-index.md)进入。
-
-## 三类实现不要混成同一份证据
-
-仓库经常同时提供：
-
-1. **公式参考实现**：用 NumPy 或精确分数检查公式和边界；
-2. **框架小实验**：真实调用 PyTorch、JAX、Transformers 或 SDK，但输入很小且固定；
-3. **目标环境实验**：在指定 checkpoint、GPU、runtime 与 workload 上测行为或性能。
-
-例如 NumPy GQA 可以证明 head mapping，不能证明 CUDA kernel 快；固定 Qwen CPU forward 说明真实权重路径执行过，
-不能证明总体质量；MockTransport 的 response close 说明客户端释放资源，不能证明云端停止计费。
-
-想查看每项实验的精确版本、固定输入与未覆盖项，请用：
-
-- [项目控制台账](../evidence/project-controls.md)：项目级可执行证据；
-- [准确性台账](../evidence/accuracy-ledger.md)：重要结论与验证入口；
-- 各主题的 `docs/evidence/*-controls.md`：精确结果与边界。
-
-## 质量等级怎样理解
-
-| 等级 | 表示什么 | 尚不能默认说明什么 |
+| 你现在想做什么 | 打开哪里 | 你应该带走什么 |
 |---|---|---|
-| L0 文档 | 机制、术语、边界和自测完整 | 代码可运行 |
-| L1 最小实现 | CPU 实现与核心单元测试通过 | 框架/目标模型兼容 |
-| L2 可复现实验 | 固定输入、seed、artifact 和结果 | 真实 workload 代表性 |
-| L3 工程样例 | 配置、日志、错误与集成路径完整 | 已满足生产 SLO |
-| L4 生产设计 | 容量、安全、监控、回滚和成本方案齐全 | 目标组织已实地验收 |
+| 理解一个机制为什么成立 | `docs/` 中的主题正文 | 直觉、公式、适用条件和常见误判 |
+| 亲眼观察一个变量怎样改变结果 | `docs/practice/labs/` 或 `notebooks/` | 预测、原始输出和自己的解释 |
+| 阅读机制怎样实现 | `src/about_llm/` | 数据结构、状态变化和错误处理 |
+| 把多个部件接成可交付系统 | `projects/` | 运行入口、输入输出、失败路径和验收方法 |
+| 核对某个数字或实验版本 | `docs/evidence/` | 固定输入、实际结果和结论范围 |
 
-同一主题可以在数学机制上达到 L2，而在 CUDA 性能上仍只有“待目标环境实测”。证据等级必须绑定具体结论，
-不能给整个目录贴一个笼统等级。
+学习时通常按“正文 → 小实验 → 项目”前进。只有在想追代码或核对结论时，才进入 `src/`、测试和证据页。
 
-## 一个推荐的工作循环
+## 用一个 KV Cache 问题走遍仓库
 
-```mermaid
-flowchart LR
-  Q["从一个具体问题开始"] --> D["读对应主线章节"]
-  D --> L["运行最小 lab"]
-  L --> P["运行端到端 project"]
-  P --> F["故意触发一个失败"]
-  F --> E["核对 evidence / tests"]
-  E --> N["记录结论与未覆盖项"]
-```
+假设你正在问：**为什么生成下一个 token 时可以复用 KV Cache，推理框架又怎样保存这些状态？**
 
-例如学习 Agent 时，不必先跑所有 MCP transport tests。先运行退款生命周期，看懂为什么 `pending` 不能直接重试；
-需要接框架时再运行 LangChain/LlamaIndex adapter；准备协议互操作时才进入 MCP/A2A 专项实验。
+不要一次打开十篇文章。按下面五步走，每一步只多回答一个问题。
 
-## 代码与数据约定
+### 第一步：先看真实文本怎样变成模型输入
+
+阅读 [Qwen 请求主线](../models/qwen.md#local-request-stack)，然后运行固定 Qwen3 tokenizer：
+
+~~~powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+~~~
+
+固定版本已在本地缓存时，这条命令会展示 chat template、29 个输入 ID 和每个 token 的可读片段。
+第一次尚未缓存时可以去掉 `--local-files-only`。完成这一步后，你应该能指出哪些 ID 来自用户正文，哪些来自模板。
+
+### 第二步：用小张量看懂 block 分配
+
+阅读 [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md)，运行：
+
+~~~powershell
+python projects/inference-serving/paged_kv_tensor_toy.py
+~~~
+
+这个 CPU 实验把 block size 缩小到 3。你可以亲手复算五个前缀 token 占用几个块、分支为什么共享前缀，以及
+继续写入时为什么触发写时复制。此时关注的是状态和账本，GPU kernel 留到后面。
+
+### 第三步：读懂它怎样写成代码
+
+小实验的核心实现位于：
+
+- `src/about_llm/inference/kv_allocator.py`：分配、引用计数、分支与容量错误；
+- `src/about_llm/inference/paged_kv_torch.py`：把逻辑 block table 接到真实 PyTorch K/V 张量；
+- `tests/test_paged_kv_torch.py`：正常路径、容量失败和张量一致性检查。
+
+先沿 `append()` 或 `fork_sequence()` 读一条路径，再看相应测试。无需从包入口开始逐文件阅读。
+
+### 第四步：换到真实 Qwen3 与 nano-vLLM
+
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)把同一概念放进真实模型运行时。它使用 256-token block，
+并观察 prefill、decode、prefix hit、序列状态和 KV 释放。
+
+实验输入是 768 个固定生成的 ID，目的是让 block 账本容易复算。第一步的 29 个 ID 来自真实中文请求；两组输入
+分别解释“文本怎样编码”和“运行时怎样调度”。
+
+### 第五步：最后进入服务容量
+
+完成 [Inference Serving 项目](../practice/projects/inference-serving.md)，再把真实业务 Prompt、并发和请求长度分布
+接回来。到这里才测 TTFT、TPOT、吞吐、显存、取消和失败终态。
+
+这五步展示了目录之间的关系：正文先解释问题，小实验隔离机制，`src/` 暴露实现，目标实验运行真实模型，项目再处理
+服务交付。以后学习 RAG、Agent 或微调时，也可以沿同一顺序找入口。
+
+## 按主题直接进入第一步
+
+| 想学什么 | 先读 | 第一次运行 | 学会后能解释什么 |
+|---|---|---|---|
+| Tokenization | [Tokenizer](../core/tokenization.md) | [实验 1A/1B](../practice/labs.md#lab-1) | 教学 BPE 与目标 tokenizer 的职责差异 |
+| Transformer | [Transformer](../core/transformer.md) | [Transformers Basics](../practice/projects/transformers-basics.md#run) | 张量形状、因果 mask 与 cache 一致性 |
+| 生成 | [生成基础](../core/generation-basics.md) | [实验 0A](../practice/labs/lab-0a-sampling.md) | 概率怎样变成 token，循环为什么结束 |
+| 推理服务 | [请求生命周期](../systems/inference-request-lifecycle.md) | [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md) | 排队、prefill、decode 与容量怎样连接 |
+| RAG | [一次 RAG 请求](../applications/rag-request-lifecycle.md) | [实验 5](../practice/labs/lab-5-rag-request.md) | 权限、召回、重排、引用与拒答 |
+| Agent | [一次退款任务](../applications/agent-task-lifecycle.md) | [实验 6](../practice/labs/lab-6-agent-lifecycle.md) | 审批、幂等、超时未知与恢复 |
+| SFT/QLoRA | [SFT 数据闭环](../training/sft-data-pipeline.md) | [实验 4A](../practice/labs/lab-4a-sft-sample.md) | 模板、labels、LoRA 更新与独立重载 |
+| JAX | [JAX/Optax](../training/jax-optax.md) | [JAX MiniGPT](../practice/projects/jax-minigpt.md) | PyTree、JIT、PRNG 与恢复状态 |
+| 评测 | [评测总览](../quality/evaluation.md) | [实验 8](../practice/labs.md#lab-8) | 指标分数怎样变成发布决定 |
+| Cloud API | [云 API 契约](../models/cloud-api-contracts.md) | [实验 0C](../practice/labs/lab-0c-cloud-budget.md) | 重试、流式、用量和不确定结果 |
+
+所有项目及其第一次成功命令都集中在[工程项目索引](../practice/project-index.md)。
+
+## 三类实验分别回答什么
+
+仓库经常为同一个主题提供三种实验。它们的区别在于问题不同，不在于哪一种“更高级”。
+
+| 实验类型 | 典型例子 | 可以回答的问题 | 还需要什么后续证据 |
+|---|---|---|---|
+| 公式与参考实现 | NumPy attention、手写 BPE | 给定小输入时，公式和状态怎样变化 | 框架接口与目标硬件行为 |
+| 框架小实验 | tiny PyTorch/JAX、Transformers tokenizer | 当前框架版本能否执行这条固定路径 | 目标 checkpoint、代表性数据或性能 |
+| 目标环境实验 | 固定 Qwen、3070 Laptop、真实 API | 指定版本、输入和机器上的实际行为 | 更广负载、质量样本和生产验收 |
+
+例如，NumPy GQA 能核对查询头与键值头的映射。CUDA 内核速度要在目标 GPU 上测量。
+
+固定 Qwen CPU 前向计算能说明特定权重和输入实际运行过。模型质量要用独立评测集回答。
+
+`MockTransport` 可以观察客户端是否关闭响应。云端是否停算和计费要由真实供应商协议与账单核对。
+
+想追溯精确版本和结果时再打开：
+
+- [项目实验与证据](../evidence/project-controls.md)：每个项目运行到了哪一层；
+- [内容准确性证据](../evidence/accuracy-ledger.md)：重要结论由什么实现或实验支持；
+- 各主题的 `docs/evidence/*-controls.md`：固定输入、录制结果和未覆盖条件。
+
+## 证据等级怎样读
+
+等级必须和具体结论写在一起。例如，“KV block 分配达到 L2”并不表示同一项目的 GPU 性能也达到 L2。
+
+| 等级 | 已经做了什么 | 读者接下来还要验证什么 |
+|---|---|---|
+| L0 文档 | 机制、术语和边界已经写清 | 代码能否运行 |
+| L1 最小实现 | 固定 CPU 输入和核心检查通过 | 框架或目标模型兼容性 |
+| L2 可复现实验 | 版本、输入、参数和结果可以复算 | 样本与真实 workload 是否匹配 |
+| L3 工程样例 | 多个组件、错误和恢复路径已经接通 | 目标组织的容量、安全与运维验收 |
+| L4 生产设计 | SLO、权限、监控、成本和回滚方案完整 | 方案在目标生产环境的实际结果 |
+
+## 学习时怎样使用测试
+
+先运行当前页面给出的单个脚本，再改一个变量。能解释变化后，只运行离该机制最近的测试。
+
+例如学习 Agent 时，先运行退款生命周期，观察远端已经受理但本地超时的分支。理解 `pending` 状态后，再打开
+相应恢复测试。框架适配、MCP 和 A2A 属于后续专题，无需作为第一次运行的前置条件。
+
+完整测试套件主要用于维护仓库。它能检查已经写下的预期，无法代替你对输入、状态和结论范围的解释。
+
+## 实现与数据约定
 
 - Python 支持 3.10–3.12；路径优先使用 `pathlib`，配置与 secret 分离。
-- 公共函数提供类型标注和可操作错误信息。
-- 浮点测试使用有理由的 tolerance；随机实验固定 seed，也保留至少一个反例。
-- Import 不下载模型/数据、不访问网络、不初始化 GPU。
-- 执行模型 proposal 前，外部 Runtime 继续做 Schema、权限、审批和副作用校验。
-- 本仓库准备的小型教学数据可以随仓库分发；大型或受限数据只保存获取说明、identity 与校验方式。
-- 训练与评测数据分权；生成 artifact 默认不提交到 Git。
+- 公共函数提供类型标注和可操作的错误信息。
+- 浮点比较写明容差来源；随机实验固定 seed，并保留至少一个反例。
+- 导入模块时不下载模型或数据，也不访问网络、初始化 GPU。
+- 模型只能提出工具动作。执行层继续检查 Schema、权限、审批和副作用。
+- 仓库内只保存可公开分发的小型教学数据；大型或受限数据保存获取方法与校验信息。
+- 训练集与评测集分开管理；本机生成的报告和模型工件默认不提交到 Git。
 
 ## 下一步
 
