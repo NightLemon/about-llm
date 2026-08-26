@@ -15,9 +15,12 @@
 
 Agent 不是“更聪明的聊天框”，而是一个允许模型反复选择动作的程序。真正困难的部分也不是让模型生成工具名，而是保证一次不可靠的选择不会变成越权、重复扣款或无法恢复的副作用。
 
-本章用一个售后助手建立地图：它可以查询订单、读取退款规则，并在获得批准后申请退款。
-[生命周期专题](agent-task-lifecycle.md)会让同一笔退款真实经历 schema、ACL、审批、远端超时、pending、
-幂等重放、业务验证和恢复，不把它们拆成互不相干的名词。
+本章始终跟随同一个售后助手。它先读取订单，再提出一笔 300 元退款；可信程序检查参数、订单归属和用户审批后，
+才把请求交给支付服务。
+
+[生命周期专题](agent-task-lifecycle.md)继续追踪最难的分支：支付服务已经受理，本地响应却超时。你会看到任务怎样
+进入待核对状态、查询远端回执，并在恢复后复用同一结果。[产品设计章节](product-design.md)则把这些后端状态翻译成
+用户实际看到的文案和按钮。
 
 深入实现分别见[架构、规划与记忆](agent-architecture.md)、[决策理论与安全终止](agent-decision-theory.md)、[工具协议与故障恢复](agent-runtime.md)、[MCP、A2A 与互操作](agent-interoperability.md)以及[Agent 评测与红队](../quality/agent-evaluation.md)。
 
@@ -114,7 +117,9 @@ ledger `pending`、verifier `passed` 和恢复后 `cached` 可以依次成立。
 | Agent 运行状态 | 当前步骤、tool result、预算 | 持久化为可恢复的 task/event |
 | 辅助记忆 | 用户偏好、历史摘要 | 带来源、过期时间，并允许用户编辑或删除 |
 
-Working、episodic、semantic、procedural memory 是有用的设计分类，但都不能取代 source of truth。模型总结可能遗漏否定词或金额；关键事实必须能回链原事件，并在读取时再次执行 ACL。
+工作记忆（working）、事件记忆（episodic）、语义记忆（semantic）和程序记忆（procedural）是四种设计分类。
+权威业务事实仍来自订单系统和原始事件。模型摘要可能遗漏否定词或金额，因此关键事实要能回链来源，并在每次读取时
+重新检查权限。
 
 ## 停止与恢复
 
@@ -138,9 +143,11 @@ Agent 至少要有最大步数、时间、token、费用、重复动作和无进
 
 MCP 主要连接 AI 应用与 tools/resources/prompts；A2A 主要描述独立 Agent 的发现、任务和 artifact。它们统一通信方式，却不会自动建立业务信任。
 
-无论工具来自本地函数、LangChain、LlamaIndex、MCP 还是远端 Agent，收到的名称、schema、状态和 artifact
-都仍是待验证声明。版本、transport 与可运行验证程序统一放在[互操作专题](agent-interoperability.md)，
-避免协议细节打断第一次学习。
+工具可以来自本地函数、LangChain、LlamaIndex、MCP 或远端 Agent。无论来源如何，它返回的工具名、参数结构、
+状态和工件都要经过本地程序验证，远端的 `completed` 也不能直接改写业务状态。
+
+具体协议版本、传输方式与可运行实验统一放在[互操作专题](agent-interoperability.md)。第一次学习先看懂业务边界，
+再进入协议细节。
 
 ## 评测
 

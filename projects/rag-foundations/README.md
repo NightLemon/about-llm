@@ -89,8 +89,17 @@ python -m about_llm.rag.cli evaluate `
   --top-k 3
 ```
 
-报告把 answerable 与 no-answer 分开。前者查看 Recall、MRR、nDCG、Precision 和 all-evidence recall；后者的
-zero-result 只是检索信号，不能替代最终拒答评测。
+报告把“有答案”和“知识库无答案”分开。对于有答案问题，几个指标回答不同问题：
+
+| 指标 | 在这里检查什么 |
+|---|---|
+| Recall@k | 前 k 个结果找回了多少比例的标注相关来源 |
+| MRR | 第一份相关来源排得有多靠前 |
+| nDCG | 带不同相关性等级的来源是否排在合理位置 |
+| Precision@k | 返回结果中有多少属于标注来源 |
+| All-evidence recall | 有多少问题在前 k 个结果中找齐了全部必需来源 |
+
+对于无答案问题，检索到零条结果只是一个信号。系统还要评价最终是否正确拒答，以及有主题相关文本时会不会越界作答。
 
 端到端 exact-span 评测：
 
@@ -160,8 +169,10 @@ python projects/rag-foundations/serve_extractive.py `
   --principal engineering
 ```
 
-Tenant 和 principals 由认证上下文注入，不允许客户端在请求 body 中自报。这个服务只适合 loopback 教学；真实部署还需要
-TLS、JWT/IAM 验证、全局 admission control、可取消下游和受控 trace store。
+租户和权限主体来自已经认证的会话，客户端请求正文不能自行声明这些身份。这个示例服务只监听本机回环地址，适合
+观察请求路径。
+
+真实部署还要增加 TLS、JWT 或 IAM 身份验证、跨进程并发限制、可取消的下游调用，以及受访问控制的 trace 存储。
 
 ## 固定 Qwen 为什么第一次会失败
 
