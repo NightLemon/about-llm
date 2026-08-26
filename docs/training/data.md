@@ -133,8 +133,15 @@ ID 可以保持关联、hash 应变化。只用正文 hash 做身份，会把一
 
 ## 过滤器每保留一次，也在改变数据分布
 
-质量信号可以来自文本长度、字符分布、重复行、压缩率和语言识别，也可以来自困惑度、广告或安全分类器、
-结构检查、代码测试和人工标签。无论来源是什么，系统最终都要给出一个可解释的决定：保留、隔离、降权或删除。
+过滤器使用的信号大致分为三类：
+
+| 信号来源 | 例子 | 它直接回答什么 |
+|---|---|---|
+| 文本统计 | 长度、字符分布、重复行、压缩率 | 样本是否异常或高度模板化 |
+| 模型判断 | 语言识别、困惑度、广告或安全分类 | 样本更像哪个已定义类别 |
+| 外部验证 | 结构检查、代码测试、人工标签 | 样本是否满足可执行或人工标准 |
+
+信号本身不是最终处置。策略还要把它映射为保留、隔离、降权或删除，并保存原因。
 
 因此不能只报告“过滤了 18%”。至少还要看：
 
@@ -202,9 +209,27 @@ python projects/single-gpu-finetuning/minhash_lsh_toy.py
 仓库实现先用 SHA-256 把 Unicode 文本片段稳定映射到 \(2^{61}-1\) 模域，再用随机种子派生哈希系数。
 LSH 的分带命中只产生候选对，程序随后还会重算精确 Jaccard。
 
-固定样例包含 5 个 item，一共形成 10 对比较。使用 64 个哈希并按 16 组、每组 4 行分带后，程序找到 3 个候选对；
-其中只有 1 对达到 0.8，所以这次精确率是 `1/3`。穷举全部 10 对得到的召回率为 1。另一个只用 1 个哈希的反例中，
-两集合的 Jaccard 是 `2/3`，却没有分带碰撞，实测召回率为 0。
+固定样例有 5 个 item，因此所有可能文本对共有：
+
+\[
+\binom{5}{2}=10.
+\]
+
+先按下面的账本读程序输出：
+
+| 计数 | 结果 | 怎样得到 |
+|---|---:|---|
+| 所有可能文本对 | 10 | 对 5 个 item 两两组合 |
+| LSH 候选对 | 3 | 至少命中一个 band |
+| 候选中 Jaccard 不低于 0.8 | 1 | 对 3 个候选重算精确 Jaccard |
+| 全部 10 对中的真正例 | 1 | 穷举得到，作为本次召回核对 |
+| 被 LSH 找回的真正例 | 1 | 真正例同时位于候选集合 |
+
+因此候选精确率是 \(1/3\)，候选召回率是 \(1/1=1\)。精确率的分母是“LSH 交给后续精查的候选”，
+召回率的分母是“全部文本对中实际达到阈值的真正例”，两者不能混用。
+
+脚本还准备了一个只用 1 个哈希的反例。两集合的 Jaccard 是 \(2/3\)，但它们没有发生分带碰撞；
+真正例有 1 个，找回数为 0，所以这次召回率是 0。
 
 这些数字只解释当前小样例的候选机制。换成新闻镜像、代码分支或数学证明后，需要重新标注文本对，
 并报告精确率、召回率、簇大小、token 移除率，以及不同语言和来源的差异。canonical item 的选择也要单独说明。
@@ -268,20 +293,74 @@ per-domain repetition
 - 截断尾部是丢弃、续到下一条，还是先补 EOS；
 - loss denominator 是否只包含有效 objective tokens。
 
-例如 `[docA, EOS, docB]` 中，如果让 `EOS` 预测 `docB` 的首 token，就人为加入了跨文档目标。
-可以 mask 该 label，也可以接受它，但训练定义必须明确。插入 EOS 本身不会改变 attention mask；
-真正隔离文档需要 block-diagonal mask 或等价机制。
+### 用 6 个 token 看清跨文档边界
 
-Packing efficiency 可以写成：
+假设 tokenizer 已经把两个文档变成 `docA=[A1,A2]`、`docB=[B1,B2]`，并令 `EOS=2`：
+
+```text
+position   0   1    2    3   4    5
+token     A1  A2  EOS   B1  B2  EOS
+token ID  11  12    2   21  22    2
+document   A   A    A    B   B    B
+```
+
+Decoder-only causal LM 用位置 \(i\) 的 hidden state 预测位置 \(i+1\) 的 label。因此边界附近实际发生的是：
+
+| 预测位置 | 本位置 token | 目标位置 | 目标 token | 是否跨文档 | 屏蔽边界时进入 loss？ |
+|---:|---|---:|---|---|---|
+| 0 | A1 | 1 | A2 | 否 | 是 |
+| 1 | A2 | 2 | EOS(A) | 否 | 是 |
+| 2 | EOS(A) | 3 | B1 | 是 | 否 |
+| 3 | B1 | 4 | B2 | 否 | 是 |
+| 4 | B2 | 5 | EOS(B) | 否 | 是 |
+
+从仓库根目录运行：
+
+~~~powershell
+python projects/single-gpu-finetuning/packing_loss_mask_toy.py
+~~~
+
+脚本对同一串 input IDs 输出三种训练定义：
+
+| 定义 | 对齐后的 labels | B1 能看到哪些 key 位置 | position IDs |
+|---|---|---|---|
+| 直接拼接 | `[-100,12,2,21,22,2]` | `[0,1,2,3]` | `[0,1,2,3,4,5]` |
+| 只屏蔽跨文档目标 | `[-100,12,2,-100,22,2]` | `[0,1,2,3]` | `[0,1,2,3,4,5]` |
+| 文档隔离 | `[-100,12,2,-100,22,2]` | `[3]` | `[0,1,2,0,1,2]` |
+
+序列中没有位置能预测 A1，因此位置 0 的 label 写成 `-100`，不计入损失。
+位置 3 的 `-100` 则排除了 `EOS(A) → B1` 这项损失。
+
+第二行修改了损失掩码，注意力矩阵保持原样，因此 B1 仍能读取 docA。
+
+第三行另建块对角（block-diagonal）注意力，把两个文档的可见范围隔开。
+
+位置编号是独立配置。本例重置 position IDs 时，只改变送入位置编码的编号。
+普通二维 padding mask 通常只区分真实位置与补齐位置；文档边界要按训练框架或拼接注意力内核的接口处理。
+
+### 占满 sequence 不等于每个位置都计算 loss
+
+建议把两个比例分开报告：
 
 \[
-\text{packing efficiency}
-=
-\frac{\text{valid objective tokens}}{\text{allocated sequence slots}}.
+\text{non-padding occupancy}
+=\frac{\text{non-padding tokens}}{\text{allocated sequence slots}},
+\qquad
+\text{objective-token utilization}
+=\frac{\text{tokens included in loss}}{\text{allocated sequence slots}}.
 \]
 
-这个比例只描述空间利用。错误的 loss mask 也可能得到 100% 利用率，同时把 padding 或错误边界纳入训练。
-发布前应抽样打印 text、token IDs、labels、loss mask、position IDs 与 document boundaries，并用小例子逐位置核对。
+上面的 6 个位置都不是 padding，所以第一项是 \(6/6=100\%\)。屏蔽跨文档目标后，
+真正进入损失的目标只有 4 个，第二项是 \(4/6\approx66.7\%\)。
+
+不同工具可能把其中一个称为 packing efficiency。报告必须写出分子和分母，不能只留下一个百分比。
+
+这个 CPU 小实验只使用人工 token IDs。它没有运行真实分词器、数据整理器、模型前向或拼接注意力内核。
+接入训练框架后，抽样打印并逐位置核对：
+
+- 原文、token IDs 和文档边界；
+- labels 与 loss mask；
+- position IDs 和实际 attention mask。
 
 ## 合成数据也要进入同一条 lineage
 

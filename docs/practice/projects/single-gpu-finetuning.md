@@ -406,6 +406,7 @@ python projects/single-gpu-finetuning/smoke_trl_dpo.py
 | 现象 | 先检查 | 下一项实验 |
 |---|---|---|
 | Assistant mask 全零 | Template 是否标 generation span | SFT label 检查 |
+| Packed 文档互相泄漏上下文 | 跨文档 target 与 attention 是否分别处理 | `packing_loss_mask_toy.py` |
 | 变长 batch 梯度不对 | Loss sum、有效 token denominator | `gradient_accumulation_toy.py` |
 | 多卡梯度缩小 | DDP 是 sum 还是 mean | `ddp_token_mean_control.py` |
 | `no_sync` 没减少通信 | Forward 是否也在 context 内 | `ddp_accumulation_no_sync_control.py` |
@@ -419,9 +420,10 @@ python projects/single-gpu-finetuning/smoke_trl_dpo.py
 
 ## 深挖机制实验 { #controls }
 
-当你开始研究分布式归一化、AMP 或 exact resume，再运行：
+当你开始研究 packing、分布式归一化、AMP 或 exact resume，再运行：
 
 ```powershell
+python projects/single-gpu-finetuning/packing_loss_mask_toy.py
 python projects/single-gpu-finetuning/gradient_accumulation_toy.py
 python projects/single-gpu-finetuning/ddp_token_mean_control.py
 python projects/single-gpu-finetuning/ddp_accumulation_no_sync_control.py
@@ -432,11 +434,12 @@ python projects/single-gpu-finetuning/dataloader_prefetch_resume_control.py
 python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
 ```
 
-这些脚本分三组回答机制问题。
+这些脚本分四组回答机制问题。
 
-- 第一组研究 token-mean、DDP 的平均规则和 `no_sync`。
-- 第二组研究 GradScaler、跨 rank overflow 与 checkpoint。
-- 第三组研究 prefetch cursor 和 optimizer-committed 窗口。
+- 第一组区分跨文档 target、attention 和 position IDs。
+- 第二组研究 token-mean、DDP 的平均规则和 `no_sync`。
+- 第三组研究 GradScaler、跨 rank overflow 与 checkpoint。
+- 第四组研究 prefetch cursor 和 optimizer-committed 窗口。
 
 精确 tensor、cursor、RNG 与负例结果集中在[项目控制台账](../../evidence/project-controls.md)。
 这些结果来自独立实验，不能拼成同一次完整训练。
@@ -466,6 +469,7 @@ python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
 
 ```powershell
 python -m pytest `
+  tests/test_training_packing.py `
   tests/test_finetuning_cli.py `
   tests/test_sft_readiness.py `
   tests/test_lora.py `

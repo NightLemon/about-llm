@@ -78,6 +78,14 @@ from about_llm.finetuning.near_duplicate import (
     normalize_near_duplicate_text,
     shingle_jaccard,
 )
+from about_llm.finetuning.packing import (
+    IGNORE_INDEX,
+    PACKED_CAUSAL_LM_VERSION,
+    PackedCausalLMExample,
+    PackedDocument,
+    PackedNextTokenTarget,
+    build_packed_causal_lm_example,
+)
 from about_llm.finetuning.peft_export import (
     PEFT_EXPORT_MANIFEST_FILENAME,
     PEFT_EXPORT_MANIFEST_VERSION,
@@ -270,7 +278,9 @@ __all__ = [
     "AMP_GRAD_SCALER_EVIDENCE_BOUNDARY",
     "ASSISTANT_LABEL_AUDIT_VERSION",
     "ASSISTANT_MASK_AUDIT_VERSION",
+    "IGNORE_INDEX",
     "MINHASH_LSH_VERSION",
+    "PACKED_CAUSAL_LM_VERSION",
     "PEFT_EXPORT_MANIFEST_FILENAME",
     "PEFT_EXPORT_MANIFEST_VERSION",
     "PREFERENCE_DATA_CONTRACT_VERSION",
@@ -342,6 +352,9 @@ __all__ = [
     "PEFTExportLimits",
     "PEFTExportVerification",
     "PPOClippedSurrogateReport",
+    "PackedCausalLMExample",
+    "PackedDocument",
+    "PackedNextTokenTarget",
     "PairwiseRewardMetrics",
     "PreferenceDataAuditReport",
     "PreferenceDuplicateGroup",
@@ -406,6 +419,7 @@ __all__ = [
     "audit_sft_near_duplicates",
     "audit_sft_records",
     "bradley_terry_loss",
+    "build_packed_causal_lm_example",
     "categorical_policy_gradient",
     "character_ngrams",
     "dpo_logit",

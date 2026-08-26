@@ -72,6 +72,7 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 |---|---|
 | Split、结构和 exact duplicate 是否正确 | `python -m about_llm.finetuning_cli audit ...` |
 | 训练数据是否满足近重复与治理要求 | `python -m about_llm.finetuning_cli prepare-training ...` |
+| 两篇文档拼接后哪些 target 和 attention 跨界 | `packing_loss_mask_toy.py` |
 | Assistant 区域是否真的进入 labels | `smoke_trl_sft.py`、`run_qwen_target_sft_label_control.py` |
 | Base 是否冻结，Adapter 能否保存、重载和合并 | `smoke_peft.py`、`run_qwen_target_lora_control.py` |
 | 目标模型的 LoRA/QLoRA 能否启动 | `train_trl_sft.py`、`train_qlora.py` |
@@ -150,6 +151,7 @@ python projects/single-gpu-finetuning/run_qwen_target_dpo_control.py `
 
 ```powershell
 python -m pytest `
+  tests/test_training_packing.py `
   tests/test_finetuning_cli.py `
   tests/test_sft_readiness.py `
   tests/test_lora.py `
