@@ -22,17 +22,18 @@
 
 这里的 L2 也不是 immutable byte evidence。官方页面会重定向、更新字段、改变导航；`Last updated` 只描述网页，不证明你的请求经过相同服务版本。
 
-本仓库当前最高只取得 Gemini `generateContent` text-only 子集的 L3 离线证据：
+本仓库当前为 Gemini 的两个小范围取得 L3 离线证据：`generateContent` 的 text-only 映射，以及
+Interactions 的一条 `function_call → requires_action` SSE 生命周期。
 
-- authored request/response fixture；
-- authored SSE event fixture；
+- 仓库固定的 request/response 样例；
+- 仓库固定的 SSE event 样例；
 - provider-neutral strict JSON/SSE/HTTP/retry controls；
 - provider-neutral memory/SQLite budget controls；
 - `network_performed=false` 的三供应商契约报告。
 
 这些证据不能相加成 L4：
 
-- `generateContent` adapter 通过，不表示 Interactions 已实现；
+- Interactions 固定回放通过，不表示 request builder、远端 transport 或完整 API 已实现；
 - SSE state machine 通过，不表示执行过 streaming HTTP；
 - HTTP MockTransport 通过，不表示 Google endpoint 收到 cancel；
 - SQLite 账本通过，不表示 provider usage 或 invoice 正确；
@@ -72,8 +73,7 @@ GenerateContentRequest
 ├── tools[] / toolConfig
 ├── safetySettings[]
 ├── generationConfig
-├── cachedContent
-└── service/store 等版本化字段
+└── cachedContent
 
 GenerateContentResponse
 ├── candidates[]
@@ -144,7 +144,7 @@ GenerateContentResponse
 
 ## `streamGenerateContent` 与 Interactions stream 不可混写
 
-仓库 `GeminiGenerateContentTextStream` 的 authored 子集：
+仓库 `GeminiGenerateContentTextStream` 的固定子集：
 
 ```text
 SSE message
@@ -167,7 +167,6 @@ SSE message
 
 它没有：
 
-- Interactions 的 named event/event_type 双重校验；
 - step start/delta/stop；
 - function/multimodal/thought delta；
 - prompt feedback；
@@ -178,6 +177,17 @@ SSE message
 - backpressure 与 server cancel 证据。
 
 所以正确表述是“实现并测试 `streamGenerateContent` text-only local state machine”，不是“完成 Gemini 流式 API”。
+
+单独的 `GeminiInteractionsReplay` 读取仓库固定的 named SSE events，并检查：
+
+- named event 与 payload `event_type` 相同；
+- `interaction.created → step.start/delta/stop → interaction.completed → done → EOF` 的顺序；
+- Interaction id 与 model 在流中保持一致；
+- 两段 `arguments_delta` 在 step 关闭后组成严格 JSON object；
+- `interaction.completed` event 可以携带 `requires_action` status；
+- 未知 event 被记录后跳过，未支持的 step/delta 会留下不完整投影标记。
+
+这条回放没有发送 Interactions request、执行函数、连接 Google、恢复断流或运行 background task。
 
 ## 固定预算 control { #budget-control }
 
@@ -199,11 +209,11 @@ SSE message
 
 | 能力 | Interactions | `generateContent` | 本仓库证据 |
 |---|---|---|---|
-| text request/response | official L2 | official L2 + local L3 subset | 仅后者 L3 |
-| typed steps | official L2 | 不适用 | 未实现 |
-| text streaming | official L2 | official L2 + local L3 subset | 后者 state-only |
+| text request/response | official L2 | official L2 + local L3 subset | `generateContent` 为 local L3 |
+| typed steps | official L2 | 不适用 | Interactions function-call step 的 local L3 回放 |
+| text streaming | official L2 | official L2 + local L3 subset | 两套 API 都只有离线 state/framing 证据 |
 | multimodal input | model/API dependent | model/API dependent | 未执行 |
-| function calling | API/model dependent | API/model dependent | 未执行 |
+| function calling | API/model dependent | API/model dependent | 只重建 Interactions proposal，未执行工具 |
 | server state | `previous_interaction_id` | 不同历史模型 | 未执行 |
 | background | Interactions capability | 不借用 | 未执行 |
 | custom safety/config | version/capability probe | surface-specific | 未执行 |
@@ -215,15 +225,17 @@ capability negotiation 失败应阻止发布或走显式降级，不能静默删
 
 当前仓库可如实写：
 
-> 为 Gemini `generateContent` 构建 text-only canonical→wire adapter 与单 candidate stream state machine，显式映射 `user/model`、顶层 `systemInstruction`、`usageMetadata` 与 `finishReason + EOF`，并对 non-text part、多 candidate、重复 terminal、缺 terminal 和非法 token usage fail closed；同时给出 Interactions resource/step/state/tool/retention 的生产设计与迁移 gate。
+> 为 Gemini `generateContent` 构建 text-only canonical→wire adapter 与单 candidate stream state machine；另为
+> Interactions 固定 SSE 实现 step 回放，重建分片函数参数，并区分 `interaction.completed` event、
+> `requires_action` resource status 与应用成功。
 
 必须紧邻披露：
 
-- adapter/stream 都是 authored offline fixtures；
-- 未实现 Interactions parser；
+- 两条路径都使用仓库固定的离线记录；
+- Interactions 只实现 reviewed event 子集，没有 request builder、SDK 或远端 transport；
 - 未执行 Google GenAI SDK；
 - 未使用账号、真实 DNS/TLS/HTTP/SSE；
-- 未运行 Gemini model、多模态、tool、thought/signature、file/cache；
+- 未运行 Gemini model、多模态、tool execution、thought/signature、file/cache；
 - 未验证 usage/billing、质量、性能、安全或生产 SLO；
 - 80/66/146 micro-USD 是固定样例中的数字，不是 Google 价格。
 
@@ -241,7 +253,18 @@ capability negotiation 失败应阻止发布或走显式降级，不能静默删
 
 ## 可运行实验
 
-本仓库 `about_llm.integrations.cloud_api` 对 `generateContent` 做离线 text-only 契约测试：assistant role 映射为 `model`、system 映射到 `systemInstruction`、响应提取 `usageMetadata`；`GeminiGenerateContentTextStream` 另检查 `streamGenerateContent` 单 candidate 的 text parts、usageMetadata、finishReason 与 EOF。它没有实现 Interactions API streaming、完整多模态/function parts、真实 streaming HTTP 或 Google 端点验证。
+本仓库 `about_llm.integrations.cloud_api` 对 `generateContent` 做离线 text-only 契约测试：assistant role 映射为
+`model`、system 映射到 `systemInstruction`、响应提取 `usageMetadata`；
+`GeminiGenerateContentTextStream` 另检查单 candidate 的 text parts、usageMetadata、finishReason 与 EOF。
+
+下面的命令回放另一套 Interactions 协议：
+
+```powershell
+python projects/cloud-api-contracts/gemini_interactions_replay.py
+```
+
+它从 SSE bytes 重建 `lookup_weather(city="上海")` proposal，并正确停在 `requires_action`。它没有实现真实
+streaming HTTP、工具执行、background/resume、多模态 steps 或 Google 端点验证。
 
 建议新增四组 fixture/实验：
 
@@ -254,9 +277,9 @@ capability negotiation 失败应阻止发布或走显式降级，不能静默删
 
 ## 一手资料
 
-- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，GA、状态、steps、后台执行与存储边界；核对日期 2026-08-15。
-- Google，[Interactions API reference](https://ai.google.dev/api/interactions-api)，resource、status、methods、steps 与 API version；核对日期 2026-08-15。
-- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step/terminal lifecycle；核对日期 2026-08-15。
+- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，GA、状态、steps、后台执行与存储边界；核对日期 2026-08-26。
+- Google，[Interactions API reference](https://ai.google.dev/api/interactions-api)，resource、status、methods、steps 与 API version；核对日期 2026-08-26。
+- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step/terminal lifecycle；核对日期 2026-08-26。
 - Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、`systemInstruction`、candidates、prompt feedback 与 usage；核对日期 2026-08-15。
 - Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前入口、`output_text` 有损边界与 stateless step preservation；核对日期 2026-08-15。
 - Google Cloud，[Agent Platform model overview](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models)，云平台模型、访问与治理导航；核对日期 2026-08-15。

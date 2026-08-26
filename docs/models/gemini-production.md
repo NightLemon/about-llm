@@ -403,17 +403,22 @@ GPU 性能。
 
 ## 仓库当前能证明到哪里 {#repository-evidence}
 
-仓库当前为 `generateContent` 的纯文本子集提供离线 request builder、response parser 和单候选流式状态机。
-它还提供供应商无关的 HTTP、重试和预算固定样例。
+仓库当前为 `generateContent` 的纯文本子集提供离线请求构造、响应解析和单候选流式状态机。另一个固定回放
+展示 Interactions 函数调用：流已经结束，资源仍可能等待客户端动作。供应商无关的 HTTP、重试和预算样例则
+覆盖调用外围的工程状态。
 
-它尚未执行 Google Gen AI SDK、真实账号、Google 端点、图片、工具、文件、缓存或 Interactions parser。
-所以本章中的告警任务是一条生产设计主线，不是已经录制的 Gemini 多模态调用。
+这些实验都在本地使用固定数据。它们没有连接 Google Gen AI SDK、真实账号与端点，也没有运行图片、工具、文件
+或缓存。后台任务和断线恢复同样需要在目标环境验证。
+
+因此，本章中的告警任务是一条生产设计主线，不是已经录制的 Gemini 多模态调用。
 
 可运行的第一步是：
 
 ```powershell
 python -m about_llm.integrations.cloud_api_cli verify `
   --contracts projects/cloud-api-contracts/contracts.example.jsonl
+
+python projects/cloud-api-contracts/gemini_interactions_replay.py
 
 python projects/cloud-api-contracts/usage_budget_toy.py
 ```
@@ -436,9 +441,9 @@ python projects/cloud-api-contracts/usage_budget_toy.py
 
 ## 一手资料
 
-- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，接口定位、状态、后台执行与存储边界；核对日期 2026-08-15。
-- Google，[Interactions API 参考文档](https://ai.google.dev/api/interactions-api)，资源、状态、方法与步骤；核对日期 2026-08-15。
-- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step 生命周期；核对日期 2026-08-15。
+- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，接口定位、状态、后台执行与存储边界；核对日期 2026-08-26。
+- Google，[Interactions API 参考文档](https://ai.google.dev/api/interactions-api)，资源、状态、方法与步骤；核对日期 2026-08-26。
+- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step 生命周期；核对日期 2026-08-26。
 - Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、candidates、反馈与用量；核对日期 2026-08-15。
 - Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前文本入口和有损文本视图；核对日期 2026-08-15。
 - 目标型号、SDK、数据保留、区域与价格页面；真实部署时需要重新核对。

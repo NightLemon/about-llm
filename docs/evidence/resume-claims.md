@@ -89,7 +89,11 @@ Anthropic 子集可如实写成：“为 Messages 构建 canonical→wire text a
 
 该表述必须紧邻披露：仓库未执行 Anthropic SDK、账号、DNS/TLS、真实 HTTP/SSE、Claude model、tool/thinking/signature blocks、prompt caching、server cancellation 或 billing；text parser 会有损丢弃非 text blocks，offline state machine 也不证明 Claude 质量、安全、完整协议兼容或生产 SLO。只有另做固定 API/version 的受限 network smoke，才可增加“单请求 L4 协议证据”；仍不能把它写成生产接入。
 
-Gemini 子集可如实写成：“为 legacy-but-supported `generateContent` 构建 text-only canonical→wire adapter 与单 candidate stream state machine，映射 `user/model`、`systemInstruction`、`usageMetadata` 和 `finishReason + EOF`，对 non-text part、多 candidate、非法 index/usage、重复或缺失 terminal fail closed；另按 2026-08-15 官方契约设计 Interactions resource/status/step/state/tool/retention 的迁移 gate。”“设计 Interactions gate”不能缩写成“实现 Interactions API”：仓库没有其 event fixture/parser，也没有执行 background、resume、function/thought steps。
+Gemini 子集可如实写成：“为 legacy-but-supported `generateContent` 构建 text-only canonical→wire adapter 与单
+candidate stream state machine；另为 Interactions 固定 SSE 实现 step 回放，重建分片函数参数，并区分
+`interaction.completed` event、`requires_action` resource status 与应用成功。”这仍不能缩写成“实现
+Interactions API”：仓库没有发送 Interactions request、执行 Google SDK/远端 HTTP、运行工具，也没有验证
+background、resume、thought 或多模态 steps。
 
 同一句或紧邻位置必须说明：所有 `generateContent` 证据来自仓库准备的固定事件和离线 state machine，未执行 Google GenAI SDK、账号、DNS/TLS、真实 HTTP/SSE、Gemini model、多模态、tool、thought/signature、file/cache 或 billing；text parser 只读 `candidates[0]` 的 text parts，会丢失 prompt feedback、安全、其他 candidates/parts、response id 与 usage 明细。80 uncertain + 66 settled = 146 micro-USD 是 provider-neutral MockTransport/SQLite 样例，不是 Google 定价、usage、发票或成本优化。不能写成“接入最新 Gemini”“支持全量多模态”“验证长上下文/缓存收益”或“生产级 Google Cloud 网关”。
 

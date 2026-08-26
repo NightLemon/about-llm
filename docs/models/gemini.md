@@ -207,6 +207,8 @@ Interactions 同样不能只保存 `output_text`。这个便捷属性是有损�
 ```powershell
 python -m about_llm.integrations.cloud_api_cli verify `
   --contracts projects/cloud-api-contracts/contracts.example.jsonl
+
+python projects/cloud-api-contracts/gemini_interactions_replay.py
 ```
 
 Gemini 这一项会检查：
@@ -217,9 +219,13 @@ Gemini 这一项会检查：
 - `usageMetadata` 映射为输入、输出 token 数；
 - `finishReason` 和 `modelVersion` 被读取。
 
-报告中的 `network_performed` 和 `real_credentials_used` 都是 `false`。当前解析器只读取第一个 candidate 的
-文本 parts，遇到纯工具或媒体 part 会拒绝；流式状态机也只覆盖单候选纯文本与 `finishReason + EOF`。
-这些行为能证明本地适配逻辑，不能证明图片任务、Interactions、Google SDK 或真实端点已经运行。
+第一条命令的 `network_performed` 和 `real_credentials_used` 都是 `false`。`generateContent` 解析器只接受一个
+candidate 的纯文本 parts；遇到工具或媒体 part 会拒绝。第二条命令回放 Interactions 的固定函数调用事件，
+重建 `lookup_weather(city="上海")`，并展示为什么 `interaction.completed` event 仍可能对应
+`requires_action` status。
+
+这两条路径都只证明本地协议处理。它们没有运行图片任务、Google SDK 或真实端点；Interactions 回放也没有发送
+请求或执行天气工具。
 
 ## 第五步：用反事实证明模型真的看了图片 {#multimodal-evaluation}
 

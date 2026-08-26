@@ -1,0 +1,25 @@
+event: interaction.created
+data: {"interaction":{"id":"v1_example_weather_001","status":"in_progress","object":"interaction","model":"gemini-example-snapshot"},"event_type":"interaction.created"}
+
+event: interaction.status_update
+data: {"interaction_id":"v1_example_weather_001","status":"in_progress","event_type":"interaction.status_update"}
+
+event: step.start
+data: {"index":0,"step":{"type":"function_call","id":"call_weather_001","name":"lookup_weather","arguments":{}},"event_type":"step.start"}
+
+event: step.delta
+data: {"index":0,"delta":{"type":"arguments_delta","arguments":"{\"city\":"},"event_type":"step.delta"}
+
+event: step.delta
+data: {"index":0,"delta":{"type":"arguments_delta","arguments":"\"上海\"}"},"event_type":"step.delta"}
+
+event: step.stop
+data: {"index":0,"event_type":"step.stop"}
+
+event: interaction.completed
+data: {"interaction":{"id":"v1_example_weather_001","status":"requires_action","object":"interaction","model":"gemini-example-snapshot","usage":{"total_tokens":12,"total_input_tokens":8,"input_tokens_by_modality":[{"modality":"text","tokens":8}],"total_output_tokens":4,"total_cached_tokens":0}},"event_type":"interaction.completed"}
+
+event: done
+data: [DONE]
+
+: end of repository example

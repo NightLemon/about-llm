@@ -30,11 +30,18 @@ python -m about_llm.integrations.cloud_api_cli verify `
 python -m about_llm.integrations.cloud_api_cli retry-matrix `
   --output artifacts/cloud-api/retry-matrix.json
 
+python projects/cloud-api-contracts/gemini_interactions_replay.py
+
 python projects/cloud-api-contracts/usage_budget_toy.py
 ```
 
-它们依次回答：模型输出怎样经过 JSON、结构、原文位置和字段证据检查；三种 Provider 协议怎样映射为共同业务对象；
-哪些失败可以安全重放；一次调用怎样先预留最大费用，再根据实际 usage 结算或进入 uncertain。
+这些小实验分别回答：
+
+- 模型输出怎样经过 JSON、结构、原文位置和字段证据检查；
+- 三种 Provider 文本协议怎样映射为共同业务对象；
+- Gemini Interactions 的函数参数怎样跨步骤重建，为什么流结束后仍可能等待客户端动作；
+- 哪些失败允许安全重放；
+- 一次调用怎样先预留最大费用，再根据实际用量结算或进入结果未知状态。
 Prompt Contract 实验的逐步解释见 [Prompt Engineering 与输出契约](../../docs/applications/prompting.md#contract-walkthrough)。
 
 ## 一次逻辑调用的状态
@@ -132,6 +139,7 @@ python projects/cloud-api-contracts/budgeted_retry_demo.py `
 |---|---|
 | 结构化抽取怎样从错误输出走到可接受结果 | `prompt_contract_walkthrough.py` |
 | 三种 text API 怎样映射共同对象 | `cloud_api_cli verify` |
+| Interactions event 与 resource status 为什么不同 | `gemini_interactions_replay.py` |
 | Replay-safe、deadline 与 `Retry-After` | `cloud_api_cli retry-matrix` |
 | JSON HTTP 的 origin、redirect、timeout 与解析边界 | `execute_json_request` 及 `tests/test_cloud_http.py` |
 | SSE framing 与三种 provider stream | `SSEDecoder`、`cloud_stream` 相关测试 |
@@ -180,6 +188,7 @@ Shape allowlist 通过不代表文本已经完成 secret、PII、版权或用途
 | 文件 | 用途 |
 |---|---|
 | `contracts.example.jsonl` | 三类 adapter 的 request、固定 response 与预期规范化结果 |
+| `gemini-interactions-function-call.example.sse` | Interactions 函数调用与 `requires_action` 固定事件 |
 | `openai-responses-events.example.jsonl` | Responses typed-event 本地 replay |
 | `trajectory-release.example.json` | 允许与拒绝发布的 block 样例 |
 | `artifacts/cloud-api/contracts.json` | Provider 映射验证结果 |
@@ -209,6 +218,7 @@ Pricing snapshot 是人工核对的本地估值，不是 provider 发票。真�
 ```powershell
 python -m pytest `
   tests/test_cloud_api.py `
+  tests/test_gemini_interactions_replay.py `
   tests/test_cloud_api_cli.py `
   tests/test_openai_responses_replay.py `
   tests/test_reasoning_artifact.py `

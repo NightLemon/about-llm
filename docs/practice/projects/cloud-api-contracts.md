@@ -118,6 +118,16 @@ python -m about_llm.integrations.cloud_api_cli verify `
 拒答或无文本结果需要各自的类型。只支持文本的 adapter 遇到这些对象时应明确失败。
 
 同一品牌也可能拥有不同协议。例如 Gemini Interactions 与 `generateContent` 的请求和事件结构不能混用。
+运行下面的固定 Interactions 回放：
+
+```powershell
+python projects/cloud-api-contracts/gemini_interactions_replay.py
+```
+
+这次“查询上海天气”的流以函数调用结束。输出会同时显示
+`stream_terminal_event=interaction.completed` 和 `resource_status=requires_action`：流已经收尾，客户端却仍需
+校验并执行工具。两段 `arguments_delta` 只有在 `step.stop` 后才组成完整 JSON，不能边接收边调用函数。完整过程见
+[Gemini Interactions API](../../models/gemini-interactions.md)。
 
 ## 什么失败允许重试
 
@@ -161,7 +171,8 @@ Retry policy 同时考虑已观察到的错误、请求能否重放、结果是�
 |---|---|
 | OpenAI-compatible Chat Completions | content delta、usage、finish reason、`[DONE]` |
 | Anthropic Messages | message/content-block 生命周期、usage、`message_stop` |
-| Gemini streaming | 单 candidate text parts、`usageMetadata`、finish reason |
+| Gemini `streamGenerateContent` | 单 candidate text parts、`usageMetadata`、finish reason |
+| Gemini Interactions | named event、step 生命周期、函数参数增量、resource status、`[DONE]` |
 
 Tool、拒答、reasoning、媒体和未知 block 不会被删除后冒充纯文本回答。
 
@@ -254,6 +265,7 @@ signature、encrypted 和未知字段会使发布停止。
 ```powershell
 python -m pytest `
   tests/test_cloud_api.py `
+  tests/test_gemini_interactions_replay.py `
   tests/test_cloud_api_cli.py `
   tests/test_openai_responses_replay.py `
   tests/test_reasoning_artifact.py `
@@ -290,6 +302,7 @@ python -m pytest `
 | 已经实际运行 | 仍需在目标环境验证 |
 |---|---|
 | 三种固定文本协议的 adapter | 真实 SDK、端点和模型输出 |
+| 固定 Interactions 函数调用事件回放 | 在线 request、工具执行、background 与 resume |
 | `MockTransport` 的 JSON、SSE 与 retry | DNS、TLS、代理、连接池和取消传播 |
 | SQLite 的逐 attempt 预算 | Provider usage、发票与跨区域配额 |
 | 固定 Responses 事件回放 | 在线事件版本与长时间 stream |
