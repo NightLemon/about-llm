@@ -7,7 +7,7 @@
 
 - **适合读者**：想把 tokenizer、attention、generation 和 checkpoint 检查串成可运行实验的开发者。
 - **先修**：Python、NumPy/PyTorch 张量基础和 [Transformer](../../core/transformer.md)。
-- **首次实践**：BPE → attention/cache → tiny model → generation → config；真实权重是选修。
+- **首次实践**：BPE → 因果语言模型训练目标 → 注意力与缓存 → 微型模型 → 生成 → 配置。
 - **完成信号**：能预测一个中间结果、制造一个失败，并说明每个实验不能外推什么。
 - **卡住时**：只运行当前阶段的一条命令，不要先跑完整测试集。
 
@@ -21,6 +21,7 @@
 ~~~text
 raw text
 → tokenizer tokens
+→ labels / loss mask
 → attention logits
 → model logits
 → generation protocol
@@ -84,6 +85,27 @@ python projects/transformers-basics/train_byte_bpe.py --text "banana bandana" --
 
 编码后能够还原原文，只说明这个分词器内部自洽。它是否兼容某个现有 checkpoint，要继续核对词表和合并规则；
 中文文本的 token 成本也必须用目标分词器实测。
+
+## Phase 1.5：把同一个 token 序列变成训练目标
+
+```powershell
+python projects/transformers-basics/trace_language_model_sample.py
+```
+
+脚本让 `你好🙂!` 经过微型 Byte BPE，得到两个文本 token，再加入本实验自己的 `BOS`、`EOS` 和 `PAD`。
+输出会逐位置列出模型输入、下一个目标、可见的输入位置和是否参与 loss：
+
+```text
+model input: [BOS, 你好🙂, !, EOS]
+labels:      [你好🙂, !, EOS, PAD]
+loss mask:  [true, true, true, false]
+```
+
+先回答两个问题：为什么位置 1 看不见位置 2？为什么最后一个位置可以参与因果计算，却不参与 loss？因果注意力
+mask 回答第一个问题，loss mask 回答第二个问题。
+
+脚本停在模型前向计算之前。下一阶段才让注意力和微型模型真正运行。逐位置解释见
+[NLP 与语言建模](../../foundations/nlp.md#shift-and-mask)。
 
 ## Phase 2：手算 causal attention
 
@@ -309,6 +331,7 @@ python projects/transformers-basics/run_target_checkpoint.py --local-files-only
 
 ~~~powershell
 python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
+python projects/transformers-basics/trace_language_model_sample.py
 python projects/transformers-basics/online_softmax_demo.py
 python projects/transformers-basics/smoke_tiny.py
 python projects/transformers-basics/generation_runtime_control.py

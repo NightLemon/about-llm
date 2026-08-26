@@ -7,17 +7,52 @@
 
 - **适合读者**：需要理解文本如何变成语言模型输入输出的开发者。
 - **先修**：Python 基础和条件概率直觉。
-- **首次阅读**：文本单位 → 语言模型概率 → shift 与 loss mask → 解码。
-- **完成信号**：能区分字符、token、token id、logit、loss 和生成文本。
+- **首次阅读**：先运行一个样本，再沿 bytes → token IDs → labels → loss mask 阅读。
+- **完成信号**：能逐位置解释模型看见什么、预测什么，以及哪个目标不计入 loss。
 - **卡住时**：先做[新手知识地图](../guide/beginner-map.md)的四项自检。
 
 </div>
 
-自然语言处理（Natural Language Processing, NLP）研究怎样把语言现象变成可计算对象，又怎样把模型输出还原为对人有用、可验证的语言行为。LLM 把许多任务统一成“给定上下文预测后续 token”，但数据表示、概率建模、解码、评测和语用问题并没有因此消失。
+自然语言处理（Natural Language Processing，NLP）研究怎样把语言变成可计算对象，又怎样把模型结果还原为对人
+有用的语言行为。
+
+这页先让 `你好🙂!` 经过 UTF-8 字节、BPE 子词和因果语言模型的训练目标。后面的概率、训练输入和生成过程，
+都会回到这一个样本解释。
+
+## 先运行一个完整样本
+
+```powershell
+python projects/transformers-basics/trace_language_model_sample.py
+```
+
+这条命令会训练仓库的微型 Byte BPE，然后构造 labels、因果可见范围和 loss mask。输出中的关键数字是：
+
+| 阶段 | 固定样本的结果 |
+|---|---|
+| 人类输入 | `你好🙂!`，4 个 Unicode code points |
+| UTF-8 | 11 bytes |
+| BPE 文本 token | `[264, 33]`，分别展开为 `你好🙂` 和 `!` |
+| 本实验特殊 ID | `BOS=265`、`EOS=266`、`PAD=267` |
+| 模型输入 | `[265, 264, 33, 266]` |
+| 预测目标 | `[264, 33, 266, 267]` |
+| Loss mask | `[true, true, true, false]` |
+
+程序实际训练了 BPE，并构造了特殊 token、因果 mask 和计分位置。运行到这里便停在模型前向计算之前，
+所以输出中没有 logits、loss 或 perplexity。
+
+ID `264` 只属于这次训练出来的微型词表。Qwen、Llama 等真实 checkpoint 必须使用各自配套的 tokenizer。
+
+你可以先只记住三条边界：
+
+```text
+字符串不是 token IDs
+因果 attention mask 决定“能看哪些输入位置”
+loss mask 决定“哪些预测目标参与计分”
+```
 
 ## 1. 语言的层次
 
-语言不是一串互相独立的词。分析一个系统时，可区分：
+上面的程序只处理了文本表示和训练目标。真实语言问题还可以分成：
 
 - **形态（morphology）**：词素、屈折和派生，例如时态、数、词缀；
 - **句法（syntax）**：成分和依存关系，决定“谁修饰谁”；
@@ -52,23 +87,28 @@ Tokenizer 是模型契约的一部分。添加 special token、修改正规化�
 
 完整算法见 [Tokenization](../core/tokenization.md)。
 
-### 2.3 一个 shift 与 mask 例子
+### 2.3 同一个样本怎样 shift { #shift-and-mask }
 
-假设文本被编码为：
-
-```text
-input ids: [BOS, 今, 天, 下, 雨, EOS, PAD]
-```
-
-因果语言模型通常以当前位置预测下一个 token：
+程序先构造完整序列：
 
 ```text
-model input: [BOS, 今, 天, 下, 雨, EOS]
-labels:      [今,  天, 下, 雨, EOS, PAD]
-loss mask:   [1,   1,  1,  1,   1,   0]
+[BOS, 你好🙂, !, EOS, PAD]
 ```
 
-具体库可能要求调用者显式 shift，也可能在模型内部 shift。把两边都 shift 会错一位；两边都不 shift 则可能学成复制当前 token。`PAD`、prompt 区域和跨文档拼接边界是否参与 loss 也必须显式检查。
+然后把输入和目标错开一位：
+
+| 位置 | 当前位置输入 | 要预测的目标 | 可见输入位置 | 计入 loss |
+|---:|---|---|---|---|
+| 0 | `BOS` | `你好🙂` | `0` | 是 |
+| 1 | `你好🙂` | `!` | `0, 1` | 是 |
+| 2 | `!` | `EOS` | `0, 1, 2` | 是 |
+| 3 | `EOS` | `PAD` | `0, 1, 2, 3` | 否 |
+
+这张表同时出现两个 mask。因果 attention mask 是下三角形，让位置 1 看见位置 0 和 1，却看不见 2、3。
+Loss mask 则保留前三个预测目标，排除最后的 padding 目标。改变其中一个，不会自动替你改变另一个。
+
+不同库对 shift 的分工不同：有的模型在 forward 内部移动 labels，有的训练代码先构造错位序列。接入时应打印
+一个 batch 的输入、目标和有效位置，确认 shift 只发生一次。
 
 ## 3. 语言模型的概率定义
 
@@ -87,7 +127,9 @@ p(x_{1:T})=\prod_{t=1}^{T}p(x_t\mid x_{<t}).
 \log p_\theta(x_t\mid x_{<t}),
 \]
 
-其中 \(m_t\in\{0,1\}\) 表示该 token 是否计入目标。实际报告通常再除以有效 token 数 \(\sum_t m_t\)。
+其中 \(m_t\in\{0,1\}\) 表示该 token 是否计入目标。固定样本的三个有效目标是 `你好🙂`、`!` 和 `EOS`，
+所以 token mean 的分母是 3，而不是输入长度 4 或完整序列长度 5。只有模型给出每个目标的概率后，才能计算这项
+loss；walkthrough 本身没有伪造概率。
 
 这个分解来自概率规则，不要求模型一定使用 Transformer；n-gram、RNN、状态空间模型也可定义自回归概率。
 
@@ -120,7 +162,10 @@ p(x_{1:T})=\prod_{t=1}^{T}p(x_t\mid x_{<t}).
 
 ### 4.3 Encoder-decoder 与去噪目标
 
-Encoder 双向读取输入，decoder 在 encoder 表示条件下自回归生成输出。Span corruption 可遮盖连续片段并要求恢复，常用于 seq2seq 预训练。翻译、摘要和结构转换天然适合条件生成，但 decoder-only 模型也可通过拼接 prompt 与 response 完成这些任务。
+编码器（encoder）双向读取输入，解码器（decoder）根据编码结果逐步生成输出。
+
+Span corruption 会遮盖一段连续文本，再要求模型恢复它。这是一类常见的序列到序列预训练目标，适合翻译和
+摘要等条件生成任务。只有解码器的模型也能把输入与回答拼成一个序列来学习这些任务。
 
 ### 4.4 Prefix LM 与混合掩码
 
@@ -128,9 +173,14 @@ Prefix 区域内部可双向可见，生成区域只能看 prefix 和自己左�
 
 ## 5. Teacher forcing 与训练—推理差异
 
-训练因果模型时，第 \(t\) 个位置以真实前缀 \(x_{<t}\) 为条件；推理时前缀包含模型先前生成的 token。后者一旦偏离数据分布，错误可能累积，这常被称为 exposure bias。
+训练固定样本时，四个输入位置一次送入模型。因果 mask 保证每个位置只使用真实前缀，因此三个有效目标可以并行
+计算。这个做法叫 teacher forcing。
 
-但不能据此简单断言“teacher forcing 是错误方法”。最大似然为真实序列提供清晰、密集的监督，并可并行训练。scheduled sampling 等替代方法会改变训练分布，也可能引入不一致性。生产上通常结合更好的数据、后训练、解码约束、检索、验证器或交互式纠错，而不是只替换 teacher forcing。
+生成时只有 `BOS` 是已知的。模型先生成第一个 token，再把自己的结果放回前缀；某一步偏离以后，后续条件也会
+变化。这种训练与推理前缀的差异常称为 exposure bias。
+
+Teacher forcing 仍然提供清晰、密集且可并行的最大似然监督。生产系统通常结合数据改进、后训练、解码约束、
+检索和验证器来控制生成错误。Scheduled sampling 等替代方法会改变训练分布，需要单独验证其目标与偏差。
 
 ## 6. 从分数到文本：解码是决策过程
 
@@ -193,7 +243,10 @@ Prefix 区域内部可双向可见，生成区域只能看 prefix 和自己左�
 
 ### 10.1 语料来源与 lineage
 
-记录来源、许可、采集时间、解析器版本、过滤、去重和派生关系。网页 boilerplate、导航菜单、乱码、模板页和机器生成垃圾会消耗训练预算。过滤器也可能系统性排除方言、少数语言或特定写作风格。
+每份语料都要记录来源、许可、采集时间、解析器版本、过滤、去重和派生关系。
+
+网页模板、导航菜单、乱码和机器生成垃圾会浪费训练预算。过滤规则也可能过度删除方言、少数语言或特定写作风格，
+因此要按来源和语言切片检查保留率。
 
 ### 10.2 去重与污染
 
@@ -259,7 +312,11 @@ Prefix 区域内部可双向可见，生成区域只能看 prefix 和自己左�
 - 监控新词、语言比例、长度与拒答率的变化；
 - 将工具/RAG 的失败与纯语言模型失败分开统计。
 
-仓库中的 `notebooks/01_attention_three_ways.ipynb`、`notebooks/02_minigpt_forward.ipynb`、`projects/jax-minigpt/` 和 `projects/rag-foundations/` 分别提供注意力、因果语言建模训练和传统/稠密检索的可执行实验；入口见[实验导航](../practice/labs.md)、[项目成熟度索引](../practice/project-index.md)和 [RAG 总览](../applications/rag.md)。
+本页开头的 `trace_language_model_sample.py` 负责文本编码、token IDs、标签错位和计分位置。
+
+下一步运行 `notebooks/02_minigpt_forward.ipynb`，让微型模型真正产生 logits 与 loss。随后可进入
+`projects/jax-minigpt/` 观察训练；注意力与检索实验分别见[实验导航](../practice/labs.md)和
+[RAG 总览](../applications/rag.md)。
 
 ## 14. 常见错误结论
 

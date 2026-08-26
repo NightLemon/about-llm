@@ -88,6 +88,29 @@ python projects/transformers-basics/train_byte_bpe.py `
 
 它没有 normalization、pre-tokenizer、special tokens、offset map、added-token policy、chat template 或 checkpoint compatibility。小型 authored corpus 的 token 数也不能推成中文压缩率、计费量或目标模型上下文长度。连接真实 checkpoint 时，必须加载该 revision 的 tokenizer 并保存实际 prompt token IDs。
 
+### 1.4 从 token 序列构造语言模型训练目标
+
+~~~powershell
+python projects/transformers-basics/trace_language_model_sample.py
+~~~
+
+这条命令用同一个 Byte BPE 实现处理 `你好🙂!`。程序实测它包含 4 个 Unicode code points、11 个 UTF-8
+bytes，并编码为 `[264, 33]` 两个文本 token。随后，脚本为这次讲解加入 `BOS=265`、`EOS=266` 和
+`PAD=267`，构造出：
+
+~~~text
+model input: [265, 264, 33, 266]
+labels:      [264, 33, 266, 267]
+loss mask:   [true, true, true, false]
+~~~
+
+测试独立检查上述固定数字、4×4 下三角因果 mask、逐位置可见范围和三个有效预测目标。它还要求特殊 token ID
+位于本次学习所得词表之后，避免与文本 token 冲突。
+
+这个实验停在模型前向计算之前。它证明本仓库能够把字符串变成可解释的训练输入，却没有执行 embedding、attention
+或语言模型，也没有产生 logits、loss 和 perplexity。这里的特殊 token 与 ID 仅用于讲解；真实 checkpoint 仍须使用
+配套 tokenizer 和 special-token 配置。
+
 ## 2. Attention：先锁定数学，再谈 kernel
 
 ### 2.1 Dense causal attention

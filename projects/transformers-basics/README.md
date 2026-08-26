@@ -3,26 +3,28 @@
 这个项目把语言模型最容易混在一起的四层拆开：从零实现的数学与算法、框架中的 tiny model、公开 checkpoint 的
 配置与协议，以及真实权重运行。你可以先建立机制直觉，再判断 Transformers、模型仓库和推理 runtime 各自负责什么。
 
-第一次学习请从[项目教学页](../../docs/practice/projects/transformers-basics.md)开始。那里按照 bytes → tokens → attention
-→ tiny model → generation → config → checkpoint 的顺序讲解；本页只保留运行入口、脚本索引和排错方法。
+第一次学习请从[项目教学页](../../docs/practice/projects/transformers-basics.md)开始。它从原始字节和 token IDs 出发，
+依次讲训练目标、注意力、微型模型、生成配置和 checkpoint。本页只保留运行入口、脚本索引和排错方法。
 
 ## 第一次运行
 
-下面四条命令都不下载公开模型：
+下面五条命令都不下载公开模型：
 
 ```powershell
 python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
+python projects/transformers-basics/trace_language_model_sample.py
 python projects/transformers-basics/online_softmax_demo.py
 python projects/transformers-basics/smoke_tiny.py
 python projects/transformers-basics/generation_runtime_control.py
 ```
 
-它们依次回答四个问题：
+它们依次回答五个问题：
 
 1. Byte-level BPE 怎样从 256 个 byte 开始学习 merge？
-2. Online softmax 为什么不需要保存完整 attention score matrix？
-3. Transformers 的 tiny GPT-2 能否完成 forward、loss、backward 和 generate？
-4. EOS、最大生成长度和调用参数覆盖怎样共同决定停止？
+2. 一段文字怎样变成 input IDs、labels、causal mask 和 loss mask？
+3. Online softmax 为什么不需要保存完整 attention score matrix？
+4. Transformers 的 tiny GPT-2 能否完成 forward、loss、backward 和 generate？
+5. EOS、最大生成长度和调用参数覆盖怎样共同决定停止？
 
 先解释输出，再进入真实 checkpoint。完整的 90 分钟 CPU 路线见[推荐运行顺序](../../docs/practice/projects/transformers-basics.md#run)。
 
@@ -43,6 +45,7 @@ generation config、库版本和执行硬件。
 | 你想理解什么 | 入口 |
 |---|---|
 | Byte-level BPE 的计数、merge 与编码 | `train_byte_bpe.py` |
+| 文本 token 怎样变成因果 LM 的逐位置训练目标 | `trace_language_model_sample.py` |
 | Causal attention、mask、cache 与 online softmax | `online_softmax_demo.py` 和 `tests/test_attention_numpy.py` |
 | Tiny Transformers 的训练与生成接线 | `smoke_tiny.py` |
 | EOS、length cap 与 generation 参数优先级 | `generation_runtime_control.py`、`inspect_generation_protocol.py` |
@@ -128,6 +131,7 @@ python projects/transformers-basics/generation_runtime_control.py
 | 现象 | 先检查 |
 |---|---|
 | BPE merge 顺序与预期不同 | 计数是否跨 document、同频 tie-break 和 merge rank 是否固定 |
+| 模型看似在复制当前 token | Input 与 labels 是否正确错开一位，shift 是否重复或遗漏 |
 | Attention 输出出现未来 token 信息 | Causal mask 的方向、广播形状和 softmax 维度 |
 | Cached logits 与 full recompute 不一致 | Position IDs、mask、past length 和比较位置 |
 | Loss 不下降 | Labels shift、padding mask、optimizer 参数和 `train()`/`eval()` 状态 |
@@ -144,6 +148,7 @@ python projects/transformers-basics/generation_runtime_control.py
 ```powershell
 python -m pytest `
   tests/test_tokenizer.py `
+  tests/test_language_model_sample.py `
   tests/test_attention_numpy.py `
   tests/test_gpt_torch.py `
   tests/test_gpt_jax.py `
@@ -164,5 +169,7 @@ python scripts/check_docs.py
 python scripts/check_content_accuracy.py
 ```
 
-真实权重、GPU kernel、nano-vLLM/vLLM 调度和容量测试不属于默认 CPU 检查。完成这里后，可以进入
-[Inference Serving 项目](../../docs/practice/projects/inference-serving.md)，把同一个 Qwen 请求放进真实推理 runtime。
+默认 CPU 检查只覆盖参考实现和微型模型。真实权重与 GPU kernel 需要单独运行。
+
+完成这里后，可以进入 [Inference Serving 项目](../../docs/practice/projects/inference-serving.md)，把同一个 Qwen
+请求放进 nano-vLLM 或 vLLM，继续观察调度和容量。
