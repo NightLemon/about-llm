@@ -13,10 +13,12 @@ from about_llm.inference.nano_vllm_study import (
     REPORT_VERSION,
     SOURCE_REPOSITORY,
     SOURCE_REVISION,
+    build_study_trace_explanation,
     fingerprint_document,
     load_and_verify_study_report,
     load_study_manifest,
     main,
+    render_study_trace_explanation,
     verify_study_report,
 )
 
@@ -150,7 +152,7 @@ def _trace() -> list[dict[str, Any]]:
                         cached_tokens=768 + decode_index - 1,
                         scheduled_tokens=0,
                         block_count=before_blocks,
-                        is_prefill=decode_index != 1,
+                        is_prefill=decode_index == 1,
                     )
                 ],
                 "sequences_scheduled": [scheduled_decode],
@@ -420,6 +422,24 @@ def test_synthetic_report_proves_success_and_preserves_failure_terminals() -> No
             ),
             "token budget exceeded",
         ),
+        (
+            lambda report: report["cases"][0]["samples"][1]["trace"][1]["sequences_before"][
+                0
+            ].update({"cached_tokens": 999}),
+            "sequence continuity drift",
+        ),
+        (
+            lambda report: report["cases"][0]["samples"][1]["trace"][0]["sequences_scheduled"][
+                0
+            ].update({"is_prefill": False}),
+            "phase/sequence mode drift",
+        ),
+        (
+            lambda report: report["cases"][0]["samples"][1]["trace"][0].update(
+                {"committed_token_count": 0}
+            ),
+            "committed-token phase drift",
+        ),
     ],
 )
 def test_verifier_rejects_cooperatively_rehashed_semantic_drift(mutate: Any, message: str) -> None:
@@ -455,3 +475,83 @@ def test_verify_cli_is_cpu_only(tmp_path: Path, capsys: pytest.CaptureFixture[st
     summary = json.loads(capsys.readouterr().out)
     assert summary["successful_cases"] == 1
     assert summary["failed_cases"] == 31
+
+
+def test_trace_explanation_turns_one_verified_request_into_a_readable_ledger() -> None:
+    manifest = load_study_manifest(MANIFEST)
+    verified = verify_study_report(manifest, _report(manifest))
+
+    explanation = build_study_trace_explanation(
+        verified,
+        execution_mode="eager",
+        max_num_batched_tokens=256,
+        prefix_variant="exact",
+    )
+
+    assert explanation["case_id"] == "eager-mbt256-exact-c1"
+    assert explanation["prompt_tokens"] == 768
+    assert explanation["output_tokens"] == 8
+    assert explanation["prefix_hit_blocks"] == 2
+    assert explanation["prefix_hit_tokens"] == 512
+    assert len(explanation["steps"]) == 8
+    assert explanation["steps"][0] == {
+        "step_index": 0,
+        "phase": "prefill",
+        "execution_path": "eager",
+        "status_before": "waiting",
+        "status_after": "running",
+        "cached_before": 0,
+        "cached_when_scheduled": 512,
+        "cached_after": 768,
+        "scheduled_tokens": 256,
+        "completion_before": 0,
+        "completion_after": 1,
+        "committed_tokens": 1,
+        "kv_used_before": 0,
+        "kv_used_scheduled": 3,
+        "kv_used_after": 3,
+    }
+    assert explanation["steps"][-1]["status_after"] == "finished"
+    assert explanation["steps"][-1]["cached_after"] is None
+    assert explanation["kv_released"]["used_blocks"] == 0
+
+    rendered = render_study_trace_explanation(explanation)
+    assert "前缀命中: 2 个 KV block, 共 512 个 token" in rendered
+    assert "| 0 | prefill | eager | waiting → running | 0 → 512 → 768 |" in rendered
+    assert "| 7 | decode | eager | running → finished | 774 → 774 → released |" in rendered
+    assert "完成后: used_blocks=0, ref_count_total=0, cached_hash_entries=3" in rendered
+
+
+@pytest.mark.smoke
+def test_explain_cli_verifies_before_rendering(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest = load_study_manifest(MANIFEST)
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(_report(manifest), ensure_ascii=False), encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "explain",
+                "--manifest",
+                str(MANIFEST),
+                "--report",
+                str(report_path),
+                "--prefix-variant",
+                "exact",
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "案例: eager-mbt256-exact-c1" in output
+    assert "请求: 768 个输入 token → 8 个输出 token" in output
+
+
+def test_trace_explanation_preserves_a_failed_case_terminal() -> None:
+    manifest = load_study_manifest(MANIFEST)
+    verified = verify_study_report(manifest, _report(manifest))
+
+    with pytest.raises(ValueError, match="engine_init / OutOfMemoryError"):
+        build_study_trace_explanation(verified)

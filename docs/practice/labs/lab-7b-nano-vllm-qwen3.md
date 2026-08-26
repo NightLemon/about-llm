@@ -288,6 +288,29 @@ python projects/inference-serving/nano_vllm_study.py verify \
 报告里的 fingerprint 是内容摘要：内容改变时摘要也会改变，所以它可以帮助发现报告是否被修改。
 它没有使用密钥，无法证明报告由谁生成。
 
+整份报告包含 32 个 case，不适合从头翻到尾。验证通过后，先把一条 `drift + 256 budget + concurrency 1`
+的测量轨迹展开：
+
+~~~bash
+python projects/inference-serving/nano_vllm_study.py explain \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --report artifacts/inference/nano-vllm-study.json \
+  --execution-mode eager \
+  --max-num-batched-tokens 256 \
+  --prefix-variant one_token_drift \
+  --sample-index 0
+~~~
+
+`explain` 会再次验证整份报告，然后只读取这个成功 case 的第一份测量样本。输出表的每一行对应一次 engine step：
+
+- `sequence 状态` 显示请求怎样从 waiting 进入 running，最后变成 finished；
+- `cached tokens` 分别显示调度前、调度时和 postprocess 后的位置；
+- `本轮调度` 与 `本轮提交` 可以区分“模型算过候选”和“用户真的得到一个 token”；
+- `used KV blocks` 显示调度前、分配后和本轮结束后的活动块数。
+
+最后一行应结束于 `finished`，完成摘要中的 `used_blocks` 与 `ref_count_total` 都应为 0。
+若所选 case 在采集时失败，命令会保留并报告它的失败阶段，不会把失败轨迹拼成成功表格。
+
 ## 怎样读四组消融，而不是只找最快数字
 
 | 对照 | 先看机制字段 | 再看指标 | 可以提出的解释 |

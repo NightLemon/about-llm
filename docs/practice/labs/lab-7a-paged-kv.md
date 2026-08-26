@@ -1,7 +1,7 @@
 # 实验 7A：亲手追踪 Paged KV 与 copy-on-write
 
-这个实验不要求 GPU，也不要求下载模型。你会跟踪两条序列如何共享前缀、为什么未满尾块不能直接写，
-以及一次 copy-on-write（COW）怎样改变 block table 和真实 K/V tensor。
+这是一个可以直接在 CPU 上运行的小实验，无需下载模型。你会跟踪两条序列如何共享前缀、为什么未满尾块不能
+直接写，以及一次 copy-on-write（COW）怎样改变 block table 和真实 K/V tensor。
 
 **相关教材**：[一次请求如何穿过推理引擎](../../systems/inference-request-lifecycle.md) ·
 [推理优化](../../systems/inference-optimization.md) ·

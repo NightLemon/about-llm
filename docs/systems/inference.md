@@ -88,9 +88,11 @@ Decode 必须串行等待前一个输出，单步工作又相对小。小 batch 
 总 forward positions 是 (4+3-1=6)。最后一个 prompt position 已经产生 `y1`，
 所以后续只需 (O-1) 次普通 decode。
 
-这个等式描述标准的 decoder-only 因果生成：最后一个 prompt 位置产生首个输出，之后每个输出再需要一个 decode 位置。
-前缀复用、投机验证、beam search、padding 和重计算会改变实际工作。本账本统计模型求值的位置，
-不等同于 API 用量、计费 token 或 GPU kernel 次数。
+这个等式描述标准的 decoder-only（仅解码器）因果生成。最后一个 prompt 位置产生首个输出；之后每增加一个输出，
+模型再处理一个 decode 位置。
+
+本账本统计模型求值的位置，不等同于 API 用量、计费 token 或 GPU kernel 次数。前缀复用、投机验证、
+beam search、padding 和重计算需要另行记账。
 
 ### 把同一个账本放大到 Qwen3 + nano-vLLM
 
@@ -112,8 +114,10 @@ python projects/inference-serving/generation_work_ledger.py
 | 768-token 前缀完全相同 | 768 | 512 | 256 | 7 | `256+7=263` |
 | 索引 256 发生漂移 | 768 | 256 | 512 | 7 | `512+7=519` |
 
-三行的逻辑 prompt 都是 768。区别在于，前缀缓存已经保存了多少位置的 K/V，本轮 prefill 可以跳过多少位置。
-8 个输出都只需要 7 个 decode 位置，因为首个输出仍来自最后一个实际执行的 prefill 位置。
+三行的逻辑 prompt 都是 768。区别在于前缀缓存已经保存了多少位置的 K/V，也就是本轮 prefill 可以跳过多少位置。
+
+三行都只需要 7 个 decode 位置。首个输出已经由最后一个实际执行的 prefill 位置产生，后面七个输出才需要 decode。
+
 表中的索引从 0 开始，因此索引 256 是第二个 256-token block 的首个 token；它变化后，只有第一个 block
 还能命中缓存。
 

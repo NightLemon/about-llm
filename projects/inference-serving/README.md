@@ -63,6 +63,13 @@ python projects/inference-serving/nano_vllm_study.py collect \
 python projects/inference-serving/nano_vllm_study.py verify \
   --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
   --report artifacts/inference/nano-vllm-study.json
+
+python projects/inference-serving/nano_vllm_study.py explain \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --report artifacts/inference/nano-vllm-study.json \
+  --execution-mode eager \
+  --max-num-batched-tokens 256 \
+  --prefix-variant one_token_drift
 ```
 
 `collect` 会先确认源码和模型版本，再运行四组对照：eager 与 CUDA Graph、精确前缀与单 token 漂移、两种
@@ -72,6 +79,9 @@ prefill 预算，以及并发 1/2/4/8。
 
 `verify` 不需要 GPU。它会重新检查版本、时间顺序、指标计算、prefix hit、调度预算和 KV 账本。仓库目前没有把
 其他机器的数据写成 RTX 3070 Laptop 结果；你在目标机器生成的报告通过验证后，才是这台机器的实测证据。
+
+`explain` 同样不需要 GPU。它先验证整份报告，再把选中的并发 1 样本整理成逐 step 表格，适合核对 sequence 状态、
+cached token、提交的输出和活动 KV block。所选 case 如果失败，命令会直接报告失败阶段。
 
 完整的预测题、trace 阅读方法和 3070 Laptop 建议见[实验 7B](../../docs/practice/labs/lab-7b-nano-vllm-qwen3.md)。
 

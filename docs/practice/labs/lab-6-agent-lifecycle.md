@@ -1,7 +1,12 @@
 # 实验 6：追踪一次 Agent 退款
 
-这个实验不调用真实模型或支付服务。你会跟踪一笔 300 元退款怎样经过 observation、proposal、schema、
-ACL、approval、execution、idempotency、verifier 和 recovery，并解释为什么超时后不能直接重试。
+我们跟随一笔 300 元退款，观察它从“读到订单”走到“核对退款结果”的全过程：
+
+1. 把 observation 变成模型给出的 proposal；
+2. 用 schema、ACL 和 approval 判断这项提议能否执行；
+3. 在 execution 之后，用 idempotency、verifier 和 recovery 收口副作用。
+
+实验使用固定输入，不调用真实模型或支付服务。重点是解释：远端已经受理请求但本地超时时，为什么不能直接重试。
 
 **相关教材**：[Agent 总览](../../applications/agents.md) ·
 [一次 Agent 退款任务](../../applications/agent-task-lifecycle.md) ·

@@ -1,4 +1,4 @@
-"""Collect and verify the pinned Qwen3-0.6B through nano-vLLM study."""
+"""Collect, verify, and explain the pinned Qwen3-0.6B through nano-vLLM study."""
 
 from __future__ import annotations
 
@@ -1282,6 +1282,7 @@ def _verify_trace(
     first_cached_tokens: dict[int, int] = {}
     committed_total = 0
     prior_finished = 0
+    previous_after: list[Any] | None = None
     for index, step_value in enumerate(trace):
         step = _as_mapping(step_value, f"{location}[{index}]")
         _exact(
@@ -1337,22 +1338,25 @@ def _verify_trace(
         )
         if not scheduled_ids:
             raise ValueError(f"{location}[{index}] scheduled no sequences")
+        projections_by_name: dict[str, list[Any]] = {}
         for name in ("sequences_before", "sequences_scheduled", "sequences_after"):
             projections = _as_list(step[name], f"{location}[{index}].{name}")
+            projections_by_name[name] = projections
+            projection_ids: list[int] = []
             for projection_index, projection in enumerate(projections):
                 _verify_sequence_projection(
                     projection, f"{location}[{index}].{name}[{projection_index}]"
                 )
+                projection_ids.append(cast(int, cast(Mapping[str, Any], projection)["sequence_id"]))
                 if name == "sequences_scheduled" and step["phase"] != "decode":
                     projection_map = cast(Mapping[str, Any], projection)
                     first_cached_tokens.setdefault(
                         cast(int, projection_map["sequence_id"]),
                         cast(int, projection_map["cached_tokens"]),
                     )
+            if len(set(projection_ids)) != len(projection_ids):
+                raise ValueError(f"{location}[{index}].{name} has duplicate sequence ids")
             if name == "sequences_scheduled":
-                projection_ids = [
-                    cast(Mapping[str, Any], projection)["sequence_id"] for projection in projections
-                ]
                 projection_tokens = sum(
                     cast(int, cast(Mapping[str, Any], projection)["scheduled_tokens"])
                     for projection in projections
@@ -1365,8 +1369,25 @@ def _verify_trace(
                     raise ValueError(
                         f"{location}[{index}] decode must schedule one token per sequence"
                     )
+        before = projections_by_name["sequences_before"]
+        scheduled = projections_by_name["sequences_scheduled"]
+        after = projections_by_name["sequences_after"]
+        if previous_after is not None and before != previous_after:
+            raise ValueError(f"{location}[{index}] sequence continuity drift")
+        expected_is_prefill = step["phase"] != "decode"
+        if any(
+            cast(Mapping[str, Any], projection)["is_prefill"] is not expected_is_prefill
+            for projection in scheduled
+        ):
+            raise ValueError(f"{location}[{index}] phase/sequence mode drift")
+        expected_committed = 0 if step["phase"] == "chunked_prefill" else len(scheduled)
+        if committed != expected_committed:
+            raise ValueError(f"{location}[{index}] committed-token phase drift")
+        previous_after = after
         for name in ("kv_before", "kv_scheduled", "kv_after"):
             _verify_kv(step[name], f"{location}[{index}].{name}")
+    if previous_after:
+        raise ValueError(f"{location} ended with active sequences")
     return first_cached_tokens, committed_total
 
 
@@ -1850,6 +1871,185 @@ def load_and_verify_study_report(manifest_path: Path, report_path: Path) -> dict
     return verify_study_report(manifest, report)
 
 
+def _sequence_from_step(projections: Sequence[Any], sequence_id: int) -> Mapping[str, Any] | None:
+    for projection in projections:
+        projection_map = cast(Mapping[str, Any], projection)
+        if projection_map["sequence_id"] == sequence_id:
+            return projection_map
+    return None
+
+
+def build_study_trace_explanation(
+    verified_report: Mapping[str, Any],
+    *,
+    execution_mode: str = "eager",
+    max_num_batched_tokens: int = 256,
+    prefix_variant: str = "one_token_drift",
+    sample_index: int = 0,
+) -> dict[str, Any]:
+    """Select one verified concurrency-1 measurement and project its request trace."""
+
+    if execution_mode not in cast(Sequence[str], _LOCKED_WORKLOAD["execution_modes"]):
+        raise ValueError("execution_mode is not part of this study")
+    if max_num_batched_tokens not in cast(
+        Sequence[int], _LOCKED_WORKLOAD["max_num_batched_tokens"]
+    ):
+        raise ValueError("max_num_batched_tokens is not part of this study")
+    if prefix_variant not in cast(Sequence[str], _LOCKED_WORKLOAD["prefix_variants"]):
+        raise ValueError("prefix_variant is not part of this study")
+    if isinstance(sample_index, bool) or not isinstance(sample_index, int) or sample_index < 0:
+        raise ValueError("sample_index must be a non-negative integer")
+
+    case_id = f"{execution_mode}-mbt{max_num_batched_tokens}-{prefix_variant}-c1"
+    selected_case: Mapping[str, Any] | None = None
+    for case_value in cast(Sequence[Any], verified_report["cases"]):
+        case = cast(Mapping[str, Any], case_value)
+        if case["case_id"] == case_id:
+            selected_case = case
+            break
+    if selected_case is None:
+        raise ValueError(f"selected case is absent: {case_id}")
+    if selected_case["status"] != "success":
+        failure = cast(Mapping[str, Any], selected_case["failure"])
+        raise ValueError(
+            f"selected case failed during collection: {failure['stage']} / {failure['error_type']}"
+        )
+
+    selected_sample: Mapping[str, Any] | None = None
+    for sample_value in cast(Sequence[Any], selected_case["samples"]):
+        sample = cast(Mapping[str, Any], sample_value)
+        if sample["kind"] == "measurement" and sample["sample_index"] == sample_index:
+            selected_sample = sample
+            break
+    if selected_sample is None:
+        raise ValueError(f"measurement sample is absent: {sample_index}")
+
+    requests = cast(Sequence[Any], selected_sample["requests"])
+    prefix_hits = cast(Sequence[Any], selected_sample["prefix_hits"])
+    if len(requests) != 1 or len(prefix_hits) != 1:
+        raise ValueError("trace explanation requires the concurrency-1 case")
+    request = cast(Mapping[str, Any], requests[0])
+    prefix_hit = cast(Mapping[str, Any], prefix_hits[0])
+    sequence_id = cast(int, request["sequence_id"])
+    block_size = cast(int, cast(Mapping[str, Any], selected_case["engine"])["kvcache_block_size"])
+
+    rows: list[dict[str, Any]] = []
+    observed_prompt_tokens: int | None = None
+    for step_value in cast(Sequence[Any], selected_sample["trace"]):
+        step = cast(Mapping[str, Any], step_value)
+        before = _sequence_from_step(cast(Sequence[Any], step["sequences_before"]), sequence_id)
+        scheduled = _sequence_from_step(
+            cast(Sequence[Any], step["sequences_scheduled"]), sequence_id
+        )
+        after = _sequence_from_step(cast(Sequence[Any], step["sequences_after"]), sequence_id)
+        if before is None or scheduled is None:
+            raise ValueError("selected request is missing from a scheduled trace step")
+        prompt_tokens = cast(int, before["prompt_tokens"])
+        if observed_prompt_tokens is None:
+            observed_prompt_tokens = prompt_tokens
+        elif prompt_tokens != observed_prompt_tokens:
+            raise ValueError("selected request prompt length changed inside the trace")
+        completion_after = (
+            request["completion_tokens"] if after is None else after["completion_tokens"]
+        )
+        rows.append(
+            {
+                "step_index": step["step_index"],
+                "phase": step["phase"],
+                "execution_path": step["execution_path"],
+                "status_before": before["status"],
+                "status_after": "finished" if after is None else after["status"],
+                "cached_before": before["cached_tokens"],
+                "cached_when_scheduled": scheduled["cached_tokens"],
+                "cached_after": None if after is None else after["cached_tokens"],
+                "scheduled_tokens": scheduled["scheduled_tokens"],
+                "completion_before": before["completion_tokens"],
+                "completion_after": completion_after,
+                "committed_tokens": step["committed_token_count"],
+                "kv_used_before": cast(Mapping[str, Any], step["kv_before"])["used_blocks"],
+                "kv_used_scheduled": cast(Mapping[str, Any], step["kv_scheduled"])["used_blocks"],
+                "kv_used_after": cast(Mapping[str, Any], step["kv_after"])["used_blocks"],
+            }
+        )
+    if observed_prompt_tokens is None:
+        raise ValueError("selected request trace is empty")
+
+    return {
+        "report_fingerprint": verified_report["report_fingerprint"],
+        "case_id": case_id,
+        "sample_index": sample_index,
+        "request_id": request["request_id"],
+        "prompt_tokens": observed_prompt_tokens,
+        "output_tokens": request["completion_tokens"],
+        "prefix_hit_blocks": prefix_hit["hit_blocks"],
+        "prefix_hit_tokens": cast(int, prefix_hit["hit_blocks"]) * block_size,
+        "metrics": copy.deepcopy(cast(dict[str, Any], selected_sample["metrics"])),
+        "steps": rows,
+        "kv_released": copy.deepcopy(cast(dict[str, Any], selected_sample["kv_released"])),
+    }
+
+
+def _display_trace_value(value: Any) -> str:
+    return "released" if value is None else str(value)
+
+
+def render_study_trace_explanation(explanation: Mapping[str, Any]) -> str:
+    """Render a compact Markdown walkthrough for one selected request."""
+
+    metrics = cast(Mapping[str, Any], explanation["metrics"])
+    released = cast(Mapping[str, Any], explanation["kv_released"])
+    lines = [
+        f"已验证报告: {explanation['report_fingerprint']}",
+        f"案例: {explanation['case_id']}, 测量样本 {explanation['sample_index']}",
+        (
+            f"请求: {explanation['prompt_tokens']} 个输入 token → "
+            f"{explanation['output_tokens']} 个输出 token"
+        ),
+        (
+            f"前缀命中: {explanation['prefix_hit_blocks']} 个 KV block, "
+            f"共 {explanation['prefix_hit_tokens']} 个 token"
+        ),
+        "",
+        (
+            "| step | phase | path | sequence 状态 | cached tokens | 本轮调度 | "
+            "输出进度 | 本轮提交 | used KV blocks |"
+        ),
+        "|---:|---|---|---|---|---:|---|---:|---|",
+    ]
+    for row_value in cast(Sequence[Any], explanation["steps"]):
+        row = cast(Mapping[str, Any], row_value)
+        lines.append(
+            "| "
+            f"{row['step_index']} | {row['phase']} | {row['execution_path']} | "
+            f"{row['status_before']} → {row['status_after']} | "
+            f"{row['cached_before']} → {row['cached_when_scheduled']} → "
+            f"{_display_trace_value(row['cached_after'])} | "
+            f"{row['scheduled_tokens']} | "
+            f"{row['completion_before']} → {row['completion_after']} | "
+            f"{row['committed_tokens']} | "
+            f"{row['kv_used_before']} → {row['kv_used_scheduled']} → {row['kv_used_after']} |"
+        )
+    lines.extend(
+        [
+            "",
+            (
+                "测量: "
+                f"TTFT={metrics['ttft_ms']} ms, TPOT={metrics['tpot_ms']} ms, "
+                f"E2E={metrics['e2e_ms']} ms, "
+                f"output throughput={metrics['output_tokens_per_second']} tokens/s"
+            ),
+            (
+                "完成后: "
+                f"used_blocks={released['used_blocks']}, "
+                f"ref_count_total={released['ref_count_total']}, "
+                f"cached_hash_entries={released['cached_hash_entries']}"
+            ),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1861,6 +2061,19 @@ def _build_parser() -> argparse.ArgumentParser:
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument("--manifest", required=True, type=Path)
     verify_parser.add_argument("--report", required=True, type=Path)
+    explain_parser = subparsers.add_parser("explain")
+    explain_parser.add_argument("--manifest", required=True, type=Path)
+    explain_parser.add_argument("--report", required=True, type=Path)
+    explain_parser.add_argument(
+        "--execution-mode", choices=("eager", "cuda_graph"), default="eager"
+    )
+    explain_parser.add_argument(
+        "--max-num-batched-tokens", choices=(256, 1024), default=256, type=int
+    )
+    explain_parser.add_argument(
+        "--prefix-variant", choices=("exact", "one_token_drift"), default="one_token_drift"
+    )
+    explain_parser.add_argument("--sample-index", default=0, type=int)
     worker_parser = subparsers.add_parser("_worker", help=argparse.SUPPRESS)
     worker_parser.add_argument("--manifest", required=True, type=Path)
     worker_parser.add_argument("--source-root", required=True, type=Path)
@@ -1879,6 +2092,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = collect_study(args.manifest, args.source_root, args.model_snapshot, args.output)
     elif args.command == "verify":
         report = load_and_verify_study_report(args.manifest, args.report)
+    elif args.command == "explain":
+        report = load_and_verify_study_report(args.manifest, args.report)
+        explanation = build_study_trace_explanation(
+            report,
+            execution_mode=args.execution_mode,
+            max_num_batched_tokens=args.max_num_batched_tokens,
+            prefix_variant=args.prefix_variant,
+            sample_index=args.sample_index,
+        )
+        sys.stdout.write(render_study_trace_explanation(explanation))
+        return 0
     else:
         return _run_worker(
             args.manifest,

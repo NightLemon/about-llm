@@ -26,6 +26,7 @@
 | 教材结论 | 主要实现或测试 | 判定依据为什么独立于被测实现 | 仍未证明 |
 |---|---|---|---|
 | 单序列工作量为 \(P+O-1\)；A/B/C 四轮共处理 10 个位置 | `tests/test_continuous_batching.py` | 手算 `3+3+2+2=10`，再与请求总量 `7+6-3=10` 对账 | Padding、speculation、真实 kernel work 或计费 |
+| 前缀复用减少本轮需要计算的 prompt 位置；chunking 只改变调度步数 | `tests/test_inference_memory.py`、`tests/test_generation_work_ledger.py` | 直接复算 `P-cached+O-1`，并从固定 Manifest 推导 775/263/519 | nano-vLLM 实际命中、GPU kernel work 或延迟收益 |
 | KV 字节随层、KV heads、head dim、长度和 dtype 增长 | `tests/test_inference_memory.py` | 公式 fixture 与边界输入 | Runtime 对齐、workspace、allocator 或峰值 VRAM |
 | Shared partial tail append 必须 COW | `tests/test_kv_allocator.py` | append 前后 block/refcount 独立断言 | vLLM allocator、CUDA 并发或 eviction |
 | 容量不足不能留下半更新状态 | `tests/test_kv_allocator.py`、`tests/test_paged_kv_torch.py` | 异常前后 allocator 与 tensor 全量比较 | 异步 CUDA 故障的事务回滚 |
@@ -103,10 +104,19 @@ python projects/inference-serving/transformers_thread_cancellation_control.py --
 python projects/inference-serving/nano_vllm_study.py verify \
   --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
   --report artifacts/inference/nano-vllm-study.json
+
+python projects/inference-serving/nano_vllm_study.py explain \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --report artifacts/inference/nano-vllm-study.json \
+  --execution-mode eager \
+  --max-num-batched-tokens 256 \
+  --prefix-variant one_token_drift
 ~~~
 
 CPU 测试使用 synthetic report 检查 verifier 自己会拒绝 duplicate key、NaN、revision 漂移、时间倒流、
-指标篡改、prefill budget 超限和 KV 账本不守恒。它不声称 synthetic timing 是 GPU 性能。
+指标篡改、prefill budget 超限、相邻 step 的 sequence 断裂、phase 标记矛盾、错误的 token 提交数和 KV 账本不守恒。
+`explain` 只在整份报告通过这些检查后投影一条并发 1 轨迹；它不会修补失败 case 或重新计算性能数字。
+Synthetic timing 仍然不是 GPU 性能。
 
 GPU collector 才会真实执行固定 Qwen3 权重、nano-vLLM Scheduler/BlockManager/ModelRunner、FlashAttention、
 Triton KV store、Sampler 和符合条件的 decode CUDA Graph。报告中的 TTFT/TPOT/E2E 是 engine 内部时钟，

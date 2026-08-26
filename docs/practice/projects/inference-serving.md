@@ -75,8 +75,12 @@ offered -> dispatch -> admission -> prefill -> first token
 python projects/inference-serving/generation_work_ledger.py
 ~~~
 
-没有前缀复用时，模型需要处理 768 个 prefill positions 和 7 个 decode positions，共 775 个；精确复用前两个
-256-token block 后只剩 263 个；如果索引 256（从 0 开始）发生 token 漂移，则只能复用第一个 block，总数回升到 519 个。
+先对照三行结果：
+
+- 没有前缀复用：`768 prefill + 7 decode = 775` 个计算位置；
+- 精确复用前两个 256-token block：`256 + 7 = 263` 个；
+- 索引 256（从 0 开始）发生漂移，只能复用第一个 block：`512 + 7 = 519` 个。
+
 这一步没有运行 Qwen3 或 nano-vLLM，它的作用是让你先把 GPU trace 中应该出现的数量算清楚。
 
 ## 阶段 1：运行 Paged KV 引导实验
@@ -132,7 +136,17 @@ python projects/inference-serving/nano_vllm_study.py collect \
 python projects/inference-serving/nano_vllm_study.py verify \
   --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
   --report artifacts/inference/nano-vllm-study.json
+
+python projects/inference-serving/nano_vllm_study.py explain \
+  --manifest projects/inference-serving/nano-vllm-qwen3-0.6b.study.json \
+  --report artifacts/inference/nano-vllm-study.json \
+  --execution-mode eager \
+  --max-num-batched-tokens 256 \
+  --prefix-variant one_token_drift
 ~~~
+
+先用 `explain` 阅读一条并发 1 的逐 step 表格，再比较 32 个 case 的汇总指标。这样能先确认性能变化对应哪次
+prefill、decode 或 KV 分配，而不是直接从中位数猜原因。
 
 完成标准：
 

@@ -1,4 +1,4 @@
-"""Collect or verify the pinned Qwen3-0.6B through nano-vLLM study."""
+"""Collect, verify, or explain the pinned Qwen3-0.6B through nano-vLLM study."""
 
 from __future__ import annotations
 
