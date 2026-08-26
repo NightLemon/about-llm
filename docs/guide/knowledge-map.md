@@ -65,13 +65,14 @@ flowchart TD
 
 先修：主干 3–4，并具备基本操作系统和网络知识。
 
-1. [推理基础](../systems/inference.md)：prefill、decode 和 KV Cache。
-2. [请求生命周期](../systems/inference-request-lifecycle.md)：从 admission 到 KV 释放的端到端主线。
-3. [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md)：用 block table、refcount 和 COW 解释缓存状态。
-4. [推理优化](../systems/inference-optimization.md)：按症状选择量化、批处理和内存管理。
-5. [vLLM 与单卡服务](../systems/vllm-serving.md)：服务启动、请求和容量实验。
-6. [服务与可观测性](../systems/serving.md)：排队、限流、取消、SLO 和回滚。
-7. [硬件与端侧](../systems/hardware-edge.md)：带宽、算力、显存和设备约束。
+1. [算子与计算栈](../systems/operator-stack.md)：从 RMSNorm 数学走到框架图、ATen、kernel 和支持审计。
+2. [推理基础](../systems/inference.md)：prefill、decode 和 KV Cache。
+3. [请求生命周期](../systems/inference-request-lifecycle.md)：从 admission 到 KV 释放的端到端主线。
+4. [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md)：用 block table、refcount 和 COW 解释缓存状态。
+5. [推理优化](../systems/inference-optimization.md)：按症状选择量化、批处理和内存管理。
+6. [vLLM 与单卡服务](../systems/vllm-serving.md)：服务启动、请求和容量实验。
+7. [服务与可观测性](../systems/serving.md)：排队、限流、取消、SLO 和回滚。
+8. [硬件与端侧](../systems/hardware-edge.md)：带宽、算力、显存和设备约束。
 
 出口成果：一份区分 TTFT、TPOT、吞吐、错误率和资源占用的压测报告。
 

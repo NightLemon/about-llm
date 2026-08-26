@@ -36,6 +36,7 @@ flowchart TD
 | 第一次理解 loss、梯度与分类指标 | [机器学习最小闭环](../foundations/ml-dl.md#ml-minimal-loop) | 15–30 分钟 |
 | 第一次观察生成模型 | [实验 0A](labs/lab-0a-sampling.md) | 30–60 分钟 |
 | 理解 tokenizer 与注意力 | [实验 1](#lab-1)、[实验 2](#lab-2) | 2–4 小时 |
+| 理解框架算子与 kernel 的边界 | [实验 2D](labs/lab-2d-operator-stack.md) | 1–2 小时 |
 | 训练或微调模型 | [实验 3](#lab-3)、[实验 4A](labs/lab-4a-sft-sample.md) | 1–3 天 |
 | 构建 RAG 或 Agent | [RAG 实验 5](labs/lab-5-rag-request.md)、[Agent 实验 6](labs/lab-6-agent-lifecycle.md) | 1–3 天 |
 | 学习服务与评测 | [实验 7](#lab-7)、[实验 8](#lab-8) | 1–3 天 |
@@ -177,6 +178,14 @@ attention 结构改为 MLA。目标是找出标准公式在哪一步失去适用
 另一个选修是只量化一层矩阵，再观察局部数值误差怎样传播到最终 logits。
 
 交付物：模型 revision、tokenizer/template、输入 token IDs、数值容差和资源记录。单个 prompt、单层量化或 argmax 不变都不能证明整体质量、显存收益或加速。
+
+### 实验 2D：从 RMSNorm 走到框架算子 { #lab-2d }
+
+如果已经能手算 Transformer，却还分不清模型模块、框架算子和设备 kernel，进入
+[实验 2D](labs/lab-2d-operator-stack.md)。实验先在 CPU 上追踪非连续布局、RMSNorm 数学和两层计算图，再提供
+3070 Laptop 的 CUDA 观察入口。
+
+完成后，你会用本次运行记录描述当前路径，并把尚未测试的数据类型、形状和性能单独列出。
 
 ## 实验 3：训练微型 GPT { #lab-3 }
 

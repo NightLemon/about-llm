@@ -89,7 +89,7 @@ GQA 和 MQA 通过减少 K/V head 数来降低这一项。分页分配器还会�
 
 容量账本要保留安全余量，并分别记录框架报告的峰值 allocated memory 和 reserved memory。
 
-## 3. Roofline 模型
+## 3. Roofline 模型 { #roofline-model }
 
 算术强度：
 
@@ -107,7 +107,7 @@ t_{ideal}\ge
 
 Ridge point 为 \(I_{ridge}=P/BW\)：\(I<I_{ridge}\) 更可能 bandwidth-bound，反之更可能 compute-bound。
 
-### 3.1 可执行下界
+### 3.1 可执行下界 { #roofline-control }
 
 ```python
 from about_llm.inference import roofline_lower_bound
@@ -179,6 +179,9 @@ CUDA Graph、提前编译（AOT）、即时编译（JIT）和 kernel 自动调�
 
 动态形状、数据相关控制流、自定义算子或新的 batch 形状，可能触发重新编译或回退路径。基准测试要把首次编译和冷启动
 时间，与预热后的稳态时间分开报告。
+
+这些概念在 [LLM 算子与计算栈](operator-stack.md)中沿一次 RMSNorm 展开；
+[实验 2D](../practice/labs/lab-2d-operator-stack.md)会实际打印非连续布局、FX、ATen 与 profiler 事件。
 
 ## 7. GPU、TPU、NPU 与 CPU
 

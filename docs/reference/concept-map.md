@@ -86,6 +86,23 @@ flowchart LR
 
 先把 prefill 与 decode 当成两种负载，再讨论 batching、cache 和调度。只报告平均 tokens/s 无法回答首 token、尾延迟或过载时发生了什么。
 
+## 算子与计算栈链
+
+```mermaid
+flowchart LR
+  T["Tensor / stride / dtype"] --> O["Operator semantics"]
+  O --> G["Computation graph"]
+  G --> A["ATen / Dispatch"]
+  A --> L["Decomposition / Lowering"]
+  L --> K["Kernel"]
+  K --> H["Instruction / Hardware"]
+  H --> R["Roofline / Profiling"]
+```
+
+这条链用于回答“模型为什么能跑、为什么会回退、为什么没有达到预期速度”。模型算子描述数学角色，ATen 描述
+框架接口，kernel 才是设备上一次启动执行的程序。沿一次 RMSNorm 的完整讲解和可运行图捕获见
+[算子与计算栈](../systems/operator-stack.md)及[实验 2D](../practice/labs/lab-2d-operator-stack.md)。
+
 ## RAG 诊断链
 
 检索表示不是黑盒 API；它有自己的训练依赖：

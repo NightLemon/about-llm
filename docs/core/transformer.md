@@ -313,6 +313,9 @@ FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返与�
 部署时应记录实际使用的计算后端，并确认 head dimension、数值类型、mask、GQA、RoPE 和硬件组合确实选择了预期
 kernel。配置中出现一个启用开关，并不能证明运行时没有回退。
 
+如果这里的“模型算子、ATen、编译图和 kernel”仍容易混在一起，先跟一次
+[RMSNorm 算子计算栈](../systems/operator-stack.md#rmsnorm-trace)，再回来看 Attention backend。
+
 ## 11. 架构类型
 
 - Encoder-only：通常用双向 self-attention，适合表示、分类和抽取；

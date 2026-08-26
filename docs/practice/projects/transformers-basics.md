@@ -225,6 +225,20 @@ python projects/transformers-basics/online_softmax_demo.py
 这个演示仍会计算完整注意力作为参考答案，所以进程本身并不节省全部内存。
 它解释在线 softmax 的数学过程，不是在测量 FlashAttention 内核或进程峰值显存。
 
+## Phase 3.5：跟一次 RMSNorm 走到 ATen 图
+
+```powershell
+python projects/transformers-basics/trace_rmsnorm_operator_stack.py
+```
+
+Transformer 主章已经给出 RMSNorm 数学定义，这一步继续追踪它在框架中的表达。程序先让同一个张量经过
+`transpose` 和 `contiguous()`，观察 shape、stride 与 storage；再比较手写分解和
+`torch.nn.functional.rms_norm`，最后打印 FX 与 `torch.export` 的 ATen 图。
+
+加入 `--profile` 可以看到当前 PyTorch 的算子事件；在支持 CUDA 的 3070 Laptop 环境还可以加入
+`--device cuda`。这些事件不能直接当作稳定的 GPU kernel 清单。完整的抽象层、支持审计和实验记录方法见
+[算子计算栈](../../systems/operator-stack.md)与[实验 2D](../labs/lab-2d-operator-stack.md)。
+
 ## Phase 4：让同一个样本真正经过 MiniGPT
 
 ~~~powershell
@@ -396,6 +410,7 @@ python projects/transformers-basics/run_target_checkpoint.py --local-files-only
 python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
 python projects/transformers-basics/trace_language_model_sample.py
 python projects/transformers-basics/online_softmax_demo.py
+python projects/transformers-basics/trace_rmsnorm_operator_stack.py
 python projects/transformers-basics/trace_minigpt_training_step.py
 python projects/transformers-basics/smoke_tiny.py
 python projects/transformers-basics/generation_runtime_control.py
@@ -419,6 +434,7 @@ python projects/transformers-basics/inspect_config.py projects/transformers-basi
 
 - 激活修补（activation patching）：设计干净输入、受扰动输入和正负对照；
 - MoE 路由：观察 top-k 专家选择、容量限制和跨设备 all-to-all 通信；
+- 算子计算栈：比较非连续布局、FX/ATen 图和当前 backend 的 profiler 事件；
 - 局部 INT4：区分被量化权重的局部误差与整模型质量；
 - 真实 checkpoint：对账 KV cache、生成结果和资源用量。
 

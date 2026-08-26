@@ -123,6 +123,7 @@ nav:
       - 持续学习与模型合并: training/continual-learning.md
       - JAX、Optax 与函数式训练: training/jax-optax.md
   - 推理与系统:
+      - LLM 算子与计算栈: systems/operator-stack.md
       - 推理:
           - 推理基础（基础）: systems/inference.md
           - 一次请求如何穿过推理引擎: systems/inference-request-lifecycle.md
@@ -185,6 +186,7 @@ nav:
           - 0B 生成、停止与流式协议: practice/labs/lab-0b-generation-protocol.md
           - 0C 云 API 预算与对账: practice/labs/lab-0c-cloud-budget.md
           - 0D Opaque Reasoning 工件安全: practice/labs/lab-0d-reasoning-artifact-security.md
+          - 2D RMSNorm 算子计算栈: practice/labs/lab-2d-operator-stack.md
           - 4A 追踪一个 SFT 样本: practice/labs/lab-4a-sft-sample.md
           - 5 一次 RAG 问答: practice/labs/lab-5-rag-request.md
           - 6 一次 Agent 退款: practice/labs/lab-6-agent-lifecycle.md
