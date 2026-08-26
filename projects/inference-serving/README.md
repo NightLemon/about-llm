@@ -7,6 +7,14 @@ prefill、decode、KV Cache、流式输出、取消和资源释放，再用明�
 运行入口、脚本索引和排错信息。当前使用 Qwen3-0.6B 与 nano-vLLM 的读者，可以直接进入
 [实验 7B](../../docs/practice/labs/lab-7b-nano-vllm-qwen3.md)。
 
+在长 GPU 实验之前，建议先运行一次真实 Qwen3 对话编码：
+
+```powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+```
+
+它回答“中文 message 怎样变成模型输入”；实验 7B 的 768 个固定生成 ID 则专门回答“相同长度的输入怎样被调度”。
+
 ## 第一次运行
 
 先运行一个不需要 GPU 或模型下载的 Paged KV 实验：
@@ -15,8 +23,9 @@ prefill、decode、KV Cache、流式输出、取消和资源释放，再用明�
 python projects/inference-serving/paged_kv_tensor_toy.py
 ```
 
-运行前先预测：五个前缀 token 会占几个 block，产生分支后哪些 block 共享，继续追加 token 时，哪个未写满的 block
-会触发写时复制（copy-on-write）。输出中的 `dense parity=true` 只表示分页读写与连续张量参考结果一致，并不表示执行了 GPU PagedAttention。
+运行前先预测：五个前缀 token 会占几个块，产生分支后哪些块共享，继续追加 token 时，哪个未写满的块会触发
+写时复制（copy-on-write）。输出中的 `dense parity=true` 只表示分页读写与连续张量参考结果一致。GPU
+PagedAttention 要在目标运行时中另行观察。
 
 然后离线复核一份已经录制的 HTTP 报告：
 
@@ -29,7 +38,7 @@ python projects/inference-serving/run_qwen_target_service.py `
 
 ## Qwen3-0.6B 与 nano-vLLM 主线
 
-这个实验追踪一次请求经过 nano-vLLM 的调度器（scheduler）、KV block 管理器、模型执行器、Qwen3 和采样器。
+这个实验追踪一次请求经过 nano-vLLM 的调度器、KV 块管理器、模型执行器、Qwen3 和采样器。
 为了让结果可以复现，仓库使用 nano-vLLM commit `bb823b3e06983d71485a8e1f23715ebd87d98ef8`，以及 Qwen3-0.6B commit
 `c1899de289a04d12100db370d81485cdf75e47ca`。
 
@@ -47,8 +56,10 @@ python projects/inference-serving/nano_vllm_study.py verify \
   --report artifacts/inference/nano-vllm-study.json
 ```
 
-`collect` 会先确认源码和模型版本，再比较 eager 与 CUDA Graph、精确前缀与单 token 漂移、两种 prefill 预算，
-以及并发 1/2/4/8。报告按步骤记录序列状态、调度的 token 数和 KV block 使用量，并汇总 TTFT、TPOT、吞吐和峰值显存。
+`collect` 会先确认源码和模型版本，再运行四组对照：eager 与 CUDA Graph、精确前缀与单 token 漂移、两种
+prefill 预算，以及并发 1/2/4/8。
+
+报告按步骤记录序列状态、调度的 token 数和 KV block 使用量，最后汇总 TTFT、TPOT、吞吐和峰值显存。
 
 `verify` 不需要 GPU。它会重新检查版本、时间顺序、指标计算、prefix hit、调度预算和 KV 账本。仓库目前没有把
 其他机器的数据写成 RTX 3070 Laptop 结果；你在目标机器生成的报告通过验证后，才是这台机器的实测证据。

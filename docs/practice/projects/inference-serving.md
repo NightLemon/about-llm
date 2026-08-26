@@ -63,6 +63,12 @@ offered -> dispatch -> admission -> prefill -> first token
 
 完成标准：能把输出 token、KV 长度、block table 和四个时间戳放到同一张表中。
 
+接着运行[实验 1B](../labs.md#lab-1b)。默认中文 message 经过 Qwen3 chat template 后会得到 29 个 ID。
+这一步只执行 tokenizer。
+
+实验 7B 会改用 768 个固定生成的 ID，让前缀命中和 256-token block 账本容易复算。前一组输入解释文本编码，
+后一组输入解释 runtime 调度。
+
 ## 阶段 1：运行 Paged KV 引导实验
 
 先完成[实验 7A](../labs/lab-7a-paged-kv.md)，不要直接跳到测试命令。
@@ -92,10 +98,10 @@ python -m pytest `
 
 ## 阶段 1B：让 Qwen3 真正穿过 nano-vLLM
 
-完成[实验 7B](../labs/lab-7b-nano-vllm-qwen3.md)。这一步把 CPU Paged KV 的参考实现放进真实模型 runtime，
-但还没有进入完整 HTTP 服务：
-它真实加载固定 Qwen3-0.6B 权重并执行 CUDA/FlashAttention/Triton，却只研究 engine 内部请求，不提供
-OpenAI-compatible endpoint。
+完成[实验 7B](../labs/lab-7b-nano-vllm-qwen3.md)。它会加载固定的 Qwen3-0.6B 权重，并通过 CUDA、
+FlashAttention 和 Triton 执行真实模型计算。
+
+这一阶段只研究推理引擎内部的请求。HTTP 服务和 OpenAI-compatible endpoint 留到后面接入。
 
 先写下四个预测，再运行长实验：
 
@@ -118,9 +124,11 @@ python projects/inference-serving/nano_vllm_study.py verify \
   --report artifacts/inference/nano-vllm-study.json
 ~~~
 
-完成标准：能从任一 measurement 的 trace 指出 first-token commit 边界、每次 KV 分配/释放、
-prefix hit 失效点和 eager/CUDA Graph 实际分支；报告通过离线 verifier。若某个并发档失败，保留
-typed terminal，不把它从容量曲线中删除。
+完成标准：
+
+- 能从任一测量轨迹中指出首 token 提交边界、每次 KV 分配与释放，以及前缀命中的失效点；
+- 能说明 eager 与 CUDA Graph 实际走了哪条分支，并让报告通过离线验证；
+- 某个并发档失败时，保留带类型的终态，并把它计入容量曲线。
 
 ## 阶段 2：把协议和终态跑通
 
@@ -241,7 +249,7 @@ GPU utilization / peak memory / KV blocks / preemption
 
 - TTFT 被重复 system prompt 主导：评估 prefix cache。
 - KV 容量先到上限：评估更短 context、GQA 模型、KV/weight quantization 或 admission。
-- 小 batch decode 明显受带宽/launch 限制：评估 batch policy、兼容 kernel 或 CUDA Graph。
+- 小批量 decode 明显受带宽或 kernel 启动开销限制：评估批处理策略、兼容 kernel 或 CUDA Graph。
 - Target decode 串行成本主导：在接受率与 draft 成本可测时评估 speculative decoding。
 
 保持 workload、质量 case 和其他配置不变，重新运行同一容量扫描。

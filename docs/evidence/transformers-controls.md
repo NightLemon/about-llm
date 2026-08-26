@@ -111,6 +111,25 @@ loss mask:   [true, true, true, false]
 或语言模型，也没有产生 logits、loss 和 perplexity。这里的特殊 token 与 ID 仅用于讲解；真实 checkpoint 仍须使用
 配套 tokenizer 和 special-token 配置。
 
+### 1.5 同一句中文进入固定 Qwen3 tokenizer
+
+~~~powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+~~~
+
+2026-08-26 使用 Transformers 4.57.6 和
+`Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca` 实际运行，默认 message
+经过 `add_generation_prompt=true`、`enable_thinking=false` 的 chat template 后得到 29 个 token IDs。模板直接
+返回的 IDs 与“先渲染文本、再关闭自动 special token 添加进行编码”的结果一致；保留 special tokens 解码后也还原了
+完整模板文本。
+
+本次加载的类名为 `Qwen2TokenizerFast`。这是 Transformers 为该 Qwen3 checkpoint 选择的兼容 tokenizer 实现，
+不能据此把模型写成 Qwen2。`<|im_start|>` 和 `<|im_end|>` 位于 `all_special_ids`；模板中的 `<think>` 和
+`</think>` 是 added tokens，却不在该集合中。这个差异会影响 `skip_special_tokens` 的解释。
+
+脚本没有加载模型权重、执行 forward、调用 nano-vLLM 或使用 GPU。若使用 `--model-snapshot` 指向复制后的本地目录，
+目录本身也不能证明来源 commit；报告会明确保留这一边界。
+
 ## 2. Attention：先锁定数学，再谈 kernel
 
 ### 2.1 Dense causal attention

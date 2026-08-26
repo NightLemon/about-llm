@@ -89,11 +89,32 @@ nano-vLLM 负责请求状态、调度、缓存和执行。
 这张表也解释了为什么“模型支持某种架构”不等于“任意推理框架都能运行它”。运行时必须认识配置中的
 模型类型，拥有对应的模型类，并能管理它需要的缓存状态和计算 kernel。
 
+### 先把模板和 token IDs 真正跑出来
+
+仓库提供了一条只运行 Qwen3 tokenizer 的命令。它不会加载模型权重，也不需要 GPU：
+
+~~~powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+~~~
+
+若模型在单独的 snapshot 目录中，使用 `--model-snapshot <path>`。如果固定版本还没有进入本地缓存，第一次运行时
+去掉 `--local-files-only` 即可。脚本会把这条中文 message、chat template 渲染出的完整提示词、29 个输入 ID 和
+每个 token 的可读片段放在一起。
+
+Transformers 会用 `Qwen2TokenizerFast` 加载这个固定版本。Qwen3 复用了兼容的 tokenizer 实现，模型权重仍然
+属于 Qwen3-0.6B。因此，不能只看 tokenizer 的 Python 类名判断模型家族。
+
+脚本还会显示：`<think>` 和 `</think>` 是 added tokens，但不在当前 `all_special_ids` 中。模板控制词与
+tokenizer 元数据中的 special token 是两个不同概念。
+
 ### 教材主线与可复现实验怎样对应
 
-上面的中文问题便于理解请求生命周期。[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)
-把输入换成 768 个固定生成的 token ID，并只生成 8 个 token。这样做不是为了模拟真实聊天，而是为了让读者
-稳定观察 256-token KV block、分块 prefill、前缀复用和逐轮 decode。
+先在[实验 1B](../practice/labs.md#lab-1b)中编码上面的中文问题，观察真实模板和输入 ID。
+
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)改用 768 个固定生成的 token ID，并只生成 8 个 token。
+这组整齐的长度用来观察 256-token KV block、分块 prefill、前缀复用和逐轮 decode。
+
+进入服务基准后，再把真实业务 Prompt 和长度分布接回去。
 
 实验使用 `Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca`，以及 nano-vLLM
 commit `bb823b3e06983d71485a8e1f23715ebd87d98ef8`。runner 会记录序列状态和缓存账本；真实耗时、吞吐与
@@ -347,6 +368,7 @@ checkpoint 的模板反推。
 
 | 目标 | 建议入口 |
 |---|---|
+| 观察中文 message 怎样变成 Qwen3 输入 IDs | [实验 1B](../practice/labs.md#lab-1b) |
 | 理解 tokenizer、attention、量化与真实权重 | [Transformers Basics](../practice/projects/transformers-basics.md) |
 | 完成单卡 SFT/LoRA/DPO 路线 | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
 | 建立中文权限感知 RAG | [RAG Foundations](../practice/projects/rag-foundations.md) |

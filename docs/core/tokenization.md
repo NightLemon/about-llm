@@ -232,9 +232,9 @@ RAG 引用、PII 标注和网页高亮尤其依赖这条映射。索引阶段与
 
 模型运行时主要处理整数 ID。Tokenizer 若换成不兼容版本，即使 tensor shape 勉强一致，ID 也可能指向错误的 Embedding 行。
 
-上下文长度同样要在应用 chat template 以后计算。Tokenizer 能告诉你当前输入有多少 IDs；模型 config 和推理 Runtime
-共同决定最多能接受多少，以及超长时是报错、截断还是采用其他位置扩展策略。完整运行链路见
-[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)。
+上下文长度要在应用对话模板以后计算。Tokenizer 能告诉你当前输入有多少个 ID。模型配置与推理框架再共同决定
+可接受的最大长度，以及超长时是报错、截断还是采用其他位置扩展策略。完整运行链路见
+[Qwen3 tokenizer 实验](../practice/labs.md#lab-1b)和[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)。
 
 ## Token 数会影响哪些训练和推理量
 

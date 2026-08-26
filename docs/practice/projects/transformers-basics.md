@@ -107,6 +107,32 @@ mask 回答第一个问题，loss mask 回答第二个问题。
 脚本停在模型前向计算之前。下一阶段才让注意力和微型模型真正运行。逐位置解释见
 [NLP 与语言建模](../../foundations/nlp.md#shift-and-mask)。
 
+## Phase 1.75：换成 Qwen3 自己的 tokenizer
+
+前两个实验中的字节级 BPE、`BOS/EOS/PAD` 和 token IDs 都是教学实现。
+
+下面仍使用同一句中文问题，但把输入交给固定版本 Qwen3-0.6B 的 tokenizer 与 chat template：
+
+~~~powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+~~~
+
+如果模型文件位于单独目录，改用 `--model-snapshot <path>`。第一次尚未缓存时可以去掉 `--local-files-only`；
+程序请求的是完整 commit `c1899de289a04d12100db370d81485cdf75e47ca`。
+
+固定输入在当前模板下得到 29 个 ID。前 3 个是 `<|im_start|>`、`user` 和换行，随后才是消息正文；结尾还包括
+`<|im_end|>`、assistant 起始标记，以及禁用 thinking 时模板补上的空 `<think>...</think>` 区间。
+因此，不能只编码消息正文来估算 prefill 长度。
+
+输出中的 tokenizer 类名是 `Qwen2TokenizerFast`。Qwen3 checkpoint 复用了这个 Transformers tokenizer 实现，
+模型权重仍然属于 Qwen3。
+
+`<think>` 和 `</think>` 展示了另一个边界：它们是 added tokens，却不在当前 `all_special_ids` 中。
+因此，“模板控制词”和“解码时会跳过的 special token”需要分开判断。
+
+这一步没有加载权重、计算 logits 或进入 nano-vLLM。它只把真实应用输入接到目标 tokenizer；模型执行和调度要在
+后续实验中分别观察。
+
 ## Phase 2：手算 causal attention
 
 先看单头缩放点积注意力（scaled dot-product attention）：
@@ -324,17 +350,17 @@ python projects/transformers-basics/inspect_config.py projects/transformers-basi
 python projects/transformers-basics/inspect_checkpoint.py <model-id> --revision <full-commit-hash>
 ~~~
 
-检查程序会先保存：
+检查程序会输出：
 
 - 请求的版本和仓库实际解析到的版本；
-- 模型配置、分词器、对话模板和生成配置；
+- 模型类型、架构名、词表大小和上下文配置；
 - 特殊 token ID 和模板渲染后的 Prompt；
-- 权重分片清单；
-- 运行环境，以及是否允许执行远端自定义代码；
-- 许可证和模型卡的人工检查结果。
+- 标准 attention/GQA 配置是否足以推导 KV 布局；
+- 可用 generation config 与 tokenizer/model config 的特殊 token 关系。
 
 这一步可以发现 Base 模型没有对话模板、特殊 token 配置漂移，或者模型依赖自定义注意力实现。
-此时还没有加载全部权重，所以权重是否完整、前向计算是否正确和模型质量都需要下一阶段验证。
+程序使用 `trust_remote_code=False`，也不读取权重分片、模型卡或许可证。权重是否完整、前向计算是否正确和模型质量
+都需要下一阶段验证。
 
 ## Phase 8：真实权重是选修
 
@@ -376,6 +402,7 @@ python projects/transformers-basics/generation_runtime_control.py
 ### 第二次：静态 checkpoint 路线
 
 ~~~powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
 python projects/transformers-basics/verify_release_evidence.py
 python projects/transformers-basics/inspect_config.py projects/transformers-basics/configs/standard-gqa.example.json --tokens 4096
 ~~~

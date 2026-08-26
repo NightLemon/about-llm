@@ -53,6 +53,7 @@ generation config、库版本和执行硬件。
 | Tiny Transformers 的训练与生成接线 | `smoke_tiny.py` |
 | EOS、length cap 与 generation 参数优先级 | `generation_runtime_control.py`、`inspect_generation_protocol.py` |
 | 本地 config 能否使用标准 GQA/KV 公式 | `inspect_config.py` |
+| 一条中文对话怎样变成 Qwen3 的真实输入 IDs | `trace_qwen3_tokenizer.py` |
 | 公开 checkpoint 的 config、tokenizer 与模板 | `inspect_checkpoint.py` |
 | Llama、Qwen、DeepSeek 发布资料如何固定 | `verify_release_evidence.py` |
 | 固定 Qwen 权重的 forward、KV cache 与 generate | `run_target_checkpoint.py` |
@@ -63,6 +64,25 @@ generation config、库版本和执行硬件。
 
 MoE、activation patching 和真实权重量化是机制选修，不应阻塞第一次理解 Transformer。精确输入和运行结果见
 [Transformers 证据页](../../docs/evidence/transformers-controls.md)，不要把多个独立实验拼成某个发布模型的完整能力结论。
+
+## 追踪一条 Qwen3 对话输入
+
+本地已经缓存固定版本时，运行：
+
+```powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+```
+
+模型放在单独目录时，可以传入 `--model-snapshot <path>`。第一次没有缓存时去掉 `--local-files-only`；脚本请求的仍是
+Qwen3-0.6B 的完整 commit `c1899de289a04d12100db370d81485cdf75e47ca`。
+
+默认输出从一条中文用户消息开始。程序先展示对话模板组成的文本，再列出 29 个 token IDs、可读片段和词表 token。
+
+随后，它会比较“模板直接返回的 IDs”和“先渲染文本再编码的 IDs”。这一步只加载 tokenizer，不需要模型权重、
+nano-vLLM 或 GPU。
+
+加载后的类名是 `Qwen2TokenizerFast`，因为 Qwen3 复用了兼容的 tokenizer 实现。判断模型家族要看 checkpoint
+配置和模型类，不能只看 tokenizer 的 Python 类名。
 
 ## 检查公开 checkpoint
 
@@ -152,6 +172,7 @@ python projects/transformers-basics/generation_runtime_control.py
 python -m pytest `
   tests/test_tokenizer.py `
   tests/test_language_model_sample.py `
+  tests/test_qwen3_tokenizer_trace.py `
   tests/test_minigpt_training_trace.py `
   tests/test_attention_numpy.py `
   tests/test_gpt_torch.py `

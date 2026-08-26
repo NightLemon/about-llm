@@ -9,6 +9,7 @@
 怎样释放所有活动引用。
 
 **相关教材**：[请求生命周期](../../systems/inference-request-lifecycle.md) ·
+[Qwen3 tokenizer 实验](../labs.md#lab-1b) ·
 [Paged KV 实验](lab-7a-paged-kv.md) ·
 [Qwen](../../models/qwen.md) ·
 [Inference Serving 项目](../projects/inference-serving.md)
@@ -42,6 +43,11 @@
 | KV block size | 256 tokens |
 | 输入 / 输出 | 768 synthetic token IDs / 8 sampled tokens |
 | 对照 | eager/CUDA Graph、exact/drift、batch budget 256/1024、并发 1/2/4/8 |
+
+这里的 768 个 ID 由实验程序固定生成。它与页面开头的中文请求是两组不同输入。
+
+长实验开始前，先运行[实验 1B](../labs.md#lab-1b)，亲眼看一次真实 message 怎样变成 Qwen3 的 29 个输入 ID。
+回到本页后，只研究输入长度、前缀变化、调度和 KV block。前一个实验解释文本编码，本实验解释 runtime 执行。
 
 加载模型以前，收集程序先核对 nano-vLLM 的 Git commit 和远端地址，并确认源码目录没有本地修改或未跟踪文件。
 

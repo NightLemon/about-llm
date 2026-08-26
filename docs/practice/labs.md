@@ -50,13 +50,14 @@ flowchart TD
 | 顺序 | 实验 | 这一步把什么看清楚 |
 |---:|---|---|
 | 1 | [0A：从 logits 到采样](labs/lab-0a-sampling.md) | 最后一个 token 是怎样从概率分布中选出的 |
-| 2 | [实验 1：tokenizer](#lab-1) | 中文字符串怎样变成 Qwen3 接收的 token IDs |
-| 3 | [实验 2](#lab-2) 与 [2B](#lab-2b) | attention、GQA、KV Cache 和停止协议怎样连接 |
-| 4 | [7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md) | 不加载 GPU 模型，先看 block 分配、共享和写时复制 |
-| 5 | [7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md) | 一次真实请求怎样经过调度、prefill、decode 与 sampling |
-| 6 | [实验 7：服务基准](#lab-7) | 在 3070 上测显存、延迟、并发和失败终态 |
+| 2 | [实验 1A：教学 Byte BPE](#lab-1) | bytes、token IDs、labels 和 loss 怎样接起来 |
+| 3 | [实验 1B：真实 Qwen3 tokenizer](#lab-1b) | 同一句中文怎样经过 Qwen3 chat template 变成 29 个输入 ID |
+| 4 | [实验 2](#lab-2) 与 [2B](#lab-2b) | attention、GQA、KV Cache 和停止协议怎样连接 |
+| 5 | [7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md) | 不加载 GPU 模型，先看 block 分配、共享和写时复制 |
+| 6 | [7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md) | 固定长度输入怎样经过调度、prefill、decode 与 sampling |
+| 7 | [实验 7：服务基准](#lab-7) | 在 3070 上测真实请求的显存、延迟、并发和失败终态 |
 
-完成第 5 步时，你已经走通一条推理系统主线。实验 3–4 负责“模型怎样训练与微调”，
+完成第 6 步时，你已经走通一条推理系统主线。实验 3–4 负责“模型怎样训练与微调”，
 实验 5–6 负责“模型怎样进入 RAG 与 Agent”；它们可以按你的下一个目标插入，而不是作为 nano-vLLM 的前置条件。
 
 ## 实验 0：观察语言模型，而不是只和它聊天 { #lab-0 }
@@ -72,17 +73,62 @@ flowchart TD
 
 交付物：一张手算表、一张状态图，以及至少一个“输出看似合理但协议已经失败”的例子。
 
-## 实验 1：手写 tokenizer 和语言模型 { #lab-1 }
+## 实验 1：从教学 tokenizer 走到真实 Qwen3 输入 { #lab-1 }
 
-从 `projects/transformers-basics/train_byte_bpe.py` 开始：
+### 1A：先用小实现看清计算
+
+先运行仓库能够实际执行的三条命令：
+
+~~~powershell
+python projects/transformers-basics/train_byte_bpe.py `
+  --text "你好🙂你好🙂" --sample "你好🙂!" --vocab-size 280
+python projects/transformers-basics/trace_language_model_sample.py
+python projects/transformers-basics/trace_minigpt_training_step.py
+~~~
+
+它们使用同一个 `你好🙂!` 样本，依次回答：
 
 1. 在小语料上手算一次 pair count、tie-break 和非重叠 merge。
 2. 比较字符、UTF-8 byte 与 grapheme；验证 encode/decode round trip。
-3. 用 bigram 建立最小语言模型，报告验证集 NLL/PPL。
-4. 比较中文、英文、代码、数字和 emoji 的 bytes/token 与序列长度。
-5. 修改一条输入，先预测 merge 和概率怎样变化，再重新运行。
+3. 检查 `[BOS, text, EOS, PAD]` 怎样错开成模型输入、labels 和 loss mask。
+4. 让同一组 labels 进入 MiniGPT，观察 logits、逐位置 NLL、梯度和一次 SGD 更新。
+5. 修改一条输入，先预测 merge、有效预测位置和 loss 会怎样变化，再重新运行。
 
-交付物：token 表、长度分布、一个未见 bigram 或边界字符失败样例。Round trip 只证明本 tokenizer 自洽，不证明它兼容任意现有 checkpoint。
+交付物：分词表、序列长度与掩码对照、一次参数更新账本，以及一个边界样例。能够编码后再还原原文，只说明这个
+教学 tokenizer 内部自洽。它的合并规则、特殊 token 和 ID 都不属于 Qwen3。
+
+### 1B：再看同一句中文怎样进入 Qwen3 { #lab-1b }
+
+下面的脚本使用 Qwen3-0.6B 自己的 tokenizer 和 chat template，但不加载模型权重，也不需要 GPU：
+
+~~~powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
+~~~
+
+`--local-files-only` 要求固定版本已经在 Hugging Face 缓存中。如果你的模型保存在单独目录，改用：
+
+~~~powershell
+python projects/transformers-basics/trace_qwen3_tokenizer.py `
+  --model-snapshot C:\path\to\Qwen3-0.6B
+~~~
+
+第一次还没有缓存时，去掉 `--local-files-only`；程序仍会请求完整 commit
+`c1899de289a04d12100db370d81485cdf75e47ca`，不会自动跟随 `main`。
+
+默认问题是“请用一句话解释：为什么生成下一个 token 时可以复用 KV Cache？”。固定版本会先把 `user`、
+消息正文、`assistant` 起始标记和关闭的 thinking 区间排成完整提示词，再编码为 **29 个 token IDs**。
+输出会把每个 ID、可读片段和词表 token 排在一张表里。
+
+这里有两个值得亲眼确认的细节：
+
+- 加载后的类名是 `Qwen2TokenizerFast`。这表示 Qwen3 继续复用了 Transformers 中兼容的 tokenizer 实现，
+  不表示脚本偷偷换成了 Qwen2 模型或权重。
+- `<think>` 与 `</think>` 是保留的 added tokens，但当前 tokenizer 没把它们列入 `all_special_ids`。
+  “模板控制词”和“`skip_special_tokens` 会跳过的 special token”不是同一个概念。
+
+交付物：原始 message、渲染后的完整提示词、29 个 token IDs，以及对“教学 Byte BPE”和“目标模型
+tokenizer”差异的解释。下一步进入实验 7B 时，输入会换成固定生成的 768 个 ID，以便隔离调度和 KV block；
+那不是这条真实聊天消息的运行结果。
 
 ## 实验 2：从零实现注意力 { #lab-2 }
 
