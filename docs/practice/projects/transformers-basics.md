@@ -31,6 +31,10 @@ raw text
 
 每个阶段都先写预测，再运行，再对账。只有这样，框架输出才会变成你真正理解的知识。
 
+如果你还不能清楚解释 train/test 泄漏、NLL、梯度下降和 accuracy 的区别，先运行一次
+`python projects/transformers-basics/ticket_classification_walkthrough.py`。它用一批工单把这四件事串在一起，
+只需 CPU 和 Python 标准库；逐步讲解见[机器学习最小闭环](../../foundations/ml-dl.md#ml-minimal-loop)。
+
 ## 先认识四级证据
 
 | 层级 | 例子 | 能证明什么 |

@@ -33,6 +33,7 @@ flowchart TD
 
 | 当前目标 | 从这里开始 | 预计时间 |
 |---|---|---:|
+| 第一次理解 loss、梯度与分类指标 | [机器学习最小闭环](../foundations/ml-dl.md#ml-minimal-loop) | 15–30 分钟 |
 | 第一次观察生成模型 | [实验 0A](labs/lab-0a-sampling.md) | 30–60 分钟 |
 | 理解 tokenizer 与注意力 | [实验 1](#lab-1)、[实验 2](#lab-2) | 2–4 小时 |
 | 训练或微调模型 | [实验 3](#lab-3)、[实验 4A](labs/lab-4a-sft-sample.md) | 1–3 天 |
