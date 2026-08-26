@@ -185,7 +185,30 @@ python -m pytest tests/test_attention_numpy.py -q
 
 Demo 为比较而另外物化 dense reference，所以 `15 vs 35` 不是整个进程的峰值内存测量。Float64 NumPy recurrence 也不是 FlashAttention kernel；它没有测 HBM traffic、workspace、CUDA、吞吐或延迟。
 
-## 3. Tiny Transformers：验证框架接线
+## 3. Tiny 模型：从逐位置目标到参数更新
+
+### 3.1 同一个中文样本进入仓库 MiniGPT
+
+~~~powershell
+python projects/transformers-basics/trace_minigpt_training_step.py
+~~~
+
+脚本复用第 1.4 节的 `[265,264,33,266]` 输入，并把最后一个 `PAD` 标签转换为 `-100`。随机初始化的仓库
+MiniGPT 使用 1 层、16 维、4 个 attention heads、268 个词表项和 6496 个可训练参数；token embedding 与
+LM head 共享权重。模型实际执行 CPU forward，得到 `[1,4,268]` logits。
+
+固定 seed 37 时，三个有效目标的 NLL 分别为 `5.623527/5.503419/5.630446`。脚本直接从逐位置
+log-probability 复算平均值 `5.585798`，与模型的 masked cross-entropy 一致；对应 perplexity 为
+`266.613`。第四个位置仍产生 `PAD` 概率，但不进入平均值。
+
+随后，脚本执行一次 `lr=0.1` 的 SGD：全局梯度 L2 为 `3.086677`，12/12 个命名参数张量发生变化，同一
+样本上的 NLL 降为 `5.134247`。测试还检查模型实际使用的 4×4 因果 mask 与上一阶段构造的 mask 相同，并拒绝
+非法 seed 和学习率。
+
+这些数字证明当前随机小模型的 token→embedding→attention→MLP→logits→loss→backward→update 链路可以对账。
+单个训练样本上的一步下降主要体现记忆方向，不证明中文能力、泛化、收敛、预训练 checkpoint、GPU 或生产性能。
+
+### 3.2 Transformers 的 tiny GPT-2
 
 `smoke_tiny.py` 从 `GPT2Config` 创建随机模型，不下载权重。固定 batch 训练 12 步后执行 greedy `generate()`：
 
@@ -528,6 +551,7 @@ Rank 1 是 zero-assignment source rank，但 zero-size graph edge 仍参加 reve
 ~~~powershell
 python projects/transformers-basics/train_byte_bpe.py
 python projects/transformers-basics/online_softmax_demo.py
+python projects/transformers-basics/trace_minigpt_training_step.py
 python projects/transformers-basics/smoke_tiny.py
 python projects/transformers-basics/generation_runtime_control.py
 python projects/transformers-basics/activation_patching.py

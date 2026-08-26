@@ -195,13 +195,46 @@ python projects/transformers-basics/online_softmax_demo.py
 这个演示仍会计算完整注意力作为参考答案，所以进程本身并不节省全部内存。
 它解释在线 softmax 的数学过程，不是在测量 FlashAttention 内核或进程峰值显存。
 
-## Phase 4：用 tiny model 验证框架接线
+## Phase 4：让同一个样本真正经过 MiniGPT
+
+~~~powershell
+python projects/transformers-basics/trace_minigpt_training_step.py
+~~~
+
+Phase 1.5 已经得到下面四个训练位置：
+
+~~~text
+input:  [BOS, 你好🙂, !, EOS]
+target: [你好🙂, !, EOS, PAD]
+score:  [yes, yes, yes, no]
+~~~
+
+现在，仓库从零实现的 PyTorch MiniGPT 会实际执行词嵌入、因果注意力、前馈网络和词表输出层，得到
+`[1,4,268]` 的 logits。脚本逐位置取出目标 token 的对数概率，并复算：
+
+\[
+L=\frac{-\log p(\text{你好🙂})-\log p(!)-\log p(\mathrm{EOS})}{3}.
+\]
+
+这个值应与模型使用 `ignore_index=-100` 返回的交叉熵一致。`PAD` 位置仍有 logits，但它不进入分子，也不进入
+分母。默认运行的两种算法应给出相同的六位小数：`5.585798`。
+
+接下来，脚本执行反向传播和一步 SGD。固定 seed 下，同一小样本的 NLL 会降到 `5.134247`，12 个参数张量都发生
+变化。这里观察的是训练接线，不是模型能力：随机模型只在刚见过的三个目标上更新了一次，还没有接受新样本检验。
+
+### 故意破坏
+
+先把第三个有效标签也改成 `-100`，预测平均 NLL 的分母怎样变化。再把 labels 错开两位，程序仍可能正常运行，
+但模型学习的目标已经不再是“预测下一个 token”。这说明 finite loss 只能证明计算可执行，不能替你验证监督语义。
+
+## Phase 4.5：再换成 Transformers 的 tiny GPT-2
 
 ~~~powershell
 python projects/transformers-basics/smoke_tiny.py
 ~~~
 
-脚本只读取配置，创建一个随机初始化的微型因果语言模型，不下载预训练权重。运行时逐项检查：
+上一步使用本仓库可直接阅读的 MiniGPT；这一步换成 Transformers 的 `GPT2LMHeadModel`，仍然只创建随机初始化
+的微型模型，不下载预训练权重。运行时逐项检查：
 
 1. 配置是否构造出预期的模型类；
 2. 输入和标签的形状是否一致；
@@ -333,6 +366,7 @@ python projects/transformers-basics/run_target_checkpoint.py --local-files-only
 python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
 python projects/transformers-basics/trace_language_model_sample.py
 python projects/transformers-basics/online_softmax_demo.py
+python projects/transformers-basics/trace_minigpt_training_step.py
 python projects/transformers-basics/smoke_tiny.py
 python projects/transformers-basics/generation_runtime_control.py
 ~~~
