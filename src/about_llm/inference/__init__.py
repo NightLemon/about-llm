@@ -45,7 +45,10 @@ from about_llm.inference.kv_quantization import (
     quantize_kv_cache_int8,
     quantized_kv_grouped_query_attention,
 )
-from about_llm.inference.memory import estimate_kv_cache_bytes
+from about_llm.inference.memory import (
+    estimate_causal_generation_forward_positions,
+    estimate_kv_cache_bytes,
+)
 from about_llm.inference.metrics import (
     InferenceAttempt,
     InferenceMeasurement,
@@ -257,6 +260,7 @@ __all__ = [
     "build_arrival_schedule",
     "classify_http_failure",
     "constrained_greedy_from_probabilities",
+    "estimate_causal_generation_forward_positions",
     "estimate_kv_cache_bytes",
     "greedy_next_token",
     "load_quantized_minigpt_checkpoint",

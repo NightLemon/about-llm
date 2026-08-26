@@ -31,6 +31,15 @@
 
 3070 Laptop 的实际耗时会受到功耗、散热、驱动和依赖构建影响，所以只能在你的机器上实测。
 
+开始 GPU 长任务前，先在任意 CPU 环境复算三种工作量：
+
+~~~powershell
+python projects/inference-serving/generation_work_ledger.py
+~~~
+
+确认无复用、精确前缀和单 token 漂移分别需要计算 775、263 和 519 个位置。
+这一步只核对公式与 Manifest；后面的 GPU trace 才负责观察 nano-vLLM 是否真的按这些位置调度。
+
 ## 本实验使用的版本和参数
 
 为了让实验结果可以复现，本实验使用以下版本和参数。它们也写在实验清单（Manifest）中，运行脚本会据此核对环境。
@@ -156,7 +165,7 @@ Primer 完成后，活动引用已经释放；完整 block 的哈希和 token �
 
 ### One-token drift
 
-负例只修改 position 256，也就是第二个 block 的第一个 token：
+负例只修改索引 256（从 0 开始），也就是第二个 block 的第一个 token：
 
 ```text
 block 0 相同 -> 命中

@@ -42,6 +42,15 @@ python projects/inference-serving/run_qwen_target_service.py `
 为了让结果可以复现，仓库使用 nano-vLLM commit `bb823b3e06983d71485a8e1f23715ebd87d98ef8`，以及 Qwen3-0.6B commit
 `c1899de289a04d12100db370d81485cdf75e47ca`。
 
+先在任意 CPU 环境运行工作量账本：
+
+```powershell
+python projects/inference-serving/generation_work_ledger.py
+```
+
+它会根据同一份实验 Manifest 算出无复用、精确前缀和单 token 漂移三种情况下的 prefill、decode 与总计算位置。
+这个结果是后续阅读 GPU trace 的预期值，不代表已经执行了模型或测得 GPU 性能。
+
 在有 CUDA 的 Linux/WSL 环境中运行：
 
 ```bash

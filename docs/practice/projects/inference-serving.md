@@ -69,6 +69,16 @@ offered -> dispatch -> admission -> prefill -> first token
 实验 7B 会改用 768 个固定生成的 ID，让前缀命中和 256-token block 账本容易复算。前一组输入解释文本编码，
 后一组输入解释 runtime 调度。
 
+进入 GPU 实验前，先用 CPU 账本复算三种情况：
+
+~~~powershell
+python projects/inference-serving/generation_work_ledger.py
+~~~
+
+没有前缀复用时，模型需要处理 768 个 prefill positions 和 7 个 decode positions，共 775 个；精确复用前两个
+256-token block 后只剩 263 个；如果索引 256（从 0 开始）发生 token 漂移，则只能复用第一个 block，总数回升到 519 个。
+这一步没有运行 Qwen3 或 nano-vLLM，它的作用是让你先把 GPU trace 中应该出现的数量算清楚。
+
 ## 阶段 1：运行 Paged KV 引导实验
 
 先完成[实验 7A](../labs/lab-7a-paged-kv.md)，不要直接跳到测试命令。
@@ -103,7 +113,7 @@ FlashAttention 和 Triton 执行真实模型计算。
 
 这一阶段只研究推理引擎内部的请求。HTTP 服务和 OpenAI-compatible endpoint 留到后面接入。
 
-先写下四个预测，再运行长实验：
+先根据上面的 CPU 账本写下四个预测，再运行长实验：
 
 ```text
 exact prefix 应命中几个 256-token block？

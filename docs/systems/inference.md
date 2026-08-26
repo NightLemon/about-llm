@@ -7,11 +7,17 @@
 
 - **适合读者**：第一次系统学习 LLM 推理，或准备进入推理服务与容量规划的开发者。
 - **先修**：[Transformer](../core/transformer.md)与[生成基础](../core/generation-basics.md)。
-- **首次阅读**：一次生成 → prefill/decode → KV Cache → 多请求调度 → 指标。
-- **完成信号**：能用一条请求解释 TTFT、TPOT、KV 容量和 (P+O-1) 的工作量账本。
-- **卡住时**：先只看“请求 A 的三轮模型工作”，暂时忽略分页、量化和服务协议。
+- **首次阅读**：先用 4→3 的小例子理解 prefill/decode，再把同一账本放大到 Qwen3 的 768→8 实验。
+- **完成信号**：能区分逻辑上下文长度、本次真正计算的位置数和调度步数，并解释三者为什么可能不同。
+- **卡住时**：运行 `generation_work_ledger.py`，先只比较三行 `cached`、`prefill` 和 `forward` 数字。
 
 </div>
+
+**实践导航**：[请求生命周期](inference-request-lifecycle.md) ·
+[Paged KV 实验](../practice/labs/lab-7a-paged-kv.md) ·
+[Qwen3 + nano-vLLM](../practice/labs/lab-7b-nano-vllm-qwen3.md) ·
+[Inference Serving 项目](../practice/projects/inference-serving.md)
+{ .doc-nav }
 
 用户看到的是一段连续文字，模型看到的却是一串“预测下一个 token”的重复工作。
 推理系统的任务，就是在显存和时间预算内，把这些重复工作安排好，并把结果可靠地送回客户端。
@@ -82,8 +88,41 @@ Decode 必须串行等待前一个输出，单步工作又相对小。小 batch 
 总 forward positions 是 (4+3-1=6)。最后一个 prompt position 已经产生 `y1`，
 所以后续只需 (O-1) 次普通 decode。
 
-这个等式只适用于标准 decoder-only causal generation，且没有 prefix reuse、speculative verification 或 beam。
-它是模型工作量的教学账本，不是 API usage、计费 token 或 GPU kernel work 的通用定义。
+这个等式描述标准的 decoder-only 因果生成：最后一个 prompt 位置产生首个输出，之后每个输出再需要一个 decode 位置。
+前缀复用、投机验证、beam search、padding 和重计算会改变实际工作。本账本统计模型求值的位置，
+不等同于 API 用量、计费 token 或 GPU kernel 次数。
+
+### 把同一个账本放大到 Qwen3 + nano-vLLM
+
+固定实验使用 768 个 prompt token，并生成 8 个输出 token。先在 CPU 上运行工作量账本：
+
+~~~powershell
+python projects/inference-serving/generation_work_ledger.py
+~~~
+
+它读取实验 7B 的固定 Manifest，得到：
+
+这个固定 nano-vLLM 版本只把序列最后一个 block 之前的完整块用于前缀查找。768 个 token 恰好占三个
+256-token block，因此输入即使完全相同，也只复用前两个 block，即 512 个 token。这是当前实现规则，
+不是所有前缀缓存的通用上限。
+
+| 场景 | 逻辑 prompt | 已有 KV、可跳过 | 本次 prefill | decode 位置 | 本次计算位置总数 |
+|---|---:|---:|---:|---:|---:|
+| 不复用前缀 | 768 | 0 | 768 | 7 | `768+7=775` |
+| 768-token 前缀完全相同 | 768 | 512 | 256 | 7 | `256+7=263` |
+| 索引 256 发生漂移 | 768 | 256 | 512 | 7 | `512+7=519` |
+
+三行的逻辑 prompt 都是 768。区别在于，前缀缓存已经保存了多少位置的 K/V，本轮 prefill 可以跳过多少位置。
+8 个输出都只需要 7 个 decode 位置，因为首个输出仍来自最后一个实际执行的 prefill 位置。
+表中的索引从 0 开始，因此索引 256 是第二个 256-token block 的首个 token；它变化后，只有第一个 block
+还能命中缓存。
+
+当每轮最多处理 256 个 prefill token 时，精确前缀的 256 个位置用一步完成；漂移场景的 512 个位置需要两步。
+分块预填充改变了调度步数，却没有把 512 个待计算位置变少。实验 7B 中间步骤产生的候选 token 不会提交给用户，
+也不会额外计入 8 个最终输出。
+
+这张表是由固定 Manifest 推导出的 CPU 公式账本。它没有加载 Qwen3 权重或运行 nano-vLLM；
+GPU trace 通过后，才能证明目标环境实际走出了对应的调度和 KV 状态。
 
 ## KV Cache 保存了什么
 
@@ -115,8 +154,8 @@ M_{KV/token}=2\times L\times H_{kv}\times D\times bytes(dtype),
 
 ### GQA 与 MQA 为什么能降低 KV
 
-MHA 通常让 query heads 和 K/V heads 数量相同。GQA 让一组 query heads 共享一个 K/V head，
-MQA 更进一步让所有 query heads 共享同一组 K/V。
+多头注意力（MHA）通常让查询头与 K/V 头数量相同。分组查询注意力（GQA）让一组查询头共享一个 K/V 头，
+多查询注意力（MQA）则让所有查询头共享同一组 K/V。
 
 公式中决定缓存大小的是 (H_{kv})，不是 query head 数。因此在其他条件相同时，减少 K/V heads
 可以显著降低长上下文和高并发时的缓存容量。
@@ -209,6 +248,10 @@ TPOT 常用首 token 后的生成区间除以 `output_tokens - 1`。只有一个
 仓库中可以先读[端到端请求生命周期](inference-request-lifecycle.md)，再运行
 [Inference Serving 项目](../practice/projects/inference-serving.md)。
 用于手算对照的实现与测试范围位于[推理服务证据页](../evidence/inference-serving-controls.md)。
+
+若在第一步就分不清“输入 768”“缓存 512”和“本轮计算 263”，先读
+`src/about_llm/inference/memory.py` 的 `estimate_causal_generation_forward_positions()`，再运行
+`projects/inference-serving/generation_work_ledger.py`。它只处理工作量口径，不会把调度、显存和延迟混进公式。
 
 ## 自测
 

@@ -1,8 +1,49 @@
 import pytest
 
-from about_llm.inference import estimate_kv_cache_bytes
+from about_llm.inference import (
+    estimate_causal_generation_forward_positions,
+    estimate_kv_cache_bytes,
+)
 
 pytestmark = pytest.mark.formula
+
+
+def test_causal_generation_work_matches_toy_and_prefix_reuse_ledgers() -> None:
+    assert estimate_causal_generation_forward_positions(
+        prompt_tokens=4,
+        output_tokens=3,
+    ) == 6
+    assert estimate_causal_generation_forward_positions(
+        prompt_tokens=768,
+        output_tokens=8,
+    ) == 775
+    assert estimate_causal_generation_forward_positions(
+        prompt_tokens=768,
+        output_tokens=8,
+        cached_prompt_tokens=512,
+    ) == 263
+    assert estimate_causal_generation_forward_positions(
+        prompt_tokens=768,
+        output_tokens=8,
+        cached_prompt_tokens=256,
+    ) == 519
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"prompt_tokens": 0, "output_tokens": 1},
+        {"prompt_tokens": 1, "output_tokens": 0},
+        {"prompt_tokens": 1, "output_tokens": 1, "cached_prompt_tokens": -1},
+        {"prompt_tokens": 1, "output_tokens": 1, "cached_prompt_tokens": 1},
+        {"prompt_tokens": True, "output_tokens": 1},
+    ],
+)
+def test_causal_generation_work_rejects_invalid_or_fully_cached_prompt(
+    kwargs: dict[str, int],
+) -> None:
+    with pytest.raises(ValueError):
+        estimate_causal_generation_forward_positions(**kwargs)
 
 
 def test_kv_cache_example_is_exactly_one_gibibyte() -> None:
