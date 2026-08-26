@@ -6,6 +6,19 @@
 第一次学习请从[项目教学页](../../docs/practice/projects/evaluation-gate.md)开始。那里完整走过 score → compare →
 verify → render → tamper；本页只保留运行入口、脚本索引和排错信息。
 
+## 十分钟热身
+
+```powershell
+python projects/evaluation-gate/trace_headline_accuracy_trap.py
+```
+
+这条命令把 22/30 → 24/30 的总分拆成六条配对变化：四条普通问题改善，两条跨租户拒绝退化。
+
+程序会计算总体配对区间和高风险切片区间，并据此拦截 candidate。所有输出都由仓库准备，不会调用模型。
+这个热身只为讲清“总分上涨为什么仍不能发布”。
+
+这是预期被拦截的教学场景，因此进程成功计算后仍返回 0。CI 发布门禁应使用下文的 `evaluation.cli compare`。
+
 ## 开始前先固定评测问题
 
 看到 candidate 结果之前，至少写下：
@@ -128,6 +141,7 @@ Schema-valid 的 JSON 仍可能写错值；引用 span 完全匹配也可能与 
 
 | 你想确认什么 | 入口 |
 |---|---|
+| 总分上涨为什么仍可能拒绝发布 | `trace_headline_accuracy_trap.py` |
 | 两套 recorded outputs 怎样配对比较 | `evaluation.cli score/compare` |
 | Comparison 是否自洽、上游是否仍可重算 | `verify-comparison`、`verify-evidence` |
 | JSON syntax、schema 与 value 的差别 | `structured-metrics.*.jsonl` |
@@ -192,6 +206,7 @@ Cases、outputs 和逐例 findings 可能包含用户数据。真实系统需要
 
 ```powershell
 python -m pytest `
+  tests/test_headline_accuracy_trace.py `
   tests/test_evaluation_cli.py `
   tests/test_evaluation_comparison_artifact.py `
   tests/test_evaluation_structured.py `

@@ -131,12 +131,19 @@ python -m pytest tests/test_agent_refund_lifecycle.py tests/test_model_planner.p
 ### 路径 C：评测差异是否足以发布 { #acceptance-evaluation }
 
 ~~~powershell
+python projects/evaluation-gate/trace_headline_accuracy_trap.py
 python projects/evaluation-gate/paired_randomization_toy.py
 python projects/evaluation-gate/clustered_bootstrap_toy.py
 python projects/evaluation-gate/sequential_peeking_toy.py
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
 python -m pytest tests/test_evaluation_statistics.py -q
 ~~~
+
+热身脚本用 25 条普通问题和 5 条跨租户拒绝组成固定评测集。Baseline/candidate 总分分别为 22/30 与 24/30；
+六条配对变化由四次普通改善和两次跨租户退化组成。固定 10,000 次、seed 7 的 case-level bootstrap 得到总体
+差值 `+0.067`、95% 区间 `[-0.100,+0.233]`；跨租户正确拒绝率从 4/5 降到 2/5，差值区间为
+`[-0.800,0.000]`。质量下界与 protected-slice gate 都失败，所以决定为 block。该脚本使用准备好的输出，
+不写 run manifest/comparison artifact，不调用模型，也不建立样本代表性或指标有效性。
 
 先手算 paired difference，再比较 case-level 与 cluster-level 重采样。若同一用户贡献多个 case，它们通常相关；把它们当独立样本会低估不确定性。统计显著也只回答“在给定抽样假设下差异是否难以由随机性解释”，不回答差异是否足够大、指标是否有效或线上用户是否受益。
 
