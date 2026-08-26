@@ -7,16 +7,45 @@
 
 - **适合读者**：需要设计 RAG 召回、排序和离线评测的开发者与算法工程师。
 - **先修**：[一次 RAG 请求的生命周期](rag-request-lifecycle.md)、向量与排序的基本直觉。
-- **首次阅读**：相关性 → BM25/dense → hybrid → reranker → 指标与失败归因。
-- **完成信号**：能用固定 qrels 判断失败来自 corpus、retriever、ANN、reranker 还是 packing。
-- **卡住时**：先只保留 BM25 与 10 条人工 query，确认 answer-bearing evidence 能否进 top-k。
+- **首次阅读**：请求 A 的三个候选 → BM25 → 稠密检索 → 融合 → 重排 → 失败归因。
+- **完成信号**：能用固定相关性标注判断失败来自语料、召回、近似索引、重排还是上下文组装。
+- **卡住时**：先只保留 BM25 与 10 条人工问题，确认含答案的证据能否进入前 k 个结果。
 
 </div>
 
+**实践导航**：[一次 RAG 请求](rag-request-lifecycle.md) ·
+[运行实验 5](../practice/labs/lab-5-rag-request.md) ·
+[RAG Foundations](../practice/projects/rag-foundations.md) ·
+[检索表示学习](retrieval-learning.md)
+{ .doc-nav }
+
 检索不是寻找“最像问题的一段话”，而是在有限候选预算内覆盖回答所需证据。
 
-在[请求 A](rag-request-lifecycle.md)中，BM25 找到了三段相关资料：
-一段直接回答 ACL 顺序，两段只提供背景。Reranker 的工作是把有限上下文留给更可用的证据。
+在[请求 A](rag-request-lifecycle.md)中，用户问：“RAG 为什么要先做 ACL 权限过滤？”系统只在当前用户有权查看的
+资料中计算 BM25，得到三段候选：
+
+| 初排 | 候选内容 | 来源 | BM25 分数 | 重排分数 | 重排后 |
+|---:|---|---|---:|---:|---:|
+| 1 | 必须先做租户隔离与 ACL，再排序和构建上下文 | `rag-security` | 6.1148 | 0.95 | 1 |
+| 2 | 回答还需检查引用、忠实度和拒答 | `rag-evaluation` | 2.5060 | 0.10 | 3 |
+| 3 | 已授权证据与引用不等于语义蕴含 | `rag-security` | 0.6798 | 0.70 | 2 |
+
+第一段直接回答问题，第三段补充使用边界。重排后，它们成为最终进入上下文的两段资料。本章后面的算法都回到这张表：
+它们究竟改变了“候选有没有进来”，还是只改变“候选排在哪里”？
+
+### 先分清本例实际运行了什么
+
+| 部件 | 请求 A 是否执行 | 本例可以观察什么 |
+|---|---|---|
+| 请求级授权 | 是 | 越权文档不会进入查询期统计或打分 |
+| BM25 | 是 | 三段候选及其真实分数 |
+| 稠密向量检索 | 否 | 本章只解释原理与接入条件 |
+| ANN 近似索引 | 否 | 没有目标向量库的召回或性能数字 |
+| RRF 融合 | 否 | 只提供公式和手算方法 |
+| 重排 | 使用预先记录的分数 | 排序、授权复查和分数绑定会真实执行；没有运行 learned model |
+| 上下文组装 | 是 | 重排前两名怎样映射为 `S1`、`S2` |
+
+这张表防止把一条 BM25 教学请求误写成“混合检索系统已经完整运行”。
 
 ## 先把“相关”拆成三层
 
@@ -28,7 +57,7 @@
 | Answer-bearing | 是否含回答所需事实？ | “ACL 必须先于排序” |
 | Usable | 权限、版本、时间和来源是否允许使用？ | `tenant-a / engineering` 可见的当前版本 |
 
-Embedding 很容易优化 topical similarity；RAG 真正需要后两层。
+向量相似度很容易把“主题相近”排到前面；RAG 最终需要的是可用于回答、并且当前用户有权使用的证据。
 
 一个问题也可能需要多份证据。标注时应保存 evidence set，不能强迫每个 query 只有唯一正确文档。
 
@@ -73,7 +102,7 @@ flowchart LR
 
 授权上下文必须进入 cache key。Policy revision 改变后，旧 cache 也要失效。
 
-## Sparse retrieval：先学会 BM25
+## 关键词检索：先学会 BM25
 
 BM25 的常见形式为：
 
@@ -100,13 +129,17 @@ BM25 特别适合：
 中文必须明确 tokenizer。按单字、词、字符 n-gram 或领域词典切分会得到不同统计，
 不能只写“使用 BM25”而不版本化分析器。
 
+回到请求 A，第一段同时出现“先”“ACL”“权限”“过滤”等高价值词，因此得到 6.1148。第二段主要谈评测，
+只因共享少量词得到 2.5060。BM25 分数只在当前查询、可见集合和实现中有意义，不能拿 6.1148 与另一条查询的分数
+直接比较。
+
 ### 字段化检索
 
 标题、正文、标签和代码符号不应自动等权。BM25F 或多字段查询可以提高标题和精确字段权重。
 
 权重必须在固定评测集上调。导航标题和模板文字会重复出现，盲目提升 title boost 可能把模板噪声排到前面。
 
-## Dense retrieval：语义相近不等于可回答
+## 稠密向量检索：语义相近不等于可回答
 
 Bi-encoder 分别编码 query 和 document：
 
@@ -125,7 +158,10 @@ s(q,d)=\frac{e_q^\top e_d}{\lVert e_q\rVert\lVert e_d\rVert}.
 Dense retrieval 能找出同义改写，例如“访问控制应在哪一步执行”与“ACL 必须先于排序”。
 它也可能忽略产品号、否定、数字和时效，因此通常不应无评测地替换 sparse baseline。
 
-### Embedding contract
+请求 A 尚未运行稠密检索。如果要加入，应保持原查询、调用者身份、语料版本和相关性标注不变，再比较含答案段是否
+进入候选。只展示一个余弦分数，无法说明它比上面的 BM25 排序更好。
+
+### 固定 Embedding 的运行条件
 
 接入一个 Embedding 模型时，要固定：
 
@@ -150,7 +186,7 @@ Bi-encoder 常用 InfoNCE 或多正例对比目标。Negative 决定模型被要
 
 完整公式、梯度和 ColBERT/SPLADE 路线见[检索表示学习](retrieval-learning.md)。
 
-## ANN：把模型误差与索引误差分开
+## ANN：把向量表示误差与近似索引误差分开
 
 Exact vector search 随文档量线性增长。ANN 用近似换吞吐：
 
@@ -170,12 +206,15 @@ Exact vector search 随文档量线性增长。ANN 用近似换吞吐：
 
 它衡量 ANN 是否复现 exact neighbor，不衡量这些 neighbor 是否真的 answer-bearing。
 
+因此要保存两组分母：ANN recall 比较近似索引与精确向量搜索；evidence recall 比较检索结果与人工证据标注。
+前者低时优先检查索引，后者在精确搜索上也低时再检查表示、语料或标注。
+
 过滤会改变图或分区的可达性。ANN 参数必须在真实 tenant、ACL 和 metadata 分布下评测。
 
-## Hybrid retrieval：融合排名而不是硬加分数
+## 混合检索：融合名次而不是硬加分数
 
-BM25 score 与 cosine score 不在同一尺度，直接相加很脆弱。
-Reciprocal Rank Fusion（RRF）只使用名次：
+BM25 分数与余弦相似度不在同一尺度，直接相加会让权重含义随模型和语料变化。
+Reciprocal Rank Fusion（RRF，倒数排名融合）只使用名次：
 
 \[
 \operatorname{RRF}(d)=
@@ -184,13 +223,16 @@ Reciprocal Rank Fusion（RRF）只使用名次：
 
 它不要求各检索器校准到相同分布，是很稳的 hybrid baseline。
 
+例如某段资料在 BM25 中排第 1、在稠密检索中排第 3，取 `k=60` 时得分为
+`1/61 + 1/63 ≈ 0.03226`。这个数字只演示名次怎样合并，不是请求 A 的运行结果。
+
 Weighted RRF 可以偏向某一路，但权重、各路候选深度和缺失 rank 都是协议的一部分。
 学习融合器能利用 score 与 metadata，却更容易过拟合和漂移。
 
 Query router 可以让错误码优先 sparse、自然语言解释优先 dense。
 在有充分 trace 前，先并行召回并记录各路贡献，避免硬路由把某类 query 永久送错通道。
 
-## Metadata filter 不是普通相关性特征
+## 元数据过滤不是普通相关性特征
 
 时间、产品、区域、语言、文档状态和 ACL 应尽量进入候选生成。
 
@@ -200,7 +242,7 @@ Query router 可以让错误码优先 sparse、自然语言解释优先 dense。
 LLM 可以从 query 抽取结构化 filter，但输出要经过 schema、枚举与授权校验。
 严格过滤为零时应请求澄清，不能静默扩大到无权或失效来源。
 
-## Reranker：用更贵的交互换更细的判断
+## 重排：用更贵的交互换更细的判断
 
 Bi-encoder 在编码 query 与 document 时不交互，适合大规模召回。
 Cross-encoder 把 query–document 拼在一起，让 token 在打分前交互，通常更准确但更慢。
@@ -213,8 +255,8 @@ Cross-encoder 把 query–document 拼在一起，让 token 在打分前交互�
 -> 5–15 context units
 ```
 
-Reranker 输入要保留标题和必要 parent context。若最大长度把答案段截掉，
-有限且漂亮的 score 也没有意义。至少记录 truncation 比例、batch、dtype、额外 p95 和 GPU 成本。
+重排输入要保留标题和必要的上级上下文。若最大长度把答案段截掉，模型仍可能返回一个有限且漂亮的分数。
+报告至少要记录截断比例、批大小、数据类型、增加的 p95 延迟和 GPU 成本。
 
 生成式 reranker 可以处理复杂约束，但也会引入不稳定输出、文档 Prompt injection 与更高成本。
 它必须只读取授权候选，输出固定 ID/schema，并与 cross-encoder baseline 比较。
@@ -223,11 +265,11 @@ Reranker 输入要保留标题和必要 parent context。若最大长度把答�
 
 请求 A 的 recorded scores 把 ACL 顺序段排第一、引用边界段排第二、一般评测段排第三。
 
-这段程序会检查授权、query/chunk 绑定、score shape、有限数与稳定排序；
-它没有运行 learned model，也没有 gold qrels 质量对比。精确边界见
+这段程序会再次检查授权，并确认分数绑定当前查询与 chunk 内容。它还会拒绝数量不对、非有限或无法稳定排序的分数。
+分数来自仓库准备的固定样例，没有运行学习得到的重排模型，也没有与人工相关性标注比较。精确边界见
 [RAG 证据页](../evidence/rag-answer-controls.md)。
 
-## Query rewrite 与多跳
+## 查询改写与多跳检索
 
 “那它的限制呢？”需要结合对话历史恢复实体。可以生成 standalone query，
 但必须保存原 query、改写 query 和引用的 history turn，避免改写偷偷改变意图。
@@ -251,7 +293,7 @@ Reranker 输入要保留标题和必要 parent context。若最大长度把答�
 \frac{|G_q\cap R_q^k|}{|G_q|}.
 \]
 
-Recall 关注是否找全。MRR 关注第一个相关结果的位置。nDCG 支持分级相关性。
+Recall 计算找回相关来源的比例。MRR 关注第一个相关结果的位置。nDCG 支持分级相关性。
 
 本仓库的 source-level Precision 使用实际返回且被检查的槽位作分母：
 
@@ -271,13 +313,13 @@ Recall 关注是否找全。MRR 关注第一个相关结果的位置。nDCG 支�
 
 其中 (H_q) 是缺一不可的 required evidence。它不能替代普通 Recall，因为失败 case 不告诉你究竟缺几个证据。
 
-### No-answer 与不完整 qrels
+### 无答案问题与不完整标注
 
 No-answer query 的 gold 集合为空，不能塞进普通 Recall 分母。
 应显式标记 `answerable=false`，并分开评价 retrieval signal 与最终拒答行为。
 
-Gold 往往不完备。未标注的新 top result 应先叫 unjudged，不应自动当作 false positive。
-可通过 pooling 补标，并同时报告 judged@k coverage。
+人工相关性标注往往不完备。新出现的高排名结果应先记为“尚未判断”，不能自动当作错误结果。
+可以汇总多个系统的候选后补充标注，并同时报告前 k 个结果中已有标注的比例。
 
 ## 用 trace 定位第一个错误
 
@@ -330,8 +372,8 @@ python -m pytest tests/test_retriever_learning.py -q
 精确实体、型号和错误码经常更适合 sparse；两路错误模式互补，hybrid 也提供可解释基线。
 
 **怎样判断该优化 Embedding 还是 ANN？**
-先用相同 embedding 做 exact search。Exact evidence recall 已低，问题在表示或语料；
-exact 高而 ANN 低，才优先调索引。
+先用相同 Embedding 做精确向量搜索。若精确搜索的证据召回率已经很低，先检查表示、语料和标注；
+若精确搜索表现好、ANN 结果差，再优先调整近似索引。
 
 **为什么 reranker 前还要再授权？**
 上游候选不是永久可信，reranker 会读取正文并可能写日志或缓存。二次门禁限制错误传播范围。
