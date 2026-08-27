@@ -1,3 +1,9 @@
+"""比较逐 case 翻符号与整 cluster 翻符号的配对随机化检验。
+
+六条 case 实际只来自两个用户。朴素检验会独立翻转六个差值，cluster 检验则让同一用户的
+全部差值共同翻转，从而保留组内依赖结构。实验还对比 case 加权和 cluster 等权结论。
+"""
+
 from __future__ import annotations
 
 import json
@@ -9,9 +15,13 @@ from about_llm.evaluation import (
 
 
 def main() -> None:
+    """在同一差值向量上运行朴素与 clustered 三种检验。"""
+
+    # user-a 重复五次改善，user-b 出现一次退化，故意制造 cluster 大小不平衡。
     baseline = [0, 0, 0, 0, 0, 0]
     candidate = [1, 1, 1, 1, 1, -1]
     clusters = ["user-a"] * 5 + ["user-b"]
+    # 三种结果并排保存，让读者直接观察独立性假设如何改变 p-value。
     artifact = {
         "authored_case_scores": {
             "baseline": baseline,

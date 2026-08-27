@@ -1,4 +1,8 @@
-"""Build, strictly reload, and execute a two-matrix quantized bundle."""
+"""把两张量化矩阵、模型结构与版本身份封装成一个可重新执行的 bundle。
+
+单张 tensor artifact 还不足以描述模型。本实验构造两层无 bias MLP，将两张 INT4 矩阵按名称
+写入同一容器，重新加载后完成前向，并核对字节往返和相对 FP32 误差。
+"""
 
 from __future__ import annotations
 
@@ -28,16 +32,21 @@ def run_toy(
     group_size: int,
     artifact_path: Path | None = None,
 ) -> dict[str, Any]:
+    """构造两层合成 MLP，打包量化权重并从 bundle 重新执行。"""
+
+    # shape 分别为 [8, 6] 和 [3, 8]，中间用 tanh 连接成完整两层前向。
     rng = np.random.default_rng(seed)
     inputs = rng.normal(0, 0.5, size=(3, 6)).astype(np.float32)
     first_weight = rng.normal(0, 0.4, size=(8, 6)).astype(np.float32)
     second_weight = rng.normal(0, 0.4, size=(3, 8)).astype(np.float32)
+    # 两张矩阵独立量化，但使用同一位宽与 group size。
     first = quantize_symmetric_groupwise(
         first_weight, bit_width=bit_width, group_size=group_size
     ).pack()
     second = quantize_symmetric_groupwise(
         second_weight, bit_width=bit_width, group_size=group_size
     ).pack()
+    # identity 记录解释这些张量所需的架构与 revision，tensor 本身按稳定名称索引。
     bundle = QuantizedMatrixBundle(
         identity=QuantizedBundleIdentity(
             model_family="authored-two-layer-mlp",
@@ -57,6 +66,7 @@ def run_toy(
             NamedQuantizedMatrix("layer.1.weight", second),
         ),
     )
+    # 先做纯内存序列化往返；给定路径时再覆盖磁盘读取路径。
     serialized = bundle.to_bytes()
     reloaded = QuantizedMatrixBundle.from_bytes(serialized)
     disk_round_trip = False
@@ -65,6 +75,7 @@ def run_toy(
         reloaded = QuantizedMatrixBundle.read(artifact_path)
         disk_round_trip = True
 
+    # FP32 与量化路径执行同一网络，差异只来自两张权重的量化。
     fp32_output = np.tanh(inputs @ first_weight.T) @ second_weight.T
     quantized_output = quantized_linear(
         np.tanh(
@@ -124,6 +135,8 @@ def run_toy(
 
 
 def parse_args() -> argparse.Namespace:
+    """定义随机种子、位宽、group size 和可选输出文件。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=29)
     parser.add_argument("--bit-width", type=int, default=4)
@@ -137,6 +150,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """运行 bundle 构建、重载和前向闭环。"""
+
     args = parse_args()
     print(
         json.dumps(

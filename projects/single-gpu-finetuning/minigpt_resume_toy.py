@@ -1,4 +1,8 @@
-"""Prove exact CPU MiniGPT AdamW resume across a strict training checkpoint."""
+"""验证 CPU MiniGPT + AdamW 从严格 checkpoint 恢复后逐位延续训练轨迹。
+
+baseline 连续训练六步；split 路径训练三步后序列化模型、优化器、scheduler、dropout RNG、
+shuffle RNG 与数据游标，再加载并完成后三步。最终逐张量比较两条路径。
+"""
 
 from __future__ import annotations
 
@@ -29,6 +33,9 @@ _HEADER = struct.Struct("<8sB3xIII")
 
 
 def _state() -> tuple[MiniGPTTrainingState, torch.Tensor]:
+    """从固定种子创建带 dropout、shuffle 与线性学习率的训练状态。"""
+
+    # 模型初始化、数据生成、训练 RNG 和数据 RNG 分别使用明确种子。
     torch.manual_seed(13)
     tokenizer = ByteBPETokenizer()
     model = MiniGPT(
@@ -71,6 +78,8 @@ def _state() -> tuple[MiniGPTTrainingState, torch.Tensor]:
 
 
 def _exact_state(state: MiniGPTTrainingState, reference: MiniGPTTrainingState) -> bool:
+    """逐项比较 step、数据流、RNG、参数和 AdamW moments。"""
+
     if not (
         state.global_step == reference.global_step
         and state.batch_stream.cursor == reference.batch_stream.cursor
@@ -102,9 +111,13 @@ def _exact_state(state: MiniGPTTrainingState, reference: MiniGPTTrainingState) -
 
 
 def run_toy(*, artifact_path: Path | None = None) -> dict[str, Any]:
+    """运行 uninterrupted 与 save/resume 两条六步训练轨迹。"""
+
+    # 两份初始 state 独立创建但完全相同，分别用于 baseline 与 split path。
     baseline, baseline_dataset = _state()
     split, split_dataset = _state()
     external_rng_before = torch.get_rng_state().clone()
+    # baseline 一口气走六步；split 只走前三步后立即保存。
     baseline_reports = run_minigpt_training_updates(
         baseline, baseline_dataset, updates=6
     )
@@ -115,6 +128,7 @@ def run_toy(*, artifact_path: Path | None = None) -> dict[str, Any]:
         tokenizer_revision="byte-v1",
         data_revision="fixture-seed-99",
     )
+    # checkpoint 绑定数据身份但不嵌入数据 payload，加载时必须提供匹配 dataset。
     artifact = serialize_minigpt_training_checkpoint(
         split, split_dataset, identity=identity
     )
@@ -131,6 +145,7 @@ def run_toy(*, artifact_path: Path | None = None) -> dict[str, Any]:
             artifact_path, split_dataset
         )
         disk_round_trip = True
+    # 先检查刚加载的状态，再跑后三步并与 baseline 最终状态比较。
     state_exact_at_resume = _exact_state(restored, split)
     tail_reports = run_minigpt_training_updates(restored, split_dataset, updates=3)
     final_state_exact = _exact_state(restored, baseline)
@@ -208,6 +223,8 @@ def run_toy(*, artifact_path: Path | None = None) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
+    """读取可选 checkpoint artifact 输出路径。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--artifact-path",
@@ -218,6 +235,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """运行精确恢复实验并输出状态与轨迹对比。"""
+
     args = parse_args()
     print(
         json.dumps(

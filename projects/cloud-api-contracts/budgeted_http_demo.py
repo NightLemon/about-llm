@@ -1,4 +1,8 @@
-"""Offline SQLite budget + MockTransport reconciliation demo."""
+"""离线演示 SQLite 预算预留、HTTP 调用和失败后的账目对账。
+
+MockTransport 模拟一次成功响应和一次服务端 500，因此不会访问网络。每次调用都先预留
+最大可能成本，再根据真实 usage 结算；请求已经发出但失败时，则保守标记为待对账。
+"""
 
 from __future__ import annotations
 
@@ -31,6 +35,8 @@ from about_llm.integrations.usage_budget import (
 
 
 def _ledger(database: Path) -> SQLiteUsageBudgetLedger:
+    """用固定限额、单价和时钟创建可重复的 SQLite 预算账本。"""
+
     return SQLiteUsageBudgetLedger(
         database,
         limits=UsageBudgetLimits(200, 40, 280),
@@ -48,11 +54,12 @@ def _ledger(database: Path) -> SQLiteUsageBudgetLedger:
 
 
 async def run_demo(database: Path) -> dict[str, Any]:
-    """Settle one reported usage and reconcile one sent HTTP error."""
+    """结算一次成功 usage，并记录一次已经发出的 HTTP 失败。"""
 
     if database.exists():
         raise ValueError(f"refusing to reuse existing database: {database}")
 
+    # handler 第一次返回带 usage 的成功响应，第二次返回 500。
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -87,6 +94,7 @@ async def run_demo(database: Path) -> dict[str, Any]:
             json={"error": "authored server error"},
         )
 
+    # .invalid 域名和 MockTransport 共同保证示例不会把假密钥或请求发往公网。
     request = build_openai_compatible_request(
         base_url="https://provider.invalid",
         api_key="example-secret-not-real",
@@ -101,6 +109,7 @@ async def run_demo(database: Path) -> dict[str, Any]:
         request_timeout_seconds=2,
     )
     policy = RetryPolicy(max_attempts=1)
+    # 成功路径会用供应商返回的 token usage 把预留额度结算为实际额度。
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         success = await execute_budgeted_json_request(
             ledger=ledger,
@@ -115,6 +124,7 @@ async def run_demo(database: Path) -> dict[str, Any]:
             replay_safe=True,
             jitter=lambda: 0,
         )
+        # 失败发生在请求发送之后，本地无法确定供应商是否计费，因此不能简单退款。
         try:
             await execute_budgeted_json_request(
                 ledger=ledger,
@@ -174,6 +184,8 @@ async def run_demo(database: Path) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
+    """要求调用者提供一个尚不存在的数据库路径。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database",
@@ -185,6 +197,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """运行异步离线实验并打印完整账本事件。"""
+
     args = parse_args()
     print(json.dumps(asyncio.run(run_demo(args.database)), ensure_ascii=False, indent=2))
 

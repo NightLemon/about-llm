@@ -1,4 +1,8 @@
-"""Single-GPU LoRA SFT entry point for chat-formatted JSONL data."""
+"""单 GPU LoRA SFT 入口：从严格 chat JSONL 一直走到可发布 adapter bundle。
+
+脚本先验证数据/readiness 与 assistant-only label 投影，再加载固定 revision 的 tokenizer/model，
+用 TRL SFTTrainer 训练，保存 adapter、tokenizer、运行身份、指标与显存证据，最后发布 bundle。
+"""
 
 from __future__ import annotations
 
@@ -27,6 +31,8 @@ from about_llm.finetuning.training_runtime import (
 
 
 def parse_args() -> argparse.Namespace:
+    """定义模型身份、数据、LoRA、训练与 preflight 参数。"""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--revision", required=True)
@@ -84,6 +90,8 @@ def _training_run_report(
     memory_before: dict[str, object],
     memory_after: dict[str, object],
 ) -> dict[str, object]:
+    """汇总训练身份、数据指纹、指标、显存和 artifact 边界。"""
+
     return {
         "report_version": "about-llm.sft-training-run.v1",
         "status": status,
@@ -135,7 +143,10 @@ def _training_run_report(
 
 
 def main() -> None:
+    """依次执行数据门禁、tokenization 审计、LoRA SFT 与 bundle 发布。"""
+
     args = parse_args()
+    # 在加载任何大模型前先完成便宜的数据契约与 split 泄漏检查。
     records = load_sft_records(args.train_jsonl)
     readiness = load_sft_training_readiness(args.readiness_json)
     audit = validate_sft_training_readiness(records, readiness)
@@ -149,6 +160,7 @@ def main() -> None:
 
     from transformers import AutoTokenizer
 
+    # tokenizer 与模型都固定相同 model_id/revision，禁止远端自定义代码。
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id,
         revision=args.revision,
@@ -199,6 +211,7 @@ def main() -> None:
     from peft import LoraConfig, TaskType
     from trl import SFTConfig, SFTTrainer
 
+    # 训练 rows 已含 input_ids/labels；prompt 与非监督 span 的 label 为 -100。
     dataset = Dataset.from_list(mask_preparation.to_training_rows())
 
     target_modules = [item.strip() for item in args.target_modules.split(",") if item.strip()]
@@ -236,6 +249,7 @@ def main() -> None:
         report_to="none",
         seed=42,
     )
+    # 已自行完成模板与 mask，因此 Trainer 只负责 batching、backward 和优化器调度。
     trainer = SFTTrainer(
         model=args.model_id,
         args=training_config,
@@ -332,6 +346,7 @@ def main() -> None:
             memory_after=cuda_memory_snapshot(torch, device),
         ),
     )
+    # 只有训练报告与 adapter/tokenizer 文件齐全后才发布可独立验证的 bundle。
     publish_sft_adapter_bundle(args.output_dir)
 
 

@@ -1,4 +1,8 @@
-"""Print three ways to train on two documents packed into one causal sequence."""
+"""比较两个文档 packing 后的三种 labels、Attention 与 position 处理方式。
+
+同一条 packed token 序列可以直接拼接、只 mask 跨文档 target，或同时隔离文档 Attention并
+重置 position IDs。输出逐位置展示每种选择究竟允许模型学习哪些 next-token 关系。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ from typing import Any
 
 from about_llm.finetuning.packing import PackedDocument, build_packed_causal_lm_example
 
+# 两篇各含两个 token 的文档，边界足够短，可以逐位置手算。
 DOCUMENTS = (
     PackedDocument(document_id="docA", token_ids=(11, 12)),
     PackedDocument(document_id="docB", token_ids=(21, 22)),
@@ -15,6 +20,9 @@ DOCUMENTS = (
 
 
 def run_toy() -> dict[str, Any]:
+    """对相同文档生成三种 packing profile。"""
+
+    # concatenated 会让 docA 的 EOS 预测 docB 开头，可能产生非预期跨文档监督。
     profiles = {
         "concatenated": build_packed_causal_lm_example(
             DOCUMENTS,
@@ -82,6 +90,8 @@ def run_toy() -> dict[str, Any]:
 
 
 def main() -> None:
+    """以 UTF-8 JSON 打印 token、labels、mask 与 position IDs。"""
+
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     print(json.dumps(run_toy(), ensure_ascii=False, indent=2))

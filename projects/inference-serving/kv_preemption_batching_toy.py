@@ -1,4 +1,8 @@
-"""Run the deterministic KV-capacity/recompute-preemption scheduling fixture."""
+"""模拟 KV block 不足时 continuous batching 的抢占与重新 prefill。
+
+两个请求竞争三个 block。调度器无法同时保留全部 KV 时，会释放被抢占序列的 block，随后从
+prompt 重新计算其状态。报告区分逻辑 token 与实际重复执行的 forward 工作。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,9 @@ from about_llm.inference import BatchingRequest, simulate_kv_preemption_batching
 
 
 def main() -> None:
+    """运行固定请求时间线并打印 block、抢占和重算事件。"""
+
+    # block_size=2 且总 block=3，故意让并发序列在增长时触发容量压力。
     report = simulate_kv_preemption_batching(
         [
             BatchingRequest("a", 0, 4, 3),

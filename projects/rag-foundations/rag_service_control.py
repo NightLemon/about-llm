@@ -1,4 +1,8 @@
-"""Execute the persistent extractive RAG service through an in-process ASGI client."""
+"""通过进程内 ASGI 客户端运行持久化抽取式 RAG 服务的完整控制实验。
+
+实验覆盖 readiness、bearer 身份、租户/ACL 可见性、请求体伪造、缺失鉴权、排队饱和、
+执行超时和容量恢复。它使用真实 FastAPI/Starlette/httpx 与 SQLite，但不打开公网端口。
+"""
 
 from __future__ import annotations
 
@@ -27,6 +31,8 @@ from about_llm.rag.sqlite_store import SQLiteChunkStore
 
 
 def _seed(path: Path) -> None:
+    """写入公开、工程组、财务组和另一租户四类权限文档。"""
+
     sources = (
         SourceDocument(
             source_id="public-security",
@@ -55,12 +61,15 @@ def _seed(path: Path) -> None:
             text="RAG 检索必须在排序前执行权限过滤。",
         ),
     )
+    # 使用真实磁盘 SQLite；后续服务查询会重新打开它，覆盖持久化边界。
     with SQLiteChunkStore(path) as store:
         for source in sources:
             store.upsert_source(source, expected_current_version=None, max_chars=1000)
 
 
 def _request_ids() -> Any:
+    """返回一个确定性 request ID 生成器，便于核对响应头。"""
+
     counter = 0
 
     def next_id() -> str:
@@ -72,6 +81,8 @@ def _request_ids() -> Any:
 
 
 def _auth_resolver() -> StaticBearerAuthResolver:
+    """把两个公开测试 token 映射为工程主体与匿名主体。"""
+
     return StaticBearerAuthResolver(
         {
             "engineering-token": AuthContext(
@@ -89,9 +100,11 @@ def _auth_resolver() -> StaticBearerAuthResolver:
 
 
 class _BlockedRAGService(PersistentExtractiveRAGService):
-    """Hold one sync request until the queue-saturation state has been observed."""
+    """阻塞一个同步请求，直到实验观察到队列饱和。"""
 
     def __init__(self, database: Path) -> None:
+        """将并发设为 1，并建立跨线程协调事件。"""
+
         super().__init__(
             database,
             config=RAGServiceConfig(
@@ -112,6 +125,8 @@ class _BlockedRAGService(PersistentExtractiveRAGService):
         auth: AuthContext,
         request_id: str,
     ) -> RAGQueryResponse:
+        """在测试门打开前让后台同步查询保持运行。"""
+
         if not self.block_work:
             return super()._query_sync(request, auth, request_id)
         self.work_started.set()
@@ -123,17 +138,23 @@ class _BlockedRAGService(PersistentExtractiveRAGService):
         self,
         work: asyncio.Task[RAGQueryResponse],
     ) -> None:
+        """后台工作真正结束并释放 permit 后通知实验协程。"""
+
         super()._release_after_background_work(work)
         self.permit_released.set()
 
 
 async def _execute_pressure(database: Path) -> dict[str, Any]:
+    """制造 execution timeout 与 queue saturation，再验证容量恢复。"""
+
+    # 单并发 permit 被第一个后台线程持有；HTTP 504 并不代表该线程已经停止。
     service = _BlockedRAGService(database)
     app = create_rag_app(service, _auth_resolver())
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         headers = {"Authorization": "Bearer engineering-token"}
         try:
+            # 第一个请求很快在 HTTP 层超时，但同步工作仍被 event 阻塞。
             first = await client.post(
                 "/v1/rag/query",
                 headers=headers,
@@ -142,6 +163,7 @@ async def _execute_pressure(database: Path) -> dict[str, Any]:
             started = await asyncio.to_thread(service.work_started.wait, 1)
             if not started:
                 raise AssertionError("blocked synchronous work did not start")
+            # permit 尚未释放，第二个请求在 queue timeout 后收到 503。
             second = await client.post(
                 "/v1/rag/query",
                 headers=headers,
@@ -152,6 +174,7 @@ async def _execute_pressure(database: Path) -> dict[str, Any]:
         released = await asyncio.to_thread(service.permit_released.wait, 1)
         if not released:
             raise AssertionError("background work did not release the concurrency permit")
+        # 后台线程完成并释放 permit 后，放宽执行超时，第三个请求应恢复成功。
         service.block_work = False
         service.config = RAGServiceConfig(
             max_concurrency=1,
@@ -200,6 +223,8 @@ async def _execute_pressure(database: Path) -> dict[str, Any]:
 
 
 async def _execute(database: Path) -> dict[str, Any]:
+    """通过 ASGI 请求验证正常权限路径、失败路径和压力恢复。"""
+
     service = PersistentExtractiveRAGService(
         database,
         request_id_factory=_request_ids(),
@@ -214,6 +239,7 @@ async def _execute(database: Path) -> dict[str, Any]:
             "top_k": 10,
             "budget_units": 12000,
         }
+        # 相同 query 分别使用工程主体与匿名主体，返回的授权来源集合应不同。
         engineering = await client.post(
             "/v1/rag/query",
             headers={"Authorization": "Bearer engineering-token"},
@@ -224,6 +250,7 @@ async def _execute(database: Path) -> dict[str, Any]:
             headers={"Authorization": "Bearer anonymous-token"},
             json=query,
         )
+        # 客户端不能在 JSON body 自报 tenant；可信租户只能来自鉴权上下文。
         forged = await client.post(
             "/v1/rag/query",
             headers={"Authorization": "Bearer anonymous-token"},
@@ -239,6 +266,7 @@ async def _execute(database: Path) -> dict[str, Any]:
     anonymous_sources = [
         source["stable_source_id"] for source in anonymous_payload["artifact"]["sources"]
     ]
+    # 固定来源断言同时检查 ACL 发生在检索评分之前，没有秘密文档进入候选。
     if engineering_sources != ["public-security", "engineering-citations"]:
         raise AssertionError("engineering service visibility fixture changed")
     if anonymous_sources != ["public-security"]:
@@ -288,6 +316,8 @@ async def _execute(database: Path) -> dict[str, Any]:
 
 
 def run_control() -> dict[str, Any]:
+    """创建临时数据库，写入语料并运行完整异步服务实验。"""
+
     with tempfile.TemporaryDirectory(prefix="about-llm-rag-service-") as directory:
         database = Path(directory) / "rag.db"
         _seed(database)

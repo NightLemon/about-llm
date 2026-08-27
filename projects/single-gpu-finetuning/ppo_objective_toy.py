@@ -1,4 +1,8 @@
-"""Run authored CPU controls for GAE, PPO clipping, and sampled-ratio limits."""
+"""手算 GAE、PPO clipped surrogate 与 sampled action ratio 的边界。
+
+实验分别覆盖 terminal 与 truncation 的 bootstrap 差异、padding mask、正负 advantage 下 clipping
+方向，以及“只约束采到的 action ratio”并不限制完整策略 KL 的反例。
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,9 @@ from about_llm.finetuning import (
 
 
 def run_experiment() -> dict[str, Any]:
+    """运行 GAE、截断 bootstrap、PPO clip 与 ratio 反例。"""
+
+    # 第三行填入巨大数但 valid_mask=False，验证 padding 不参与递推或 loss。
     gae = generalized_advantage_estimation(
         rewards=[0.0, 1.0, 999.0],
         values=[0.5, 0.25, 999.0],
@@ -27,6 +34,7 @@ def run_experiment() -> dict[str, Any]:
         gae_lambda=0.8,
         bootstrap_truncated=True,
     )
+    # 时间上限 truncation 可从 next value bootstrap；真正 terminal 则不能。
     truncated_with_bootstrap = generalized_advantage_estimation(
         rewards=[1.0],
         values=[0.5],

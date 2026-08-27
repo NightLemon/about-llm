@@ -1,4 +1,8 @@
-"""Exact false-positive audit for repeated fixed-horizon sign tests."""
+"""精确计算重复偷看固定样本量检验带来的累计假阳性率。
+
+在同一实验的 10/20/30/40/50 个 pair 处反复用 alpha=0.05 判断，会让“至少误报一次”的
+概率超过 5%。实验再用预先分配的 Bonferroni 阈值对照，展示停止规则也是评测设计的一部分。
+"""
 
 from __future__ import annotations
 
@@ -9,12 +13,17 @@ from about_llm.evaluation import analyze_repeated_two_sided_sign_tests
 
 
 def run_toy() -> dict[str, object]:
+    """对相同 look schedule 精确比较朴素阈值与 Bonferroni 阈值。"""
+
+    # Fraction 保留精确有理数，避免边界 p-value 因浮点舍入改变是否拒绝。
     look_sample_counts = (10, 20, 30, 40, 50)
     familywise_alpha = Fraction(1, 20)
+    # naive 在每次查看都花完整的 0.05，累计错误率会膨胀。
     naive = analyze_repeated_two_sided_sign_tests(
         look_sample_counts,
         per_look_alpha=familywise_alpha,
     )
+    # Bonferroni 把总 alpha 平分给五次预先声明的查看。
     bonferroni = analyze_repeated_two_sided_sign_tests(
         look_sample_counts,
         per_look_alpha=familywise_alpha / len(look_sample_counts),
@@ -65,6 +74,8 @@ def run_toy() -> dict[str, object]:
 
 
 def main() -> None:
+    """输出两种停止策略的精确累计拒绝概率。"""
+
     print(
         json.dumps(
             run_toy(),

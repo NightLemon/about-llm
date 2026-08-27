@@ -1,4 +1,8 @@
-"""Offline text-tokenization and Transformer reward-model optimizer control."""
+"""离线跑通 preference 文本分词、Transformer reward model 与 pairwise 更新。
+
+脚本从固定 records 构造本地 tokenizer 和随机 GPT-2 sequence classifier，分别编码 chosen 与
+rejected，优化 ``-log sigmoid(r_chosen-r_rejected)``，并报告 margin 与准确率变化。
+"""
 
 from __future__ import annotations
 
@@ -40,6 +44,8 @@ CHAT_TEMPLATE = (
 
 
 def _tokenizer(records: tuple[Any, ...]) -> PreTrainedTokenizerFast:
+    """从固定 preference 文本建立可离线复现的 WordLevel tokenizer。"""
+
     vocabulary = {"[UNK]": 0, "[PAD]": 1, "</s>": 2}
     tokens = {"<|system|>", "<|user|>", "<|assistant|>", "<|tool|>"}
     for record in records:
@@ -67,6 +73,8 @@ def _render(
     tokenizer: PreTrainedTokenizerFast,
     messages: list[dict[str, str]],
 ) -> list[int]:
+    """用同一 chat template 渲染 prompt 与某个候选回答。"""
+
     token_ids = tokenizer.apply_chat_template(
         messages,
         tokenize=True,
@@ -103,6 +111,8 @@ def _scores(
     input_ids: torch.Tensor,
     attention_mask: torch.Tensor,
 ) -> torch.Tensor:
+    """对一批文本计算每条序列的 scalar reward。"""
+
     logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
     if logits.shape != (input_ids.shape[0], 1):
         raise AssertionError("reward model must emit exactly one scalar per sequence")
@@ -110,6 +120,8 @@ def _scores(
 
 
 def _metrics(chosen_scores: torch.Tensor, rejected_scores: torch.Tensor) -> dict[str, object]:
+    """汇总 pairwise accuracy、margin 和 softplus loss。"""
+
     margins = chosen_scores - rejected_scores
     losses = functional.softplus(-margins)
     return {
@@ -128,9 +140,12 @@ def run_smoke(
     train_path: Path = TRAIN_FIXTURE,
     readiness_path: Path = READINESS_FIXTURE,
 ) -> dict[str, object]:
+    """执行数据审计、tokenization、pairwise 训练和前后指标比较。"""
+
     if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
         raise ValueError("steps must be a positive integer")
     torch.manual_seed(29)
+    # readiness 通过后才允许这些 records 进入优化器。
     training = load_preference_records(train_path)
     readiness = load_preference_training_readiness(readiness_path)
     train_audit = validate_preference_training_readiness(training, readiness)

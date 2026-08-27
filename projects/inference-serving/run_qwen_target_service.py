@@ -1,4 +1,8 @@
-"""Run or verify the fixed Qwen2.5-0.5B loopback service control."""
+"""运行或离线复核固定 Qwen2.5 checkpoint 的本地流式服务。
+
+实时模式会启动 loopback HTTP 服务、发送请求并核对 SSE、停止原因、usage 和取消语义；
+``--verify`` 不加载模型，只检查 recorded report 是否仍绑定同一 service manifest。
+"""
 
 from __future__ import annotations
 
@@ -23,6 +27,9 @@ DEFAULT_CHECKPOINT_MANIFEST = (
 
 
 def main() -> None:
+    """根据 --verify 选择真实服务控制或离线证据验证。"""
+
+    # 服务响应可能含中文，显式设置 UTF-8 后再打印 JSON。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)

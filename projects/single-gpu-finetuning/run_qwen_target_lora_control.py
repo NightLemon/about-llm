@@ -1,3 +1,9 @@
+"""运行或离线复核固定 Qwen2.5 checkpoint 的一步 LoRA 更新。
+
+实验验证 base checkpoint 与已发布 adapter bundle，执行真实前向/反向并检查只有 LoRA 参数改变；
+``--verify`` 则在不加载模型的情况下核对仓库记录报告和 artifact 哈希。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -31,6 +37,8 @@ DEFAULT_ARTIFACT = PROJECT / "target-adapters" / "qwen2.5-0.5b-instruct-step1"
 
 
 def _write_json_new(path: Path, value: object) -> None:
+    """新建并持久化 UTF-8 JSON 报告，不覆盖现有文件。"""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
         "utf-8"
@@ -42,6 +50,8 @@ def _write_json_new(path: Path, value: object) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """定义 checkpoint、LoRA 控制、adapter 目录和运行/验证模式。"""
+
     parser = argparse.ArgumentParser(
         description="Run or verify the reviewed Qwen2.5-0.5B CPU FP32 LoRA control"
     )
@@ -64,12 +74,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """加载共同身份约束，再选择一步 LoRA 运行或报告复核。"""
+
     args = parse_args()
     checkpoint_spec = load_checkpoint_control_spec(args.checkpoint_control)
     spec = load_target_lora_control_spec(
         args.control, checkpoint_spec=checkpoint_spec
     )
     if args.verify is not None:
+        # 只读取 recorded report 和 adapter 文件，不执行模型训练。
         report = load_recorded_target_lora_report(
             args.verify,
             spec=spec,
@@ -78,6 +91,7 @@ def main() -> None:
             artifact_directory=args.artifact_directory,
         )
     else:
+        # 真实路径加载固定 base 与 adapter，执行一步梯度更新并记录可训练参数变化。
         report = run_target_lora_control(
             spec,
             checkpoint_spec=checkpoint_spec,

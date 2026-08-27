@@ -1,4 +1,8 @@
-"""Deterministic offline demo of transactional-outbox crash recovery."""
+"""离线演示 transactional outbox 在“外部成功、本地未确认”崩溃点的恢复。
+
+worker-a 把任务状态与待发送 effect 原子写入 SQLite，调用 provider 成功后立刻模拟崩溃。
+租约过期后 worker-b 重试同一 idempotency key；provider 去重，因此两次调用只产生一个副作用。
+"""
 
 from __future__ import annotations
 
@@ -14,9 +18,11 @@ EXECUTION_FINGERPRINT = "sha256:" + "a" * 64
 
 
 class SimulatedIdempotentProvider:
-    """In-memory provider that deduplicates requests by idempotency key."""
+    """按 idempotency key 去重的内存 provider。"""
 
     def __init__(self) -> None:
+        """初始化调用计数与已产生副作用的映射。"""
+
         self.calls = 0
         self.effects: dict[str, dict[str, str]] = {}
 
@@ -27,6 +33,8 @@ class SimulatedIdempotentProvider:
         destination: str,
         payload: Any,
     ) -> dict[str, str]:
+        """模拟外部发送；重复 key 返回同一 receipt，不再产生新 effect。"""
+
         self.calls += 1
         del destination, payload
         return self.effects.setdefault(
@@ -36,13 +44,14 @@ class SimulatedIdempotentProvider:
 
 
 def run_demo(database: Path) -> dict[str, Any]:
-    """Run one success-before-ack crash and return its auditable artifact."""
+    """执行一次 success-before-ack 崩溃，并返回可审计事件时间线。"""
 
     if database.exists():
         raise ValueError(f"refusing to reuse existing database: {database}")
 
     provider = SimulatedIdempotentProvider()
     worker_a = SQLiteTransactionalOutbox(database)
+    # effect 与任务状态在同一 SQLite 事务提交，避免只更新任务却漏发消息。
     effect = EffectRequest(
         effect_id="effect-1",
         execution_fingerprint=EXECUTION_FINGERPRINT,
@@ -55,6 +64,7 @@ def run_demo(database: Path) -> dict[str, Any]:
         effect,
         now=10,
     )
+    # claim 给 effect 加短租约，其他 worker 在租约有效期内不能同时发送。
     first = worker_a.claim_due("worker-a", now=10, lease_seconds=5)
     if first is None:
         raise RuntimeError("worker-a did not claim the fixture effect")
@@ -64,9 +74,10 @@ def run_demo(database: Path) -> dict[str, Any]:
         payload=first.payload,
     )
 
-    # Simulated crash: provider success is durable, but the local acknowledgement is absent.
+    # 模拟崩溃：provider 已成功，但本地还没来得及写 delivered acknowledgement。
     del worker_a
     worker_b = SQLiteTransactionalOutbox(database)
+    # now=16 时原租约已过期，worker-b 会重新 claim 并进行 at-least-once 重试。
     second = worker_b.claim_due("worker-b", now=16, lease_seconds=5)
     if second is None:
         raise RuntimeError("worker-b did not reclaim the expired fixture effect")
@@ -75,6 +86,7 @@ def run_demo(database: Path) -> dict[str, Any]:
         destination=second.destination,
         payload=second.payload,
     )
+    # provider 返回相同 receipt 后，worker-b 才把 outbox 记录推进到 delivered。
     worker_b.mark_delivered(second.effect_id, "worker-b", second_receipt, now=17)
 
     record = worker_b.get(second.effect_id)
@@ -119,6 +131,8 @@ def run_demo(database: Path) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
+    """要求一个新 SQLite 路径，避免覆盖已有演示账本。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database",
@@ -130,6 +144,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """执行崩溃恢复实验并输出 effect 与 event 记录。"""
+
     args = parse_args()
     print(json.dumps(run_demo(args.database), ensure_ascii=False, indent=2))
 

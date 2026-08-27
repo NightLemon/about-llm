@@ -1,4 +1,8 @@
-"""Exact authored best-of-N verifier-selection counterexample."""
+"""用精确反例说明 best-of-N 会放大 verifier 的可利用漏洞。
+
+三个候选中，verifier_hack 实际错误却拿到最高 verifier 分。N 从 1 增至 16 时，选中样本的
+平均 verifier 分继续上升，但真实成功率先升后降；oracle 上限则仍随覆盖率增加。
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,7 @@ from about_llm.inference import (
     analyze_verifier_guided_best_of_n,
 )
 
+# sampling_weight 表示模型采到候选的概率权重，target_success 是独立于 verifier 的真值。
 AUTHORED_CANDIDATES = (
     VerifierCandidate(
         candidate_id="wrong",
@@ -32,6 +37,8 @@ AUTHORED_CANDIDATES = (
 
 
 def run_toy() -> dict[str, object]:
+    """精确计算 N=1/4/16 时 verifier 选择与 oracle 选择的成功率。"""
+
     analyses = tuple(
         analyze_verifier_guided_best_of_n(
             AUTHORED_CANDIDATES,
@@ -39,6 +46,7 @@ def run_toy() -> dict[str, object]:
         )
         for sample_count in (1, 4, 16)
     )
+    # 三条序列分别回答“分数是否更高”“实际是否更对”“候选集合是否覆盖正确答案”。
     expected_scores = [analysis.expected_selected_verifier_score for analysis in analyses]
     selected_success = [analysis.selected_success_probability for analysis in analyses]
     oracle_success = [analysis.oracle_success_probability for analysis in analyses]
@@ -72,6 +80,8 @@ def run_toy() -> dict[str, object]:
 
 
 def main() -> None:
+    """打印不同 N 下的 verifier 分数与真实成功率。"""
+
     print(json.dumps(run_toy(), ensure_ascii=False, allow_nan=False, indent=2))
 
 

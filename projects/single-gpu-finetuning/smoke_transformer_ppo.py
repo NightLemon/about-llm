@@ -1,4 +1,8 @@
-"""Offline tiny-Transformer token PPO control with exact task-reward enumeration."""
+"""用微型 Transformer actor-critic 跑 token-level PPO，并穷举精确 task reward。
+
+模型从 BOS 开始生成最多两个 token，目标是产生指定 token。实验采集自回归 rollout、处理 EOS
+与 padding、执行 clipped PPO，再枚举全部短序列检查期望任务回报是否改善。
+"""
 
 from __future__ import annotations
 
@@ -26,6 +30,8 @@ MAX_CONTEXT_LENGTH = 2
 
 
 def _step_contexts(previous_actions: Tensor | None, episodes: int) -> tuple[Tensor, Tensor]:
+    """为当前生成步构造固定长度 context 与 attention mask。"""
+
     contexts = torch.full(
         (episodes, MAX_CONTEXT_LENGTH), PAD_TOKEN_ID, dtype=torch.long
     )
@@ -40,6 +46,8 @@ def _step_contexts(previous_actions: Tensor | None, episodes: int) -> tuple[Tens
 
 @torch.inference_mode()
 def exact_expected_task_reward(model: TinyCausalActorCritic) -> float:
+    """枚举所有两步 token 路径，精确计算目标 token 奖励期望。"""
+
     """Enumerate all first-token branches for the two-action reward horizon."""
 
     model.eval()
@@ -67,6 +75,8 @@ def collect_token_rollout(
     kl_coefficient: float,
     generator: torch.Generator,
 ) -> TransformerRollout:
+    """逐 token 采样并保存 old log-prob、value、mask 与终止状态。"""
+
     """Sample two tokens and bind every action to behavior/reference statistics."""
 
     episode_count = positive_integer(episodes, "episodes")
@@ -152,6 +162,8 @@ def run_smoke(
     learning_rate: float = 0.01,
     kl_coefficient: float = 0.02,
 ) -> dict[str, Any]:
+    """采集 rollout、执行 PPO 更新，并比较精确期望任务回报。"""
+
     """Execute reproducible Transformer token rollout and PPO updates on CPU."""
 
     iteration_count = positive_integer(iterations, "iterations")
@@ -163,6 +175,7 @@ def run_smoke(
         raise ValueError("learning_rate must be positive")
     coefficient = finite_non_negative(kl_coefficient, "kl_coefficient")
     torch.manual_seed(61)
+    # rollout 与 minibatch shuffle 使用独立 RNG，便于分别复现采样和优化顺序。
     rollout_generator = torch.Generator(device="cpu").manual_seed(62)
     optimizer_generator = torch.Generator(device="cpu").manual_seed(63)
     model = TinyCausalActorCritic(

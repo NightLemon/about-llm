@@ -1,4 +1,8 @@
-"""Explain why a 24/30 candidate can still fail a release gate."""
+"""解释 candidate 总分达到 24/30 时为何仍应被发布门禁拦截。
+
+实验先展示 headline accuracy，再展开六条实际发生变化的配对 case，最后检查置信区间和
+跨租户拒答切片。它用固定输出说明“总体多答对两题”不能覆盖高风险能力退化。
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,8 @@ from about_llm.evaluation.headline_accuracy_trace import build_headline_accuracy
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """提供中文导览与完整 JSON 两种输出模式。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--json",
@@ -22,10 +28,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """构建固定评测 trace，并选择适合阅读或程序处理的输出。"""
+
+    # 导览包含中文 case 描述，统一 stdout 编码。
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="backslashreplace")
     args = build_parser().parse_args(argv)
+    # 报告由仓库准备的 baseline/candidate 输出计算，不调用真实模型。
     report = build_headline_accuracy_trace()
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -35,6 +45,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _guided_view(report: dict[str, Any]) -> str:
+    """按“总分→配对变化→关键切片→发布决定”渲染中文导览。"""
+
     headline = report["headline"]
     changes = report["paired_changes"]
     comparison = report["comparison"]

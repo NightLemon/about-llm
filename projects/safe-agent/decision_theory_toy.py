@@ -1,4 +1,8 @@
-"""Run finite controls for belief, information value, and agent termination."""
+"""用有限状态例子串起 belief update、信息价值、硬约束和 Agent 终止性。
+
+前半段让 Agent 在两种故障间更新概率，并比较“先观察再行动”是否值得成本；后半段枚举
+有限状态图，区分终态可达、一定终止、可进入禁区和可能无限循环四种性质。
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ from about_llm.agents import (
 
 
 def _information_summary(report: ValueOfInformationReport) -> dict[str, Any]:
+    """把观察前后决策与净信息价值整理成可读字段。"""
+
     return {
         "prior_expected_utilities": report.prior_decision.expected_utilities.tolist(),
         "prior_best_action_index": report.prior_decision.best_action_index,
@@ -34,6 +40,8 @@ def _information_summary(report: ValueOfInformationReport) -> dict[str, Any]:
 
 
 def _transition_summary(report: TransitionSystemReport) -> dict[str, Any]:
+    """提取状态图的可达性、安全性与终止性结论。"""
+
     return {
         "reachable_states": list(report.reachable_states),
         "reachable_terminal_states": list(report.reachable_terminal_states),
@@ -47,10 +55,14 @@ def _transition_summary(report: TransitionSystemReport) -> dict[str, Any]:
 
 
 def run_experiment() -> dict[str, Any]:
+    """计算一次 Bayes 更新、两种信号价值和三张状态图。"""
+
+    # prior 表示两类故障的当前信念；identity transition 假设观察期间状态不变。
     prior = [0.6, 0.4]
     identity_transition = [[1.0, 0.0], [0.0, 1.0]]
     strong_signal = [[0.85, 0.15], [0.15, 0.85]]
     weak_signal = [[0.51, 0.49], [0.49, 0.51]]
+    # 第四个 action 的效用故意最高，但 allowed_actions=False 表示策略层禁止它。
     utilities = [
         [10.0, -14.0],
         [-14.0, 10.0],
@@ -59,12 +71,14 @@ def run_experiment() -> dict[str, Any]:
     ]
     allowed_actions = [True, True, True, False]
 
+    # 先看到 signal-a 后按 Bayes 规则更新 belief，再做受约束的期望效用决策。
     belief = update_belief(prior, identity_transition, strong_signal[0])
     constrained = select_expected_utility_action(
         prior,
         utilities,
         allowed_actions=allowed_actions,
     )
+    # 强信号能改变动作且可能值回成本；弱信号通常不足以改变最优动作。
     strong_information = value_of_information(
         prior,
         strong_signal,
@@ -80,12 +94,14 @@ def run_experiment() -> dict[str, Any]:
         allowed_actions=allowed_actions,
     )
 
+    # 第一张图所有路径最终到终态；第二张图结构相同但把一个可达状态标成 forbidden。
     terminating_graph = [
         [False, True, True, False],
         [False, False, False, True],
         [False, False, False, True],
         [False, False, False, True],
     ]
+    # cycling_graph 的状态 2 有自环，所以终态虽可达，却不保证每条路径都会终止。
     cycling_graph = [
         [False, True, True, False],
         [False, False, False, True],
@@ -149,6 +165,8 @@ def run_experiment() -> dict[str, Any]:
 
 
 def main() -> None:
+    """打印决策论数值与状态图审计结果。"""
+
     print(json.dumps(run_experiment(), ensure_ascii=False, indent=2, sort_keys=True))
 
 

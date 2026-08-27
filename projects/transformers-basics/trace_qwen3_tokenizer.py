@@ -1,4 +1,8 @@
-"""Show how one Chinese chat message becomes Qwen3 token IDs."""
+"""追踪一条中文对话怎样经过 Qwen3 chat template 变成 token IDs。
+
+实验只加载固定版本的 tokenizer，不加载模型权重。它把应用层 message、模板渲染文本、
+最终 ID、词表 token 和逐 token 解码并排展示，帮助区分“模板加了什么”和“分词器切了什么”。
+"""
 
 # ruff: noqa: RUF001 -- Full-width punctuation is intentional in learner-facing text.
 
@@ -15,6 +19,7 @@ from typing import Any
 import transformers
 from transformers import AutoTokenizer
 
+# 仓库名与完整 commit 共同固定 tokenizer 身份，避免上游分支变化后结果悄悄漂移。
 MODEL_REPOSITORY = "Qwen/Qwen3-0.6B"
 MODEL_REVISION = "c1899de289a04d12100db370d81485cdf75e47ca"
 REPORT_SCHEMA = "about-llm.qwen3-tokenizer-trace.v1"
@@ -22,6 +27,8 @@ DEFAULT_MESSAGE = "请用一句话解释：为什么生成下一个 token 时可
 
 
 def _flat_integer_ids(value: object, *, source: str) -> list[int]:
+    """确认第三方 tokenizer 返回的是一维整数 ID，而不是张量或嵌套 batch。"""
+
     if not isinstance(value, list) or any(
         isinstance(token_id, bool) or not isinstance(token_id, int)
         for token_id in value
@@ -31,6 +38,8 @@ def _flat_integer_ids(value: object, *, source: str) -> list[int]:
 
 
 def _serializable_special_tokens(value: object) -> object:
+    """递归把 tokenizer 元数据转换成 JSON 能稳定保存的基础类型。"""
+
     if isinstance(value, Mapping):
         return {
             str(key): _serializable_special_tokens(item)
@@ -51,17 +60,20 @@ def trace_chat_message(
     source_kind: str = "repository_revision",
     enable_thinking: bool = False,
 ) -> dict[str, Any]:
-    """Trace one message through the tokenizer's own chat template."""
+    """让一条 user message 走过模板、编码、token 映射和解码往返。"""
+
     if not isinstance(message, str) or not message.strip():
         raise ValueError("message must be a non-empty string")
     if not getattr(tokenizer, "chat_template", None):
         raise RuntimeError("the loaded tokenizer does not provide a chat template")
 
+    # chat template 接收带 role 的消息列表，而不是已经拼好的 prompt 字符串。
     messages = [{"role": "user", "content": message}]
     template_options = {
         "add_generation_prompt": True,
         "enable_thinking": enable_thinking,
     }
+    # 第一次只渲染文本，直接观察模板插入的控制 token、换行和 assistant 起始标记。
     rendered = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
@@ -70,6 +82,7 @@ def trace_chat_message(
     if not isinstance(rendered, str):
         raise RuntimeError("chat template rendering did not return text")
 
+    # 第二次让同一模板直接产生 ID，代表正常推理入口最接近的 tokenization 路径。
     direct_ids = _flat_integer_ids(
         tokenizer.apply_chat_template(
             messages,
@@ -78,6 +91,7 @@ def trace_chat_message(
         ),
         source="chat template tokenization",
     )
+    # 再编码渲染文本作为交叉检查；禁止额外 special token，避免模板标记被重复添加。
     encoded = tokenizer(rendered, add_special_tokens=False)
     if not isinstance(encoded, Mapping) or "input_ids" not in encoded:
         raise RuntimeError("encoding the rendered prompt did not return input_ids")
@@ -86,6 +100,7 @@ def trace_chat_message(
         source="rendered prompt encoding",
     )
 
+    # convert_ids_to_tokens 返回词表内部写法，decode 则尽力恢复面向人的字符片段。
     raw_tokens = tokenizer.convert_ids_to_tokens(direct_ids)
     if not isinstance(raw_tokens, list) or any(
         not isinstance(token, str) for token in raw_tokens
@@ -94,6 +109,7 @@ def trace_chat_message(
     if len(raw_tokens) != len(direct_ids):
         raise RuntimeError("token conversion returned a different number of pieces")
 
+    # special 与 added 是不同概念：模板控制词可能是 added token，但未必被标为 special。
     raw_special_ids = getattr(tokenizer, "all_special_ids", [])
     special_ids = {
         token_id
@@ -109,6 +125,7 @@ def trace_chat_message(
         for token_id in raw_added_vocab.values()
         if isinstance(token_id, int) and not isinstance(token_id, bool)
     }
+    # 为每个位置保留 ID、词表形式、解码片段和 token 类型，形成可逐行阅读的 trace。
     token_rows = []
     for position, token_id in enumerate(direct_ids):
         decoded_piece = tokenizer.decode(
@@ -133,6 +150,7 @@ def trace_chat_message(
                 ),
             }
         )
+    # 最后把整串 ID 一次性解码，检查是否能回到模板渲染文本。
     decoded = tokenizer.decode(
         direct_ids,
         skip_special_tokens=False,
@@ -141,6 +159,7 @@ def trace_chat_message(
     if not isinstance(decoded, str):
         raise RuntimeError("tokenizer.decode did not return text")
 
+    # 本地目录方便离线运行，但目录路径本身不能证明文件确实来自目标 commit。
     local_snapshot = source_kind == "local_snapshot"
     source_explanation = (
         "从本地目录读取 tokenizer。报告会保留本实验期望的模型版本，"
@@ -199,8 +218,10 @@ def load_tokenizer(
     model_snapshot: Path | None,
     local_files_only: bool,
 ) -> tuple[Any, str, str]:
-    """Load the fixed tokenizer from its repository revision or a local directory."""
+    """从本地快照或固定仓库 revision 加载 tokenizer。"""
+
     if model_snapshot is not None:
+        # 显式目录总是离线读取；调用方需要自行保证其来源可信。
         resolved = model_snapshot.expanduser().resolve()
         if not resolved.is_dir():
             raise ValueError(f"model snapshot directory does not exist: {resolved}")
@@ -211,6 +232,7 @@ def load_tokenizer(
         )
         return tokenizer, str(resolved), "local_snapshot"
 
+    # 仓库模式固定完整 commit，可选择只使用已存在的 Hugging Face 缓存。
     tokenizer = AutoTokenizer.from_pretrained(  # type: ignore[no-untyped-call]
         MODEL_REPOSITORY,
         revision=MODEL_REVISION,
@@ -221,11 +243,14 @@ def load_tokenizer(
 
 
 def _visible_token(token: str) -> str:
+    """把换行和制表符转义为可在一行表格中看见的文本。"""
+
     return token.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
 
 
 def format_human_readable(report: Mapping[str, Any]) -> str:
-    """Format the trace as a short walkthrough for a learner."""
+    """把结构化 trace 排成四步中文导览。"""
+
     model = report["model"]
     request = report["request"]
     runtime = report["runtime"]
@@ -241,6 +266,7 @@ def format_human_readable(report: Mapping[str, Any]) -> str:
     rows = tokenization["tokens"]
     assert isinstance(rows, list)
 
+    # 展示顺序与真实调用链一致：message → template → IDs → 一致性检查。
     lines = [
         "Qwen3 对话分词追踪",
         f"目标模型：{model['target_repository']}@{model['target_revision']}",
@@ -289,6 +315,8 @@ def format_human_readable(report: Mapping[str, Any]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """定义消息、加载来源、thinking 模板开关和输出格式。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--message", default=DEFAULT_MESSAGE)
     parser.add_argument(
@@ -315,6 +343,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """加载目标 tokenizer 并打印人类导览或完整 JSON。"""
+
+    # token 片段包含中文和特殊符号，统一为 UTF-8 输出。
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="backslashreplace")

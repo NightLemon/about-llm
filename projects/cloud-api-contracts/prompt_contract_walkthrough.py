@@ -1,4 +1,8 @@
-"""Trace prepared contract-extraction outputs through independent validation layers."""
+"""让五份合同抽取结果依次经过 JSON、schema、证据和字段语义校验。
+
+这些候选输出是仓库预先准备的，不调用语言模型。实验故意加入伪造币种、无效证据、
+缺字段和重复 JSON key，展示“能解析”为什么远远不等于“可以进入业务系统”。
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,8 @@ SOURCE_TEXT = (
 
 
 def _evidence(field: str, quote: str) -> dict[str, object]:
+    """从原文定位一段精确引文，生成带字符区间的证据。"""
+
     start = SOURCE_TEXT.index(quote)
     return {
         "field": field,
@@ -25,6 +31,8 @@ def _evidence(field: str, quote: str) -> dict[str, object]:
 
 
 def _base_output() -> dict[str, Any]:
+    """构造后续反例共同使用的基础抽取结果。"""
+
     return {
         "status": "complete",
         "party": "海云科技有限公司",
@@ -38,8 +46,11 @@ def _base_output() -> dict[str, Any]:
 
 
 def _prepared_outputs() -> dict[str, str]:
+    """准备四个失败案例和一个证据不足但诚实的正确案例。"""
+
     fabricated = _base_output()
 
+    # 原文只说币种“见附件”，不能据此推出 CNY；精确引用也可能不支持结论。
     unsupported_quote = _base_output()
     unsupported_quote["evidence"] = [
         *unsupported_quote["evidence"],
@@ -49,6 +60,7 @@ def _prepared_outputs() -> dict[str, str]:
     missing_status = _base_output()
     missing_status.pop("status")
 
+    # 正确做法不是猜币种，而是显式返回 insufficient_evidence 与 null。
     corrected = _base_output()
     corrected["status"] = "insufficient_evidence"
     corrected["currency"] = None
@@ -78,6 +90,8 @@ def _prepared_outputs() -> dict[str, str]:
 
 
 def run_walkthrough() -> dict[str, object]:
+    """验证每个候选输出，并确认最终决策符合教学预期。"""
+
     expected = {
         "fabricated_currency_without_evidence": "reject",
         "fabricated_currency_with_exact_but_unsupported_quote": "reject",
@@ -86,6 +100,7 @@ def run_walkthrough() -> dict[str, object]:
         "corrected_insufficient_evidence": "accept",
     }
     cases: dict[str, dict[str, object]] = {}
+    # 所有案例走同一个独立 validator，避免为每个反例手写判断结果。
     for name, raw_output in _prepared_outputs().items():
         result = validate_contract_extraction(SOURCE_TEXT, raw_output)
         if result.decision != expected[name]:
@@ -115,6 +130,8 @@ def run_walkthrough() -> dict[str, object]:
 
 
 def main() -> None:
+    """打印五个案例经过各层校验后的详细原因。"""
+
     print(json.dumps(run_walkthrough(), ensure_ascii=False, indent=2, sort_keys=True))
 
 

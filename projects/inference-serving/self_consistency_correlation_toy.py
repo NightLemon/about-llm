@@ -1,4 +1,8 @@
-"""Exact binary self-consistency counterexample with correlated candidates."""
+"""用精确概率反例说明相关候选可能让 self-consistency 越采样越差。
+
+两种场景的单次成功率相同。独立场景每票 IID，增加奇数票会改善多数决；相关场景先为整道题
+抽一个 easy/hard 隐状态，同题候选因共享难度而相关，多采样反而更确信错误的 hard 答案。
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from about_llm.inference import (
     analyze_latent_regime_binary_majority,
 )
 
+# IID 场景只有一个 regime，每次候选成功概率恒为 3/5。
 INDEPENDENT_REGIMES = (
     BinaryVoteRegime(
         regime_id="iid",
@@ -19,6 +24,7 @@ INDEPENDENT_REGIMES = (
     ),
 )
 
+# 相关场景先等概率选择 easy 或 hard，同一题的全部候选共享该 regime。
 LATENT_CORRELATED_REGIMES = (
     BinaryVoteRegime(
         regime_id="easy",
@@ -36,6 +42,8 @@ LATENT_CORRELATED_REGIMES = (
 
 
 def run_toy() -> dict[str, object]:
+    """精确计算 1/3/5/11 个候选的多数决成功率与票间相关性。"""
+
     sample_counts = (1, 3, 5, 11)
     independent = tuple(
         analyze_latent_regime_binary_majority(
@@ -51,6 +59,7 @@ def run_toy() -> dict[str, object]:
         )
         for sample_count in sample_counts
     )
+    # 分别抽出成功率序列，后面直接检查随 sample count 的单调方向。
     independent_majorities = [
         analysis.majority_success_probability for analysis in independent
     ]
@@ -103,6 +112,8 @@ def run_toy() -> dict[str, object]:
 
 
 def main() -> None:
+    """输出独立与潜变量相关场景的精确分数结果。"""
+
     print(json.dumps(run_toy(), ensure_ascii=False, allow_nan=False, indent=2))
 
 

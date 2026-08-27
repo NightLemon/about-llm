@@ -1,4 +1,8 @@
-"""Frozen learned-reward PPO counterexample with exhaustive proxy auditing."""
+"""冻结一个 learned reward model 做 PPO，并穷举审计 proxy reward hacking。
+
+reward model 只见过稀疏 preference，容易把某个 shortcut token 当成高分信号。PPO 随后优化这份
+冻结 proxy；脚本枚举全部可达响应，同时计算 proxy 与真实 task reward，观察前者升高而后者下降。
+"""
 
 from __future__ import annotations
 
@@ -32,6 +36,8 @@ from about_llm.finetuning.ppo_transformer import (
 
 @dataclass(frozen=True)
 class ExactProxyObjectives:
+    """保存完整响应分布下的精确 proxy/task reward 与 KL。"""
+
     """Exact policy expectations over every reachable response."""
 
     probability_mass: float
@@ -46,6 +52,8 @@ class ExactProxyObjectives:
 
 @dataclass(frozen=True)
 class LearnedRewardTable:
+    """把每个可达 token 响应映射到冻结 reward model 分数。"""
+
     """Frozen centered scores for all EOS/cap-stopped responses."""
 
     responses: tuple[tuple[int, ...], ...]
@@ -78,6 +86,8 @@ def _reward_scores(
     input_ids: Tensor,
     attention_mask: Tensor,
 ) -> Tensor:
+    """在 no-grad 下用冻结 reward model 给 rollout 响应批量打分。"""
+
     logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
     if logits.shape != (input_ids.shape[0], 1):
         raise AssertionError("reward model must emit one scalar per response")
@@ -96,6 +106,8 @@ def _train_sparse_reward_model(
     steps: int,
     seed: int,
 ) -> tuple[GPT2ForSequenceClassification, LearnedRewardTable, dict[str, Any]]:
+    """在少量偏好对上训练微型 reward model，并导出完整响应分数表。"""
+
     step_count = positive_integer(steps, "reward_model_steps")
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise ValueError("reward_model_seed must be a non-negative integer")
@@ -138,6 +150,7 @@ def _train_sparse_reward_model(
     if not math.isclose(initial_loss, math.log(2), abs_tol=1e-7):
         raise AssertionError("zero reward head must start at log(2) pairwise loss")
 
+    # reward model 只在这一步更新；进入 PPO 后会被冻结并逐参数检查不变。
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=0)
     model.train()
     for _ in range(step_count):
@@ -234,7 +247,7 @@ def exact_proxy_objectives(
     vocab_size: int,
     allowed_token_ids: tuple[int, ...],
 ) -> ExactProxyObjectives:
-    """Enumerate the complete stopped-response distribution under the policy."""
+    """枚举 policy 下全部停止响应，精确计算 proxy/task 目标。"""
 
     policy.eval()
     if (eos_token_id,) not in table.responses:
@@ -316,6 +329,8 @@ def run_smoke(
     learning_rate: float = 0.01,
     kl_coefficient: float = 0.01,
 ) -> dict[str, Any]:
+    """训练 reward model，冻结后采样 PPO rollout，并审计 proxy 与真实目标。"""
+
     """Train a sparse RM, freeze it, then show exact PPO proxy exploitation."""
 
     iteration_count = positive_integer(ppo_iterations, "ppo_iterations")
@@ -348,6 +363,7 @@ def run_smoke(
     allowed_token_ids = tuple(
         tokenizer.convert_tokens_to_ids(token) for token in allowed_token_texts
     )
+    # 第一阶段只训练 reward model，并把全部可达响应的分数冻结成审计表。
     reward_model, reward_table, reward_report = _train_sparse_reward_model(
         prompt_ids=prompt_ids,
         vocab_size=vocab_size,
@@ -381,6 +397,7 @@ def run_smoke(
         name: parameter.detach().clone()
         for name, parameter in reference.named_parameters()
     }
+    # 第二阶段优化 policy；reward_model 参数不进入这个 optimizer。
     optimizer = torch.optim.Adam(policy.parameters(), lr=rate)
     initial_exact = exact_proxy_objectives(
         policy,
@@ -393,6 +410,7 @@ def run_smoke(
     )
     reports: list[dict[str, Any]] = []
     for iteration in range(iteration_count):
+        # rollout 使用 learned proxy 作为奖励，但报告会同时计算独立 task reward。
         rollout = collect_autoregressive_text_rollout(
             policy,
             reference,
@@ -540,6 +558,8 @@ def run_smoke(
 
 
 def main() -> None:
+    """运行 reward hacking 反例并打印完整穷举与 PPO 证据。"""
+
     print(json.dumps(run_smoke(), ensure_ascii=False, indent=2, sort_keys=True))
 
 

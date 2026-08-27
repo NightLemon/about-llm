@@ -1,4 +1,8 @@
-"""Offline TRL DPO smoke from strict preference records through optimizer steps."""
+"""离线跑通严格 preference records 到 TRL DPO optimizer step。
+
+实验用随机微型 GPT-2 和本地 tokenizer，先审计 chosen/rejected 数据、治理、近重复与截断，
+再冻结 reference model，执行若干 DPO 更新并比较训练前后的 loss。
+"""
 
 from __future__ import annotations
 
@@ -49,6 +53,8 @@ CHAT_TEMPLATE = (
 
 
 def _tokenizer(records: tuple[Any, ...]) -> PreTrainedTokenizerFast:
+    """根据固定 preference 文本构建最小 tokenizer 和共享 chat template。"""
+
     vocabulary = {"[UNK]": 0, "[PAD]": 1, "</s>": 2}
     tokens = {"<|system|>", "<|user|>", "<|assistant|>", "<|tool|>"}
     for record in records:
@@ -75,6 +81,8 @@ def _tokenizer(records: tuple[Any, ...]) -> PreTrainedTokenizerFast:
 def _collated_batch(
     trainer: DPOTrainer, prepared: Any
 ) -> tuple[dict[str, torch.Tensor], int, int]:
+    """从 DPOTrainer 取出一批真实 collated chosen/rejected 张量。"""
+
     features = [dict(prepared[index]) for index in range(len(prepared))]
     batch = trainer.data_collator(features)
     pair_count = len(features)
@@ -112,6 +120,8 @@ def _collated_batch(
 
 
 def _loss(trainer: DPOTrainer, batch: dict[str, torch.Tensor]) -> float:
+    """用 Trainer 自己的 loss 路径计算固定 batch 指标。"""
+
     trainer.model.eval()
     with torch.no_grad():
         value = float(trainer.compute_loss(trainer.model, batch))
@@ -121,9 +131,12 @@ def _loss(trainer: DPOTrainer, batch: dict[str, torch.Tensor]) -> float:
 
 
 def run_smoke(steps: int = 20) -> dict[str, object]:
+    """完成数据门禁、policy/reference 构造和 DPO 训练闭环。"""
+
     if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
         raise ValueError("steps must be a positive integer")
     torch.manual_seed(23)
+    # 先确保数据与 split 审计通过，再初始化 policy/reference 模型。
     records = load_preference_records(FIXTURE)
     split_audit = audit_preference_records(records)
     if not split_audit.gate_passed:
@@ -198,6 +211,7 @@ def run_smoke(steps: int = 20) -> dict[str, object]:
             use_cache=False,
         )
     )
+    # reference 是更新前 policy 的冻结深拷贝，训练期间逐参数检查它没有变化。
     reference = copy.deepcopy(model)
     reference_before = {
         name: parameter.detach().clone() for name, parameter in reference.named_parameters()
@@ -223,6 +237,7 @@ def run_smoke(steps: int = 20) -> dict[str, object]:
             seed=23,
             data_seed=23,
         )
+        # Trainer 计算同一 prompt 下 policy/reference 的 chosen/rejected log probability。
         trainer = DPOTrainer(
             model=model,
             ref_model=reference,

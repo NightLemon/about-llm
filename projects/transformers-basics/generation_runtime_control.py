@@ -1,4 +1,9 @@
-"""Deterministic offline control for Transformers generation stopping semantics."""
+"""离线观察 Transformers ``generate`` 的 EOS 与长度停止规则。
+
+随机模型本身无法稳定生成指定 token，因此实验插入一个 LogitsProcessor，按预定计划强制
+每一步的输出。这样可以把注意力放在三个问题上：EOS 列表如何生效、调用参数如何覆盖
+GenerationConfig，以及没有 EOS 时 ``max_new_tokens`` 如何停止生成。
+"""
 
 from __future__ import annotations
 
@@ -21,7 +26,11 @@ from about_llm.integrations.transformers_tools import parameter_report
 
 @dataclass
 class ForcedTokenPlan(LogitsProcessor):
-    """Replace every next-token score with one authored deterministic choice."""
+    """把每一步的全部候选分数替换为预定的唯一 token，并记录调用轨迹。
+
+    这个处理器只控制“下一 token 是谁”，停止条件仍由 Transformers 的真实生成循环判断。
+    因此我们可以在不依赖随机模型输出的情况下单独验证停止语义。
+    """
 
     prompt_length: int
     token_plan: tuple[int, ...]
@@ -29,6 +38,8 @@ class ForcedTokenPlan(LogitsProcessor):
     trace: list[dict[str, int]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        """在生成开始前检查 prompt、计划和词表范围。"""
+
         if isinstance(self.prompt_length, bool) or self.prompt_length <= 0:
             raise ValueError("prompt_length must be a positive integer")
         if not self.token_plan:
@@ -46,6 +57,9 @@ class ForcedTokenPlan(LogitsProcessor):
     def __call__(
         self, input_ids: torch.Tensor, scores: torch.Tensor
     ) -> torch.Tensor:
+        """根据当前序列长度选择计划 token，并覆盖本步 logits。"""
+
+        # input_ids 已包含 prompt 和此前生成的 token，两者长度差就是当前生成步编号。
         step = int(input_ids.shape[1]) - self.prompt_length
         if not 0 <= step < len(self.token_plan):
             raise RuntimeError(
@@ -55,6 +69,7 @@ class ForcedTokenPlan(LogitsProcessor):
         if scores.ndim != 2 or scores.shape[1] != self.vocabulary_size:
             raise RuntimeError("unexpected next-token score shape")
         token_id = self.token_plan[step]
+        # 其余 token 设为 -inf、目标 token 设为 0，贪心选择必然得到目标 token。
         forced = torch.full_like(scores, float("-inf"))
         forced[:, token_id] = 0
         self.trace.append(
@@ -76,16 +91,21 @@ def _run_case(
     call_eos_token_id: int | None = None,
     call_max_new_tokens: int | None = None,
 ) -> dict[str, object]:
+    """运行一组停止条件，并拆分 prompt 与本次新生成的 token。"""
+
+    # 每个 case 新建 processor，轨迹不会在多个对照之间串联。
     processor = ForcedTokenPlan(
         prompt_length=int(prompt.shape[1]),
         token_plan=token_plan,
         vocabulary_size=int(model.config.vocab_size),
     )
+    # 只有显式传入的调用级参数才放进 overrides，用来观察它们是否覆盖配置对象。
     overrides: dict[str, Any] = {}
     if call_eos_token_id is not None:
         overrides["eos_token_id"] = call_eos_token_id
     if call_max_new_tokens is not None:
         overrides["max_new_tokens"] = call_max_new_tokens
+    # 这里运行 Transformers GenerationMixin 的真实循环，只替换 token 选择分数。
     with torch.inference_mode():
         output = model.generate(
             input_ids=prompt,
@@ -105,6 +125,7 @@ def _run_case(
     sequence_ids = sequences[0].tolist()
     if sequence_ids[: len(prompt_ids)] != prompt_ids:
         raise RuntimeError("generate changed the prompt prefix")
+    # generate 返回 prompt 与续写的拼接序列，因此按原 prompt 长度切出新 token。
     generated_ids = sequence_ids[len(prompt_ids) :]
     return {
         "prompt_token_ids": prompt_ids,
@@ -123,8 +144,9 @@ def _run_case(
 
 
 def run_control() -> dict[str, object]:
-    """Execute EOS-set, call-override, and length-cap paths on a random tiny model."""
+    """依次运行 EOS 集合、调用级覆盖和长度上限三组对照。"""
 
+    # 模型只负责让 generate 走过真实前向路径；随机种子固定其参数身份。
     torch.manual_seed(71)
     model_config = GPT2Config(  # type: ignore[no-untyped-call]
         vocab_size=16,
@@ -148,14 +170,17 @@ def run_control() -> dict[str, object]:
         max_new_tokens=5,
         use_cache=False,
     )
+    # 保存副本，实验结束后还要检查 generate 没有原地修改调用者持有的配置。
     generation_config_before = generation_config.to_dict()
 
+    # token 3 属于配置中的 EOS 列表，生成 [4, 3] 后应立即停止。
     eos_set_case = _run_case(
         model,
         prompt=prompt,
         generation_config=generation_config,
         token_plan=(4, 3),
     )
+    # 调用级 eos_token_id=5 覆盖配置中的 [2, 3]，所以 token 3 不再触发停止。
     call_override_case = _run_case(
         model,
         prompt=prompt,
@@ -164,6 +189,7 @@ def run_control() -> dict[str, object]:
         call_eos_token_id=5,
         call_max_new_tokens=4,
     )
+    # 计划中没有 EOS；调用级 max_new_tokens=2 成为唯一停止原因。
     length_cap_case = _run_case(
         model,
         prompt=prompt,
@@ -171,6 +197,7 @@ def run_control() -> dict[str, object]:
         token_plan=(4, 6),
         call_max_new_tokens=2,
     )
+    # 用显式断言把“观察到的输出”变成实验必须满足的语义，不只是在报告里展示。
     if eos_set_case["generated_token_ids"] != [4, 3]:
         raise RuntimeError("generation-config EOS set did not stop on token 3")
     if call_override_case["generated_token_ids"] != [3, 5]:

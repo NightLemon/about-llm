@@ -1,4 +1,8 @@
-"""Serve the persistent deterministic RAG baseline with demo bearer auth."""
+"""启动带 SQLite 持久化和演示 bearer auth 的确定性抽取式 RAG 服务。
+
+该服务适合本机学习请求、权限和并发控制，不包含生产身份系统。默认只监听 loopback；若要
+绑定外部地址，必须显式确认静态 token 不是可靠的生产安全边界。
+"""
 
 from __future__ import annotations
 
@@ -19,6 +23,8 @@ from about_llm.rag.service import (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """定义数据库、演示身份、监听地址与并发/超时限制。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--tenant", required=True)
@@ -39,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _loopback(host: str) -> bool:
+    """判断 host 是否只在本机可访问。"""
+
     if host.lower() == "localhost":
         return True
     try:
@@ -48,12 +56,16 @@ def _loopback(host: str) -> bool:
 
 
 def build_app(args: argparse.Namespace) -> object:
+    """从命令行参数构造持久化 RAG 服务与静态鉴权解析器。"""
+
     if not 1 <= args.port <= 65535:
         raise ValueError("port must be in [1, 65535]")
+    # 静态 token 暴露到非本机地址风险更高，必须由操作者显式确认。
     if not _loopback(args.host) and not args.allow_non_loopback_demo_auth:
         raise ValueError(
             "static demo auth may bind only to loopback unless explicitly acknowledged"
         )
+    # token 只从环境变量读取，避免把秘密放进命令历史或源码。
     token = os.environ.get(args.token_env)
     if token is None or not token:
         raise ValueError(f"demo bearer token environment variable {args.token_env!r} is missing")
@@ -78,6 +90,8 @@ def build_app(args: argparse.Namespace) -> object:
 
 
 def main() -> None:
+    """构造应用并交给 Uvicorn 运行。"""
+
     args = build_parser().parse_args()
     app = build_app(args)
     uvicorn.run(

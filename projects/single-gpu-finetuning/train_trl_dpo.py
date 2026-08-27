@@ -1,4 +1,8 @@
-"""Single-GPU TRL 0.29 DPO entry with held-out-free data gates."""
+"""单 GPU TRL DPO 入口，先通过 preference 数据门禁再更新 LoRA/QLoRA。
+
+脚本验证 chosen/rejected 结构、近重复与 readiness，使用固定 chat template 做 tokenization 审计，
+随后加载 policy/reference，计算 DPO log-ratio loss 并训练；held-out 数据不会进入优化器。
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,8 @@ from about_llm.finetuning import (
 
 
 def parse_args() -> argparse.Namespace:
+    """定义模型、preference 数据、LoRA/QLoRA、DPO beta 与训练参数。"""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--revision", required=True)
@@ -54,6 +60,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def _write_json(path: Path, payload: object) -> None:
+    """以 UTF-8 严格 JSON 写入 preflight 或训练报告。"""
+
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -62,7 +70,10 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def main() -> None:
+    """执行 preference 门禁、tokenization 审计和 DPOTrainer 训练。"""
+
     args = parse_args()
+    # 数据/readiness 检查先于模型加载，确保训练集没有混入 held-out 或阻断级问题。
     records = load_preference_records(args.train_jsonl)
     readiness = load_preference_training_readiness(args.readiness_json)
     audit = validate_preference_training_readiness(records, readiness)
@@ -79,6 +90,7 @@ def main() -> None:
     from transformers import AutoTokenizer
     from trl import DPOConfig, DPOTrainer
 
+    # chosen/rejected 必须由同一个固定 tokenizer/template 渲染，才能比较条件 log-prob。
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id,
         revision=args.revision,
@@ -156,6 +168,7 @@ def main() -> None:
         target_modules=targets,
         task_type="CAUSAL_LM",
     )
+    # Dataset 只包含已通过门禁的 train records；reference 不会看到评测 split。
     dataset = Dataset.from_list([record.to_dpo_row() for record in records])
     model: Any = args.model_id
     model_init_kwargs: dict[str, Any] | None = {
@@ -238,6 +251,7 @@ def main() -> None:
             "held_out_dataset_passed_to_trainer": False,
         },
     )
+    # DPOTrainer 内部同时计算 policy 与 reference 的 chosen/rejected log probabilities。
     trainer = DPOTrainer(
         model=model,
         ref_model=None,

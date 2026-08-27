@@ -1,8 +1,8 @@
-"""Exercise LangChain and LlamaIndex as proposal transports for Safe Agent.
+"""把 LangChain 与 LlamaIndex 当作 Safe Agent 工具提案的传输层。
 
-The frameworks expose and parse tool arguments.  The canonical AgentRuntime
-still owns resource resolution, policy, idempotency, and handler execution.
-No model, network, remote tool, or external side effect is used here.
+两个框架负责公开 tool schema、接收参数并形成 proposal；canonical AgentRuntime 仍独占资源解析、
+权限、幂等和 handler 执行。实验比较允许、重放、跨租户、类型错误和未知工具五条路径，
+不调用模型、网络或远端工具。
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ POLICY_VERSION = "fixture-capability-policy@v1"
 
 
 class LookupArguments(BaseModel):
-    """One schema source shared by both framework tools and the runtime gate."""
+    """两个框架与 Runtime 共同使用的唯一参数 schema 来源。"""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -49,18 +49,24 @@ class LookupArguments(BaseModel):
 
 @dataclass
 class Harness:
+    """把一套独立 Runtime、可信上下文和 handler 调用记录放在一起。"""
+
     runtime: AgentRuntime
     context: ExecutionContext
     handler_calls: list[str]
 
 
 def _strict_schema() -> dict[str, Any]:
+    """从 Pydantic 模型生成 closed JSON Schema，并声明标准版本。"""
+
     schema = LookupArguments.model_json_schema(mode="validation")
     schema["$schema"] = DRAFT_2020_12_URI
     return schema
 
 
 def _contract() -> JSONSchemaToolContract:
+    """用共享 schema 构造 Runtime 的 canonical 工具 contract。"""
+
     return JSONSchemaToolContract(
         name=TOOL_NAME,
         description=TOOL_DESCRIPTION,
@@ -70,15 +76,21 @@ def _contract() -> JSONSchemaToolContract:
 
 
 def _resource(arguments: Mapping[str, Any]) -> ResourceRef:
+    """把 public/private key 解析到不同租户的可信资源。"""
+
     key = arguments["key"]
     tenant_id = "tenant-a" if key == "public" else "tenant-b"
     return ResourceRef(tenant_id, "fixture", str(key), "fixture-data@v1")
 
 
 def _new_harness() -> Harness:
+    """创建一套全新 Runtime，避免两个框架共享 cache 或调用计数。"""
+
     handler_calls: list[str] = []
 
     def handler(arguments: Mapping[str, Any]) -> dict[str, str]:
+        """记录真正执行的 key，并返回固定本地值。"""
+
         key = cast(str, arguments["key"])
         handler_calls.append(key)
         return {"value": f"fixture:{key}"}
@@ -106,10 +118,14 @@ def _new_harness() -> Harness:
 
 
 def _proposal(key: Any) -> dict[str, Any]:
+    """生成两个适配器共同交给 Runtime 的 closed envelope。"""
+
     return {"tool_name": TOOL_NAME, "arguments": {"key": key}}
 
 
 def _build_langchain_tool() -> StructuredTool:
+    """构造只负责产出 proposal artifact 的 LangChain StructuredTool。"""
+
     def propose(key: Literal["public", "private"]) -> tuple[str, dict[str, Any]]:
         return "proposal_ready", _proposal(key)
 
@@ -123,6 +139,8 @@ def _build_langchain_tool() -> StructuredTool:
 
 
 def _build_llamaindex_tool() -> FunctionTool:
+    """构造只负责产出 proposal 的 LlamaIndex FunctionTool。"""
+
     def propose(key: Literal["public", "private"]) -> dict[str, Any]:
         return _proposal(key)
 
@@ -141,8 +159,9 @@ def _langchain_proposal(
     selected_name: str,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    # BaseTool.invoke is an execution API, not an authorization API.  Check the
-    # selected registry name before dispatching the particular tool instance.
+    """让 LangChain 解析一次 ToolCall，并取回 proposal artifact。"""
+
+    # BaseTool.invoke 是执行 API，不是授权 API；调用前先对 allowlist 中的工具名。
     if selected_name != tool.name:
         raise ValueError("LangChain selection does not match the bound tool")
     result = tool.invoke(
@@ -166,6 +185,8 @@ def _llamaindex_proposal(
     tool: FunctionTool,
     selection: ToolSelection,
 ) -> Mapping[str, Any]:
+    """让 LlamaIndex 解析 ToolSelection，并取回 proposal。"""
+
     if selection.tool_name != tool.metadata.get_name():
         raise ValueError("LlamaIndex selection does not match the bound tool")
     result = tool.call(**selection.tool_kwargs)
@@ -182,6 +203,9 @@ def _execute_proposal(
     call_id: str,
     proposal: Mapping[str, Any],
 ) -> ExecutionOutcome:
+    """验证框架 envelope 后，将提案交给 canonical Runtime。"""
+
+    # 框架输出也不可信，必须再次检查 closed envelope 与工具名。
     if set(proposal) != {"tool_name", "arguments"}:
         raise ValueError("framework proposal must use the closed canonical envelope")
     if proposal["tool_name"] != TOOL_NAME:
@@ -196,6 +220,8 @@ def _execute_proposal(
 
 
 def _public_outcome(outcome: ExecutionOutcome) -> dict[str, Any]:
+    """提取两个框架可公平比较的 Runtime 结果字段。"""
+
     value = json.loads(canonical_json_bytes(outcome.value)) if outcome.value is not None else None
     return {
         "status": outcome.status.value,
@@ -206,6 +232,8 @@ def _public_outcome(outcome: ExecutionOutcome) -> dict[str, Any]:
 
 
 def _exception_type(operation: Any) -> str:
+    """运行一个预期失败的负例，只公开异常类型。"""
+
     try:
         operation()
     except Exception as error:  # The report intentionally publishes only the type.
@@ -214,11 +242,15 @@ def _exception_type(operation: Any) -> str:
 
 
 def run_control() -> dict[str, Any]:
+    """让两个框架依次走正常、缓存、拒绝和非法输入路径。"""
+
+    # 两个 harness 独立执行，避免一边的 call ID 缓存影响另一边。
     langchain_tool = _build_langchain_tool()
     llamaindex_tool = _build_llamaindex_tool()
     langchain = _new_harness()
     llamaindex = _new_harness()
 
+    # 正常路径：框架只形成 proposal，Runtime 解析 public 资源后允许 handler。
     lc_allowed_proposal = _langchain_proposal(
         langchain_tool,
         call_id="lc-public-1",
@@ -240,6 +272,7 @@ def run_control() -> dict[str, Any]:
         proposal=li_allowed_proposal,
     )
 
+    # 同一个 call ID 再执行应命中 Runtime cache，handler 不应第二次运行。
     lc_replayed = _execute_proposal(
         langchain, call_id="lc-public-1", proposal=lc_allowed_proposal
     )
@@ -249,6 +282,7 @@ def run_control() -> dict[str, Any]:
         proposal=li_allowed_proposal,
     )
 
+    # private key 被解析到 tenant-b，与可信 context 的 tenant-a 不符，应在 handler 前拒绝。
     lc_denied_proposal = _langchain_proposal(
         langchain_tool,
         call_id="lc-private-1",
@@ -270,6 +304,7 @@ def run_control() -> dict[str, Any]:
         proposal=li_denied_proposal,
     )
 
+    # key=7 类型错误：LangChain 先在框架 schema 拒绝，LlamaIndex direct call 后由 Runtime 拒绝。
     counts_before_invalid = (len(langchain.handler_calls), len(llamaindex.handler_calls))
     lc_invalid_type = _exception_type(
         lambda: _langchain_proposal(
@@ -295,6 +330,7 @@ def run_control() -> dict[str, Any]:
     )
     counts_after_invalid = (len(langchain.handler_calls), len(llamaindex.handler_calls))
 
+    # 即使拿到一个 tool instance，也必须核对模型选择的名字是否在该 adapter allowlist。
     lc_unknown = _exception_type(
         lambda: _langchain_proposal(
             langchain_tool,
@@ -314,6 +350,7 @@ def run_control() -> dict[str, Any]:
         )
     )
 
+    # 最后比较实际暴露的 schema；记录 LlamaIndex 当前版本 projection 丢失 closed-root 的事实。
     model_schema = LookupArguments.model_json_schema(mode="validation")
     langchain_schema = langchain_tool.get_input_schema().model_json_schema()
     llamaindex_model_schema = llamaindex_tool.metadata.fn_schema.model_json_schema()
@@ -411,6 +448,8 @@ def run_control() -> dict[str, Any]:
 
 
 def main() -> int:
+    """运行适配器对照并输出一行 JSON。"""
+
     print(json.dumps(run_control(), ensure_ascii=False, sort_keys=True))
     return 0
 

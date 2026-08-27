@@ -1,3 +1,9 @@
+"""在真实 Qwen 生成外层运行 fail-closed RAG 策略。
+
+有授权证据时才调用 ``GenerationMixin.generate``；授权后候选为空时，策略直接返回拒答，
+不让模型凭参数记忆猜测。该实验展示控制面如何包住模型，而不是修补模型输出。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -24,6 +30,9 @@ DEFAULT_CHECKPOINT_MANIFEST = (
 
 
 def main() -> None:
+    """验证 checkpoint 与 RAG manifest，然后执行带门禁的真实生成。"""
+
+    # 生成答案可能含中文，显式配置 UTF-8。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
@@ -42,6 +51,7 @@ def main() -> None:
         help="require the reviewed checkpoint files to exist in the local cache",
     )
     args = parser.parse_args()
+    # 先绑定模型身份和 RAG workload，避免报告对应到其他 checkpoint 或 prompt。
     checkpoint_spec = load_checkpoint_control_spec(args.checkpoint_manifest)
     spec = load_guarded_rag_transformers_control_spec(args.manifest)
     report = run_guarded_rag_transformers_control(

@@ -1,3 +1,9 @@
+"""运行固定 Qwen checkpoint 的 retrieval-to-generation 基线实验。
+
+它按 manifest 执行真实检索与 ``generate``，原样记录模型是否给出合规引用、证据不足时是否
+拒答。基线不会事后修补输出，因而可以与 guarded policy 的阻断效果公平比较。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -24,6 +30,9 @@ DEFAULT_CHECKPOINT_MANIFEST = (
 
 
 def main() -> None:
+    """加载固定模型与 RAG 控制规范，运行并保存观察报告。"""
+
+    # 报告保留中文 prompt 和答案，统一 stdout 编码。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
@@ -42,6 +51,7 @@ def main() -> None:
         help="require the reviewed checkpoint files to exist in the local cache",
     )
     args = parser.parse_args()
+    # checkpoint 与 RAG manifest 分别固定模型身份和请求/检索配置。
     checkpoint_spec = load_checkpoint_control_spec(args.checkpoint_manifest)
     spec = load_rag_transformers_control_spec(args.manifest)
     report = run_rag_transformers_control(

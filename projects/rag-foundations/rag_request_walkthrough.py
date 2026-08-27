@@ -1,4 +1,8 @@
-"""Walk one answerable and one no-answer request through the RAG controls."""
+"""让一个可回答和一个不可回答问题走完整条 RAG 请求链。
+
+每条请求依次经过 BM25 召回、ACL 过滤、重排、上下文预算、抽取式回答、引用检查和最终动作。
+第一条应带引用回答，第二条因证据不足拒答；全程不调用 LLM，便于看清控制面。
+"""
 
 from __future__ import annotations
 
@@ -31,18 +35,22 @@ PRINCIPALS = ("engineering",)
 
 
 class _BM25ScorePassthrough:
-    """Keep BM25 order while exercising the authorization-first rerank boundary."""
+    """直接复用 BM25 分数，同时仍经过重排前的再次授权边界。"""
 
     def score(
         self,
         query: str,
         candidates: tuple[SearchResult, ...],
     ) -> tuple[float, ...]:
+        """按候选顺序返回原 BM25 分数。"""
+
         del query
         return tuple(candidate.score for candidate in candidates)
 
 
 def _result_rows(results: tuple[SearchResult, ...] | list[SearchResult]) -> list[dict[str, Any]]:
+    """保留观察召回与重排顺序所需的结果字段。"""
+
     return [
         {
             "rank": result.rank,
@@ -56,6 +64,8 @@ def _result_rows(results: tuple[SearchResult, ...] | list[SearchResult]) -> list
 
 
 def _packing_rows(artifact: Any) -> list[dict[str, Any]]:
+    """提取每个候选在上下文预算阶段的选中或丢弃原因。"""
+
     return [
         {
             "document_id": decision.document_id,
@@ -76,6 +86,9 @@ def _request_row(
     reranked: tuple[SearchResult, ...],
     scorer_identity: str,
 ) -> dict[str, Any]:
+    """从已授权候选继续执行 packing、回答、引用审计和最终门禁。"""
+
+    # 抽取式生成只复制检索证据中的精确 span，避免 LLM 随机性遮住控制流程。
     artifact = generate_extractive_answer(
         reranked,
         query_id=query_id,
@@ -87,6 +100,7 @@ def _request_row(
         cost_unit="utf8_bytes",
     )
     source_ids = tuple(artifact.packed_context.context.sources)
+    # 引用检查分为“编号语法有效”和“语义确实被来源支持”；本实验只完成前者与精确 span。
     citation_audit = audit_citations(artifact.answer_text, source_ids)
     if artifact.action.value == "answer":
         citation_required = True
@@ -155,6 +169,9 @@ def _request_row(
 
 
 def build_walkthrough() -> dict[str, Any]:
+    """构建共享索引，并运行可回答与无答案两条请求。"""
+
+    # pipeline 在召回前接收可信 tenant/principals，未授权文档不会进入候选分数比较。
     pipeline = MarkdownBM25Pipeline(load_corpus(CORPUS))
 
     answerable_query = "RAG 为什么要先做 ACL 权限过滤"
@@ -164,6 +181,7 @@ def build_walkthrough() -> dict[str, Any]:
         principals=PRINCIPALS,
         top_k=3,
     )
+    # 固定重排分数模拟 learned reranker 的接口，同时保持实验完全离线可复现。
     recorded_scorer = RecordedRerankScorer(
         load_recorded_rerank_scores(RERANK_SCORES)
     )
@@ -177,6 +195,7 @@ def build_walkthrough() -> dict[str, Any]:
         top_k=2,
     )
 
+    # corpus 没有 Kubernetes 灾备证据，用来验证“有相似词候选”不等于“应该回答”。
     no_answer_query = "引用的 Kubernetes 灾难恢复步骤是什么"
     no_answer_candidates = pipeline.retrieve(
         no_answer_query,
@@ -226,6 +245,8 @@ def build_walkthrough() -> dict[str, Any]:
 
 
 def main() -> int:
+    """输出两条请求从召回到最终动作的完整 UTF-8 trace。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
     rendered = json.dumps(build_walkthrough(), ensure_ascii=False, indent=2) + "\n"

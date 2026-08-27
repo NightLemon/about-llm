@@ -1,3 +1,9 @@
+"""用有限字符串集合演示 constrained decoding 如何逐 token 屏蔽非法路径。
+
+允许的最终文本只有 ``{"x":1}`` 和 ``{"x":2}``。概率最高的局部 token ``1]`` 会使前缀
+无法完成合法字符串，因此约束状态机在采样前将其屏蔽，并只在接受态允许 EOS。
+"""
+
 from __future__ import annotations
 
 import json
@@ -9,8 +15,12 @@ from about_llm.inference import (
 
 
 def main() -> None:
+    """执行受约束贪心解码，并输出关键第三步的允许 token 集合。"""
+
+    # literal set 会被编译成前缀状态机，每一步都知道哪些字符串仍可能完成。
     constraint = LiteralSetConstraint.from_literals(('{"x":1}', '{"x":2}'))
     token_texts = ('{"x"', ":", "1}", "1]", "2}", None, "garbage")
+    # 第三步故意让非法的 "1]" 概率最高，验证 mask 发生在最终选择之前。
     probability_table = {
         (): [0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2],
         (0,): [0.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.1],

@@ -1,4 +1,8 @@
-"""Offline PEFT save/reload/merge export with a strict complete-file verifier."""
+"""离线跑通 PEFT LoRA 的训练、保存、重载、merge 与完整文件验证。
+
+实验用随机微型 GPT-2，本地训练 LoRA 后分别保存 adapter、merged model 和 tokenizer；发布清单
+绑定全部文件哈希与 base identity，只有先通过 verifier 才重新加载并比较 logits。
+"""
 
 from __future__ import annotations
 
@@ -42,6 +46,8 @@ _TOKENIZER_REVISION = "authored-wordlevel-v1"
 
 
 def _sha256_file(path: Path) -> str:
+    """分块读取文件并计算 SHA-256，避免把大 artifact 全部载入内存。"""
+
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
@@ -50,10 +56,14 @@ def _sha256_file(path: Path) -> str:
 
 
 def _maximum_error(left: torch.Tensor, right: torch.Tensor) -> float:
+    """返回两个 logits 张量的最大绝对误差。"""
+
     return float((left - right).abs().max())
 
 
 def _tokenizer() -> PreTrainedTokenizerFast:
+    """构建与微型模型配套的离线 WordLevel tokenizer。"""
+
     vocab = {
         "<pad>": 0,
         "<bos>": 1,
@@ -80,6 +90,8 @@ def _tokenizer() -> PreTrainedTokenizerFast:
 
 
 def _load_base(path: Path) -> GPT2LMHeadModel:
+    """只从本地 safetensors 目录加载一份干净 base model。"""
+
     model = cast(
         GPT2LMHeadModel,
         GPT2LMHeadModel.from_pretrained(path, local_files_only=True),
@@ -89,6 +101,8 @@ def _load_base(path: Path) -> GPT2LMHeadModel:
 
 
 def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
+    """在给定目录完成 LoRA 训练、三类 artifact 发布与重载比较。"""
+
     torch.manual_seed(31)
     base = GPT2LMHeadModel(  # type: ignore[no-untyped-call]
         GPT2Config(  # type: ignore[no-untyped-call]
@@ -108,6 +122,7 @@ def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
     adapter_dir = root / "adapter"
     merged_dir = root / "merged"
     tokenizer_dir = root / "tokenizer"
+    # 先保存随机 base，后续每条验证路径都从相同 bytes 重新加载，避免共享内存参数。
     base.save_pretrained(base_dir, safe_serialization=True)
     base_weight_path = base_dir / "model.safetensors"
 
@@ -135,6 +150,7 @@ def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
         lr=1e-2,
     )
     losses: list[float] = []
+    # 只有 LoRA 参数可训练；base 参数保持冻结。
     model.train()
     for _ in range(steps):
         optimizer.zero_grad()
@@ -152,6 +168,7 @@ def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
     with torch.no_grad():
         trained_adapter_logits = model(input_ids).logits
     adapter_keys = sorted(get_peft_model_state_dict(model, save_embedding_layers=False))
+    # adapter 保存低秩增量；merged 模型则把增量合回 base 权重。
     model.save_pretrained(str(adapter_dir), safe_serialization=True)
     adapter_weight_path = adapter_dir / "adapter_model.safetensors"
     adapter_config_path = adapter_dir / "adapter_config.json"
@@ -193,6 +210,7 @@ def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
         base_revision=_BASE_REVISION,
         tokenizer_revision=_TOKENIZER_REVISION,
     )
+    # 清单最后发布并覆盖全部预期文件，防止“目录存在但文件不完整”被当作成功。
     verification = write_peft_export_manifest_new(
         root,
         identity=identity,
@@ -200,6 +218,7 @@ def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
     )
 
     verified_base = _load_base(base_dir)
+    # verifier 通过后才用公开加载 API 重载 adapter 与 merged model 并比较输出。
     verified_adapter = PeftModel.from_pretrained(
         verified_base,
         adapter_dir,
@@ -312,6 +331,8 @@ def _run_smoke(*, steps: int, root: Path, persisted: bool) -> dict[str, Any]:
 def run_smoke(
     steps: int = 10, *, artifact_root: Path | None = None
 ) -> dict[str, Any]:
+    """在临时目录或调用者指定目录运行 PEFT 闭环。"""
+
     if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
         raise ValueError("steps must be a positive integer")
     if artifact_root is None:
@@ -323,6 +344,8 @@ def run_smoke(
 
 
 def parse_args() -> argparse.Namespace:
+    """定义训练步数和可选持久化 artifact 目录。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument(
@@ -334,6 +357,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """运行 PEFT smoke 并打印训练、文件与数值一致性证据。"""
+
     args = parse_args()
     print(
         json.dumps(

@@ -1,4 +1,8 @@
-"""Offline TRL smoke test from strict SFT records through assistant-only labels."""
+"""离线跑通严格 SFT records、assistant-only labels 与 TRL optimizer step。
+
+实验用本地 WordLevel tokenizer 和随机微型 GPT-2，不下载模型。数据先通过治理与近重复门禁，
+再由 chat template 投影只监督 assistant 的 labels，最后训练若干步并确认 loss 有限。
+"""
 
 from __future__ import annotations
 
@@ -43,6 +47,8 @@ CHAT_TEMPLATE = (
 
 
 def _tokenizer(records: tuple[Any, ...]) -> PreTrainedTokenizerFast:
+    """从当前固定 records 建立最小 WordLevel tokenizer 与 chat template。"""
+
     vocabulary = {"[UNK]": 0, "[PAD]": 1, "</s>": 2}
     tokens = {f"<|{message.role.value}|>" for record in records for message in record.messages}
     tokens.update(
@@ -70,6 +76,8 @@ def _tokenizer(records: tuple[Any, ...]) -> PreTrainedTokenizerFast:
 def _assert_collator_labels(
     trainer: SFTTrainer, dataset: Any
 ) -> tuple[dict[str, torch.Tensor], int, int]:
+    """确认 TRL collator 没有改写预先构造的 assistant-only labels。"""
+
     features = [dict(dataset[index]) for index in range(len(dataset))]
     batch = trainer.data_collator(features)
     input_ids = batch["input_ids"]
@@ -93,6 +101,8 @@ def _assert_collator_labels(
 
 
 def _loss(model: GPT2LMHeadModel, batch: dict[str, torch.Tensor]) -> float:
+    """在固定 batch 上计算一次不更新参数的参考 loss。"""
+
     model.eval()
     with torch.no_grad():
         value = float(
@@ -108,9 +118,12 @@ def _loss(model: GPT2LMHeadModel, batch: dict[str, torch.Tensor]) -> float:
 
 
 def run_smoke(steps: int = 12) -> dict[str, object]:
+    """执行数据门禁、label 投影、TRL 训练并返回损失与监督位置。"""
+
     if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
         raise ValueError("steps must be a positive integer")
     torch.manual_seed(19)
+    # 在模型与 Trainer 构造前先拒绝 split、治理或近重复问题。
     records = load_sft_records(TRAIN_FIXTURE)
     audited_records = load_sft_records(AUDIT_FIXTURE)
     binding = validate_training_subset(records, audited_records)
@@ -197,6 +210,7 @@ def run_smoke(steps: int = 12) -> dict[str, object]:
             seed=19,
             data_seed=19,
         )
+        # Dataset 已含 labels，Trainer 负责 batching、backward 与 optimizer 更新。
         trainer = SFTTrainer(
             model=model,
             args=config,

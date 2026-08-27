@@ -1,4 +1,8 @@
-"""Train confounded and counterfactually balanced linear reward-model controls."""
+"""训练线性 pairwise reward model，观察混杂特征如何在分布外失效。
+
+confounded 训练集中“真实质量”和“伪特征”总同向，模型可借错误捷径获胜；counterfactual 数据
+翻转伪特征，让模型只能依赖稳定信号。二者再在 held-out 反相关样本上比较。
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,9 @@ from about_llm.finetuning import (
 
 
 def run_experiment() -> dict[str, Any]:
+    """训练混杂与反事实平衡两个 reward model，并比较 held-out 指标。"""
+
+    # 第 0 维是稳定质量信号，第 1 维是训练时看似有用、测试时反向的 shortcut。
     rejected = np.zeros((4, 2), dtype=np.float64)
     confounded_chosen = np.array(
         [[1, 1], [2, 2], [1, 1], [2, 2]], dtype=np.float64
@@ -25,6 +32,7 @@ def run_experiment() -> dict[str, Any]:
     held_out_chosen = np.array([[1, -2], [2, -3]], dtype=np.float64)
     held_out_rejected = np.zeros_like(held_out_chosen)
 
+    # 两个模型使用相同优化设置，只改变 chosen 特征的相关结构。
     confounded = fit_linear_pairwise_reward_model(
         confounded_chosen,
         rejected,

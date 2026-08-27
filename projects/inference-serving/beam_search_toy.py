@@ -1,3 +1,9 @@
+"""用两个反例观察 beam width 与 length penalty 如何改变最终序列。
+
+所有 next-token 概率都直接写在表中，不运行模型。第一个反例说明贪心搜索会过早剪掉
+全局更优路径；第二个反例说明长度归一化会改变短序列和长序列的排名。
+"""
+
 from __future__ import annotations
 
 import json
@@ -6,11 +12,15 @@ from about_llm.inference import beam_search_from_probabilities
 
 
 def main() -> None:
+    """分别运行剪枝和长度惩罚两组确定性 beam search。"""
+
+    # 空元组表示生成起点；每个前缀映射到下一步词表概率。
     pruning_table = {
         (): [0.6, 0.4, 0.0],
         (0,): [0.49, 0.0, 0.51],
         (1,): [0.0, 0.0, 1.0],
     }
+    # 第二张表同时提供短路径和长路径，用于比较不同 alpha。
     length_table = {
         (): [0.6, 0.4, 0.0, 0.0],
         (0,): [0.0, 0.0, 0.0, 1.0],

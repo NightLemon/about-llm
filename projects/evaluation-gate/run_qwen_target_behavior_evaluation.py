@@ -1,3 +1,9 @@
+"""运行或离线复核固定 Qwen checkpoint 的行为评测套件。
+
+实际运行路径加载 manifest 指定的模型并生成答案；``--verify`` 路径不加载权重，只复核已有
+报告的 case、指标、哈希和套件身份。两条路径都绑定同一份评测 suite。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -27,6 +33,9 @@ DEFAULT_CHECKPOINT_MANIFEST = (
 
 
 def main() -> None:
+    """选择真实 checkpoint 运行或 recorded report 离线验证。"""
+
+    # 评测输出可能含中文，Windows 下显式设置 UTF-8 并对编码错误严格失败。
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="strict")
@@ -48,10 +57,13 @@ def main() -> None:
         help="require the reviewed checkpoint files in the local Hugging Face cache",
     )
     args = parser.parse_args()
+    # suite 固定 prompts、预期行为和指标门槛，是两种模式共同的评测定义。
     suite = load_target_qwen_evaluation_spec(args.suite)
     if args.verify is not None:
+        # CI 可走此分支，在无权重环境核对报告没有漂移或被篡改。
         report = verify_recorded_target_qwen_evaluation_report(args.verify, suite)
     else:
+        # 真实运行先验证 checkpoint 身份，再按 suite 逐条生成与打分。
         checkpoint = load_checkpoint_control_spec(args.checkpoint_manifest)
         report = run_target_qwen_evaluation_control(
             checkpoint, suite, local_files_only=args.local_files_only

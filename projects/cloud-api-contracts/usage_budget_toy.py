@@ -1,3 +1,9 @@
+"""用内存账本演示云 API 请求的预算预留、结算与不确定状态。
+
+第一次调用按供应商返回的实际 token 数结算；第二次模拟请求已发出但无法确认账单，
+因此进入 uncertain 而不是退款。示例不发网络请求，只展示预算状态机。
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -14,6 +20,9 @@ from about_llm.integrations.usage_budget import (
 
 
 def main() -> None:
+    """按时间顺序执行两次逻辑调用并打印账本快照。"""
+
+    # 价格以每百万 token 的微美元记录，整数运算避免浮点货币误差。
     pricing = TokenPricingSnapshot(
         pricing_id="authored-provider/model@price-v1",
         provider="authored-provider",
@@ -40,6 +49,7 @@ def main() -> None:
         max_tokens=10,
     )
 
+    # 调用前按预计输入与最大输出预留，成功后再替换成实际 usage。
     first = ledger.reserve_request(
         "call-1",
         request=first_request,
@@ -57,6 +67,7 @@ def main() -> None:
         ),
     )
 
+    # 更换 API key 不应改变请求的计费指纹；密钥本身也不应写入账本。
     second_request = build_openai_compatible_request(
         base_url="https://provider.invalid",
         api_key="rotated-example-secret-not-real",
@@ -64,6 +75,7 @@ def main() -> None:
         messages=messages,
         max_tokens=5,
     )
+    # 状态不明时保留最坏情况额度，等待供应商账单或人工流程对账。
     second = ledger.reserve_request(
         "call-2",
         request=second_request,

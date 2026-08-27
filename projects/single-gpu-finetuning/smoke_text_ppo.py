@@ -1,4 +1,8 @@
-"""Local text-tokenizer PPO control with EOS, truncation, and padding semantics."""
+"""用本地文本 tokenizer 跑通 PPO 的 EOS、truncation、padding 与 token loss 语义。
+
+随机微型 actor-critic 从 chat prompt 自回归采样，记录 old log-prob/value，再用固定 task reward、
+GAE 和 clipped objective 更新。三类 episode 分别覆盖正常 EOS、到 horizon 截断和 padding。
+"""
 
 from __future__ import annotations
 
@@ -35,6 +39,8 @@ MESSAGES = TEXT_CONTROL_MESSAGES
 
 @dataclass(frozen=True)
 class ExactTextObjectives:
+    """保存可穷举文本动作空间得到的精确 task/KL 目标。"""
+
     """Exactly enumerated task metrics for the two-token generation tree."""
 
     expected_task_reward: float
@@ -44,10 +50,14 @@ class ExactTextObjectives:
 
 
 def build_tokenizer() -> PreTrainedTokenizerFast:
+    """构建控制实验使用的最小 chat tokenizer。"""
+
     return build_text_control_tokenizer()
 
 
 def render_prompt(tokenizer: PreTrainedTokenizerFast) -> tuple[str, tuple[int, ...]]:
+    """应用 chat template，并同时返回文本与 token IDs。"""
+
     return render_text_control_prompt(tokenizer)
 
 
@@ -75,6 +85,8 @@ def exact_text_objectives(
     vocab_size: int,
     max_context_length: int,
 ) -> ExactTextObjectives:
+    """枚举所有可能响应，计算更新前后的精确期望 reward 与 KL。"""
+
     """Compute exact dense reward and exact `good, EOS` success probability."""
 
     model.eval()
@@ -123,6 +135,8 @@ def collect_text_rollout(
     kl_coefficient: float,
     generator: torch.Generator,
 ) -> TransformerRollout:
+    """按自回归步骤采集 token、mask、log-prob、value 与停止状态。"""
+
     def dense_good_eos_reward(actions: Tensor, valid_mask: Tensor) -> Tensor:
         rewards = torch.zeros(actions.shape, dtype=torch.float32)
         rewards[:, 0] = (
@@ -160,6 +174,8 @@ def run_smoke(
     entropy_coefficient: float = 0.01,
     bootstrap_truncated: bool = False,
 ) -> dict[str, Any]:
+    """采集冻结 rollout，执行 PPO epochs，并对照精确枚举目标。"""
+
     iteration_count = positive_integer(iterations, "iterations")
     episodes = positive_integer(episodes_per_iteration, "episodes_per_iteration")
     epoch_count = positive_integer(epochs, "epochs")
@@ -175,6 +191,7 @@ def run_smoke(
     torch.manual_seed(71)
     rollout_generator = torch.Generator(device="cpu").manual_seed(72)
     optimizer_generator = torch.Generator(device="cpu").manual_seed(73)
+    # tokenizer/template 是环境的一部分，先固定 prompt IDs 再创建模型。
     tokenizer = build_tokenizer()
     rendered_prompt, prompt_ids = render_prompt(tokenizer)
     if tokenizer.eos_token_id is None or tokenizer.pad_token_id is None:

@@ -1,4 +1,8 @@
-"""Export, strictly reload, and execute a repo-native quantized MiniGPT checkpoint."""
+"""导出、严格重载并运行仓库原生的量化 MiniGPT checkpoint。
+
+artifact 同时保存模型结构、版本身份、Byte-BPE merges、全部参数和 tied-weight 关系。实验从
+随机 FP32 模型量化导出，再仅凭 artifact 重建 tokenizer 与模型，完成前向和贪心生成。
+"""
 
 from __future__ import annotations
 
@@ -30,7 +34,12 @@ def run_toy(
     prompt: str,
     artifact_path: Path | None = None,
 ) -> dict[str, Any]:
+    """构建 MiniGPT checkpoint，重新加载并比较量化前后的 logits。"""
+
+    # 随机种子同时决定模型权重和 artifact 中记录的模型 revision。
     torch.manual_seed(seed)
+
+    # 两条手写 merge 让 tokenizer payload 很小，但仍会生成高于 255 的 BPE token。
     tokenizer = ByteBPETokenizer(((97, 98), (256, 99)))
     config = GPTConfig(
         vocab_size=tokenizer.vocab_size,
@@ -48,6 +57,7 @@ def run_toy(
         model_revision=f"fixture-seed-{seed}",
         tokenizer_revision="authored-merges-v1",
     )
+    # 序列化器会保留向量参数为 FP32，并对合适的矩阵参数做低比特量化。
     artifact = serialize_quantized_minigpt_checkpoint(
         fp32_model,
         tokenizer,
@@ -55,6 +65,7 @@ def run_toy(
         bit_width=bit_width,
         group_size=group_size,
     )
+    # 第一次从内存 bytes 重载；指定路径时再验证写盘与读盘路径。
     loaded = load_quantized_minigpt_checkpoint(artifact)
     disk_round_trip = False
     if artifact_path is not None:
@@ -62,13 +73,16 @@ def run_toy(
         loaded = read_quantized_minigpt_checkpoint(artifact_path)
         disk_round_trip = True
 
+    # 使用 artifact 中同一 tokenizer 语义编码 prompt，并检查上下文窗口。
     input_ids_list = tokenizer.encode(prompt)
     if not input_ids_list:
         raise ValueError("prompt must encode to at least one token")
     if len(input_ids_list) > config.context_length:
         raise ValueError("prompt exceeds the authored MiniGPT context length")
     input_ids = torch.tensor([input_ids_list], dtype=torch.long)
+    # 再独立加载一次，检查相同 bytes 是否重建出逐位相同的量化 logits。
     repeated = load_quantized_minigpt_checkpoint(artifact)
+    # 三条前向分别给出 FP32 参考、量化输出和重复加载确定性；最后做三 token 贪心生成。
     with torch.inference_mode():
         fp32_logits, _ = fp32_model(input_ids)
         quantized_logits, _ = loaded.model(input_ids)
@@ -151,6 +165,8 @@ def run_toy(
 
 
 def parse_args() -> argparse.Namespace:
+    """定义量化配置、prompt 和可选 artifact 输出路径。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--bit-width", type=int, default=4)
@@ -165,6 +181,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """运行 checkpoint 导出与推理闭环并打印结构、存储和误差。"""
+
     args = parse_args()
     print(
         json.dumps(

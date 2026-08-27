@@ -1,4 +1,8 @@
-"""Publish, verify, or fresh-reload one completed SFT PEFT adapter bundle."""
+"""发布、验证或在新进程重载一份完整 SFT PEFT adapter bundle。
+
+``publish`` 收集 adapter、tokenizer 与训练身份；``verify`` 核对文件清单和 base revision；
+``reload`` 再加载 base + adapter，用固定非敏感 prompt 确认 logits 有有限且非零的变化。
+"""
 
 from __future__ import annotations
 
@@ -24,6 +28,8 @@ PROBE_TEXT = "请用一句话解释 KV Cache。"
 
 
 def parse_args() -> argparse.Namespace:
+    """定义 publish、verify 和 reload 三个互斥子命令。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -52,23 +58,30 @@ def parse_args() -> argparse.Namespace:
 
 
 def _tensor_fingerprint(tensor: Any) -> str:
+    """把张量规范到 CPU/FP32/contiguous 后计算稳定摘要。"""
+
     snapshot = tensor.detach().to(device="cpu").float().contiguous()
     return "sha256:" + hashlib.sha256(snapshot.numpy().tobytes()).hexdigest()
 
 
 def _reload(args: argparse.Namespace) -> dict[str, object]:
+    """验证 bundle 后在当前新进程加载 base/adapter 并执行固定探针。"""
+
+    # reload report 必须写在 bundle 外部，避免报告把自身纳入被验证目录。
     bundle = args.bundle.resolve()
     report = args.report.resolve()
     if report.exists() or report.is_symlink():
         raise FileExistsError(f"refusing to replace reload report: {report}")
     if report.is_relative_to(bundle):
         raise ValueError("reload report must be written outside the verified bundle")
+    # 先完成静态文件与身份验证，之后才允许加载任何模型 artifact。
     verification = verify_sft_adapter_bundle(
         bundle,
         expected_model_id=args.expected_model_id,
         expected_revision=args.expected_revision,
     )
 
+    # 重依赖延迟导入，使 publish/verify 模式无需加载 PyTorch 与 Transformers。
     import torch
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -86,6 +99,7 @@ def _reload(args: argparse.Namespace) -> dict[str, object]:
         "float16": torch.float16,
         "bfloat16": torch.bfloat16,
     }[args.dtype]
+    # tokenizer 只从 bundle 读取；base 权重则固定 model ID + revision。
     tokenizer = AutoTokenizer.from_pretrained(
         bundle / "tokenizer", local_files_only=True, trust_remote_code=False
     )
@@ -105,6 +119,7 @@ def _reload(args: argparse.Namespace) -> dict[str, object]:
     if input_ids is None or input_ids.ndim != 2 or input_ids.shape[0] != 1:
         raise RuntimeError("fixed reload probe did not produce one token sequence")
 
+    # 先记录 base 最后位置 logits，再挂载 adapter 对相同输入重算。
     base = AutoModelForCausalLM.from_pretrained(
         args.expected_model_id,
         revision=args.expected_revision,
@@ -129,6 +144,7 @@ def _reload(args: argparse.Namespace) -> dict[str, object]:
         adapter_logits = adapter(**inputs, use_cache=False).logits[:, -1, :]
     if not bool(torch.isfinite(adapter_logits).all().item()):
         raise RuntimeError("adapter probe logits contain non-finite values")
+    # 非零 delta 只证明 adapter 接入并影响当前 probe，不等于回答质量改善。
     maximum_delta = float(torch.max(torch.abs(adapter_logits - base_logits)).item())
     if maximum_delta <= 0:
         raise RuntimeError("freshly loaded adapter did not change the fixed probe logits")
@@ -169,6 +185,8 @@ def _reload(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main() -> None:
+    """分发子命令并输出统一 JSON 结果。"""
+
     args = parse_args()
     if args.command == "publish":
         result = publish_sft_adapter_bundle(

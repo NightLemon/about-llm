@@ -1,4 +1,8 @@
-"""Compare one paired score vector with bootstrap and sign-flip methods."""
+"""在同一组配对分数上比较 bootstrap 与 sign-flip 随机化检验。
+
+每个位置都是同一 case 的 baseline/candidate 分数。实验保留配对关系，分别估计均值差区间、
+单侧与双侧精确 p-value，并演示非零差值太多时如何切换到固定种子的 Monte Carlo。
+"""
 
 from __future__ import annotations
 
@@ -9,16 +13,21 @@ from about_llm.evaluation import paired_bootstrap, paired_randomization_test
 
 
 def main() -> None:
+    """运行配对 bootstrap、精确随机化和 Monte Carlo 三类计算。"""
+
+    # candidate 改善四条、持平一条；平局不会进入 sign-flip 枚举。
     baseline = [0, 0, 0, 0, 1]
     candidate = [1, 1, 1, 1, 1]
     bootstrap_samples = 10_000
     bootstrap_seed = 7
+    # bootstrap 重采样的是 case 对，而不是拆开重采样两组分数。
     bootstrap = paired_bootstrap(
         baseline,
         candidate,
         samples=bootstrap_samples,
         seed=bootstrap_seed,
     )
+    # 精确检验枚举所有非零差值的正负号组合，构造零假设分布。
     exact_greater = paired_randomization_test(
         baseline,
         candidate,
@@ -29,6 +38,7 @@ def main() -> None:
         candidate,
         alternative="two-sided",
     )
+    # 把精确阈值降到 2，故意触发随机抽样近似路径。
     monte_carlo = paired_randomization_test(
         baseline,
         candidate,

@@ -1,4 +1,8 @@
-"""Deterministic CPU PPO control on an authored two-state environment."""
+"""在手写两状态环境中用真实 PyTorch autograd 跑通 PPO。
+
+环境与策略都很小，可精确枚举更新前后期望回报。实验先冻结 rollout 的 old log-prob/value，
+再计算 GAE、clipped policy loss、value loss 与 entropy，执行多个 optimizer epoch。
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ from about_llm.finetuning import generalized_advantage_estimation
 
 @dataclass(frozen=True)
 class RolloutBatch:
+    """一批固定 PPO 轨迹及采样时的旧策略快照。"""
+
     states: Tensor
     actions: Tensor
     rewards: Tensor
@@ -29,7 +35,7 @@ class RolloutBatch:
 
 
 class TinyActorCritic(nn.Module):
-    """Tabular categorical policy and scalar value for two observable states."""
+    """两个可观察状态上的表格式 categorical policy 与 scalar value。"""
 
     def __init__(self) -> None:
         super().__init__()
@@ -62,6 +68,8 @@ def _finite_positive(value: object, label: str) -> float:
 
 @torch.inference_mode()
 def exact_expected_return(model: TinyActorCritic) -> float:
+    """枚举两步环境的全部动作路径，计算精确期望回报。"""
+
     """Return exact undiscounted reward for the fixed two-step environment."""
 
     probabilities = torch.softmax(model.policy_logits, dim=-1)
@@ -75,6 +83,8 @@ def collect_rollout(
     episodes: int,
     generator: torch.Generator,
 ) -> RolloutBatch:
+    """用 old policy 采样固定轨迹，并保存 PPO 所需行为概率与 value。"""
+
     """Sample full two-step episodes and freeze behavior-policy statistics."""
 
     episode_count = _positive_integer(episodes, "episodes")
@@ -186,6 +196,8 @@ def optimize_rollout(
     entropy_coefficient: float,
     generator: torch.Generator,
 ) -> dict[str, Any]:
+    """在同一 rollout 上执行若干 PPO epoch，并记录 clip/KL/梯度统计。"""
+
     """Run multiple PPO epochs while keeping rollout targets and old log-probs fixed."""
 
     epoch_count = _positive_integer(epochs, "epochs")
@@ -289,6 +301,8 @@ def run_smoke(
     minibatch_size: int = 64,
     learning_rate: float = 0.05,
 ) -> dict[str, Any]:
+    """比较更新前后精确回报，并输出 rollout 与 PPO 优化证据。"""
+
     """Execute reproducible categorical rollout and PPO optimizer iterations."""
 
     iteration_count = _positive_integer(iterations, "iterations")
@@ -310,6 +324,7 @@ def run_smoke(
     iteration_reports: list[dict[str, Any]] = []
     rollout_reward_means: list[float] = []
     for iteration in range(iteration_count):
+        # 每轮先用当前 policy 采一批 on-policy 数据，再冻结该批数据完成多个 PPO epoch。
         rollout = collect_rollout(
             model, episodes=episodes, generator=rollout_generator
         )

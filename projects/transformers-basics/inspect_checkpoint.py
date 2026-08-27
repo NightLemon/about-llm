@@ -1,4 +1,9 @@
-"""Inspect public checkpoint contracts without loading model weights."""
+"""检查公开 checkpoint 的配置、tokenizer 与生成协议，不加载模型权重。
+
+给定模型仓库和固定 revision 后，本实验读取三类轻量文件：模型 config、tokenizer 配置与
+generation config。它展示聊天模板如何把消息变成 token ID，并检查各处特殊 token 设置
+是否一致。这里得到的是“接口契约”，不是模型输出质量或权重文件完整性的证明。
+"""
 
 from __future__ import annotations
 
@@ -25,6 +30,9 @@ NORMALIZED_GENERATION_CONFIG_SNAPSHOT_SOURCE = (
 
 
 def inspect(model_id: str, revision: str) -> dict[str, Any]:
+    """加载 checkpoint 元数据并汇总架构、聊天模板和生成协议。"""
+
+    # trust_remote_code=False 表示只使用已安装 Transformers 的实现，不执行仓库自定义代码。
     config = AutoConfig.from_pretrained(
         model_id,
         revision=revision,
@@ -35,11 +43,13 @@ def inspect(model_id: str, revision: str) -> dict[str, Any]:
         revision=revision,
         trust_remote_code=False,
     )
+    # 用一条固定消息观察 chat template 实际添加的角色标记和 generation prompt。
     messages = [{"role": "user", "content": "用一句话解释 attention。"}]
     chat_template_available = bool(getattr(tokenizer, "chat_template", None))
     rendered: str | None = None
     token_ids: list[int] | None = None
     if chat_template_available:
+        # 同时保留可读文本和最终 token ID，方便定位模板与 tokenizer 的分工。
         rendered = render_chat(tokenizer, messages)
         raw_token_ids = tokenizer.apply_chat_template(
             messages,
@@ -52,12 +62,14 @@ def inspect(model_id: str, revision: str) -> dict[str, Any]:
         ):
             raise RuntimeError("chat template did not return a flat integer token list")
         token_ids = raw_token_ids
+    # 将不同模型的配置字段归一化成统一的 Decoder 架构契约。
     config_mapping = config.to_dict()
     contract = inspect_decoder_config(config_mapping)
     generation_config_mapping: dict[str, Any] | None
     generation_config_status: str
     generation_config_error_type: str | None
     resolved_generation_config_commit: str | None
+    # generation_config.json 并非每个仓库都有；缺失是报告状态，不应阻断其余检查。
     try:
         generation_config = GenerationConfig.from_pretrained(
             model_id,
@@ -75,6 +87,7 @@ def inspect(model_id: str, revision: str) -> dict[str, Any]:
         resolved_generation_config_commit = getattr(
             generation_config, "_commit_hash", None
         )
+    # 特殊 token ID 必须在 tokenizer、模型 config 与 generation config 之间相互兼容。
     chat_template = getattr(tokenizer, "chat_template", None)
     tokenizer_contract = {
         field: getattr(tokenizer, field, None)
@@ -90,6 +103,7 @@ def inspect(model_id: str, revision: str) -> dict[str, Any]:
         if chat_template is None
         else "sha256:" + artifact_fingerprint({"chat_template": chat_template})
     )
+    # 只比较显式字段，不根据当前库版本猜测某个“有效默认值”。
     generation_protocol = inspect_generation_protocol(
         contract_id=f"{model_id}@{revision}",
         tokenizer_size=len(tokenizer),
@@ -124,6 +138,8 @@ def inspect(model_id: str, revision: str) -> dict[str, Any]:
 
 
 def main() -> None:
+    """解析模型身份并打印元数据检查报告。"""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("model_id")
     parser.add_argument("--revision", required=True)

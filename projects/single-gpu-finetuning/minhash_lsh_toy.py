@@ -1,4 +1,8 @@
-"""Deterministic lexical MinHash/LSH candidate and recall-audit toy."""
+"""演示 MinHash/LSH 如何召回近重复候选，并用精确 Jaccard 二次确认。
+
+文本先做 Unicode/空白归一化并切字符 n-gram；LSH 只负责低成本产生 candidate pairs，
+随后精确重算相似度。实验还枚举全部 pair 审计 LSH 漏召回，提醒候选生成不是保证。
+"""
 
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ from about_llm.finetuning.near_duplicate import (
     normalize_near_duplicate_text,
 )
 
+# 样例同时含空白复制、近似改写、无关文本与不同 split。
 AUTHORED_TEXTS = {
     "train-1": "A transformer predicts the next token from its prefix.",
     "validation-copy": "A  transformer predicts the next token from its prefix.",
@@ -36,6 +41,9 @@ def run_toy(
     bands: int,
     seed: int,
 ) -> dict[str, Any]:
+    """构建 n-gram 集，运行 LSH、精确复核和穷举 recall 审计。"""
+
+    # normalization profile 是数据契约的一部分，改变它会改变 n-gram 与相似度。
     items = {
         item_id: character_ngrams(
             normalize_near_duplicate_text(
@@ -46,6 +54,7 @@ def run_toy(
         for item_id, text in AUTHORED_TEXTS.items()
     }
     config = MinHashLSHConfig(num_hashes=num_hashes, bands=bands, seed=seed)
+    # LSH 只缩小 O(n²) 比较集合，任何自动动作前仍要 exact recheck。
     candidates = generate_minhash_lsh_candidates(items, config=config)
     exact_rechecks = exact_recheck_lsh_candidates(
         items, candidates, threshold=threshold
@@ -91,6 +100,8 @@ def run_toy(
 
 
 def parse_args() -> argparse.Namespace:
+    """定义 n-gram、阈值、hash 数、band 数和随机种子。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ngram-size", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.8)
@@ -101,6 +112,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """运行候选召回实验并打印概率与漏召回审计。"""
+
     args = parse_args()
     print(
         json.dumps(

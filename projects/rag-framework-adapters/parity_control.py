@@ -1,4 +1,8 @@
-"""Run an offline LangChain/LlamaIndex RAG parity and authorization control."""
+"""离线比较 LangChain 与 LlamaIndex 适配后的 RAG 结果和权限边界。
+
+实验让两个框架包装同一个 canonical BM25 检索器，再比较检索 ID、prompt 和抽取式回答。
+同时使用 engineering 与匿名主体运行两遍，确认框架适配没有绕过租户或 ACL 过滤。
+"""
 
 from __future__ import annotations
 
@@ -34,6 +38,8 @@ PROMPT_TEMPLATE = """你是一个证据受限的问答系统。
 
 
 def _corpus() -> tuple[Document, ...]:
+    """构造公开、工程组、财务组和另一租户四类权限文档。"""
+
     return (
         Document(
             "acl-before-ranking",
@@ -65,6 +71,8 @@ def _corpus() -> tuple[Document, ...]:
 
 
 def _context(results: tuple[SearchResult, ...]) -> str:
+    """把已授权结果按排名拼成两个框架共享的 context。"""
+
     return "\n\n".join(
         f"[{result.rank}] document_id={result.document.document_id}\n{result.document.text}"
         for result in results
@@ -72,6 +80,9 @@ def _context(results: tuple[SearchResult, ...]) -> str:
 
 
 def _render_prompts(context: str) -> tuple[str, str]:
+    """分别调用两个框架的 PromptTemplate 渲染同一模板。"""
+
+    # 延迟导入使缺少可选框架依赖时错误只出现在真正运行实验的位置。
     from langchain_core.prompts import PromptTemplate as LangChainPromptTemplate
     from llama_index.core.prompts import PromptTemplate as LlamaIndexPromptTemplate
 
@@ -91,6 +102,9 @@ def _run_case(
     *,
     principals: tuple[str, ...],
 ) -> dict[str, Any]:
+    """以一组 principals 运行 canonical、LangChain 和 LlamaIndex 三条路径。"""
+
+    # canonical 结果是权限与排序的唯一来源，两个适配器应逐项保持它。
     canonical = tuple(
         index.search(
             QUERY,
@@ -114,6 +128,7 @@ def _run_case(
     langchain_results = validate_langchain_round_trip(langchain_documents, canonical)
     llamaindex_results = validate_llamaindex_round_trip(llamaindex_nodes, canonical)
 
+    # 检索 parity 通过后，再比较框架模板渲染和最终回答 artifact。
     context = _context(canonical)
     langchain_prompt, llamaindex_prompt = _render_prompts(context)
     if langchain_prompt != llamaindex_prompt:
@@ -150,7 +165,8 @@ def _run_case(
 
 
 def run_control() -> dict[str, Any]:
-    """Execute both framework APIs and return machine-readable evidence."""
+    """运行工程组与匿名访问两组对照，返回可复核报告。"""
+
     index = BM25Index(_corpus())
     engineering = _run_case(index, principals=("engineering",))
     anonymous = _run_case(index, principals=())
@@ -159,6 +175,7 @@ def run_control() -> dict[str, Any]:
     relevant = {"q1": {"acl-before-ranking", "citation-binding"}}
     graded = {"q1": {"acl-before-ranking": 2.0, "citation-binding": 1.0}}
 
+    # 固定预期 ID 能让文档顺序或权限集合的意外变化立即失败。
     expected_engineering = ["acl-before-ranking", "citation-binding"]
     expected_anonymous = ["acl-before-ranking"]
     if engineering_ids != expected_engineering:

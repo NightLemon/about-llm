@@ -1,4 +1,8 @@
-"""Deterministic offline demo of crash-durable local usage reservations."""
+"""离线演示进程退出后仍存在的 SQLite API 用量预留。
+
+实验先预留一次请求，然后模拟在收到响应前进程退出。重新打开数据库后，reservation 仍在，
+并被保守标记为 usage uncertain，避免因本地不知道远端是否计费而错误释放预算。
+"""
 
 from __future__ import annotations
 
@@ -21,6 +25,8 @@ from about_llm.integrations.usage_budget import (
 
 
 def _open_ledger(database: Path) -> SQLiteUsageBudgetLedger:
+    """用相同配置打开账本，模拟两个先后启动的进程。"""
+
     return SQLiteUsageBudgetLedger(
         database,
         limits=UsageBudgetLimits(
@@ -42,11 +48,12 @@ def _open_ledger(database: Path) -> SQLiteUsageBudgetLedger:
 
 
 def run_demo(database: Path) -> dict[str, Any]:
-    """Reserve, reopen, and conservatively reconcile one uncertain call."""
+    """预留请求、重开数据库，并保守处理状态未知的远端调用。"""
 
     if database.exists():
         raise ValueError(f"refusing to reuse existing database: {database}")
 
+    # 请求指纹不包含可轮换的密钥明文，但绑定会影响计费的请求字段。
     request = build_openai_compatible_request(
         base_url="https://provider.invalid",
         api_key="example-secret-not-real",
@@ -55,6 +62,7 @@ def run_demo(database: Path) -> dict[str, Any]:
         max_tokens=10,
     )
     first_process = _open_ledger(database)
+    # 在真正发送网络请求前先占用最大预算，防止并发调用共同突破限额。
     reservation = first_process.reserve_request(
         "call-1",
         request=request,
@@ -63,7 +71,7 @@ def run_demo(database: Path) -> dict[str, Any]:
     )
     reserved_snapshot = first_process.snapshot()
 
-    # Simulated process exit: no terminal transition happened before reopening.
+    # 模拟进程退出：在重新打开数据库之前没有 success/refund 等终态转换。
     del first_process
     restarted_process = _open_ledger(database)
     active_after_reopen = restarted_process.list_active()
@@ -101,6 +109,8 @@ def run_demo(database: Path) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
+    """读取一个尚不存在的数据库路径，避免覆盖旧实验。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database",
@@ -112,6 +122,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """执行崩溃恢复时间线并输出完整事件记录。"""
+
     args = parse_args()
     print(json.dumps(run_demo(args.database), ensure_ascii=False, indent=2))
 

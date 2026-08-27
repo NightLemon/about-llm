@@ -1,4 +1,8 @@
-"""Run or verify the tiny-Transformers cooperative thread-cancellation control."""
+"""运行或复核 Transformers 工作线程的协作取消实验。
+
+实时模式让小模型在线程中生成，并通过停止条件响应取消信号；``--verify`` 只核对记录报告。
+重点是客户端断开后后台线程是否及时退出，而不只是 HTTP 层停止发送字节。
+"""
 
 from __future__ import annotations
 
@@ -19,6 +23,9 @@ DEFAULT_RECORDED_REPORT = (
 
 
 def main() -> None:
+    """选择实时线程取消实验或无模型的离线报告验证。"""
+
+    # 统一中文报告的终端编码。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)

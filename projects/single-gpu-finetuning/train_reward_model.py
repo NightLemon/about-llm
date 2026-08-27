@@ -1,4 +1,8 @@
-"""Held-out-free TRL 0.29 LoRA/QLoRA reward-model training entry."""
+"""训练 LoRA/QLoRA Transformer reward model，并保证 held-out preference 不进优化器。
+
+脚本先校验数据/readiness 和 chosen/rejected tokenization，再加载 sequence-classification base，
+注入 LoRA 后由 RewardTrainer 优化 pairwise margin。训练报告保留数据与运行身份。
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,8 @@ from about_llm.finetuning import (
 
 
 def parse_args() -> argparse.Namespace:
+    """定义数据、模型、量化、LoRA、长度和训练输出参数。"""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--revision", required=True)
@@ -70,6 +76,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def _write_json(path: Path, payload: object) -> None:
+    """写入保留中文且禁止 NaN 的 JSON 报告。"""
+
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",
@@ -78,6 +86,8 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def _comma_separated(value: str, label: str) -> list[str]:
+    """解析不能为空的逗号分隔模块名列表。"""
+
     items = [item.strip() for item in value.split(",") if item.strip()]
     if not items or len(items) != len(set(items)):
         raise ValueError(f"{label} must contain unique non-empty names")
@@ -85,7 +95,10 @@ def _comma_separated(value: str, label: str) -> list[str]:
 
 
 def main() -> None:
+    """执行数据门禁、token 审计、reward model 训练与 artifact 保存。"""
+
     args = parse_args()
+    # 先验证训练数据和 readiness，避免加载大模型后才发现 split 或治理问题。
     records = load_preference_records(args.train_jsonl)
     readiness = load_preference_training_readiness(args.readiness_json)
     audit = validate_preference_training_readiness(records, readiness)
@@ -117,6 +130,7 @@ def main() -> None:
 
     from transformers import AutoTokenizer
 
+    # 用目标 tokenizer/template 预先确认 chosen/rejected 不会被截断成无效训练对。
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id,
         revision=args.revision,
@@ -291,6 +305,7 @@ def main() -> None:
             "target_model_or_cuda_verified_by_repository": False,
         },
     )
+    # 只将训练 split 转给 RewardTrainer；held-out 评测应在独立命令中运行。
     dataset = Dataset.from_list([record.to_dpo_row() for record in records])
     trainer = RewardTrainer(
         model=model,
@@ -313,6 +328,7 @@ def main() -> None:
     )
     if trainable_parameter_count <= 0 or trainable_parameter_count >= total_parameter_count:
         raise AssertionError("LoRA reward model must have a strict trainable subset")
+    # Trainer 对每一对计算 chosen score 与 rejected score 的 pairwise loss。
     train_result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     _write_json(
         args.output_dir / "reward-model-train-result.json",

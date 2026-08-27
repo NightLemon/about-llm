@@ -1,4 +1,8 @@
-"""Run one readable MiniGPT training step on the shared Chinese sample."""
+"""在共享中文样本上追踪 MiniGPT 的一次完整训练步。
+
+输出从 token IDs 和 labels 开始，经过 embedding、各层 hidden state、logits、交叉熵，
+最后到反向传播、梯度范数和 AdamW 更新。默认给人类阅读，也可用 ``--json`` 查看完整轨迹。
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ from about_llm.from_scratch.mini_gpt_training_trace import (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """定义随机种子、学习率和完整 JSON 输出开关。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
@@ -28,14 +34,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """运行一次确定性训练步，并选择导览视图或机器可读报告。"""
+
+    # 训练样本包含中文，Windows 下显式指定 UTF-8 可避免输出乱码。
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="backslashreplace")
     args = build_parser().parse_args(argv)
+    # 底层真实执行 forward、loss.backward() 和 optimizer.step()，不是预先写好的数字。
     report = run_minigpt_training_trace(
         seed=args.seed,
         learning_rate=args.learning_rate,
     )
+    # JSON 适合核对所有张量统计；导览视图只保留理解训练闭环所需的关键节点。
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -44,6 +55,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _guided_view(report: dict[str, Any]) -> str:
+    """把完整训练报告压缩成按计算顺序排列的中文阅读视图。"""
+
     sample = report["sample"]
     model = report["model"]
     forward = report["forward_before_update"]

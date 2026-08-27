@@ -1,4 +1,8 @@
-"""Offline per-attempt SQLite budget retry demo using MockTransport."""
+"""离线演示带 SQLite 预算预留的逐次 HTTP 重试。
+
+第一次请求模拟返回可重试的 500，第二次才成功。两个 attempt 各有独立 reservation，
+因此读者能看到“逻辑调用重试一次”在预算账本中为何必须留下两条远端尝试记录。
+"""
 
 from __future__ import annotations
 
@@ -30,6 +34,8 @@ from about_llm.integrations.usage_budget import (
 
 
 def _ledger(database: Path) -> SQLiteUsageBudgetLedger:
+    """创建固定预算、价格和时钟的持久化账本。"""
+
     return SQLiteUsageBudgetLedger(
         database,
         limits=UsageBudgetLimits(200, 40, 200),
@@ -47,11 +53,12 @@ def _ledger(database: Path) -> SQLiteUsageBudgetLedger:
 
 
 async def run_demo(database: Path) -> dict[str, Any]:
-    """Reconcile a retryable HTTP 500 before settling a successful replay."""
+    """先记录一次 500 的不确定用量，再结算成功的重放请求。"""
 
     if database.exists():
         raise ValueError(f"refusing to reuse existing database: {database}")
 
+    # 同一个 handler 按调用次数返回 500 → 200，完全离线复现重试顺序。
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -87,6 +94,8 @@ async def run_demo(database: Path) -> dict[str, Any]:
         )
 
     async def no_sleep(_delay: float) -> None:
+        """跳过真实退避等待，让教学实验快速完成。"""
+
         return None
 
     request = build_openai_compatible_request(
@@ -97,6 +106,7 @@ async def run_demo(database: Path) -> dict[str, Any]:
         max_tokens=10,
     )
     ledger = _ledger(database)
+    # 重试器会为每个远端 attempt 创建新 reservation，而不是复用第一次的账本记录。
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await execute_budgeted_json_request_with_retry(
             ledger=ledger,
@@ -154,6 +164,8 @@ async def run_demo(database: Path) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
+    """读取一个全新的 SQLite 数据库路径。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database",
@@ -165,6 +177,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """执行异步重试实验并输出 reservation 与事件时间线。"""
+
     args = parse_args()
     print(json.dumps(asyncio.run(run_demo(args.database)), ensure_ascii=False, indent=2))
 

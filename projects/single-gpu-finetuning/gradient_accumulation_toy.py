@@ -1,4 +1,8 @@
-"""Masked token-mean gradient accumulation with an autograd counterexample."""
+"""用真实 autograd 说明 token-mean gradient accumulation 为什么不能平均 microbatch loss。
+
+两个 microbatch 分别只有 1 和 3 个有效 token。正确目标是四个 token 的总 loss 除以总 token 数；
+若先各自求 mean 再平均，就会让短样本获得三倍权重。实验与精确分数 oracle 交叉核对。
+"""
 
 from __future__ import annotations
 
@@ -21,6 +25,8 @@ IGNORE_INDEX = -100
 
 
 def authored_microbatches() -> tuple[CategoricalMicrobatch, ...]:
+    """构造有效 token 数为 1 与 3 的两个 microbatch，并加入 padding。"""
+
     return (
         CategoricalMicrobatch(
             "short",
@@ -44,6 +50,8 @@ def authored_microbatches() -> tuple[CategoricalMicrobatch, ...]:
 
 @dataclass(frozen=True)
 class AutogradPath:
+    """保存一种 reduction 路径得到的 loss 与逐 logit 梯度。"""
+
     loss: float
     gradient: Tensor
 
@@ -51,6 +59,8 @@ class AutogradPath:
 def _torch_fixture(
     microbatches: tuple[CategoricalMicrobatch, ...],
 ) -> tuple[Tensor, Tensor, tuple[tuple[int, ...], ...]]:
+    """把手写概率转为 logits/targets，并记录每个 microbatch 的行索引。"""
+
     logits: list[list[float]] = []
     targets: list[int] = []
     index_groups: list[tuple[int, ...]] = []
@@ -60,6 +70,7 @@ def _torch_fixture(
         for token in microbatch.tokens:
             probabilities = [float(value) for value in token.probabilities]
             logits.append([math.log(probability) for probability in probabilities])
+            # padding 用 ignore_index 表示，cross_entropy 应给这些行零梯度。
             targets.append(
                 IGNORE_INDEX if token.target_index is None else token.target_index
             )
@@ -80,9 +91,12 @@ def _autograd_path(
     *,
     reduction: Literal["full", "count_scaled", "equal_microbatch"],
 ) -> AutogradPath:
+    """分别执行 full、按 token 计数缩放和朴素等 microbatch 权重三条路径。"""
+
     logits = nn.Parameter(initial_logits.clone())
     valid_count = int((targets != IGNORE_INDEX).sum().item())
     if reduction == "full":
+        # 一次性 full-batch mean 是要复现的参考目标。
         loss = F.cross_entropy(
             logits,
             targets,
@@ -94,6 +108,7 @@ def _autograd_path(
         reported_loss = float(loss.detach().item())
     else:
         recorded_losses: list[Tensor] = []
+        # accumulation 路径逐 microbatch backward，让梯度真实累加到同一 Parameter。
         for indices in index_groups:
             index_tensor = torch.tensor(indices, dtype=torch.long)
             microbatch_logits = logits[index_tensor]
@@ -110,9 +125,11 @@ def _autograd_path(
         if logits.grad is None:
             raise AssertionError("autograd did not populate logits.grad")
         if reduction == "count_scaled":
+            # 先累加 token loss sum，最后只除一次全局有效 token 数。
             logits.grad.div_(valid_count)
             reported_loss = float(torch.stack(recorded_losses).sum().item() / valid_count)
         else:
+            # 错误路径把每个 microbatch mean 等权平均，忽略它们有效 token 数不同。
             logits.grad.div_(len(index_groups))
             reported_loss = float(torch.stack(recorded_losses).mean().item())
     if logits.grad is None:
@@ -121,6 +138,8 @@ def _autograd_path(
 
 
 def run_toy() -> dict[str, object]:
+    """并排运行精确 oracle 与 PyTorch autograd 三种 reduction。"""
+
     microbatches = authored_microbatches()
     exact = analyze_masked_token_gradient_accumulation(microbatches)
     initial_logits, targets, index_groups = _torch_fixture(microbatches)
@@ -202,6 +221,8 @@ def run_toy() -> dict[str, object]:
 
 
 def main() -> None:
+    """输出 loss、聚合梯度、padding 梯度和路径差异。"""
+
     print(
         json.dumps(
             run_toy(),

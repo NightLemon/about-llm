@@ -1,5 +1,10 @@
 # ruff: noqa: RUF001 -- Full-width punctuation is intentional in learner output.
-"""Follow one RMSNorm call from tensor layout to framework operator evidence."""
+"""沿一次 RMSNorm 调用追踪张量布局、计算图、ATen 算子和 profiler。
+
+同一个数学公式会在 PyTorch 中经过多个抽象层。本实验先构造非连续张量，再比较手写
+RMSNorm 与框架实现，接着查看 FX 图和 export 后的 ATen 图，最后可选地记录真实运行事件。
+重点是理解各层的边界，而不是把图节点误认为一一对应的 GPU kernel。
+"""
 
 from __future__ import annotations
 
@@ -20,19 +25,26 @@ EPSILON = 1e-6
 
 
 class ReferenceRMSNorm(nn.Module):
-    """A deliberately decomposed RMSNorm whose graph remains easy to inspect."""
+    """故意拆成基础算子的 RMSNorm，便于阅读公式和计算图。"""
 
     def __init__(self, hidden_size: int) -> None:
+        """创建一组非全 1 权重，使逐元素缩放在结果中可观察。"""
+
         super().__init__()
         self.weight = nn.Parameter(torch.linspace(0.5, 1.5, steps=hidden_size))
 
     def forward(self, inputs: Tensor) -> Tensor:
+        """按最后一维计算均方根并应用可学习权重。"""
+
+        # keepdim=True 保留归一化维度，结果才能沿 hidden 维广播回输入 shape。
         mean_square = (inputs * inputs).mean(dim=-1, keepdim=True)
         normalized = inputs * torch.rsqrt(mean_square + EPSILON)
         return normalized * self.weight
 
 
 def _target_name(target: object) -> str:
+    """把 FX 节点 target 规范化成适合报告展示的稳定名称。"""
+
     if isinstance(target, str):
         return target
     rendered = str(target)
@@ -48,6 +60,8 @@ def _target_name(target: object) -> str:
 
 
 def _graph_operations(graph_module: torch.fx.GraphModule) -> list[dict[str, str]]:
+    """只保留计算相关节点，省略 placeholder 和 output 等结构节点。"""
+
     return [
         {"node_kind": node.op, "target": _target_name(node.target)}
         for node in graph_module.graph.nodes
@@ -58,6 +72,9 @@ def _graph_operations(graph_module: torch.fx.GraphModule) -> list[dict[str, str]
 def _profile_call(
     call: Callable[[], Tensor], *, device: torch.device
 ) -> list[dict[str, int | str]]:
+    """执行一次函数并汇总当前设备实际观察到的 ATen 事件。"""
+
+    # CUDA launch 是异步的，前后同步确保 profiler 覆盖本次调用的完整工作。
     activities = [torch.profiler.ProfilerActivity.CPU]
     if device.type == "cuda":
         activities.append(torch.profiler.ProfilerActivity.CUDA)
@@ -85,6 +102,9 @@ def build_trace(
     sequence_length: int = DEFAULT_SEQUENCE_LENGTH,
     hidden_size: int = DEFAULT_HIDDEN_SIZE,
 ) -> dict[str, object]:
+    """构造输入并收集 RMSNorm 各抽象层的可核对证据。"""
+
+    # functional.rms_norm 是本实验的框架参考；旧 PyTorch 没有该接口时直接说明要求。
     framework_rms_norm = getattr(functional, "rms_norm", None)
     if framework_rms_norm is None:
         raise RuntimeError(
@@ -103,17 +123,21 @@ def build_trace(
         raise ValueError("dtype_name must be float32, float16, or bfloat16")
     if min(batch_size, sequence_length, hidden_size) <= 0:
         raise ValueError("batch_size, sequence_length, and hidden_size must be positive")
+    # 通过白名单把命令行字符串映射为实际 device 和 dtype，避免隐式转换。
     device = torch.device(device_name)
     dtype = dtype_by_name[dtype_name]
     element_count = batch_size * sequence_length * hidden_size
+    # 连续 base 提供可预测数值；transpose 只改变 view 的 shape/stride，并共享 storage。
     base = torch.linspace(-1.0, 1.0, steps=element_count, dtype=dtype, device=device).reshape(
         batch_size,
         sequence_length,
         hidden_size,
     )
     transposed = base.transpose(0, 1)
+    # contiguous() 会在布局不连续时物化新 storage，作为内存布局对照。
     contiguous = transposed.contiguous()
 
+    # 前向阶段比较同一输入、权重和 epsilon 下的手写公式与框架算子。
     module = ReferenceRMSNorm(hidden_size).to(device=device, dtype=dtype).eval()
     with torch.no_grad():
         reference_output = module(transposed)
@@ -124,6 +148,7 @@ def build_trace(
             EPSILON,
         )
 
+    # 另建需要梯度的叶子张量，真实执行一次 backward 并检查梯度没有 NaN/Inf。
     gradient_input = transposed.detach().clone().requires_grad_(True)
     gradient_weight = module.weight.detach().clone().requires_grad_(True)
     mean_square = (gradient_input * gradient_input).mean(dim=-1, keepdim=True)
@@ -134,11 +159,13 @@ def build_trace(
         (gradient_input, gradient_weight),
     )
 
+    # FX 保留较高层 Python 运算；torch.export 通常进一步落到 ATen 运算。
     fx_graph = torch.fx.symbolic_trace(module)
     exported_program = torch.export.export(module, (transposed,))
 
     profiler_report: dict[str, object]
     if profile:
+        # profiler 记录的是当前 PyTorch build 与设备的动态事件，不代表所有平台。
         profiler_report = {
             "executed": True,
             "device": device.type,
@@ -222,6 +249,8 @@ def build_trace(
 
 
 def _operator_names(records: object) -> str:
+    """把图节点名称连接成一条便于阅读的调用链。"""
+
     if not isinstance(records, list):
         raise TypeError("operator records must be a list")
     names = [str(record["target"]) for record in records if isinstance(record, dict)]
@@ -229,6 +258,8 @@ def _operator_names(records: object) -> str:
 
 
 def _profile_lines(profiler: dict[str, object]) -> list[str]:
+    """将可选 profiler 结果转换为一行中文说明。"""
+
     if profiler["executed"] is not True:
         return ["未运行 profiler；加入 --profile 可观察当前 PyTorch 的 ATen 事件。"]
     framework_events = profiler["framework_rms_norm"]
@@ -243,6 +274,8 @@ def _profile_lines(profiler: dict[str, object]) -> list[str]:
 
 
 def render_trace(trace: dict[str, object]) -> str:
+    """按“布局→数学→计算图→运行事件”的顺序渲染 trace。"""
+
     environment = trace["environment"]
     tensor = trace["tensor_contract"]
     contract = trace["rmsnorm_contract"]
@@ -258,6 +291,7 @@ def render_trace(trace: dict[str, object]) -> str:
     contract = dict(contract)
     graphs = dict(graphs)
     profiler = dict(profiler)
+    # 先讲每层观察到了什么，再提醒下一层还可能继续分解或融合。
     lines = [
         "跟着一次 RMSNorm 看懂算子计算栈",
         "",
@@ -294,6 +328,8 @@ def render_trace(trace: dict[str, object]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """定义设备、dtype、shape、profiler 和 JSON 输出选项。"""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--profile",
@@ -324,6 +360,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """收集 RMSNorm trace，并打印学习导览或完整 JSON。"""
+
+    # 人类视图包含中文，统一终端编码后再输出。
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="backslashreplace")

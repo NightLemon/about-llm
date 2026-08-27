@@ -1,4 +1,8 @@
-"""Consumer-GPU QLoRA SFT entry point with an offline estimate-only mode."""
+"""面向消费级 GPU 的 QLoRA SFT 入口，并提供完全离线的显存估算模式。
+
+实际训练路径执行 4-bit base 加载、k-bit training 准备、LoRA 注入、assistant-only labels 与
+TRL SFTTrainer；estimate-only 路径只根据配置估算显存和 OOM 降级顺序，不下载模型。
+"""
 
 from __future__ import annotations
 
@@ -31,6 +35,8 @@ from about_llm.finetuning.training_runtime import (
 
 
 def parse_args() -> argparse.Namespace:
+    """定义估算、数据门禁、量化、LoRA 与训练参数。"""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--revision", required=True, help="Commit hash, not a moving branch")
@@ -102,6 +108,8 @@ def _training_run_report(
     memory_before: dict[str, object],
     memory_after: dict[str, object],
 ) -> dict[str, object]:
+    """汇总 QLoRA 运行身份、显存、数据和训练指标。"""
+
     return {
         "report_version": "about-llm.qlora-training-run.v1",
         "status": status,
@@ -151,6 +159,8 @@ def _training_run_report(
 
 
 def main() -> None:
+    """选择离线估算，或执行数据→4bit 模型→LoRA→SFT→发布闭环。"""
+
     args = parse_args()
     estimate = estimate_qlora_memory(
         num_parameters=args.num_parameters,
@@ -174,6 +184,7 @@ def main() -> None:
         or args.output_dir is None
     ):
         raise RuntimeError("training arguments were not validated")
+    # 先做数据/readiness 门禁，失败时不浪费显存加载模型。
     records = load_sft_records(args.train_jsonl)
     readiness = load_sft_training_readiness(args.readiness_json)
     audit = validate_sft_training_readiness(records, readiness)
@@ -187,6 +198,7 @@ def main() -> None:
 
     from transformers import AutoTokenizer
 
+    # 先用目标 tokenizer 精确投影 assistant labels，再决定是否进入 GPU 训练。
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id, revision=args.revision, trust_remote_code=False
     )
@@ -245,6 +257,7 @@ def main() -> None:
         bnb_4bit_use_double_quant=True,
         bnb_4bit_compute_dtype=compute_dtype,
     )
+    # BitsAndBytes 在加载时把 base linear weights 量化到 4 bit；LoRA 参数仍用可训练高精度。
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         revision=args.revision,
@@ -252,6 +265,7 @@ def main() -> None:
         quantization_config=quantization,
         device_map={"": 0},
     )
+    # 冻结并整理量化 base，启用 gradient checkpointing 后再注入 LoRA。
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     targets = [value.strip() for value in args.target_modules.split(",") if value.strip()]
     if not targets:
@@ -380,6 +394,7 @@ def main() -> None:
             memory_after=cuda_memory_snapshot(torch, device),
         ),
     )
+    # 发布前将 adapter、tokenizer、训练报告和身份清单绑定成完整 bundle。
     publish_sft_adapter_bundle(args.output_dir)
 
 
