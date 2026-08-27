@@ -1,49 +1,416 @@
-# 数学基础：从张量形状到可信实验
+# 数学基础：看懂一次模型预测和更新
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：需要读懂 shape、概率、梯度和评测区间的工程师。
-- **先修**：Python 基础；能理解变量、函数、指数和对数记号。
-- **首次阅读**：先手算下面的两-token 例子，再读 Shape、Attention、softmax 与梯度；模型比较转到[评测统计](evaluation-statistics.md)。
-- **完成信号**：能从输入向量算到 attention、loss 和 logits 梯度，并解释每个公式的成立前提。
-- **卡住时**：先看[新手知识地图](../guide/beginner-map.md)，只回补当前公式需要的小节。
+- **适合读者**：学过高中数学，但没有系统学过线性代数、概率论或机器学习数学。
+- **先修**：知道加减乘除，会把数字代入简单公式；不要求会 Python。
+- **首次阅读**：沿着“天空通常是”这个例子一直读到两-token Attention，不必先看三个深入页。
+- **完成信号**：能用自己的话解释向量、矩阵乘法、logit、softmax、loss 和梯度，并手算本页的小例子。
+- **卡住时**：矩阵看[线性代数](math-linear-algebra.md)，概率看[概率与信息论](math-probability.md)，梯度看[训练数学](math-training.md)。
 
 </div>
 
-**怎样使用本章**
+很多 LLM 公式看起来吓人，不是因为每一步都很难，而是因为一行公式同时压缩了很多件小事。本章只追踪一次预测：
 
-读 Attention 公式时，你可能同时卡在三个地方：`QKᵀ` 为什么能相乘，softmax 为什么放在这一轴，
-以及代码里的 tensor shape 怎样对应纸面符号。本章就是为这类问题准备的数学工具箱。
+> 模型读到“天空通常是”，要在“红”“蓝”“。”三个候选 token 中预测下一个 token。
 
-不必先学完再去读模型章节。遇到 shape 问题就看前两节，遇到 loss 与 PPL 就看概率和信息论，
-开始训练时再读梯度与优化。需要比较两个系统的区间和显著性时，转到[评测统计](evaluation-statistics.md)。
+我们会让一组很小的数字依次经过输出矩阵、softmax 和 loss，再沿梯度更新一次。最后把相同工具用于
+两-token Attention。第一次阅读只需抓住这条线：
 
-学完后，你应该能用小数字复算一次 Attention，并追踪 loss 怎样沿计算图传回参数。
+~~~text
+两个 hidden-state 数字
+→ 三个候选 token 的分数
+→ 三个概率
+→ 一个 loss
+→ 每个参数应移动的方向
+~~~
 
-仓库提供三类可运行例子：NumPy Attention、PyTorch/JAX tiny GPT，以及 KV Cache 容量计算器。
+本页里的数字是教学样例，不是某个真实模型的输出。真实 LLM 的向量可能有数千维、词表有数万个 token，
+但每一步的关系没有变。
 
-这些小实验检查公式与训练闭环；大模型训练稳定性和目标硬件性能仍要在相应环境中验证。
+## 1. 先把数学符号翻译成人话
 
-## 先用两个 token 走完整条计算链 {#two-token-attention}
+遇到公式时，先读含义，不要急着背写法。
 
-先暂时去掉 batch 和多头两个轴，只保留两个 token、每个 token 两个特征。令输入和三组投影为：
+| 符号 | 怎样读 | 它想表达什么 |
+|---|---|---|
+| \(x_i\) | x 的第 i 个元素 | 从一组数中取一个 |
+| \(\sum_i x_i\) | 把所有 x 加起来 | 重复做加法 |
+| \(W^T\) | W 的转置 | 把矩阵的行和列互换 |
+| \(e^x\) 或 \(\exp(x)\) | e 的 x 次方 | 把任意数变成正数，且放大差距 |
+| \(\ln x\) 或 \(\log x\) | x 的自然对数 | 指数的反操作；本书未注明时用自然对数 |
+| \(\frac{\partial L}{\partial w}\) | L 对 w 的导数 | w 稍微增大时，L 会怎样变化 |
+| \(\mathbb R^{2\times3}\) | 2 行 3 列的实数 | 只是在说明 shape |
+| \(\approx\) | 约等于 | 为便于阅读，数字经过四舍五入 |
+
+例如：
+
+\[
+\sum_{i=1}^{3}x_i=x_1+x_2+x_3.
+\]
+
+若 \(x=[2,1,0]\)，结果就是 \(2+1+0=3\)。求和符号没有引入新运算，只是把重复的加法写短。
+
+??? note "自测：\(\sum_{i=1}^{3}2x_i\) 在 \(x=[2,1,0]\) 时是多少？"
+
+    先逐项乘 2，再相加：\(2\times2+2\times1+2\times0=6\)。
+
+## 2. 标量、向量、矩阵和张量是什么 {#objects}
+
+它们的区别首先是“用几条轴定位一个数字”。
+
+| 名称 | 小例子 | 需要几个下标 | 在本例中的角色 |
+|---|---|---:|---|
+| 标量（scalar） | \(0.5\) | 0 | learning rate 或一个 loss |
+| 向量（vector） | \([1,1]\) | 1 | 当前 token 的 hidden state |
+| 矩阵（matrix） | \(\begin{bmatrix}1&0&0\\1&1&0\end{bmatrix}\) | 2 | 把两个特征映射成三个分数 |
+| 张量（tensor） | shape 为 <code>[B,T,D]</code> 的数值块 | 3 或更多 | 一批序列中所有 token 的 hidden states |
+
+“张量”在深度学习代码里常被用作总称：标量、向量和矩阵也可以看作 0 维、1 维和 2 维张量。
+
+### Shape 是数字容器的尺寸
+
+向量 \([1,1]\) 有两个元素，写成一行时 shape 是 <code>[1,2]</code>。下面的矩阵有 2 行、3 列，
+shape 是 <code>[2,3]</code>：
+
+\[
+W=
+\begin{bmatrix}
+1&0&0\\
+1&1&0
+\end{bmatrix}.
+\]
+
+在 LLM 中常见的 <code>[B,T,D]</code> 分别表示：
+
+- \(B\)：一次并行处理多少条序列（batch）；
+- \(T\)：每条序列有多少个 token（sequence length）；
+- \(D\)：每个 token 用多少个数表示（hidden dimension）。
+
+字母本身并不重要，重要的是每条轴代表什么。两个 shape 即使数字相同，语义也可能不同。
+
+??? note "自测：20 个 token，每个 token 用 4 个数表示，不考虑 batch，hidden states 的 shape 是什么？"
+
+    是 <code>[20,4]</code>。20 是 token 轴，4 是特征轴。
+
+## 3. 矩阵乘法：一个输出数字从哪里来
+
+### 要回答的问题
+
+模型已有当前 hidden state：
+
+\[
+h=[1,1].
+\]
+
+怎样把这两个特征变成“红”“蓝”“。”三个候选 token 的分数？
+
+### 先代入小数字
+
+用 \(h\) 乘上面那个输出矩阵 \(W\)：
+
+\[
+\begin{bmatrix}1&1\end{bmatrix}
+\begin{bmatrix}
+1&0&0\\
+1&1&0
+\end{bmatrix}
+=
+\begin{bmatrix}
+1\times1+1\times1&
+1\times0+1\times1&
+1\times0+1\times0
+\end{bmatrix}
+=
+\begin{bmatrix}2&1&0\end{bmatrix}.
+\]
+
+每个输出都取 \(h\) 的两个数，与 \(W\) 对应列的两个数逐项相乘，再相加。
+
+### 再看公式
+
+\[
+z_j=\sum_{i=1}^{2}h_iW_{ij},
+\qquad z=hW.
+\]
+
+### 用人话复述
+
+输出矩阵的每一列都是一个“打分配方”。第 1 列把两个输入特征都算进去，所以得到 2；第 2 列只取
+第二个特征，所以得到 1；第 3 列全是 0，所以得到 0。
+
+### 为什么内侧维度必须相等
+
+这次 shape 是：
+
+~~~text
+[1, 2] @ [2, 3] → [1, 3]
+     ^     ^
+~~~
+
+内侧的两个 2 必须相等，因为一次点积需要把左边的两个数与右边一列的两个数一一配对。
+外侧的 1 和 3 留下来，表示结果有 1 行、3 列。
+
+### 在 LLM 中的位置
+
+Transformer 最后一层会为当前 token 产生 hidden state。LM head（语言模型输出头）用一个大矩阵把它映射到
+整个词表，每个词表 token 得到一个分数。真实输出矩阵的列数不是 3，而是词表大小 \(V\)。
+
+??? note "自测：<code>[5,4] @ [4,7]</code> 的输出 shape 是什么？"
+
+    是 <code>[5,7]</code>。内侧的 4 被逐项乘加，外侧的 5 和 7 留下来。
+
+## 4. Logit：还不是概率的原始分数
+
+刚算出的：
+
+\[
+z=[2,1,0]
+\]
+
+叫 logits，也就是还没有归一化的分数。它们的取值范围和总和都没有概率约束。较大的 logit 表示模型当前
+更偏向那个候选；给所有 logits 同时加 100，候选之间的相对差距仍然相同。
+
+在我们的例子里，模型此时最偏向“红”，但训练样本的正确下一个 token 是“蓝”。接下来要把分数变成概率，
+才能问“模型给正确答案分了多少概率”。
+
+??? note "自测：logits 为 \([-2,-3,-4]\) 时，哪个候选最受模型偏好？"
+
+    第一个。logit 可以全是负数，比较的是相对大小，\(-2\) 大于 \(-3\) 和 \(-4\)。
+
+## 5. Softmax：把三个分数变成概率 {#softmax}
+
+### 要回答的问题
+
+怎样把任意 logits 变成三个非负、总和等于 1 的概率，同时保留“分数越大，概率越大”的顺序？
+
+### 先代入小数字
+
+直接算指数也可以，但程序通常先减去最大值 2：
+
+\[
+[2,1,0]-2=[0,-1,-2].
+\]
+
+然后取指数并除以总和：
+
+\[
+[e^0,e^{-1},e^{-2}]
+\approx[1,0.3679,0.1353],
+\]
+
+\[
+p\approx
+\frac{[1,0.3679,0.1353]}{1+0.3679+0.1353}
+=[0.6652,0.2447,0.0900].
+\]
+
+### 再看公式
+
+\[
+p_i=\frac{e^{z_i-m}}{\sum_j e^{z_j-m}},
+\qquad m=\max_j z_j.
+\]
+
+### 用人话复述
+
+指数把每个分数变成正数；再除以总和，就得到一组总和为 1 的概率。减最大值不会改变结果，因为分子分母
+都乘了同一个比例，却能避免大数取指数时溢出。
+
+### 在 LLM 中的位置
+
+训练时，程序通常把 softmax 与 loss 合并成数值更稳定的交叉熵（cross-entropy）运算。
+
+生成时，模型先按温度、top-k 或 top-p 调整候选分布，再选择下一个 token。这里的 0.2447 描述当前分布
+给 token“蓝”的概率。它不能当作“天空为蓝”这个事实的可信度。
+
+??? note "自测：给所有 logits 同时加 10，softmax 概率会改变吗？"
+
+    不会。所有指数项同时乘上 \(e^{10}\)，分子分母中的这个因子会约掉。
+
+## 6. Loss：正确答案只得到 0.2447，错得有多严重
+
+### 要回答的问题
+
+训练需要一个数字表示当前预测有多差。正确 token“蓝”的概率是 \(0.2447\)，怎样把它变成 loss？
+
+### 先代入小数字
+
+\[
+-\ln(0.2447)\approx1.4076.
+\]
+
+若正确 token 概率分别是 0.9、0.5 和 0.01：
+
+| 正确 token 概率 | \(-\ln p\) | 直觉 |
+|---:|---:|---|
+| 0.90 | 0.105 | 很有把握地答对，惩罚很小 |
+| 0.50 | 0.693 | 还不确定 |
+| 0.01 | 4.605 | 很有把握地忽略正确答案，惩罚很大 |
+
+### 再看公式
+
+单个目标 token 的 negative log-likelihood（NLL，负对数似然）是：
+
+\[
+L=-\ln p_{\text{正确 token}}.
+\]
+
+### 用人话复述
+
+正确答案的概率越接近 1，loss 越接近 0；概率越接近 0，loss 增长得越快。因此，错误且自信的预测会受到
+更大的惩罚。这里的“惩罚”只是训练目标的数值，不是对模型进行道德判断。
+
+### 在 LLM 中的位置
+
+因果语言模型会在很多位置预测各自的下一个 token，再按 loss mask 聚合有效位置的 NLL。
+一批样本的平均 loss 可以训练模型，但它不能单独说明模型事实正确、对话安全或在真实任务上有用。
+
+??? note "自测：正确 token 概率从 0.2 上升到 0.8，NLL 会升高还是降低？"
+
+    会降低：\(-\ln0.2\approx1.609\)，\(-\ln0.8\approx0.223\)。
+
+## 7. 梯度：参数应该向哪边移动
+
+### 要回答的问题
+
+我们知道 loss 是 1.4076，但输出矩阵里有很多数字。程序怎样知道每个数字应该增大还是减小？
+
+### 先理解导数的正负号
+
+若一个参数 \(w\) 稍微增加 \(\epsilon\)，可以观察 loss 的变化：
+
+\[
+\frac{\partial L}{\partial w}
+\approx
+\frac{L(w+\epsilon)-L(w-\epsilon)}{2\epsilon}.
+\]
+
+- 导数为正：增大 \(w\) 会让 loss 上升，所以要向较小方向更新；
+- 导数为负：增大 \(w\) 会让 loss 下降，所以要向较大方向更新；
+- 导数接近 0：在当前这个很小的邻域里，改变 \(w\) 对 loss 影响不大。
+
+把 loss 对所有参数的导数放在一起，就叫梯度（gradient）。梯度指向局部上升最快的方向，所以梯度下降
+沿它的反方向走。
+
+### Softmax 与 NLL 给出的简单结果
+
+对于 one-hot 正确答案，loss 对 logits 的梯度恰好是：
+
+\[
+\frac{\partial L}{\partial z}=p-y.
+\]
+
+“蓝”是第二项，因此 \(y=[0,1,0]\)。代入：
+
+\[
+p-y
+=[0.6652,0.2447,0.0900]-[0,1,0]
+=[0.6652,-0.7553,0.0900].
+\]
+
+### 用人话复述
+
+两个错误 token 的梯度为正，沿负梯度更新会压低它们的 logits；正确 token“蓝”的梯度为负，
+沿负梯度更新会抬高它的 logit。三个梯度加起来约为 0，因为 softmax 只关心候选之间的相对差距。
+
+### 梯度怎样到达输出矩阵
+
+由于 \(z=hW\)，每个权重的梯度是对应 hidden-state 数字与 logit 梯度的乘积：
+
+\[
+\frac{\partial L}{\partial W_{ij}}
+=h_i\frac{\partial L}{\partial z_j}.
+\]
+
+本例 \(h=[1,1]\)，所以 \(W\) 的两行恰好都是
+\([0.6652,-0.7553,0.0900]\)。真实网络会继续用链式法则，把信号传回更早的 Transformer 层。
+
+### 在 LLM 中的位置
+
+自动微分负责高效计算梯度；optimizer 负责决定实际更新量。两者不是同一件事。有限差分适合核对极小例子，
+训练大模型时不会逐个参数上下扰动。
+
+??? note "自测：某个参数的梯度为 \(-0.3\)，梯度下降会让它增大还是减小？"
+
+    更新式是 \(w_{\text{new}}=w-\eta(-0.3)\)。当 learning rate \(\eta>0\) 时，参数会增大。
+
+## 8. 更新一次：正确 token 的概率真的升高了吗 {#one-update}
+
+### 要回答的问题
+
+梯度方向的解释是否与重新计算的结果一致？
+
+### 先代入小数字
+
+用 learning rate \(\eta=0.5\) 做一次最简单的梯度下降：
+
+\[
+W_{\text{new}}=W-\eta\nabla_WL.
+\]
+
+重新计算后：
+
+| 量 | 更新前 | 更新后 |
+|---|---:|---:|
+| “蓝”的 logit | 1.0000 | 1.7553 |
+| “蓝”的概率 | 0.2447 | 0.5511 |
+| NLL | 1.4076 | 0.5959 |
+
+### 用人话复述
+
+这一步把正确 token 的相对分数抬高了，所以它的概率从约 24% 上升到 55%，loss 同时下降。
+这正是当前样本上希望看到的方向。
+
+### 在 LLM 中的位置
+
+真实训练会用 mini-batch、AdamW、学习率调度和许多次更新。单个样本 loss 下降只检查“训练链路能工作”，
+不等于模型已经学会泛化。validation/test split 和任务评测仍然不可缺少。
+
+可以运行仓库中的纯 Python 版本，对照每个中间数字：
+
+~~~powershell
+python projects/transformers-basics/math_learning_walkthrough.py
+~~~
+
+它只使用 Python 标准库，不下载模型。先遮住输出，自己预测 shape、最大概率、梯度符号和更新方向，再运行。
+
+??? note "自测：本例能证明训练算法普遍有效吗？"
+
+    不能。它只说明这组数字和这一步更新中，公式、实现和方向一致。泛化能力需要独立数据和更完整的实验。
+
+## 9. 用同一套工具手算两-token Attention {#two-token-attention}
+
+现在已经认识矩阵乘法、softmax、loss 和梯度，可以把它们用于 Attention。先暂时去掉 batch 和多头，
+只保留两个 token、每个 token 两个特征：
 
 \[
 X=\begin{bmatrix}1&0\\1&1\end{bmatrix},
 \qquad W_Q=W_K=W_V=I_2.
 \]
 
-因此 \(Q=K=V=X\)。每一行对应一个 token，每一列对应一个特征。缩放后的分数为：
+\(I_2\) 是 2×2 单位矩阵，乘它不会改变输入，所以 \(Q=K=V=X\)。
+
+### 第一步：每个 token 给可见位置打分
 
 \[
-\frac{QK^T}{\sqrt 2}
-=\begin{bmatrix}0.707&0.707\\0.707&1.414\end{bmatrix}.
+\frac{QK^T}{\sqrt2}
+=
+\begin{bmatrix}
+0.707&0.707\\
+0.707&1.414
+\end{bmatrix}.
 \]
 
-第一个 token 不能读取未来的第二个 token，所以 causal mask 把右上角改成 \(-\infty\)。逐行做 softmax 后：
+以右下角为例，第二个 query \([1,1]\) 与第二个 key \([1,1]\) 点积得到 \(1\times1+1\times1=2\)，
+再除以 \(\sqrt2\)，得到约 1.414。
+
+### 第二步：遮住未来，再逐行做 softmax
+
+第一个 token 不能读取未来的第二个 token，所以 causal mask 把右上角变成 \(-\infty\)：
 
 \[
 A\approx
@@ -53,8 +420,9 @@ A\approx
 \end{bmatrix}.
 \]
 
-这两行已经能读成人话：第一个 token 只能复制自己；第二个 token 把约 33% 的注意力给第一个位置，约 67% 给自己。
-乘上 \(V\) 得到：
+第一行只能选择自己，所以概率是 \([1,0]\)。第二行可以看见两个位置，更偏向自己。
+
+### 第三步：按注意力概率混合 value
 
 \[
 O=AV\approx
@@ -64,536 +432,74 @@ O=AV\approx
 \end{bmatrix}.
 \]
 
-为了继续手算，假设输出头直接把第二行 \([1,0.670]\) 当作两个类别的 logits，正确类别是第二类。
-softmax 概率约为 \([0.582,0.418]\)，交叉熵为 \(-\log 0.418\approx0.872\)。
+第二行的第一个特征是 \(0.330\times1+0.670\times1=1\)，第二个特征是
+\(0.330\times0+0.670\times1=0.670\)。
 
-对 logits 的梯度是 \(p-y\)：
+这就是 Attention 的核心：query 和 key 决定“从哪里读多少”，value 决定“实际读出什么”。
+
+### 如果继续接上预测和 loss
+
+为了便于手算，假设输出头直接把第二行 \([1,0.670]\) 当作两个类别的 logits，正确类别是第二类。
+softmax 概率约为 \([0.582,0.418]\)，NLL 为：
 
 \[
-\frac{\partial L}{\partial z}
-\approx [0.582,-0.582].
+-\ln0.418\approx0.872.
 \]
 
-正梯度会在梯度下降时压低第一个 logit，负梯度会抬高正确类别的 logit。自动微分随后把这个信号依次传回输出头、
+对 logits 的梯度仍是 \(p-y\approx[0.582,-0.582]\)。自动微分会继续把它传回输出、
 \(O=AV\)、softmax、\(QK^T\) 和三个投影矩阵。
 
-后面的章节只是把这条小链路逐段放大：加回 batch 与多头 shape，解释数值稳定性，再讨论优化器怎样使用梯度。
+??? note "自测：为什么第一个 token 对第二个 token 的 attention 概率必须是 0？"
 
-## 1. 先用 Shape 排除不可能
+    因果语言模型预测当前位置时不能偷看未来。mask 在 softmax 前把未来位置设为极小值，使其概率为 0。
 
-### 标量、向量、矩阵、张量
+## 10. 真实 Attention 的 shape 与存储 {#attention-storage-online-softmax}
 
-批量 token hidden states 常写为：
+加回 batch 和多头后，常见 shape 是：
 
-\[
-X\in\mathbb R^{B\times T\times d}
-\]
+~~~text
+Q, K, V: [B, H, T, D]
+K 转置:  [B, H, D, T]
+score:   [B, H, T, T]
+output:  [B, H, T, D]
+~~~
 
-- \(B\)：batch；
-- \(T\)：sequence length；
-- \(d\)：hidden dimension。
+\([T,D]@[D,T]\) 得到 \([T,T]\)：每个 query token 都给每个 key token 一个分数。
+\([T,T]@[T,D]\) 再把 value 混合回每个 token 的 \(D\) 个特征。
 
-线性投影 \(W\in\mathbb R^{d\times h}\)：
+朴素 Attention 会形成含 \(T^2\) 个元素的 score 矩阵。FlashAttention 改为分块读取 Q/K/V。
+它在块之间维护 softmax 所需的最大值与归一化总和，因此省去了完整 score 和概率矩阵的显存写回。
 
-\[
-Y=XW\in\mathbb R^{B\times T\times h}
-\]
+对于精确的稠密 Attention，算术量仍为 \(O(T^2)\)；主要收益来自更少的中间存储和高带宽显存（HBM）读写。
 
-这次矩阵乘法收缩的是最后一个 \(d\) 维，batch 和 time 两个轴原样保留。权重参数量是 \(dh\)，
-所以不会随 \(B,T\) 改变；中间 activation 和计算量会随着 batch 与序列变大。
-
-遇到新的张量公式时，可以先写下面四列。它往往比盯着字母更快暴露问题：
-
-| 量 | shape | dtype/device | 是否训练 |
-|---|---|---|---|
-| input ids | `[B,T]` | integer | 否 |
-| embedding output | `[B,T,d]` | float | 中间量 |
-| projection weight | `[d,h]` | float | 是 |
-| output | `[B,T,h]` | float | 中间量 |
-
-Shape 对得上只是第一关。把 Q/K 轴弄反后，矩阵乘法可能仍然合法，但每个分数所表示的 query-key 关系已经变了。
-
-### Broadcasting
-
-广播把 size 1 或缺失轴视为可重复。例如 bias \(b\in\mathbb R^h\) 加到 `[B,T,h]`，逻辑上在 B/T 维重复，但通常不物化副本。
-
-危险案例：
-
-- `[B,T] + [T]` 按最后维广播，可能是想要的 position bias；
-- `[B,T,1] + [B,T]` 会广播成 `[B,T,T]`，常是灾难；
-- mask `[T,T]` 可广播到 `[B,H,T,T]`，但 padding mask 还需 batch 维。
-
-调试时不仅打印最终 shape，还断言每个语义轴。命名轴/Einsum 记法能降低“维度相等但语义不同”的错误。
-
-### Reshape、transpose 与 contiguous
-
-多头 attention 常做：
-
-```text
-[B,T,d] -> [B,T,H,D] -> [B,H,T,D]
-```
-
-其中 \(d=HD\)。`reshape` 改观察方式，`transpose` 改 strides/轴顺序；某些 kernel 需要 contiguous layout，会触发复制。数学 shape 相同不代表内存布局和性能相同。
-
-## 2. 线性代数直觉
-
-### 线性映射与基
-
-矩阵 \(W\) 把输入坐标映到输出空间。神经网络线性层不只是“乘一个表”，它学习哪些输入方向要放大、衰减或组合。Bias 允许仿射平移。
-
-Embedding lookup 可以理解成：用独热向量（one-hot）从矩阵中选出一行。实现会直接按 token ID 查表，
-不会真的构造一个词表大小的独热向量。
-
-输入 embedding 与语言模型输出头还可以共享参数，这称为 tied embedding/LM head。
-若输入表为 \(E\in\mathbb R^{V\times d}\)，输出 logits 常写成 \(XE^T\)。
-
-### 点积、范数与角度
-
-点积：
-
-\[
-x^Ty=\lVert x\rVert_2\lVert y\rVert_2\cos\theta
-\]
-
-它同时受方向和模长影响。余弦相似度：
-
-\[
-\cos(x,y)=\frac{x^Ty}{\lVert x\rVert_2\lVert y\rVert_2}
-\]
-
-只比较方向，但零向量无定义。向量检索要核对 embedding 模型是否要求 L2 normalization；归一化后 dot product 等于 cosine，未归一化时二者排名可能不同。
-
-常见范数：
-
-- \(\lVert x\rVert_1=\sum_i|x_i|\)：稀疏性/绝对大小；
-- \(\lVert x\rVert_2=(\sum_i x_i^2)^{1/2}\)：距离、gradient norm；
-- \(\lVert x\rVert_\infty=\max_i|x_i|\)：最大分量；
-- Frobenius norm：矩阵所有元素的 L2。
-
-不同 norm 回答不同问题。较小的参数 L2 只说明权重在这个度量下变化不大；模型输出还会受到输入、
-层间放大和非线性的共同影响。
-
-### Rank、SVD 与低秩更新
-
-矩阵 SVD：
-
-\[
-W=U\Sigma V^T
-\]
-
-奇异值描述不同输入方向的放大程度。保留前 \(r\) 个奇异值给出 Frobenius/L2 意义下的最佳 rank-\(r\) 近似（在相应经典条件下）。
-
-LoRA 保留原权重，学习的是一个低秩**增量**；它和直接对原权重做 SVD 截断是两种操作：
-
-\[
-W'=W_0+\frac{\alpha}{r}BA,
-\quad A\in\mathbb R^{r\times d_{in}},
-\quad B\in\mathbb R^{d_{out}\times r}
-\]
-
-可训练参数从 \(d_{in}d_{out}\) 变为 \(r(d_{in}+d_{out})\)。低 rank 是容量约束与归纳偏置，不保证所有任务都能用同一 rank 表达。
-
-### Conditioning
-
-若一个方向被矩阵极大放大、另一个极小，优化会呈狭长谷地；condition number 大时，统一学习率难以兼顾各方向。Normalization、初始化、自适应 optimizer 和 preconditioning 都在不同层面改善尺度，但不消除非凸性。
-
-## 3. Attention 的矩阵推导
-
-令：
-
-\[
-Q=XW_Q,\quad K=XW_K,\quad V=XW_V
-\]
-
-单头 scaled dot-product attention：
-
-\[
-S=\frac{QK^T}{\sqrt{d_h}}+M,
-\quad A=\operatorname{softmax}(S),
-\quad O=AV
-\]
-
-多头 shape：
-
-```text
-Q,K,V: [B,H,T,D]
-K^T:   [B,H,D,T]
-S,A:   [B,H,T,T]
-O:     [B,H,T,D]
-```
-
-### 为什么除以 \(\sqrt{d_h}\)
-
-若 Q/K 各分量近似独立、均值 0、方差约 1，点积 \(q^Tk\) 的方差约为 \(d_h\)。除以 \(\sqrt{d_h}\) 让 score 方差保持 \(O(1)\)，避免 softmax 随维度增大过度饱和。
-
-这些独立/同方差是假设，不是训练后严格事实；缩放仍是稳定初始化和优化的有用设计。
-
-### Mask 不是乘 0
-
-Causal mask 应在 softmax 前把未来 score 设为足够负的值，使概率为 0。若 softmax 后再乘 0，行和不再为 1；若 mask 值在低精度下不够负，仍可能泄漏。
-
-四种常见 mask 解决的是不同问题：
-
-- **Padding mask**：不让真实 token 读取补齐位置；
-- **Causal mask**：不让当前位置读取未来；
-- **Packing block mask**：不让拼接后的不同样本互相读取；
-- **Loss mask**：决定哪些位置计入训练目标，本身不改变前向可见性。
-
-### 复杂度与存储 { #attention-storage-online-softmax }
-
-朴素 Attention 会形成含 \(T^2\) 个元素的分数矩阵，\(QK^T\) 和 \(AV\) 也都包含二次计算。
-FlashAttention 的关键改进是分块搬运数据，并在块之间维护 softmax 状态，从而避免把完整分数和概率矩阵写回 HBM。
-
-它节省的是高带宽显存（HBM）读写与中间存储。对于精确的稠密 Attention，算术复杂度通常仍是 \(O(T^2)\)。
-
-分块算法为什么仍与完整 softmax 等价、全 mask 行为什么会产生 NaN，以及仓库里的 CPU 对照怎样验证这些边界，
+想看 online softmax 怎样保持数学等价、全 mask 行为什么会产生 NaN，以及 CPU 对照怎样验证边界，
 继续读[Attention 数值计算](attention-numerics.md)。
 
-## 4. 概率：模型输出究竟是什么
+??? note "自测：序列长度从 T 变成 2T，朴素 score 矩阵的元素数变成多少倍？"
 
-### 随机变量与条件概率
+    变成 4 倍，因为 \((2T)^2=4T^2\)。
 
-离散分布满足 \(p(x)\ge0\)、\(\sum_xp(x)=1\)。条件概率：
+## 11. 接下来按问题深入
 
-\[
-p(x\mid y)=\frac{p(x,y)}{p(y)}
-\]
+不需要从头学完一整套数学课程。根据正在解决的问题选择：
 
-链式法则总成立：
+| 你卡在哪里 | 继续读 | 学到能做什么就回来 |
+|---|---|---|
+| shape、转置、广播、点积、余弦、LoRA | [线性代数](math-linear-algebra.md) | 能在纸上标出一次矩阵乘法的语义轴 |
+| 条件概率、NLL、交叉熵、KL、PPL | [概率与信息论](math-probability.md) | 能说明概率的条件和 loss 的平均口径 |
+| 导数、反向传播、梯度累积、AdamW | [训练数学](math-training.md) | 能解释梯度从哪里来、optimizer 怎样使用它 |
+| softmax、mask 与浮点边界 | [Attention 数值计算](attention-numerics.md) | 能解释稳定实现与纸面公式的差别 |
+| 均值、置信区间和显著性 | [评测统计](evaluation-statistics.md) | 能判断一次指标差异是否值得相信 |
 
-\[
-p(x_{1:T})=\prod_{t=1}^Tp(x_t\mid x_{<t})
-\]
+### 本页最小检查单
 
-这不是 token 独立假设；每个条件分布都依赖前缀。
+合上页面后，尝试不用公式回答：
 
-### 似然与概率不要混用
+1. 向量、矩阵和张量的区别是什么？
+2. 为什么 <code>[1,2] @ [2,3]</code> 能相乘？
+3. Logit 和概率有什么区别？
+4. 为什么正确 token 概率越低，NLL 越高？
+5. 梯度的正负号怎样影响参数更新方向？
+6. Query、key 和 value 在 Attention 中分别负责什么？
 
-给定参数 \(\theta\)，数据概率是 \(p_\theta(D)\)；把同一表达式视为 \(\theta\) 的函数时叫 likelihood。最大似然选择：
-
-\[
-\hat\theta=\arg\max_\theta\sum_i\log p_\theta(x_i)
-\]
-
-取 log 把乘积变求和，也避免浮点下溢。Maximum likelihood 不保证因果解释、校准或分布外可靠。
-
-### Token 概率不是事实置信度
-
-`p(next_token="巴黎" | prompt)` 是生成分布下该 token 的概率，受到措辞、tokenizer、采样和训练分布影响。
-它回答“模型接下来有多可能生成这个 token”，而不是“巴黎有多可能是事实上的正确答案”。同一事实可以有多种
-tokenization 和表达方式，模型也可能对错误模板给出很高概率。
-
-如果产品需要置信度，应定义事件和标签，在目标分布做 calibration、selective prediction/abstention 和切片评测，而不是直接展示首 token probability。
-
-### Bayes 与 base rate
-
-\[
-p(H\mid E)=\frac{p(E\mid H)p(H)}{p(E)}
-\]
-
-基准率（base rate）很低时，即使检测器的召回率很高，阳性结果也可能以误报为主。
-
-例如 10,000 个事件里只有 10 个真实阳性。若检测器找回其中 9 个，同时把 1% 的阴性误报为阳性，就会产生约
-100 个误报；此时阳性预测的精确率只有 \(9/(9+100)\approx8.3\%\)。
-
-因此，安全分类、异常检测和成员推断要同时报告 precision、recall 与真实发生率，不能只看 accuracy。
-
-## 5. Softmax、LogSumExp 与数值稳定
-
-Softmax：
-
-\[
-p_i=\frac{e^{z_i}}{\sum_je^{z_j}}
-\]
-
-对任意常数 \(c\)，\(\operatorname{softmax}(z)=\operatorname{softmax}(z-c)\)。取 \(c=\max z\) 可避免 `exp` overflow：
-
-\[
-\log\sum_je^{z_j}=m+\log\sum_je^{z_j-m},\quad m=\max_jz_j
-\]
-
-Cross entropy 实现应使用 fused `log_softmax`/cross-entropy，而不是先算概率再 `log`，后者容易把极小概率舍入为 0。
-
-Softmax Jacobian：
-
-\[
-\frac{\partial p_i}{\partial z_j}=p_i(\delta_{ij}-p_j)
-\]
-
-对 one-hot label \(y\)，softmax + cross entropy 对 logits 的梯度简化为：
-
-\[
-\frac{\partial L}{\partial z}=p-y
-\]
-
-这给出直觉：正确类概率不足时得到负梯度提高 logit，错误类按当前概率被压低。
-
-## 6. 信息论：Cross Entropy、KL 与 PPL
-
-熵：
-
-\[
-H(p)=-\sum_xp(x)\log p(x)
-\]
-
-Cross entropy：
-
-\[
-H(p,q)=-\sum_xp(x)\log q(x)
-\]
-
-KL divergence：
-
-\[
-D_{KL}(p\|q)=\sum_xp(x)\log\frac{p(x)}{q(x)}
-\]
-
-满足：
-
-\[
-H(p,q)=H(p)+D_{KL}(p\|q)
-\]
-
-当数据分布 \(p\) 固定，最小化 cross entropy 等价于减小 forward KL \(D_{KL}(p\|q)\)。KL 非负但不对称，也不满足三角不等式，不是距离。
-
-### KL 方向的直觉
-
-- \(D_{KL}(p\|q)\)：若 \(p(x)>0\) 而 \(q(x)\) 很小，惩罚很大，倾向覆盖 data modes；
-- \(D_{KL}(q\|p)\)：对 q 放在 p 低密度区惩罚大，某些近似设置中呈 mode-seeking。
-
-这是理想分布直觉；神经网络训练、有限样本和参数约束会改变实际行为。
-
-### 困惑度
-
-若平均 NLL 以自然 log 计：
-
-\[
-PPL=\exp(\overline{NLL})
-\]
-
-可直觉理解为平均“有效候选数”，但只在相同数据、tokenizer、normalization 和 mask 口径下比较。一个 tokenizer 把中文切得更细，会改变 token NLL 与 PPL，不能据此直接判断语言能力。
-
-Bits-per-byte/character 可改善跨 tokenizer 比较，但仍要统一数据编码和归一化。
-
-## 7. 微积分、Jacobian 与反向传播
-
-### 导数是局部线性近似
-
-对小扰动 \(\Delta x\)：
-
-\[
-f(x+\Delta x)\approx f(x)+J_f(x)\Delta x
-\]
-
-标量 loss 对向量的梯度 \(\nabla_xL\)，指向局部上升最快的方向。
-
-高维网络不会显式构造完整 Jacobian。反向模式自动微分（reverse-mode autodiff）从一个标量 loss 出发，
-沿计算图反向计算向量—Jacobian 乘积（VJP），因此特别适合“很多参数 → 一个 loss”的训练问题。
-
-### 链式法则
-
-若 \(x\to y\to L\)：
-
-\[
-\frac{\partial L}{\partial x}
-=\frac{\partial L}{\partial y}
-\frac{\partial y}{\partial x}
-\]
-
-反向传播是把上游 cotangent 沿计算图应用局部 VJP。它不是另一种学习规则；optimizer 才决定怎样用梯度更新参数。
-
-### 线性层的梯度
-
-对 \(Y=XW\)，上游梯度 \(G=\partial L/\partial Y\)：
-
-\[
-\frac{\partial L}{\partial X}=GW^T,
-\quad
-\frac{\partial L}{\partial W}=X^TG
-\]
-
-带 batch/time 时先把这些轴视为样本维做 contraction。这也解释为什么 weight gradient 的计算量与 forward 同量级。
-
-### Gradient accumulation
-
-若 global objective 是 \(A\) 个 micro-batch loss 的平均：
-
-\[
-\nabla\left(\frac1A\sum_{a=1}^AL_a\right)
-=\frac1A\sum_{a=1}^A\nabla L_a
-\]
-
-每次 backward 若未除以 \(A\)，累积梯度是 sum，等价学习率会放大 \(A\) 倍。框架可能在 loss、distributed reducer 或 optimizer 中缩放，必须用单卡大 batch 对照验证。
-
-变长序列时，应按有效 token 对 loss numerator/denominator 聚合，而不是对 micro-batch mean 等权平均。
-
-### Gradient check
-
-小模型可用有限差分：
-
-\[
-\frac{\partial L}{\partial\theta_i}\approx
-\frac{L(\theta_i+\epsilon)-L(\theta_i-\epsilon)}{2\epsilon}
-\]
-
-\(\epsilon\) 太大会有截断误差，太小会有浮点消减。Gradient check 适合少量参数和 FP64/FP32 debug，不适合大模型全量验证。
-
-## 8. Optimization：梯度不等于更新
-
-### SGD 与 Momentum
-
-SGD：
-
-\[
-\theta_{t+1}=\theta_t-\eta_tg_t
-\]
-
-Mini-batch gradient 是随机估计，batch 大小影响方差和每 token 更新频率。Momentum 对梯度做指数平滑，减少狭长谷地中的来回震荡，但会引入 state 和超参数。
-
-### Adam
-
-\[
-m_t=\beta_1m_{t-1}+(1-\beta_1)g_t
-\]
-
-\[
-v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2
-\]
-
-偏差修正：
-
-\[
-\hat m_t=\frac{m_t}{1-\beta_1^t},
-\quad
-\hat v_t=\frac{v_t}{1-\beta_2^t}
-\]
-
-Adam 按历史二阶矩自适应缩放方向。\(\epsilon\) 不只是防除 0，在低方差参数上也影响有效步长；放在平方根内/外是不同算法实现细节。
-
-### AdamW
-
-简化更新：
-
-\[
-\theta_{t+1}=\theta_t
--\eta_t\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}
--\eta_t\lambda\theta_t
-\]
-
-AdamW 使用解耦权重衰减（decoupled weight decay）：衰减项不经过 Adam 的二阶矩缩放。
-
-在普通 SGD 的简单设置中，L2 正则与 weight decay 可以得到等价更新；换成自适应优化器后，两者通常不再等价。
-
-Norm scale、bias-like 参数常排除 decay，但这是参数 mask 配置，不是 AdamW 数学自动知道。
-
-### Warmup 与 schedule
-
-Warmup 在训练初期逐渐增大学习率，降低初始化阶段迈出过大步长的风险。余弦或线性衰减则控制后期更新。
-
-学习率曲线的横轴必须明确：按 optimizer step，还是按已经消费的 token 计数。
-Gradient accumulation 或 batch 大小变化后，这两个进度单位不再保持原来的对应关系。
-
-### Gradient clipping
-
-全局 norm clipping：
-
-\[
-g'=g\min\left(1,\frac{c}{\lVert g\rVert_2+\epsilon}\right)
-\]
-
-它保留全局方向、缩小长度。Per-value clipping 会逐元素截断，方向改变更大。记录 pre-clip norm 和触发率；clip 不是修复 NaN、错误数据或过大学习率的万能工具。
-
-## 9. 数值精度与误差
-
-浮点数只有有限指数和尾数。常见风险：
-
-- overflow：`exp(large)`、低精度累加；
-- underflow：极小概率/gradient 变 0；
-- catastrophic cancellation：相近大数相减；
-- non-associativity：\((a+b)+c\neq a+(b+c)\)；
-- reduction order：多卡 collective 顺序改变末位。
-
-几种低精度格式的主要取舍不同：
-
-- **BF16**：指数范围接近 FP32，但有效尾数更短；
-- **FP16**：指数范围更小，训练中常配合 loss scaling；
-- **FP8**：行为取决于具体格式，还需要动态缩放策略。
-
-描述混合精度时，不能只写一个“训练 dtype”。应分别说明参数存储、矩阵乘法、累加、梯度、优化器状态和
-通信归约各自使用的 dtype。
-
-### Stable variance
-
-直接用 \(E[x^2]-E[x]^2\) 计算低方差大数可能严重消减；在线算法/Welford 更稳定。Normalization 和统计指标实现应使用框架的稳定 primitive，不要只照搬代数式。
-
-### 容差
-
-`allclose` 需要绝对与相对容差：
-
-\[
-|a-b|\le atol+rtol|b|
-\]
-
-近 0 值由 `atol` 主导，大值由 `rtol` 主导。容差应由 dtype、运算长度和业务影响决定，不能为让测试绿而无限放宽。
-
-## 10. 可执行小实验
-
-### Attention 因果性
-
-本仓库分别用 NumPy、PyTorch 和 JAX 做同一个因果性测试：构造两条只在未来位置不同的序列，断言过去位置的
-logits 保持相同。
-
-检查代码里是否出现 `tril` 只能看到实现意图；这个对照直接验证了“未来 token 不改变过去输出”这一可观察性质。
-
-### KV Cache 容量
-
-理想化 dense K/V：
-
-\[
-M=2\times L\times B\times T\times H_{kv}\times d_h\times bytes(dtype)
-\]
-
-式子中的 `2` 分别代表 K 和 V。这个理想公式没有计算 allocator、block 元数据、碎片和临时工作区，
-也不适用于 MLA 等不同的 cache layout。
-
-本仓库测试中的一组特定参数恰好得到 1 GiB，用来检查公式实现；它不是目标推理框架的显存实测。
-
-### Tiny-batch overfit
-
-JAX/Optax 实验使用一个 632 参数模型和固定小 batch。它检查 loss 是否下降、参数是否更新、梯度范数是否有限，
-并在 JIT 执行后同步计时。
-
-这个实验能发现训练闭环错误，但没有使用独立验证集，不能据此判断泛化。
-
-## 常见错误
-
-- Shape 能乘就认为语义正确，忽略轴含义；
-- 把广播意外扩成 `[B,T,T]`；
-- 认为 dot product 就是 cosine；
-- 把 token probability 当事实为真的概率；
-- 先 softmax 再 log，制造 underflow；
-- 用不同 tokenizer 的 PPL 排名模型；
-- gradient accumulation 忘记平均或有效 token weighting；
-- 把 AdamW 说成“Adam + 在 loss 加 L2”而不讲条件；
-- 进行模型比较却没有先读[评测统计](evaluation-statistics.md)定义采样单位与 estimand；
-- 用理想 FLOPs/bytes 公式冒充硬件实测。
-
-## 面试追问
-
-1. `[B,T,H,D] @ [B,H,D,T]` 为什么不能直接相乘，先要转哪个轴？
-2. \(1/\sqrt{d_h}\) 缩放的方差直觉和假设是什么？
-3. 为什么 causal mask 与 loss mask 不能互相替代？
-4. Softmax + cross entropy 为什么得到 \(p-y\) 梯度？
-5. Forward KL 与 reverse KL 的直觉差别是什么？
-6. AdamW 为什么不等同于任意 Adam + L2 loss？
-7. 可变长度 micro-batch 怎样得到正确 global token mean？
-8. 如何证明一个数值优化没有改变模型语义，而不只是最终文本相似？
-
-## 一手资料与继续学习
-
-- Goodfellow、Bengio、Courville，《Deep Learning》：线性代数、概率、数值计算与优化。
-- Murphy，《Probabilistic Machine Learning》：概率模型、估计与不确定性。
-- Boyd、Vandenberghe，《Convex Optimization》：凸性、对偶与优化直觉；神经网络虽非凸，基础工具仍重要。
-- JAX/PyTorch autodiff、numerical accuracy 与 distributed 官方文档；实现行为以固定版本为准。
-- 本仓库的 attention、PyTorch/JAX GPT、KV Cache 实现与对应测试。
-- 模型比较、置信区间与 judge 校准继续读[评测统计](evaluation-statistics.md)。
+若能把答案说清楚，你已经具备继续学习 Transformer 的最低数学工具。遇到新公式时，再回到对应深入页补一块即可。

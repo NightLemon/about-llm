@@ -6,7 +6,7 @@
 **学习导航**
 
 - **适合读者**：需要比较 Prompt、模型、RAG、微调或服务版本的开发者和算法工程师。
-- **先修**：[数学基础](math.md)中的概率、均值、方差与基本 Python。
+- **先修**：[概率与信息论](math-probability.md)中的概率基础，以及均值、方差与基本 Python。
 - **首次阅读**：Estimand → 配对差值 → 区间 → 切片与多重比较 → 发布门禁。
 - **完成信号**：能写出一次模型比较的采样单位、分母、效应量和不确定性。
 - **卡住时**：先为五个 cases 手算 baseline/candidate 差值，不要先调用统计库。
@@ -390,4 +390,6 @@ Toy 输出证明统计实现对固定输入的行为，不证明你的 case set 
 - [Evaluation Gate](../practice/projects/evaluation-gate.md)：可运行统计与发布 artifact。
 - [Agent 评测](../quality/agent-evaluation.md)：task success、安全与副作用。
 - [RAG 生产实践](../applications/rag-production.md)：retrieval、citation 与端到端分层。
-- [数学基础](math.md)：概率、数值稳定和优化。
+- [数学基础主线](math.md)：从 logits、概率到一次更新。
+- [概率与信息论](math-probability.md)：条件概率、NLL 与 PPL。
+- [训练数学](math-training.md)：梯度、优化与浮点误差。

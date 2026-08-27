@@ -7,18 +7,21 @@
 **新手导航**：[30 分钟最小成功](#30-minutes) · [六周入门路径](learning-paths.md#beginner) · [环境配置](environment.md) · [术语表](../reference/glossary.md)
 { .doc-nav }
 
-## 先做四项自检
+## 先做五项自检
 
-把下面四项当作导航题，不是入学考试。某一行暂时做不到，就先读对应页面；已经熟悉的可以直接跳过。
+把下面五项当作导航题，不是入学考试。某一行暂时做不到，就先读对应页面；已经熟悉的可以直接跳过。
 
 | 如果你暂时做不到 | 先去哪里 | 达标信号 |
 |---|---|---|
 | 创建虚拟环境并运行 Python 脚本 | [环境与硬件矩阵](environment.md) | `python --version` 与最小脚本都成功 |
 | 区分训练集、验证集和测试集 | [机器学习与深度学习](../foundations/ml-dl.md) | 能解释为什么不能用测试集调参 |
-| 读懂 `[B,T,D]` 和矩阵乘法 | [数学基础](../foundations/math.md) | 能标注 batch、序列和特征维 |
+| 解释 logit、softmax、loss 和梯度 | [数学基础主线](../foundations/math.md) | 能手算一次三候选预测与更新 |
+| 读懂 `[B,T,D]` 和矩阵乘法 | [线性代数](../foundations/math-linear-algebra.md) | 能标注 batch、序列和特征维 |
 | 区分字符、byte、token id、logit | [NLP](../foundations/nlp.md)与 [Tokenization](../core/tokenization.md) | 能解释文本如何变成下一 token 概率 |
 
-你只需回补眼前会用到的部分。例如看不懂 `[B,T,D]` 时，先学 shape 和矩阵乘法，没有必要先学完整套概率论。
+你只需回补眼前会用到的部分。例如看不懂 `[B,T,D]` 时，先学 shape 和矩阵乘法，没有必要先学完整套概率论；
+概率或梯度卡住时，可分别直达[概率与信息论](../foundations/math-probability.md)和
+[训练数学](../foundations/math-training.md)。
 
 ## 十二个节点形成主线
 

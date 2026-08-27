@@ -6,7 +6,7 @@
 **学习导航**
 
 - **适合读者**：已经会算 Attention，想继续理解 FlashAttention 与 online softmax 的读者。
-- **先修**：[数学基础](math.md)中的 Attention、softmax 与浮点误差。
+- **先修**：[数学基础](math.md)中的 Attention 与 softmax；浮点误差可按需查[训练数学](math-training.md#floating-point)。
 - **首次阅读**：完整矩阵的问题 → 一行四个分数 → 三项在线状态 → mask 边界 → 可运行对照。
 - **完成信号**：能解释新最大值出现时旧块为何要重标定，并区分逻辑 tile 大小与真实显存峰值。
 - **卡住时**：回到[两-token 手算例子](math.md#two-token-attention)；先理解普通 softmax，再看本页递推式。

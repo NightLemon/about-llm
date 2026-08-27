@@ -8,9 +8,10 @@
 
 ## 第一次运行
 
-下面八条命令都不下载公开模型：
+下面九条命令都不下载公开模型：
 
 ```powershell
+python projects/transformers-basics/math_learning_walkthrough.py
 python projects/transformers-basics/ticket_classification_walkthrough.py
 python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
 python projects/transformers-basics/trace_language_model_sample.py
@@ -21,16 +22,17 @@ python projects/transformers-basics/smoke_tiny.py
 python projects/transformers-basics/generation_runtime_control.py
 ```
 
-它们依次回答八个问题：
+它们依次回答九个问题：
 
-1. 数据泄漏、交叉熵、一次梯度更新和分指标评测怎样构成最小机器学习闭环？
-2. Byte-level BPE 怎样从 256 个 byte 开始学习 merge？
-3. 一段文字怎样变成 input IDs、labels、causal mask 和 loss mask？
-4. Online softmax 为什么不需要保存完整 attention score matrix？
-5. 一次 RMSNorm 怎样从非连续张量走到 FX、ATen 和当前 backend？
-6. 同一个样本怎样经过 MiniGPT 的 forward、masked loss、backward 和参数更新？
-7. Transformers 的 tiny GPT-2 能否完成训练与生成接线？
-8. EOS、最大生成长度和调用参数覆盖怎样共同决定停止？
+1. 两个 hidden-state 数字怎样变成 logits、概率、NLL、梯度和一次参数更新？
+2. 数据泄漏、交叉熵、一次梯度更新和分指标评测怎样构成最小机器学习闭环？
+3. Byte-level BPE 怎样从 256 个 byte 开始学习 merge？
+4. 一段文字怎样变成 input IDs、labels、causal mask 和 loss mask？
+5. Online softmax 为什么不需要保存完整 attention score matrix？
+6. 一次 RMSNorm 怎样从非连续张量走到 FX、ATen 和当前 backend？
+7. 同一个样本怎样经过 MiniGPT 的 forward、masked loss、backward 和参数更新？
+8. Transformers 的 tiny GPT-2 能否完成训练与生成接线？
+9. EOS、最大生成长度和调用参数覆盖怎样共同决定停止？
 
 先解释输出，再进入真实 checkpoint。完整的 90 分钟 CPU 路线见[推荐运行顺序](../../docs/practice/projects/transformers-basics.md#run)。
 
@@ -50,6 +52,7 @@ generation config、库版本和执行硬件。
 
 | 你想理解什么 | 入口 |
 |---|---|
+| Shape、logits、softmax、NLL 和梯度怎样连成一次更新 | `math_learning_walkthrough.py` |
 | 数据切分、NLL、梯度方向和分类指标为什么必须一起看 | `ticket_classification_walkthrough.py` |
 | Byte-level BPE 的计数、merge 与编码 | `train_byte_bpe.py` |
 | 文本 token 怎样变成因果 LM 的逐位置训练目标 | `trace_language_model_sample.py` |
@@ -176,6 +179,7 @@ python projects/transformers-basics/generation_runtime_control.py
 
 ```powershell
 python -m pytest `
+  tests/test_math_learning_walkthrough.py `
   tests/test_ticket_classification_walkthrough.py `
   tests/test_tokenizer.py `
   tests/test_language_model_sample.py `

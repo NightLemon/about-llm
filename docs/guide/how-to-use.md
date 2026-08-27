@@ -78,7 +78,9 @@ python -m pytest tests/test_tokenizer.py -q
 ## 卡住时怎么办
 
 - 遇到陌生术语，先查[术语知识图谱](../reference/glossary.md)；若总把两个概念混在一起，再看[概念依赖地图](../reference/concept-map.md)。
-- 形状或概率跟不上时，只回补[数学基础](../foundations/math.md)中当前需要的那一节。
+- 数学完全没有起点时，先走完[一次三候选预测](../foundations/math.md)；只卡在某一点时，直接查
+  [线性代数](../foundations/math-linear-algebra.md)、[概率与信息论](../foundations/math-probability.md)或
+  [训练数学](../foundations/math-training.md)。
 - 命令无法运行时，先查[环境与硬件矩阵](environment.md)，把环境问题和教材问题分开。
 - 不确定下一章时，用[知识地图](knowledge-map.md)找到当前主题的直接后继。
 - 已经理解机制、想做成作品时，从[项目索引](../practice/project-index.md)选择最小可交付项目。

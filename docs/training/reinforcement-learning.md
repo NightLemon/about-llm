@@ -6,7 +6,8 @@
 **学习导航**
 
 - **适合读者**：需要理解或评审 LLM post-training、online RL 和 verifiable reward 的开发者与算法工程师。
-- **先修**：[数学基础](../foundations/math.md)中的概率与梯度、[生成](../core/generation.md)和[对齐入门](alignment-basics.md)。
+- **先修**：[概率与信息论](../foundations/math-probability.md)、
+  [训练数学](../foundations/math-training.md)、[生成](../core/generation.md)和[对齐入门](alignment-basics.md)。
 - **首次阅读**：跟随一道代码题，观察候选回答怎样被采样、评分、分配 credit，再进入 PPO、GRPO 与 RLVR。
 - **完成信号**：能解释一个 verifier 分数怎样改变回答概率，并指出采样策略、优势估计和独立验收各自解决什么问题。
 - **卡住时**：先运行本章的三动作 bandit，再回到[对齐完整章节](alignment.md)看 SFT、RM 和 DPO 数据流。

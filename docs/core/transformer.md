@@ -9,7 +9,8 @@
 - **先修**：[Tokenization](tokenization.md)、矩阵乘法、softmax 和因果语言建模。
 - **首次阅读**：4-token prefill → 第一轮 decode → Attention shape → 四类 mask → KV Cache。
 - **完成信号**：能手算两 token attention，并验证 cached/full logits 等价。
-- **卡住时**：回到[数学基础](../foundations/math.md)的 shape 与矩阵乘法。
+- **卡住时**：先回到[数学基础](../foundations/math.md)的三候选预测；需要更多 shape 练习时看
+  [线性代数](../foundations/math-linear-algebra.md)。
 
 </div>
 

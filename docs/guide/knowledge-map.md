@@ -26,13 +26,17 @@ flowchart TD
 
 | 阶段 | 主题 | 学完后应能做到 |
 |---|---|---|
-| 1 | [数学基础](../foundations/math.md)、[机器学习](../foundations/ml-dl.md) | 解释张量、概率、损失和梯度 |
+| 1 | [数学基础主线](../foundations/math.md)、[机器学习](../foundations/ml-dl.md) | 手算一次预测与更新，解释张量、概率、损失和梯度 |
 | 2 | [NLP](../foundations/nlp.md)、[Tokenization](../core/tokenization.md) | 说明文本如何变成 token 与训练样本 |
 | 3 | [Transformer](../core/transformer.md) | 写出注意力各张量形状并解释 causal mask |
 | 4 | [生成入门](../core/generation-basics.md) | 区分 greedy、sampling、beam 和停止条件 |
 | 5 | [评测](../quality/evaluation.md) | 为一个任务定义样例、指标和错误分类 |
 
 完成主干后，你应该能够读懂常见模型的输入输出和训练目标，并知道一次输出为什么不能代表整体质量。
+
+数学不需要一次学完。矩阵 shape 卡住时查[线性代数](../foundations/math-linear-algebra.md)，loss 与 PPL 卡住时查
+[概率与信息论](../foundations/math-probability.md)，backward 与 optimizer 卡住时查
+[训练数学](../foundations/math-training.md)。
 
 ## 分支一：数据与模型训练
 

@@ -50,6 +50,21 @@ raw text
 
 项目报告中，每个观察都标明属于哪一级。
 
+## Phase 0：先把一次预测和更新算明白 {#phase-0}
+
+若 logit、softmax、NLL 或 gradient 还是零散的词，先运行：
+
+~~~powershell
+python projects/transformers-basics/math_learning_walkthrough.py
+~~~
+
+程序让 hidden state <code>[1,1]</code> 乘 <code>[2,3]</code> 输出矩阵，在“红 / 蓝 / 。”三个候选中预测
+“天空通常是”的下一个 token。它会打印稳定 softmax、正确 token 的 NLL、\(p-y\)、一个权重的有限差分斜率，
+以及一次更新前后的概率和 loss。
+
+先自己预测哪个 logit 最大、正确 token 的梯度是正还是负，再运行。逐项手算见
+[数学基础主线](../../foundations/math.md)。程序只使用 Python 标准库，不下载模型。
+
 ## Phase 1：从零训练 byte-level BPE
 
 一段文本会经过三个层次：人看到的是 Unicode 字符，文件中保存的是 UTF-8 字节，模型接收的是 token ID。
@@ -407,6 +422,7 @@ python projects/transformers-basics/run_target_checkpoint.py --local-files-only
 ### 第一次：90 分钟 CPU 路线
 
 ~~~powershell
+python projects/transformers-basics/math_learning_walkthrough.py
 python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
 python projects/transformers-basics/trace_language_model_sample.py
 python projects/transformers-basics/online_softmax_demo.py

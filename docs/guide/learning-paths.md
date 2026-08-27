@@ -13,10 +13,11 @@
 
 ## 基础路线 { #beginner }
 
-这条路线适合第一次系统学习 LLM 的读者。六站按依赖排列，进度由右栏的成果决定，不按周数决定。
+这条路线适合第一次系统学习 LLM 的读者。七站按依赖排列，进度由右栏的成果决定，不按周数决定。
 
 | 站点 | 先回答的问题 | 离开这一站时留下什么 |
 |---|---|---|
+| [数学基础](../foundations/math.md) | 两个 hidden-state 数字怎样变成 token 概率和一次参数更新？ | 三候选预测与两-token Attention 手算 |
 | [机器学习与 NLP](../foundations/ml-dl.md) | 模型从什么数据学习，怎样知道它没有只记住训练集？ | 一次 train/validation/test 切分解释和 logits→NLL 手算 |
 | [Tokenization](../core/tokenization.md) | 文本为什么会变成不同长度的整数序列？ | 中英文、数字、代码和 emoji 的 byte/token 对照 |
 | [Transformer](../core/transformer.md) | 一个 token 怎样读取前文信息？ | 两 token Attention 手算和 `Q/K/V/score` shape 图 |
@@ -99,9 +100,10 @@ HTTP 和基本性能测量。
 
 ## 数学按需补给 { #math-supplement }
 
-- 看不懂矩阵和广播：读[数学基础](../foundations/math.md)的线性代数部分。
-- 看不懂 softmax、交叉熵或 KL：读概率与信息论部分。
-- 看不懂反向传播：读链式法则与自动微分，再回到[预训练](../training/pretraining.md)。
+- 完全不知道从哪里开始：跟着[一次三候选预测](../foundations/math.md)从 shape 算到一次参数更新。
+- 看不懂矩阵、转置和广播：按需读[线性代数](../foundations/math-linear-algebra.md)。
+- 看不懂 softmax、交叉熵或 KL：按需读[概率与信息论](../foundations/math-probability.md)。
+- 看不懂反向传播、梯度累积或 AdamW：读[训练数学](../foundations/math-training.md)，再回到[预训练](../training/pretraining.md)。
 - 分不清一致性、正确性和指标有效性：先读[评测测量学](../quality/evaluation-measurement.md)。
 - 看不懂显著性、功效和置信区间：读[评测测量学](../quality/evaluation-measurement.md)与[评测统计](../foundations/evaluation-statistics.md)，再回到[评测方法](../quality/evaluation-methodology.md)。
 
