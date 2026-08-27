@@ -152,7 +152,7 @@ a=6,\quad b=7,\quad L=49.
     \(c\rightarrow b\rightarrow L\)，所以
     \(\frac{\partial L}{\partial c}=\frac{\partial L}{\partial b}\frac{\partial b}{\partial c}=14\times1=14\)。
 
-## 5. 反向传播不是 optimizer
+## 5. 反向传播计算梯度，optimizer 更新参数
 
 Backpropagation（反向传播）是高效应用链式法则，得到：
 
@@ -172,8 +172,8 @@ Optimizer 接收梯度和自己的状态，产生参数更新：
 - 调用 optimizer step：根据 gradient 真正改参数；
 - 调用 zero grad：清除或置空旧 gradient，避免无意累积。
 
-调试“loss 不下降”时，要分别检查 loss 是否连到参数、gradient 是否有限、参数是否交给 optimizer、
-step 是否真的执行，而不是笼统地说“反向传播坏了”。
+调试“loss 不下降”时，要分别检查 loss 是否连到参数、gradient 是否有限、参数是否交给 optimizer，
+以及 step 是否真的执行。这样可以定位训练链路中具体出错的环节。
 
 ## 6. 线性层的梯度怎样对应 shape
 

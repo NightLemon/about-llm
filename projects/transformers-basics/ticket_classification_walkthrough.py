@@ -1,15 +1,17 @@
 # ruff: noqa: RUF001 -- Full-width punctuation is intentional in Chinese learner output.
-"""用一个最小工单分类任务串起数据切分、训练目标和分类指标。
+"""用一个工单分类场景演示机器学习项目的四个关键环节。
 
-这个实验没有训练神经网络，而是把真实训练流程中最容易混淆的四件事压缩到一个文件里：
+脚本包含四个相互独立的教学片段。它们共用工单分类的业务背景，并按照
+“定义样本 → 检查切分 → 理解训练目标 → 检查分类指标”的顺序排列：
 
-1. 先确定一条样本究竟是一行数据，还是一段完整会话；
-2. 比较错误的逐行切分和正确的按会话切分；
-3. 对一条样本手算 softmax、负对数似然（NLL）和一次梯度更新；
-4. 对比总体 accuracy 与高风险类别 recall，观察总体分数如何掩盖关键失败。
+1. 确定一条独立样本是一行数据还是一段完整会话；
+2. 比较逐行切分与按会话切分，观察同一会话跨集合造成的数据泄漏；
+3. 给定一组固定 logits，手算 softmax、负对数似然（NLL）和一次梯度更新；
+4. 使用一组固定评测计数，对比总体 accuracy 与高风险类别 recall。
 
-运行 ``python projects/transformers-basics/ticket_classification_walkthrough.py`` 可以看到完整过程。
-文件中的小数据和 logits 都是为了方便手算而设置的，不代表真实模型效果。
+固定小数据、预设 logits 和评测计数让每一步都可以手算和核对。四部分展示概念之间的关系，
+其中的 logits 和指标来自各自的教学样例，并非同一次模型训练的连续输出。
+运行 ``python projects/transformers-basics/ticket_classification_walkthrough.py`` 可以查看完整结果。
 """
 
 from __future__ import annotations
@@ -32,7 +34,7 @@ class TicketRow:
     label: str
 
 
-# 两段会话各有两行，故意用来展示逐行随机切分造成的会话泄漏。
+# 两段会话各有两行，用来展示逐行独立分配造成的会话泄漏。
 ROWS: Final = (
     TicketRow("row-001", "thread-100", "refund"),
     TicketRow("row-002", "thread-100", "refund"),
@@ -52,7 +54,7 @@ ROW_LEVEL_SPLIT: Final = {
     "row-006": "validation",
 }
 
-# 正确示范：同一段会话的所有行属于同一个集合，测试时才是在评估“没见过的新会话”。
+# 按会话切分示范：同一段会话的所有行属于同一个集合，消除这里展示的 thread overlap。
 THREAD_LEVEL_SPLIT: Final = {
     "row-001": "train",
     "row-002": "train",
@@ -200,6 +202,23 @@ def _vector(values: object) -> str:
     return "[" + ", ".join(f"{float(value):.4f}" for value in values) + "]"
 
 
+def _split_members(assignments: dict[str, str]) -> list[str]:
+    """按集合列出 thread 及其 row，供命令行解释切分结果。"""
+
+    lines: list[str] = []
+    for split in ("train", "validation", "test"):
+        members: dict[str, list[str]] = {}
+        for row in ROWS:
+            if assignments[row.row_id] == split:
+                members.setdefault(row.thread_id, []).append(row.row_id)
+        rendered = ", ".join(
+            f"{thread_id}({', '.join(row_ids)})"
+            for thread_id, row_ids in members.items()
+        )
+        lines.append(f"  {split}: {rendered or '[]'}")
+    return lines
+
+
 def render_walkthrough(walkthrough: dict[str, object]) -> str:
     """把结构化结果按“切分→损失→更新→指标”的学习顺序渲染为中文。"""
 
@@ -221,9 +240,16 @@ def render_walkthrough(walkthrough: dict[str, object]) -> str:
             "工单分类最小学习闭环",
             "",
             "1. 先检查切分单位",
-            f"逐行切分的跨集合 thread: {row_level['overlap_threads']}",
-            f"按 thread 切分的跨集合 thread: {thread_level['overlap_threads']}",
-            "结论: 同一 thread 出现在训练和测试中时，测试集不再代表新会话。",
+            "本例把一个 thread_id 当作一段完整会话；同一 thread 的多行共享会话上下文。",
+            "逐行独立分配:",
+            *_split_members(ROW_LEVEL_SPLIT),
+            f"  跨集合 thread: {row_level['overlap_threads']}",
+            "按完整 thread 分配:",
+            *_split_members(THREAD_LEVEL_SPLIT),
+            f"  跨集合 thread: {thread_level['overlap_threads']}",
+            "含义: 逐行分配让 thread-100 和 thread-200 的一部分进入训练集，另一部分进入测试集。",
+            "测试集因而包含训练阶段已经见过部分上下文的会话，不能代表全新的会话。",
+            "审计边界: 此处只检查切分结构，没有训练模型，也没有测量泄漏使指标变化了多少。",
             "",
             "2. 再手算一条 fraud_review 样本",
             f"logits: {_vector(prediction['logits'])}",

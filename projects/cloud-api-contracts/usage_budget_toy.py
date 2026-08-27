@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
 from datetime import datetime, timezone
+from typing import Any
 
 from about_llm.integrations.cloud_api import (
     ChatMessage,
@@ -19,8 +22,8 @@ from about_llm.integrations.usage_budget import (
 )
 
 
-def main() -> None:
-    """按时间顺序执行两次逻辑调用并打印账本快照。"""
+def run_demo() -> dict[str, Any]:
+    """按时间顺序执行两次逻辑调用并返回完整账本报告。"""
 
     # 价格以每百万 token 的微美元记录，整数运算避免浮点货币误差。
     pricing = TokenPricingSnapshot(
@@ -56,15 +59,11 @@ def main() -> None:
         billing_scope="authored-account/project",
         estimated_input_tokens=60,
     )
-    print("reserved:", first)
-    print(
-        "settled:",
-        ledger.settle(
-            "call-1",
-            request_fingerprint=first.request_fingerprint,
-            actual_input_tokens=58,
-            actual_output_tokens=4,
-        ),
+    settled = ledger.settle(
+        "call-1",
+        request_fingerprint=first.request_fingerprint,
+        actual_input_tokens=58,
+        actual_output_tokens=4,
     )
 
     # 更换 API key 不应改变请求的计费指纹；密钥本身也不应写入账本。
@@ -82,13 +81,72 @@ def main() -> None:
         billing_scope="authored-account/project",
         estimated_input_tokens=20,
     )
-    print("reserved:", second)
-    print(
-        "uncertain:",
-        ledger.mark_usage_uncertain(
-            "call-2", request_fingerprint=second.request_fingerprint
-        ),
+    uncertain = ledger.mark_usage_uncertain(
+        "call-2", request_fingerprint=second.request_fingerprint
     )
+    return {
+        "schema_version": 1,
+        "scenario": "in-memory pre-call reservation and post-call usage accounting",
+        "configuration": {
+            "pricing": {
+                "pricing_id": pricing.pricing_id,
+                "provider": pricing.provider,
+                "model": pricing.model,
+                "revision": pricing.revision,
+                "checked_at": pricing.checked_at.isoformat(),
+                "input_microusd_per_million": pricing.input_microusd_per_million,
+                "output_microusd_per_million": pricing.output_microusd_per_million,
+            },
+            "limits": {
+                "max_input_tokens": 100,
+                "max_output_tokens": 20,
+                "max_estimated_microusd": 140,
+            },
+            "billing_scope": "authored-account/project",
+        },
+        "input": {
+            "messages": [asdict(message) for message in messages],
+            "model": "model",
+            "base_url": "https://provider.invalid",
+            "api_key_included_in_report": False,
+        },
+        "transitions": [
+            {
+                "reservation_id": "call-1",
+                "path": ["reserved", "settled"],
+                "reservation": asdict(first),
+                "provider_reported_usage": {
+                    "input_tokens": 58,
+                    "output_tokens": 4,
+                },
+                "final_snapshot": asdict(settled),
+            },
+            {
+                "reservation_id": "call-2",
+                "path": ["reserved", "uncertain"],
+                "reservation": asdict(second),
+                "provider_reported_usage": None,
+                "final_snapshot": asdict(uncertain),
+            },
+        ],
+        "conclusion": {
+            "settled_call_commits_reported_usage_and_releases_unused_reservation": True,
+            "uncertain_call_commits_the_full_reserved_worst_case": True,
+        },
+        "scope": {
+            "ledger_storage": "in-memory",
+            "network_used": False,
+            "provider_response_or_invoice_authenticated": False,
+            "exactly_once_remote_billing_proved": False,
+            "microusd_values_are_local_estimates": True,
+        },
+    }
+
+
+def main() -> None:
+    """执行两条预算状态路径并打印结构化报告。"""
+
+    print(json.dumps(run_demo(), ensure_ascii=False, indent=2, allow_nan=False))
 
 
 if __name__ == "__main__":

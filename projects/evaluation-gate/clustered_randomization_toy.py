@@ -21,8 +21,27 @@ def main() -> None:
     baseline = [0, 0, 0, 0, 0, 0]
     candidate = [1, 1, 1, 1, 1, -1]
     clusters = ["user-a"] * 5 + ["user-b"]
-    # 三种结果并排保存，让读者直接观察独立性假设如何改变 p-value。
+    # 固定单侧备择，前两项只改变翻转单位，后两项只改变 cluster 权重。
     artifact = {
+        "experiment": {
+            "paired_case_unit": "one scored case",
+            "cluster_unit": "one user",
+            "naive_sign_flip": "flip each of six case differences independently",
+            "cluster_sign_flip": "flip all differences from the same user together",
+            "authored_cluster_sizes": {"user-a": 5, "user-b": 1},
+            "alternative_for_all_tests": "greater",
+            "comparison_design": {
+                "sign_flip_unit": (
+                    "compare naive_case_sign_flip with cluster_joint_case_weighted; "
+                    "case weighting and the alternative stay fixed"
+                ),
+                "cluster_weighting": (
+                    "compare cluster_joint_case_weighted with "
+                    "cluster_joint_equal_weighted; the sign-flip unit and alternative "
+                    "stay fixed"
+                ),
+            },
+        },
         "authored_case_scores": {
             "baseline": baseline,
             "candidate": candidate,
@@ -45,8 +64,12 @@ def main() -> None:
             candidate,
             clusters,
             cluster_weighting="equal",
-            alternative="two-sided",
+            alternative="greater",
         ).to_dict(),
+        "conclusion": (
+            "joint cluster flips preserve the authored within-user dependence; changing "
+            "from case weighting to equal-cluster weighting also changes the estimand"
+        ),
         "scope": {
             "causal_or_general_model_improvement_proved": False,
             "cluster_joint_sign_flip_executed": True,

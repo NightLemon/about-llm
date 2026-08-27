@@ -7,6 +7,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sys
+from contextlib import redirect_stdout
 from importlib.metadata import version
 from pathlib import Path
 
@@ -142,6 +145,12 @@ def _training_run_report(
     }
 
 
+def _print_report(payload: object) -> None:
+    """把完成状态作为单个严格 JSON 对象写到 stdout。"""
+
+    print(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False))
+
+
 def main() -> None:
     """依次执行数据门禁、tokenization 审计、LoRA SFT 与 bundle 发布。"""
 
@@ -156,6 +165,28 @@ def main() -> None:
         args.output_dir / "sft-training-readiness.json", readiness.to_dict()
     )
     if args.data_preflight_only:
+        _print_report(
+            {
+                "report_version": "about-llm.sft-preflight.v1",
+                "mode": "data_preflight",
+                "status": "completed",
+                "model": {"model_id": args.model_id, "revision": args.revision},
+                "record_count": len(records),
+                "model_loaded": False,
+                "data": {
+                    "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+                    "audit_manifest_fingerprint": audit.manifest_fingerprint,
+                },
+                "artifacts": [
+                    str(args.output_dir / "sft-data-audit.json"),
+                    str(args.output_dir / "sft-training-readiness.json"),
+                ],
+                "evidence_boundary": (
+                    "Data contracts and split readiness were checked; tokenizer, model, "
+                    "CUDA, label projection, and optimization were not executed."
+                ),
+            }
+        )
         return
 
     from transformers import AutoTokenizer
@@ -204,6 +235,28 @@ def main() -> None:
         args.output_dir / "sft-template-mask-audit.json", mask_audit.to_dict()
     )
     if args.tokenization_preflight_only:
+        _print_report(
+            {
+                "report_version": "about-llm.sft-preflight.v1",
+                "mode": "tokenization_preflight",
+                "status": "completed",
+                "model": {"model_id": args.model_id, "revision": args.revision},
+                "record_count": len(records),
+                "model_loaded": False,
+                "tokenizer_loaded": True,
+                "data": {
+                    "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+                    "assistant_mask_manifest_fingerprint": mask_audit.manifest_fingerprint,
+                },
+                "artifacts": [
+                    str(args.output_dir / "sft-template-mask-audit.json"),
+                ],
+                "evidence_boundary": (
+                    "Data and assistant-label tokenization were checked; model weights, "
+                    "CUDA, final Trainer collation, and optimization were not executed."
+                ),
+            }
+        )
         return
 
     import torch
@@ -290,29 +343,32 @@ def main() -> None:
     reset_cuda_peak_memory(torch, device)
     memory_before = cuda_memory_snapshot(torch, device)
     try:
-        train_output = trainer.train(
-            resume_from_checkpoint=args.resume_from_checkpoint
-        )
+        with redirect_stdout(sys.stderr):
+            train_output = trainer.train(
+                resume_from_checkpoint=args.resume_from_checkpoint
+            )
     except torch.OutOfMemoryError:
         memory_after = cuda_memory_snapshot(torch, device)
+        run_report = _training_run_report(
+            args=args,
+            readiness_fingerprint=readiness.manifest_fingerprint,
+            assistant_mask_fingerprint=mask_audit.manifest_fingerprint,
+            final_labels_fingerprint=label_audit.labels_fingerprint,
+            target_modules=target_modules,
+            status="cuda_out_of_memory",
+            optimizer_step_count=int(trainer.state.global_step),
+            trainable_parameter_count=trainable_parameter_count,
+            total_parameter_count=total_parameter_count,
+            trainer_metrics={},
+            runtime=runtime,
+            memory_before=memory_before,
+            memory_after=memory_after,
+        )
         write_strict_json(
             args.output_dir / "sft-training-run.json",
-            _training_run_report(
-                args=args,
-                readiness_fingerprint=readiness.manifest_fingerprint,
-                assistant_mask_fingerprint=mask_audit.manifest_fingerprint,
-                final_labels_fingerprint=label_audit.labels_fingerprint,
-                target_modules=target_modules,
-                status="cuda_out_of_memory",
-                optimizer_step_count=int(trainer.state.global_step),
-                trainable_parameter_count=trainable_parameter_count,
-                total_parameter_count=total_parameter_count,
-                trainer_metrics={},
-                runtime=runtime,
-                memory_before=memory_before,
-                memory_after=memory_after,
-            ),
+            run_report,
         )
+        _print_report(run_report)
         raise
     adapter_directory = args.output_dir / "adapter"
     tokenizer_directory = args.output_dir / "tokenizer"
@@ -328,26 +384,25 @@ def main() -> None:
         save_embedding_layers=False,
     )
     tokenizer.save_pretrained(tokenizer_directory)
-    write_strict_json(
-        args.output_dir / "sft-training-run.json",
-        _training_run_report(
-            args=args,
-            readiness_fingerprint=readiness.manifest_fingerprint,
-            assistant_mask_fingerprint=mask_audit.manifest_fingerprint,
-            final_labels_fingerprint=label_audit.labels_fingerprint,
-            target_modules=target_modules,
-            status="completed",
-            optimizer_step_count=int(trainer.state.global_step),
-            trainable_parameter_count=trainable_parameter_count,
-            total_parameter_count=total_parameter_count,
-            trainer_metrics=normalize_trainer_metrics(train_output.metrics),
-            runtime=runtime,
-            memory_before=memory_before,
-            memory_after=cuda_memory_snapshot(torch, device),
-        ),
+    run_report = _training_run_report(
+        args=args,
+        readiness_fingerprint=readiness.manifest_fingerprint,
+        assistant_mask_fingerprint=mask_audit.manifest_fingerprint,
+        final_labels_fingerprint=label_audit.labels_fingerprint,
+        target_modules=target_modules,
+        status="completed",
+        optimizer_step_count=int(trainer.state.global_step),
+        trainable_parameter_count=trainable_parameter_count,
+        total_parameter_count=total_parameter_count,
+        trainer_metrics=normalize_trainer_metrics(train_output.metrics),
+        runtime=runtime,
+        memory_before=memory_before,
+        memory_after=cuda_memory_snapshot(torch, device),
     )
+    write_strict_json(args.output_dir / "sft-training-run.json", run_report)
     # 只有训练报告与 adapter/tokenizer 文件齐全后才发布可独立验证的 bundle。
     publish_sft_adapter_bundle(args.output_dir)
+    _print_report(run_report)
 
 
 if __name__ == "__main__":

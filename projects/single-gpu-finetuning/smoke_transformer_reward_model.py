@@ -272,6 +272,12 @@ def run_smoke(
         raise AssertionError("reward head and Transformer backbone must both receive updates")
     return {
         "schema_version": 1,
+        "task_contract": {
+            "training_unit": "one authored prompt with chosen and rejected completions",
+            "sequence_scoring": "one scalar for each full prompt-plus-completion sequence",
+            "loss": "softplus(-(chosen_score - rejected_score))",
+            "counterfactual": "swap the authored good/bad response cues for one prompt",
+        },
         "train_manifest_fingerprint": train_audit.manifest_fingerprint,
         "combined_manifest_fingerprint_from_readiness": (
             readiness.combined_manifest_fingerprint
@@ -286,6 +292,16 @@ def run_smoke(
         "initial_metrics": initial_metrics,
         "final_metrics": final_metrics,
         "authored_counterfactual_metrics": counterfactual_metrics,
+        "outcome": {
+            "training_loss_decreased": (
+                float(final_metrics["mean_loss"])
+                < float(initial_metrics["mean_loss"])
+            ),
+            "all_authored_training_pairs_ranked_chosen_over_rejected": (
+                final_metrics["strict_pair_accuracy"] == 1
+            ),
+            "counterfactual_robustness_established": False,
+        },
         "reward_head_parameters_changed": reward_head_changed,
         "transformer_backbone_parameters_changed": embedding_changed,
         "scope": {

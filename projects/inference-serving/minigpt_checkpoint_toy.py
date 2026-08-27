@@ -93,6 +93,13 @@ def run_toy(
     unique_parameters = tuple(fp32_model.named_parameters())
     return {
         "schema_version": 1,
+        "configuration": {
+            "seed": seed,
+            "bit_width": bit_width,
+            "group_size": group_size,
+            "generation_max_new_tokens": 3,
+            "generation_strategy": "greedy",
+        },
         "identity": {
             "model_id": loaded.identity.model_id,
             "model_revision": loaded.identity.model_revision,

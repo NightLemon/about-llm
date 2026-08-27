@@ -151,12 +151,23 @@ def _run_case(
     document_ids = [result.document.document_id for result in canonical]
     return {
         "principals": list(principals),
+        "authorized_evidence": [
+            {
+                "rank": result.rank,
+                "document_id": result.document.document_id,
+                "stable_source_id": result.document.metadata["source_id"],
+                "text": result.document.text,
+                "score": result.score,
+            }
+            for result in canonical
+        ],
         "canonical_document_ids": document_ids,
         "langchain_document_ids": [document.id for document in langchain_documents],
         "llamaindex_document_ids": [item.node.node_id for item in llamaindex_nodes],
         "retrieval_scores": [result.score for result in canonical],
         "prompt_sha256": hashlib.sha256(langchain_prompt.encode("utf-8")).hexdigest(),
         "prompt_utf8_bytes": len(langchain_prompt.encode("utf-8")),
+        "rendered_prompt": langchain_prompt,
         "answer_action": langchain_answer.action.value,
         "answer_text": langchain_answer.answer_text,
         "answer_artifact_fingerprint": langchain_answer.artifact_fingerprint,

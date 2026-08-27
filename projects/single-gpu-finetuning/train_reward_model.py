@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from contextlib import redirect_stdout
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -85,6 +87,12 @@ def _write_json(path: Path, payload: object) -> None:
     )
 
 
+def _print_report(payload: object) -> None:
+    """把完成状态作为单个严格 JSON 对象写到 stdout。"""
+
+    print(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False))
+
+
 def _comma_separated(value: str, label: str) -> list[str]:
     """解析不能为空的逗号分隔模块名列表。"""
 
@@ -126,6 +134,29 @@ def main() -> None:
         },
     )
     if args.data_preflight_only:
+        _print_report(
+            {
+                "report_version": "about-llm.reward-model-preflight.v1",
+                "mode": "data_preflight",
+                "status": "completed",
+                "model": {"model_id": args.model_id, "revision": args.revision},
+                "pair_count": len(records),
+                "model_loaded": False,
+                "data": {
+                    "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+                    "audit_manifest_fingerprint": audit.manifest_fingerprint,
+                },
+                "artifacts": [
+                    str(args.output_dir / "preference-train-audit.json"),
+                    str(args.output_dir / "preference-training-readiness.json"),
+                    str(args.output_dir / "reward-model-data-contract.json"),
+                ],
+                "evidence_boundary": (
+                    "Preference structure, split, and readiness were checked; tokenizer, "
+                    "reward model, pairwise loss, and optimization were not executed."
+                ),
+            }
+        )
         return
 
     from transformers import AutoTokenizer
@@ -195,6 +226,31 @@ def main() -> None:
         tokenization_audit.to_dict(),
     )
     if args.tokenization_preflight_only:
+        _print_report(
+            {
+                "report_version": "about-llm.reward-model-preflight.v1",
+                "mode": "tokenization_preflight",
+                "status": "completed",
+                "model": {"model_id": args.model_id, "revision": args.revision},
+                "pair_count": len(records),
+                "model_loaded": False,
+                "tokenizer_loaded": True,
+                "data": {
+                    "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+                    "tokenization_manifest_fingerprint": (
+                        tokenization_audit.manifest_fingerprint
+                    ),
+                },
+                "artifacts": [
+                    str(args.output_dir / "preference-tokenization-audit.json"),
+                ],
+                "evidence_boundary": (
+                    "Preference data and full-sequence tokenization were checked; reward "
+                    "model weights, pairwise optimization, and held-out evaluation were "
+                    "not executed."
+                ),
+            }
+        )
         return
 
     import torch
@@ -329,26 +385,56 @@ def main() -> None:
     if trainable_parameter_count <= 0 or trainable_parameter_count >= total_parameter_count:
         raise AssertionError("LoRA reward model must have a strict trainable subset")
     # Trainer 对每一对计算 chosen score 与 rejected score 的 pairwise loss。
-    train_result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
-    _write_json(
-        args.output_dir / "reward-model-train-result.json",
-        {
-            "schema_version": 1,
-            "global_step": trainer.state.global_step,
-            "prepared_pair_count": len(prepared),
-            "trainable_parameter_count": trainable_parameter_count,
-            "total_parameter_count": total_parameter_count,
-            "metrics": dict(train_result.metrics),
-            "scope": {
-                "trl_reward_trainer_executed": True,
-                "held_out_dataset_passed_to_trainer": False,
-                "target_model_quality_proved": False,
-                "cuda_or_qlora_executed": args.qlora,
-            },
-        },
-    )
+    with redirect_stdout(sys.stderr):
+        train_result = trainer.train(
+            resume_from_checkpoint=args.resume_from_checkpoint
+        )
     trainer.save_model()
     tokenizer.save_pretrained(args.output_dir)
+    run_report = {
+        "schema_version": 1,
+        "report_version": "about-llm.reward-model-training-run.v1",
+        "status": "completed",
+        "model": {"model_id": args.model_id, "revision": args.revision},
+        "global_step": int(trainer.state.global_step),
+        "prepared_pair_count": len(prepared),
+        "trainable_parameter_count": trainable_parameter_count,
+        "total_parameter_count": total_parameter_count,
+        "training": {
+            "qlora": args.qlora,
+            "target_modules": targets,
+            "modules_to_save": modules_to_save,
+            "rank": args.rank,
+            "alpha": args.alpha,
+            "max_length": args.max_length,
+            "mixed_precision_mode": "bf16" if use_bf16 else "fp16" if use_fp16 else "disabled",
+            "gradient_checkpointing": args.gradient_checkpointing,
+            "resume_from_checkpoint": args.resume_from_checkpoint,
+        },
+        "data": {
+            "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+            "tokenization_manifest_fingerprint": tokenization_audit.manifest_fingerprint,
+            "held_out_dataset_passed_to_trainer": False,
+        },
+        "metrics": dict(train_result.metrics),
+        "artifacts": {
+            "output_directory": str(args.output_dir),
+            "model_and_tokenizer_saved": True,
+        },
+        "scope": {
+            "trl_reward_trainer_executed": True,
+            "held_out_dataset_passed_to_trainer": False,
+            "target_model_quality_proved": False,
+            "cuda_or_qlora_executed": args.qlora,
+        },
+        "evidence_boundary": (
+            "This report records pairwise optimization on the authored training split. "
+            "It does not include held-out reward accuracy, human-label validity, policy "
+            "optimization, safety alignment, or production convergence."
+        ),
+    }
+    _write_json(args.output_dir / "reward-model-train-result.json", run_report)
+    _print_report(run_report)
 
 
 if __name__ == "__main__":

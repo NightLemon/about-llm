@@ -56,6 +56,7 @@ def _result_rows(results: tuple[SearchResult, ...] | list[SearchResult]) -> list
             "rank": result.rank,
             "document_id": result.document.document_id,
             "stable_source_id": result.document.metadata["source_id"],
+            "text": result.document.text,
             "score": result.score,
             "source": result.source,
         }
@@ -143,6 +144,13 @@ def _request_row(
             "used_cost_units": artifact.packed_context.used_cost_units,
             "source_map": {
                 short_id: document.metadata["source_id"]
+                for short_id, document in artifact.packed_context.context.sources.items()
+            },
+            "selected_evidence": {
+                short_id: {
+                    "stable_source_id": document.metadata["source_id"],
+                    "text": document.text,
+                }
                 for short_id, document in artifact.packed_context.context.sources.items()
             },
             "decisions": _packing_rows(artifact),

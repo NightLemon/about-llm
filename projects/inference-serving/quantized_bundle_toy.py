@@ -89,6 +89,17 @@ def run_toy(
     )
     return {
         "schema_version": 1,
+        "configuration": {
+            "seed": seed,
+            "bit_width": bit_width,
+            "group_size": group_size,
+            "input_shape": list(inputs.shape),
+            "layer_weight_shapes": [
+                list(first_weight.shape),
+                list(second_weight.shape),
+            ],
+            "activation": "tanh",
+        },
         "bundle_format_version": QUANTIZED_BUNDLE_FORMAT_VERSION,
         "bundle_schema_version": QUANTIZED_BUNDLE_SCHEMA_VERSION,
         "identity": reloaded.identity.to_dict(),

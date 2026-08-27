@@ -1,0 +1,6 @@
+# These fixtures are hashed as exact bytes by the recorded audit report.
+/projects/inference-serving/attempts.example.jsonl text eol=lf
+/projects/inference-serving/attempts.manifest.example.json text eol=lf
+/projects/synthetic-data-audit/*.json text eol=lf
+/projects/synthetic-data-audit/*.jsonl text eol=lf
+/projects/transformers-basics/release-evidence/*.json text eol=lf

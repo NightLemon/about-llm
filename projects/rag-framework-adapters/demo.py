@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+
 from about_llm.integrations.rag_frameworks import (
     to_langchain_documents,
     to_llamaindex_nodes,
@@ -27,9 +29,38 @@ def main() -> None:
     results = index.search("RAG 检索", tenant_id="demo")
     langchain_documents = to_langchain_documents(results)
     llamaindex_nodes = to_llamaindex_nodes(results)
-    print("canonical ids:", [item.document.document_id for item in results])
-    print("LangChain ids:", [item.id for item in langchain_documents])
-    print("LlamaIndex ids:", [item.node.node_id for item in llamaindex_nodes])
+    canonical_ids = [item.document.document_id for item in results]
+    langchain_ids = [item.id for item in langchain_documents]
+    llamaindex_ids = [item.node.node_id for item in llamaindex_nodes]
+    report = {
+        "scenario": "adapt one authorized canonical retrieval result into two framework types",
+        "input": {
+            "query": "RAG 检索",
+            "tenant_id": "demo",
+            "documents": [
+                {
+                    "document_id": item.document.document_id,
+                    "text": item.document.text,
+                }
+                for item in results
+            ],
+        },
+        "document_ids": {
+            "canonical": canonical_ids,
+            "langchain": langchain_ids,
+            "llamaindex": llamaindex_ids,
+        },
+        "conclusion": {
+            "langchain_preserved_document_ids": langchain_ids == canonical_ids,
+            "llamaindex_preserved_document_ids": llamaindex_ids == canonical_ids,
+        },
+        "scope": {
+            "retrieval_and_acl_executed_once_in_canonical_layer": True,
+            "frameworks_retrieved_or_reauthorized_documents": False,
+            "answer_generation_or_framework_quality_compared": False,
+        },
+    }
+    print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
 
 
 if __name__ == "__main__":

@@ -48,6 +48,16 @@ def main() -> None:
         seed=7,
     )
     artifact = {
+        "experiment": {
+            "paired_unit": "the baseline and candidate values at one list position",
+            "bootstrap_purpose": "estimate uncertainty in the paired mean difference",
+            "exact_sign_flip_purpose": "enumerate the paired sharp-null sign distribution",
+            "monte_carlo_purpose": (
+                "approximate that sign distribution when exact enumeration is disabled"
+            ),
+            "nonzero_pairs": 4,
+            "tied_pairs_removed_from_sign_flip": 1,
+        },
         "authored_case_scores": {
             "baseline": baseline,
             "candidate": candidate,
@@ -61,6 +71,10 @@ def main() -> None:
         "exact_greater": exact_greater.to_dict(),
         "exact_two_sided": exact_two_sided.to_dict(),
         "seeded_monte_carlo_greater": monte_carlo.to_dict(),
+        "conclusion": (
+            "bootstrap intervals and sign-flip p-values answer different questions; "
+            "the seeded Monte Carlo result approximates the exact sign-flip calculation"
+        ),
         "scope": {
             "paired_case_sign_flip_distribution_executed": True,
             "paired_case_bootstrap_executed": True,
