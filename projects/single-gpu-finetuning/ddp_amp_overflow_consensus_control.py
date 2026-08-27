@@ -1,10 +1,10 @@
-"""Two-process CPU/Gloo control for DDP, GradScaler, and overflow consensus.
+"""用两个 DDP 进程观察 AMP overflow 发生在不同阶段时会怎样。
 
-The three authored paths distinguish failures created before DDP gradient
-reduction from a rank-local fault injected after reduction but before
-``GradScaler.unscale_``.  The latter is deliberately not presented as normal
-DDP behavior: it models application code, a custom communication path, or a
-fault that can make optimizer decisions differ across ranks.
+实验先做一次正常 AdamW 更新，再比较三条路径：同步前某 rank 产生非有限梯度、同步后只在
+rank 0 注入故障且各 rank 独立决定、以及同步后用一次 all-reduce 形成全局跳步决定。前一种
+非有限值会由 DDP reduction 传播；后一种模拟应用代码、自定义通信或硬件故障，并不是普通
+DDP 必然产生的行为。实验只说明 optimizer、scheduler 与 GradScaler 状态如何保持一致，
+不代表 CPU 人工故障等同于真实 CUDA overflow。
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ CASE_NAMES: tuple[CaseName, ...] = (
 
 
 class ScalarLinear(nn.Module):
-    """A deterministic one-parameter model with an autocast-visible matmul."""
+    """只有一个参数的线性层，便于逐 rank 比较全部训练状态。"""
 
     def __init__(self) -> None:
         super().__init__()
@@ -166,6 +166,8 @@ def _finite_warmup(
     scheduler: torch.optim.lr_scheduler.StepLR,
     scaler: torch.amp.GradScaler,
 ) -> None:
+    """让所有场景从同一个已执行一次 AdamW step 的有限状态开始。"""
+
     optimizer.zero_grad(set_to_none=True)
     _scaled_backward(ddp_model, scaler, loss_multiplier=1.0)
     scaler.unscale_(optimizer)
@@ -181,6 +183,8 @@ def _finite_warmup(
 
 
 def _run_case(rank: int, case: CaseName) -> dict[str, object]:
+    """执行一种 overflow 时序并记录每个训练状态是否真正前进。"""
+
     model = ScalarLinear()
     ddp_model = DistributedDataParallel(model)
     optimizer = torch.optim.AdamW(
@@ -202,6 +206,7 @@ def _run_case(rank: int, case: CaseName) -> dict[str, object]:
 
     local_after_no_sync: dict[str, bool | float | None] | None = None
     if case == "pre_reduction_rank_local_overflow":
+        # rank 0 先在 no_sync microbatch 中制造 inf，最终同步 microbatch 会传播它。
         with ddp_model.no_sync():
             output_dtype = _scaled_backward(
                 ddp_model,
@@ -217,6 +222,7 @@ def _run_case(rank: int, case: CaseName) -> dict[str, object]:
 
     after_reduction = _gradient_observation(model)
     if case != "pre_reduction_rank_local_overflow" and rank == 0:
+        # 这是同步完成后的显式故障注入，用来暴露各 rank 独立 GradScaler 决策的风险。
         if model.weight.grad is None:
             raise AssertionError("fault injection requires a populated gradient")
         model.weight.grad.fill_(float("inf"))
@@ -231,14 +237,13 @@ def _run_case(rank: int, case: CaseName) -> dict[str, object]:
     global_nonfinite: bool | None = None
     scaler_step_called = True
     if case == "post_reduction_rank0_fault_with_global_gate":
+        # MAX all-reduce 相当于“任一 rank 非有限，则所有 rank 都跳过本次提交”。
         nonfinite_flag = torch.tensor([int(local_nonfinite)], dtype=torch.int32)
         dist.all_reduce(nonfinite_flag, op=dist.ReduceOp.MAX)
         global_nonfinite = bool(nonfinite_flag.item())
         if global_nonfinite:
             scaler_step_called = False
-            # GradScaler has no public API for importing another rank's
-            # found-inf flag.  The application-owned gate therefore skips
-            # scaler.step everywhere and applies one explicit common backoff.
+            # GradScaler 没有导入其他 rank found-inf 标志的公开 API，因此应用层统一跳步并退火。
             scaler.update(new_scale=scale_before * BACKOFF_FACTOR)
         else:
             scaler.step(optimizer)

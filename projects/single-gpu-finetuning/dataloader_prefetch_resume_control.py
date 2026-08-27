@@ -1,10 +1,10 @@
-"""Cross-process DataLoader prefetch/resume control on CPU.
+"""演示 DataLoader 预取为何会让“已发出位置”不同于“已完成位置”。
 
-The control distinguishes the sampler cursor already emitted into worker
-queues from the sample boundary actually committed by the training loop.  It
-also contrasts stateful worker-local randomness with sample-keyed stateless
-randomness.  It does not serialize DataLoader internals or claim arbitrary
-stochastic transforms can be resumed exactly.
+实验在独立 CPU 进程中先消费 3 个样本并保存 checkpoint。两个恢复对照分别从训练主循环
+真正完成的 committed cursor，以及 sampler 已提前送进 worker 队列的 emitted cursor 继续。
+前者不会漏样本，后者会跳过只被预取但尚未训练的样本。实验还比较 worker 局部随机数与
+按 sample ID 派生的无状态随机数；它没有序列化 DataLoader 内部队列，也不能保证任意随机
+数据增强都能精确恢复。
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def _dataset_identity() -> str:
 
 
 class PrefetchDataset(Dataset[dict[str, int | float]]):
-    """Return both worker-stateful and sample-keyed random observations."""
+    """同时返回依赖 worker 状态和只依赖 sample ID 的两种随机观测。"""
 
     def __len__(self) -> int:
         return DATASET_SIZE
@@ -78,7 +78,9 @@ class PrefetchDataset(Dataset[dict[str, int | float]]):
         if worker is None:
             raise RuntimeError("this fixture requires a real DataLoader worker")
 
+        # 这个值取决于样本落到哪个 worker 以及该 worker 已消费多少次 RNG。
         worker_rng_value = float(torch.rand((), dtype=torch.float64).item())
+        # sample-keyed 随机数只由样本身份派生，跨进程恢复后仍可重建同一个值。
         digest = hashlib.sha256(
             f"{SAMPLE_KEY_NAMESPACE}:{sample_id}".encode()
         ).digest()
@@ -97,7 +99,7 @@ class PrefetchDataset(Dataset[dict[str, int | float]]):
 
 
 class TrackingOffsetSampler(Sampler[int]):
-    """Expose how far DataLoader has requested indices from a fixed order."""
+    """记录 DataLoader 已从固定顺序中请求到哪里，而非训练完成到哪里。"""
 
     def __init__(self, permutation: tuple[int, ...], start_cursor: int) -> None:
         if tuple(sorted(permutation)) != tuple(range(DATASET_SIZE)):
@@ -143,6 +145,8 @@ def _run_loader(
     start_cursor: int,
     max_records: int | None,
 ) -> dict[str, object]:
+    """运行一个 loader 阶段并分别记录返回样本与 sampler 发出位置。"""
+
     sampler = TrackingOffsetSampler(PERMUTATION, start_cursor)
     loader_generator = torch.Generator(device="cpu")
     loader_generator.manual_seed(LOADER_GENERATOR_SEED)
@@ -181,6 +185,7 @@ def _run_loader(
                     ),
                 }
             )
+        # 即使主循环只拿到少量 batch，worker 预取也可能已让 sampler 向前移动多步。
         emitted_cursor = sampler.emitted_cursor
     finally:
         # CPython destroys the non-persistent iterator here and joins workers.
@@ -239,6 +244,8 @@ def _parse_strict_json(raw: str) -> Any:
 
 
 def _checkpoint_payload(phase_report: dict[str, object]) -> dict[str, object]:
+    """只保存可公开验证的恢复契约，不尝试保存私有队列状态。"""
+
     records = phase_report.get("records")
     if not isinstance(records, list):
         raise AssertionError("phase records must be a list")
@@ -337,6 +344,8 @@ def _load_checkpoint(path: Path) -> tuple[dict[str, object], int]:
 
 
 def _worker_main(worker_kind: WorkerKind, checkpoint_path: Path) -> None:
+    """在独立进程中运行不间断、首阶段或某一种恢复路径。"""
+
     if worker_kind == "uninterrupted":
         report = _run_loader(
             worker_kind=worker_kind,
@@ -355,6 +364,7 @@ def _worker_main(worker_kind: WorkerKind, checkpoint_path: Path) -> None:
         )
     else:
         checkpoint, checkpoint_size = _load_checkpoint(checkpoint_path)
+        # 正确路径从主循环已完成的位置恢复；错误对照从 sampler 预取到的位置恢复。
         cursor_field = (
             "committed_cursor"
             if worker_kind == "resume_committed"
@@ -378,6 +388,8 @@ def _run_worker_process(
     worker_kind: WorkerKind,
     checkpoint_path: Path,
 ) -> dict[str, object]:
+    """启动新解释器，确保恢复阶段不能偷用上一阶段的进程内状态。"""
+
     completed = subprocess.run(
         [
             sys.executable,

@@ -1,4 +1,9 @@
-"""Task-incremental replay controls with explicit cost and statistical scope."""
+"""用两个会互相干扰的任务观察持续学习中的遗忘与经验回放。
+
+实验先训练任务 A，再训练规则相反的任务 B，并比较不回放、有限 reservoir buffer
+和完整回放三种策略。它会实际更新一个微型分类器，并用多随机种子与配对 bootstrap
+描述结果波动；它只解释 replay 的机制和计算代价，不能证明真实 LLM 一定不会遗忘。
+"""
 
 from __future__ import annotations
 
@@ -66,6 +71,8 @@ class TaskIncrementalClassifier(nn.Module):
 
 
 def _task_data(task_id: int, examples: int) -> tuple[Tensor, Tensor]:
+    """构造共享输入空间、但标签规则相反的两个任务。"""
+
     signal = torch.linspace(-2.0, 2.0, examples).unsqueeze(1)
     task_feature = torch.full((examples, 1), -1.0 if task_id == 0 else 1.0)
     labels = (signal[:, 0] > 0 if task_id == 0 else signal[:, 0] < 0).long()
@@ -107,6 +114,8 @@ def _prepare_after_task_a(
     tuple[float, float],
     tuple[float, float],
 ]:
+    """建立相同起点并完成任务 A，供后续策略公平复用。"""
+
     torch.manual_seed(config.seed)
     task_a = _task_data(0, config.examples_per_task)
     task_b = _task_data(1, config.examples_per_task)
@@ -133,6 +142,9 @@ def _train_task_b_strategy(
     replay_capacity: int,
     buffer_seed: int,
 ) -> tuple[ContinualLearningReport, tuple[int, ...]]:
+    """从同一任务 A 模型出发，用指定回放容量继续训练任务 B。"""
+
+    # Reservoir sampling 模拟容量有限的历史样本池；容量为零时就是直接微调任务 B。
     selected = reservoir_sample_indices(
         config.examples_per_task,
         replay_capacity,
@@ -140,6 +152,7 @@ def _train_task_b_strategy(
     )
     training_data = task_b
     if selected:
+        # 每一步都同时看到任务 B 与选中的任务 A 样本，因此不同策略的样本计算量并不相同。
         indices = torch.tensor(selected, dtype=torch.long)
         training_data = (
             torch.cat((task_b[0], task_a[0][indices]), dim=0),
@@ -184,7 +197,7 @@ def _scope_payload() -> dict[str, bool]:
 
 
 def run_experiment(config: ToyConfig | None = None) -> dict[str, Any]:
-    """Run the original single-seed no-replay/full-replay mechanism control."""
+    """用一个随机种子对照完全不回放与完整回放。"""
 
     if config is None:
         config = ToyConfig()
@@ -325,7 +338,7 @@ def run_benchmark(
     bootstrap_samples: int = 5_000,
     bootstrap_seed: int = 17,
 ) -> dict[str, Any]:
-    """Compare finite/full replay with no replay using paired seed-level bootstrap."""
+    """用多随机种子比较有限/完整回放，并估计相对不回放的差异。"""
 
     seed_tuple = tuple(seeds)
     if len(seed_tuple) < 2:
@@ -360,6 +373,7 @@ def run_benchmark(
     torch.use_deterministic_algorithms(True)
     runs: list[dict[str, Any]] = []
     for seed in seed_tuple:
+        # 同一 seed 下三种策略共享任务 A 的模型状态，差异因此能按 seed 配对比较。
         config = ToyConfig(seed=seed)
         task_a, task_b, base, baseline, after_a = _prepare_after_task_a(config)
         buffer_seed = seed + 10_000
@@ -396,6 +410,7 @@ def run_benchmark(
         )
 
     aggregate: dict[str, dict[str, float]] = {}
+    # 先报告每种策略的均值，再对“候选策略 - 不回放”做成对 bootstrap。
     for strategy in ("no_replay", "finite_reservoir", "full_replay"):
         aggregate[strategy] = {
             f"mean_{metric}": _mean(_metric_values(runs, strategy, metric))

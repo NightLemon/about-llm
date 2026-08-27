@@ -1,16 +1,14 @@
-"""Cross-process optimizer-commit resume control with real DataLoader workers.
+"""用真实 DataLoader worker 演示“读到样本”不等于“optimizer 已提交样本”。
 
-The fixture crashes after a third microbatch has been delivered and backward
-has run, while only the first two microbatches belong to a committed optimizer
-step.  The base checkpoint intentionally excludes the in-flight gradients.  A
-correct restart can either replay from the optimizer-committed cursor or load a
-digest-bound gradient sidecar.  The sidecar protocol additionally requires a
-strict manifest published last; incomplete publication snapshots fail closed.
-A negative control restarts from the later main-loop-consumed cursor without
-the gradients and silently loses one sample.
+训练每累积两个 microbatch 才执行一次 optimizer step。实验在第三个 microbatch 已完成
+backward、但尚未凑成下一次 step 时模拟崩溃：此时主循环消费位置是 3，真正提交位置仍是 2，
+sampler 又因预取走得更远。正确恢复可以从提交位置 2 重放，也可以额外恢复与基础 checkpoint
+摘要绑定的未提交梯度和 RNG，再从消费位置 3 继续；只从位置 3 恢复却丢掉梯度，会静默漏掉
+一个样本。
 
-This is a deterministic CPU/float64 control, not evidence about CUDA,
-distributed checkpointing, arbitrary trainers, or crash-durable storage.
+为了观察保存过程被打断的风险，实验按“基础 checkpoint → gradient sidecar → manifest”发布，
+并要求最后出现的 manifest 能绑定前两个文件。这里验证的是确定性 CPU/float64 小实验，不代表
+已经证明 CUDA、分布式 checkpoint 或真实存储在断电时也具备同样的持久性。
 """
 
 from __future__ import annotations
@@ -112,7 +110,7 @@ def _loader_contract() -> dict[str, object]:
 
 
 class CommitDataset(Dataset[dict[str, int | Tensor]]):
-    """Return deterministic examples and observable worker identities."""
+    """返回确定性样本，并暴露实际提供样本的 worker 身份。"""
 
     def __len__(self) -> int:
         return DATASET_SIZE
@@ -136,7 +134,7 @@ class CommitDataset(Dataset[dict[str, int | Tensor]]):
 
 
 class TrackingOffsetSampler(Sampler[int]):
-    """Yield a fixed permutation while exposing DataLoader prefetch progress."""
+    """按固定顺序产出索引，同时记录 DataLoader 预取已经请求到哪里。"""
 
     def __init__(self, start_cursor: int) -> None:
         if isinstance(start_cursor, bool) or not isinstance(start_cursor, int):
@@ -209,16 +207,20 @@ def _commit_window(
     *,
     rescale_partial: bool,
 ) -> None:
+    """把一个梯度累积窗口作为不可分割的 optimizer 提交边界。"""
+
     if not window_sample_ids:
         raise AssertionError("cannot commit an empty accumulation window")
     if len(window_sample_ids) > ACCUMULATION_STEPS:
         raise AssertionError("accumulation window exceeds the authored size")
     if rescale_partial and len(window_sample_ids) < ACCUMULATION_STEPS:
+        # 末尾不足一个完整窗口时补偿先前除以 ACCUMULATION_STEPS 的 loss。
         scale = ACCUMULATION_STEPS / len(window_sample_ids)
         for parameter in state.model.parameters():
             if parameter.grad is None:
                 raise AssertionError("partial window parameter gradient is missing")
             parameter.grad.mul_(scale)
+    # 只有 optimizer、scheduler、样本账本和 RNG 快照全部前进后，窗口才算 committed。
     state.optimizer.step()
     state.scheduler.step()
     state.optimizer.zero_grad(set_to_none=True)
@@ -234,6 +236,8 @@ def _run_segment(
     stop_after_records: int | None,
     initial_pending_sample_ids: list[int] | None = None,
 ) -> dict[str, object]:
+    """从指定 cursor 训练一段，并同时记录 consumed、emitted 与 committed 进度。"""
+
     initial_window_ids = list(initial_pending_sample_ids or [])
     if len(initial_window_ids) >= ACCUMULATION_STEPS:
         raise ValueError("initial pending window must be incomplete")
@@ -280,6 +284,7 @@ def _run_segment(
             sample_id = _scalar_int(batch, "sample_id")
             features = _tensor_batch(batch, "features")
             target = _tensor_batch(batch, "target").reshape(1, 1)
+            # 随机 mask 让错误的 RNG 恢复即使没有漏样本也会产生可观察的参数差异。
             stochastic_mask = (
                 (torch.rand_like(features) >= 0.5).to(features.dtype) * 2.0
             )
@@ -288,6 +293,7 @@ def _run_segment(
             if not bool(torch.isfinite(loss)):
                 raise AssertionError("training loss must be finite")
             # The installed PyTorch stubs do not type Tensor.backward().
+            # 每个 microbatch 只贡献窗口平均梯度的一部分，凑满窗口才允许 step。
             (loss / ACCUMULATION_STEPS).backward()  # type: ignore[no-untyped-call]
             consumed_ids.append(sample_id)
             worker_ids.append(_scalar_int(batch, "worker_id"))
@@ -295,6 +301,7 @@ def _run_segment(
             stochastic_mask_sha256.append(_tensor_sha256(stochastic_mask))
             window_ids.append(sample_id)
             if len(window_ids) == ACCUMULATION_STEPS:
+                # 到这里才跨过 optimizer commit boundary；此前只是主循环“消费过”。
                 committed = list(window_ids)
                 _commit_window(state, window_ids, rescale_partial=False)
                 new_committed_windows.append(committed)
@@ -306,6 +313,7 @@ def _run_segment(
                 stop_after_records is not None
                 and len(consumed_ids) == stop_after_records
             ):
+                # 故意停在第三个样本 backward 之后，留下一个未提交窗口和对应梯度。
                 stopped_early = True
                 break
         emitted_cursor = sampler.emitted_cursor
@@ -435,6 +443,8 @@ def _checkpoint_payload(
     state: RuntimeState,
     segment: Mapping[str, object],
 ) -> dict[str, object]:
+    """构造只代表上一次 optimizer 提交边界的基础 checkpoint。"""
+
     consumed_ids = segment["consumed_sample_ids"]
     emitted_cursor = segment["sampler_emitted_cursor_when_observed"]
     if not isinstance(consumed_ids, list) or not isinstance(emitted_cursor, int):
@@ -447,6 +457,7 @@ def _checkpoint_payload(
         "permutation": list(PERMUTATION),
         "loader_contract": _loader_contract(),
         "progress": {
+            # 三个 cursor 必须分开记录，恢复时不能把“已消费”误当成“已提交”。
             "optimizer_committed_cursor": COMMITTED_CURSOR_AT_CRASH,
             "main_loop_consumed_cursor": len(consumed_ids),
             "sampler_emitted_cursor": emitted_cursor,
@@ -478,6 +489,8 @@ def _inflight_sidecar_payload(
     *,
     base_checkpoint_sha256: str,
 ) -> dict[str, object]:
+    """保存未凑满窗口的梯度、样本账本和崩溃时 RNG。"""
+
     consumed_ids = segment["consumed_sample_ids"]
     emitted_cursor = segment["sampler_emitted_cursor_when_observed"]
     pending_ids = segment["pending_uncommitted_sample_ids"]
@@ -523,6 +536,8 @@ def _inflight_bundle_manifest_payload(
     sidecar_size_bytes: int,
     sidecar_sha256: str,
 ) -> dict[str, object]:
+    """生成最后发布的清单，用摘要把基础 checkpoint 与 sidecar 绑定。"""
+
     return {
         "schema_version": BUNDLE_MANIFEST_VERSION,
         "publication_state": "complete",
@@ -551,6 +566,8 @@ def _inflight_bundle_manifest_payload(
 
 
 def _write_checkpoint(path: Path, payload: Mapping[str, object]) -> tuple[int, str]:
+    """先写同目录临时文件并 fsync，再用 os.replace 发布单个文件。"""
+
     if path.exists():
         raise FileExistsError(f"refusing to overwrite checkpoint: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -685,6 +702,8 @@ def _read_torch_checkpoint(path: Path) -> tuple[object, int, str]:
 def _load_inflight_bundle_manifest(
     checkpoint_path: Path,
 ) -> tuple[dict[str, Any], int, str]:
+    """先验证完整发布清单及文件身份，再允许读取训练状态。"""
+
     manifest_path = _inflight_bundle_manifest_path(checkpoint_path)
     encoded, size, digest = _read_bounded_artifact(
         manifest_path,
@@ -765,6 +784,7 @@ def _load_inflight_bundle_manifest(
     )
     if bound_base_digest != base_digest:
         raise ValueError("in-flight bundle sidecar binding disagrees with base")
+    # 清单中的 size 与 digest 还要对当前文件重算，避免接受发布后被替换的 payload。
     _, actual_base_size, actual_base_digest = _read_bounded_artifact(
         checkpoint_path,
         maximum_bytes=CHECKPOINT_MAX_BYTES,
@@ -791,6 +811,8 @@ def _load_checkpoint(
     expected_size_bytes: int | None = None,
     expected_sha256: str | None = None,
 ) -> tuple[RuntimeState, dict[str, Any], int, str]:
+    """校验并恢复基础状态；刻意不恢复任何 in-flight gradient。"""
+
     raw, size, digest = _read_torch_checkpoint(path)
     if expected_size_bytes is not None and size != expected_size_bytes:
         raise ValueError("checkpoint size disagrees with bundle manifest")
@@ -998,6 +1020,8 @@ def _load_inflight_sidecar(
     restore_gradients: bool = True,
     restore_rng: bool = True,
 ) -> tuple[list[int], dict[str, Any], int, str]:
+    """校验 sidecar 与基础 checkpoint 的绑定，并按对照策略恢复梯度/RNG。"""
+
     if any(parameter.grad is not None for parameter in state.model.parameters()):
         raise AssertionError("base checkpoint must load without gradients")
     raw, size, digest = _read_torch_checkpoint(path)
@@ -1106,6 +1130,7 @@ def _load_inflight_sidecar(
         if not bool(torch.isfinite(gradient).all()):
             raise ValueError(f"in-flight gradient {name} must be finite")
         if restore_gradients:
+            # 恢复后，下一条样本的 backward 会继续累加到崩溃前未完成的窗口。
             parameter.grad = gradient.detach().cpu().clone()
     if restore_rng:
         try:
@@ -1120,6 +1145,9 @@ def _publish_inflight_bundle(
     state: RuntimeState,
     segment: Mapping[str, object],
 ) -> dict[str, object]:
+    """依次发布基础状态、未提交梯度 sidecar，最后发布完整性 manifest。"""
+
+    # manifest 最后发布：看到它就意味着前两个 payload 已经存在且身份已记录。
     size, digest = _write_checkpoint(
         checkpoint_path,
         _checkpoint_payload(state, segment),
@@ -1196,6 +1224,8 @@ def _expect_inflight_bundle_rejection(
 def _run_bundle_publication_fault_injection(
     checkpoint_path: Path,
 ) -> dict[str, object]:
+    """复制四种不完整或被篡改的目录快照，确认加载器全部拒绝。"""
+
     source_sidecar = _inflight_sidecar_path(checkpoint_path)
     source_manifest = _inflight_bundle_manifest_path(checkpoint_path)
     root = checkpoint_path.parent
@@ -1266,8 +1296,11 @@ def _run_bundle_publication_fault_injection(
 
 
 def _run_worker(mode: WorkerMode, checkpoint_path: Path) -> dict[str, object]:
+    """在一个全新进程中执行基线、崩溃阶段或指定恢复策略。"""
+
     torch.manual_seed(STOCHASTIC_MASK_SEED)
     if mode == "baseline":
+        # 不崩溃路径是所有恢复结果应匹配的参考轨迹。
         state = _new_state()
         segment = _run_segment(
             state,
@@ -1276,6 +1309,7 @@ def _run_worker(mode: WorkerMode, checkpoint_path: Path) -> dict[str, object]:
         )
         checkpoint: dict[str, object] | None = None
     elif mode == "phase1":
+        # 第三个样本 backward 后停止，并把基础状态与 in-flight 状态分开发布。
         state = _new_state()
         segment = _run_segment(
             state,
@@ -1284,6 +1318,7 @@ def _run_worker(mode: WorkerMode, checkpoint_path: Path) -> dict[str, object]:
         )
         checkpoint = _publish_inflight_bundle(checkpoint_path, state, segment)
     elif mode == "resume_committed":
+        # 基础 checkpoint 没有未提交梯度，所以必须从位置 2 重放第三个样本。
         state, progress, size, digest = _load_checkpoint(checkpoint_path)
         start_field = "optimizer_committed_cursor"
         start_cursor = _require_integer(progress[start_field], start_field)
@@ -1301,6 +1336,7 @@ def _run_worker(mode: WorkerMode, checkpoint_path: Path) -> dict[str, object]:
             "torch_rng_restored_from": "commit_boundary_base_checkpoint",
         }
     else:
+        # 其余路径先验证完整 bundle，再有选择地恢复 gradient 或 RNG 形成正负对照。
         bundle_manifest, manifest_size, manifest_digest = (
             _load_inflight_bundle_manifest(checkpoint_path)
         )
@@ -1397,6 +1433,8 @@ def _run_worker_process(
     mode: WorkerMode,
     checkpoint_path: Path,
 ) -> dict[str, Any]:
+    """用独立 Python 进程执行路径，避免误用父进程残留状态。"""
+
     completed = subprocess.run(
         [
             sys.executable,
@@ -1444,13 +1482,14 @@ def _max_parameter_difference(
 
 
 def run_control(script_path: Path | None = None) -> dict[str, object]:
-    """Execute uninterrupted, crash, two correct resumes, and two negatives."""
+    """运行完整轨迹、崩溃阶段、两种正确恢复和两种错误对照。"""
 
     entry = Path(__file__).resolve() if script_path is None else script_path.resolve()
     with tempfile.TemporaryDirectory(
         prefix="about-llm-optimizer-commit-resume-"
     ) as temporary_directory:
         checkpoint_path = Path(temporary_directory) / "checkpoint.pt"
+        # 六条顶层路径各用一个新进程，使“恢复成功”必须完全来自已发布 artifact。
         baseline = _run_worker_process(entry, "baseline", checkpoint_path)
         phase1 = _run_worker_process(entry, "phase1", checkpoint_path)
         publication_fault_injection = _run_bundle_publication_fault_injection(
@@ -1544,6 +1583,7 @@ def run_control(script_path: Path | None = None) -> dict[str, object]:
     ):
         raise AssertionError("stochastic mask traces must be lists")
     expected_emitted = CRASH_AFTER_CONSUMED + NUM_WORKERS * PREFETCH_FACTOR
+    # 既核对最终参数，也核对样本账本、随机 mask、optimizer step 与发布故障。
     assertions = {
         "all_top_level_segments_use_distinct_processes": len(set(pids)) == 6,
         "phase_stochastic_prefix_matches_uninterrupted": (

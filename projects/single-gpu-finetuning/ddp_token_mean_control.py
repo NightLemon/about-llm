@@ -1,4 +1,10 @@
-"""Two-process CPU/Gloo control for global masked-token mean gradients."""
+"""用两个真实 DDP 进程推导全局 masked-token mean 的正确缩放。
+
+两个 rank 的有效 token 数故意设成 1 和 3。实验比较三种 loss：正确的 ``D/N`` 缩放、
+漏乘 world size，以及直接对各 rank 的局部 token 求均值。DDP 默认会平均各 rank 梯度，
+因此只有先对全局有效 token 数做 all-reduce，再让局部 loss sum 乘 ``D/N``，才与把所有
+token 放在单进程中求均值一致。本实验只验证 CPU/Gloo 上的这个梯度恒等式。
+"""
 
 from __future__ import annotations
 
@@ -37,6 +43,8 @@ GRADIENT_PATHS: tuple[GradientPath, ...] = (
 
 
 def authored_rank_shards() -> tuple[CategoricalMicrobatch, ...]:
+    """构造有效 token 数不均衡的两个 rank shard。"""
+
     return (
         CategoricalMicrobatch(
             "rank-0",
@@ -59,7 +67,7 @@ def authored_rank_shards() -> tuple[CategoricalMicrobatch, ...]:
 
 
 class SharedBiasClassifier(nn.Module):
-    """Add one shared two-class parameter to rank-specific fixed logits."""
+    """给各 rank 固定 logits 加同一个偏置，使目标梯度可独立手算。"""
 
     def __init__(self) -> None:
         super().__init__()
@@ -101,6 +109,8 @@ def _run_gradient_path(
     path: GradientPath,
     global_valid_token_count: int,
 ) -> list[float]:
+    """运行一种 loss 归一化方式并返回 DDP 同步后的共享梯度。"""
+
     ddp_model.zero_grad(set_to_none=True)
     logits = ddp_model(fixture.base_logits)
     if path == "rank_local_mean":
@@ -117,6 +127,7 @@ def _run_gradient_path(
             ignore_index=IGNORE_INDEX,
             reduction="sum",
         )
+        # DDP 会再除以 D；正确路径先乘 D，错误路径则得到真实梯度的 1/D。
         numerator = WORLD_SIZE if path == "correct_d_over_n" else 1
         loss = loss_sum * numerator / global_valid_token_count
     # The installed PyTorch stubs do not type Tensor.backward().
@@ -135,6 +146,8 @@ def _worker(
     init_method: str,
     output_directory: str,
 ) -> None:
+    """在一个 rank 上统计全局 token 数并运行三种梯度路径。"""
+
     if world_size != WORLD_SIZE:
         raise ValueError(f"world_size must be {WORLD_SIZE}")
     dist.init_process_group(
@@ -146,6 +159,7 @@ def _worker(
     try:
         fixture = _rank_fixture(rank)
         count = torch.tensor([fixture.local_valid_token_count], dtype=torch.int64)
+        # padding 不计入分母，先跨 rank 汇总真正参与监督的 token 数。
         dist.all_reduce(count, op=dist.ReduceOp.SUM)
         global_count = int(count.item())
         model = SharedBiasClassifier()
@@ -178,6 +192,8 @@ def _worker(
 
 
 def _full_batch_reference() -> list[float]:
+    """把两个 shard 合并后直接求 mean，作为独立单进程参考。"""
+
     fixtures = tuple(_rank_fixture(rank) for rank in range(WORLD_SIZE))
     model = SharedBiasClassifier()
     logits = model(torch.cat([fixture.base_logits for fixture in fixtures], dim=0))
@@ -203,6 +219,8 @@ def _max_abs_difference(left: list[float], right: list[float]) -> float:
 
 
 def run_control() -> dict[str, object]:
+    """启动两进程实验并核对三种缩放与 full-batch 参考的关系。"""
+
     if not dist.is_available() or not dist.is_gloo_available():
         raise RuntimeError("torch.distributed with the Gloo backend is required")
     exact = analyze_default_ddp_token_mean(

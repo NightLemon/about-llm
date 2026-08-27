@@ -1,4 +1,10 @@
-"""Two-process CPU/Gloo control for DDP accumulation and ``no_sync``."""
+"""用两个真实 DDP 进程解释梯度累积时 ``no_sync`` 应包住哪里。
+
+每个 rank 连续反向传播两个 microbatch：第一个放在 ``no_sync`` 的 forward 与 backward
+作用域内，最后一个正常同步。实验用通信 hook 计数，并加入“只在 backward 外层写
+``no_sync``”的错误对照，说明 DDP 在 forward 时就决定是否准备梯度同步。最后将同步梯度、
+裁剪结果和 SGD 更新与单进程 full-batch 手算参考比较；这里只覆盖 CPU/Gloo 小模型。
+"""
 
 import json
 import math
@@ -42,7 +48,7 @@ CASE_NAMES: tuple[CaseName, ...] = (
 
 
 def authored_rank_windows() -> tuple[tuple[CategoricalMicrobatch, ...], ...]:
-    """Return two rank windows with effective-token counts ``[[1,2],[3,1]]``."""
+    """构造两个 rank 的窗口，有效 token 数分别是 ``[[1,2],[3,1]]``。"""
 
     return (
         (
@@ -84,7 +90,7 @@ def authored_rank_windows() -> tuple[tuple[CategoricalMicrobatch, ...], ...]:
 
 
 class SharedBiasClassifier(nn.Module):
-    """Add one shared two-class parameter to authored fixed logits."""
+    """给固定 logits 加一个共享二分类参数，让梯度可以直接核对。"""
 
     def __init__(self) -> None:
         super().__init__()
@@ -146,6 +152,8 @@ def _backward_loss(
     *,
     global_valid_token_count: int,
 ) -> None:
+    """把局部 loss sum 缩放成 DDP 平均后等价于全局 token mean 的梯度。"""
+
     logits = ddp_model(fixture.base_logits)
     loss_sum = F.cross_entropy(
         logits,
@@ -153,6 +161,7 @@ def _backward_loss(
         ignore_index=IGNORE_INDEX,
         reduction="sum",
     )
+    # DDP 随后还会除以 world size，所以这里先乘回 WORLD_SIZE。
     loss = loss_sum * WORLD_SIZE / global_valid_token_count
     # The installed PyTorch stubs do not type Tensor.backward().
     loss.backward()  # type: ignore[no-untyped-call]
@@ -164,6 +173,8 @@ def _run_case(
     case: CaseName,
     global_valid_token_count: int,
 ) -> dict[str, object]:
+    """执行一种 no_sync 放置方式并记录同步次数、梯度和参数更新。"""
+
     model = SharedBiasClassifier()
     ddp_model = DistributedDataParallel(model)
     hook_state: AllReduceHookState | None = None
@@ -179,6 +190,7 @@ def _run_case(
     for index, fixture in enumerate(fixtures):
         is_final = index == len(fixtures) - 1
         if not is_final and case != "counting_hook_backward_only":
+            # 正确做法：forward 与 backward 都处于 no_sync 作用域。
             with ddp_model.no_sync():
                 _backward_loss(
                     ddp_model,
@@ -195,7 +207,7 @@ def _run_case(
             )
             loss = loss_sum * WORLD_SIZE / global_valid_token_count
             with ddp_model.no_sync():
-                # This is deliberately too late: DDP saw sync=True in forward.
+                # 错误对照：forward 已让 DDP 记录 sync=True，此时再包 backward 已经太晚。
                 loss.backward()  # type: ignore[no-untyped-call]
         else:
             _backward_loss(
@@ -207,6 +219,7 @@ def _run_case(
     if model.bias.grad is None:
         raise AssertionError("DDP accumulation did not populate the bias gradient")
     gradient_before_clip = model.bias.grad.detach().clone()
+    # 只在最终同步完成后裁剪，保证各 rank 从同一个全局梯度出发。
     returned_norm = torch.nn.utils.clip_grad_norm_(
         model.parameters(),
         max_norm=MAX_GRAD_NORM,
