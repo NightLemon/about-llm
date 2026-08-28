@@ -68,7 +68,7 @@ flowchart TD
 
 | 层级 | 实验 | 你要回答的问题 |
 |---|---|---|
-| 必做 | [0A：从 logits 到采样](labs/lab-0a-sampling.md) | temperature、top-k、top-p 怎样改变候选分布？ |
+| 必做 | [0A：从 logits 到采样](labs/lab-0a-sampling.md) | top-k、top-p 与 repetition penalty 怎样改变候选分布，处理顺序为什么是契约？ |
 | 推荐 | [0B：生成、停止与流式协议](labs/lab-0b-generation-protocol.md) | EOS、长度上限、stop string 和断流如何形成终态？ |
 | 工程选修 | [0C：云 API 预算、重试与对账](labs/lab-0c-cloud-budget.md) | 一次逻辑请求为什么可能产生多次调用和费用？ |
 | 安全选修 | [0D：Opaque Reasoning 工件安全](labs/lab-0d-reasoning-artifact-security.md) | 哪些内部字段可以保存、重放或返回给用户？ |

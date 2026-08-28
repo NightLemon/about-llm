@@ -1,6 +1,6 @@
 """量化一组真实 K/V 张量，并观察 INT8 KV Cache 对 GQA 输出的误差。
 
-每个 batch、KV head、token 向量各自使用一个 absmax scale。实验实际生成 INT8 code 与
+每个 (batch, KV head, token) 位置上的 head_dim 向量单独取一个 absmax scale。实验实际生成 INT8 code 与
 FP32 scale，反量化后分别比较 K、V、Attention 概率和最终输出，同时统计存储量。
 """
 

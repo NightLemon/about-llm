@@ -53,14 +53,14 @@ python projects/transformers-basics/ticket_classification_walkthrough.py
 这句话固定了预测时点、输入、目标、样本单位和错误成本。少写其中任何一个，后面都可能出现“离线很准、
 线上不可用”：例如训练数据包含了客服最终处理备注，而线上预测时这段备注还没有产生，这就是 target leakage。
 
-设输入与目标来自部署分布 (P(X,Y))，模型 (f_\theta) 的总体风险是：
+设输入与目标来自部署分布 \(P(X,Y)\)，模型 \(f_\theta\) 的总体风险是：
 
 \[
 R(\theta)=\mathbb{E}_{(X,Y)\sim P}
 \left[\ell(f_\theta(X),Y)\right].
 \]
 
-我们无法枚举未来全部工单，只能在训练集 (D=\{(x_i,y_i)\}_{i=1}^{n}) 上最小化经验风险：
+我们无法枚举未来全部工单，只能在训练集 \(D=\{(x_i,y_i)\}_{i=1}^{n}\) 上最小化经验风险：
 
 \[
 \hat R_D(\theta)=\frac{1}{n}\sum_{i=1}^{n}
@@ -120,7 +120,7 @@ LLM 评测还要检查 benchmark 是否出现在预训练、SFT、few-shot 示�
 
 ## Loss 是训练的方向盘，不是产品成绩单
 
-工单分类常用交叉熵。模型给真实类别 (y) 的概率为 (p_\theta(y\mid x)) 时：
+工单分类常用交叉熵。模型给真实类别 \(y\) 的概率为 \(p_\theta(y\mid x)\) 时：
 
 \[
 \ell=-\log p_\theta(y\mid x).
@@ -143,7 +143,7 @@ LLM 评测还要检查 benchmark 是否出现在预训练、SFT、few-shot 示�
 
 ## 从线性模型走到神经网络
 
-一个线性分类器直接计算 (z=Wx+b)，再把 logits 变成类别概率。它易于调试，也是一条重要 baseline：如果一个大型
+一个线性分类器直接计算 \(z=Wx+b\)，再把 logits 变成类别概率。它易于调试，也是一条重要 baseline：如果一个大型
 模型无法稳定超过它，应先检查数据和评测，而不是继续堆参数。
 
 神经网络把多层可微函数串起来：
@@ -163,7 +163,7 @@ LoRA 只训练低秩增量，并不把底座的前向表示能力缩成同样的
 
 ## 反向传播到底在算什么
 
-前向计算得到 loss 后，自动微分沿计算图反向应用链式法则。若标量 (L) 经过中间量 (h)：
+前向计算得到 loss 后，自动微分沿计算图反向应用链式法则。若标量 \(L\) 经过中间量 \(h\)：
 
 \[
 \frac{\partial L}{\partial x}
@@ -178,7 +178,7 @@ LoRA 只训练低秩增量，并不把底座的前向表示能力缩成同样的
 一个可靠的第一步是让小模型过拟合一个极小 batch。如果做不到，先打印输入、labels、mask、有效监督数和梯度，
 再考虑扩大数据或模型。
 
-残差块 (x+F(x)) 为梯度提供较短路径，也让子层学习对输入的更新。LayerNorm 同时使用均值和方差，RMSNorm
+残差块 \(x+F(x)\) 为梯度提供较短路径，也让子层学习对输入的更新。LayerNorm 同时使用均值和方差，RMSNorm
 按均方根缩放；两者是不同函数，不能在 checkpoint 上任意互换。Pre-Norm 与 Post-Norm 的位置差异同样会改变
 训练动力学和模型函数。
 
@@ -202,7 +202,7 @@ Adam 维护梯度的一阶和二阶滑动统计。AdamW 另行执行 decoupled w
 -\eta_t\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}.
 \]
 
-在自适应优化器中，这通常不等同于把 (\lambda\theta) 加进 loss gradient。Bias 和 norm 参数是否衰减，
+在自适应优化器中，这通常不等同于把 \(\lambda\theta\) 加进 loss gradient。Bias 和 norm 参数是否衰减，
 也要由参数分组明确记录。
 
 训练循环中几个常见部件各有职责：
@@ -217,7 +217,7 @@ Clipping 能限制一次异常更新，却修不好持续的脏数据或错标�
 
 ## 为什么 Gradient Accumulation 容易悄悄换目标
 
-设第 (i) 个 micro-batch 有 (n_i) 个有效 token，token loss 为 (\ell_{ij})。若训练目标是整个 update window 的
+设第 \(i\) 个 micro-batch 有 \(n_i\) 个有效 token，token loss 为 \(\ell_{ij}\)。若训练目标是整个 update window 的
 token mean：
 
 \[
@@ -282,8 +282,8 @@ LLM 的 token probability 更不是“整段回答为真”的直接概率。
 
 ## 上线后，分布还会继续变化
 
-第二周 fraud 类别突然增加，可能是输入 (P(X)) 变了；业务规则调整后，同样文本对应的正确队列变了，
-则更接近 (P(Y\mid X)) 变化。真实系统经常同时出现多种 shift，监控一项 embedding 距离不能自动证明质量下降。
+第二周 fraud 类别突然增加，可能是输入 \(P(X)\) 变了；业务规则调整后，同样文本对应的正确队列变了，
+则更接近 \(P(Y\mid X)\) 变化。真实系统经常同时出现多种 shift，监控一项 embedding 距离不能自动证明质量下降。
 
 生产监控要把输入变化与延迟标签、人工审计或可验证业务结果连接起来。还要关注反馈回路：路由模型决定哪些工单
 进入专家队列，专家队列又决定下一轮训练能看到哪些高质量标签。

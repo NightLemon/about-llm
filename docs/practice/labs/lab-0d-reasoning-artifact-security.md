@@ -206,7 +206,9 @@ plaintext_values_emitted: false
 ```
 
 如果把某个 block 的 `type` 改为 `thinking` 或一个未知值，命令应以状态码 1 退出。报告会指出数组位置和拒绝
-类别，但不会回显该 block 的值；未知类型名也不会原样出现在报告中。
+类别。两种情况的脱敏程度不同：`thinking` 属于已枚举的禁止类型，会以 `name` 原样出现（`forbidden_block_type`），
+便于运维直接定位；完全未知的类型名则折叠为 `unrecognized`（`unknown_block_type`），不把供应商自定义字段名
+带进报告。两种情况都不回显该 block 的**内容**。
 
 这条门禁检查的是**发布对象的结构**。`secret_pii_scan_performed: false` 明确表示它没有检查允许字段里的文本
 是否含 secret、PII、版权或未经同意的数据。真实发布流程还需要独立的内容扫描、权限和人工审阅。
@@ -231,7 +233,7 @@ python -m pytest `
 - **消费失败**：同一 `artifact_id` 在同一密钥下第二次使用。
 
 发布门禁测试则覆盖 forbidden/unknown block、schema drift 和脱敏报告。它们检查拒绝原因能被运维定位，同时
-不把原始名称和值复制进报告。
+不把原始**值**复制进报告。
 
 ## 如果删掉一项控制，会发生什么 {#counterfactual-controls}
 

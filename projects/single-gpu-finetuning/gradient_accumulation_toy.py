@@ -1,7 +1,8 @@
 """用真实 autograd 说明 token-mean gradient accumulation 为什么不能平均 microbatch loss。
 
 两个 microbatch 分别只有 1 和 3 个有效 token。正确目标是四个 token 的总 loss 除以总 token 数；
-若先各自求 mean 再平均，就会让短样本获得三倍权重。实验与精确分数 oracle 交叉核对。
+若先各自求 mean 再平均，只有 1 个 token 的 microbatch 权重就会从 1/4 升到 1/2（放大一倍），
+而 3 个 token 的那个从 3/4 降到 1/2。实验与精确分数 oracle 交叉核对。
 """
 
 from __future__ import annotations

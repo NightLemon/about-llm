@@ -37,11 +37,11 @@ python -m pytest tests/test_agent_refund_lifecycle.py -q
 输出是一份 JSON walkthrough。先找这五个字段：
 
 ```text
-execution.status = failed
-execution.provider_effect_count = 1
-execution.local_ledger_state = pending
-idempotency.handler_attempted_on_replay = false
-recovery.replay_after_reconciliation.status = cached
+stages.execution.status = failed
+stages.execution.provider_effect_count = 1
+stages.execution.local_ledger_state = pending
+stages.idempotency.handler_attempted_on_replay = false
+stages.recovery.replay_after_reconciliation.status = cached
 ```
 
 它们合起来表达一个反直觉但很常见的状态：**本地调用失败，业务动作可能已经成功。** `failed` 描述的是本次调用没有取得

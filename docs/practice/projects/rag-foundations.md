@@ -48,6 +48,14 @@ flowchart LR
 python -m pip install -c constraints/ci.txt -e .
 ~~~
 
+基础安装只带 `numpy`，足够跑完下面第一、二步。后续路径需要额外 extras：`pack-tokenized`（第三步）
+需要 `transformers`，`evaluate*`（第四步）需要 `evaluation`，ASGI 服务（第六步）需要 `api`。
+想一次装齐再往下走：
+
+~~~powershell
+python -m pip install -c constraints/ci.txt -e ".[evaluation,api,transformers]"
+~~~
+
 运行同一 corpus 上的一次 answer 与一次 abstain：
 
 ~~~powershell
@@ -58,8 +66,8 @@ python projects/rag-foundations/rag_request_walkthrough.py
 
 ```text
 requests[0].trusted_security_context
-requests[0].retrieval
-requests[0].rerank
+requests[0].retrieval.candidates
+requests[0].rerank.results
 requests[0].packing.source_map
 requests[0].answer
 requests[0].citation
@@ -70,15 +78,15 @@ requests[0].final
 
 ```text
 query                 RAG 为什么要先做 ACL 权限过滤
-BM25 stable sources   rag-security, rag-evaluation, rag-security
+BM25 stable sources   rag-security 6.11, rag-evaluation 2.51, rag-security 0.68
 rerank top-2          rag-security, rag-security
 source map            S1/S2 -> 两个不同 security chunks
 coverage              1.0
 final                  answer
 ```
 
-请求 B 问 Kubernetes 灾备步骤。它仍有三个主题相关结果，但有效 query token 覆盖只有 `2/9`，
-所以 final action 是 `abstain`。
+请求 B 问 Kubernetes 灾备步骤。它仍有三个主题相关结果，但 `covered_query_tokens` 只有 2 个、
+`meaningful_query_tokens` 有 9 个，`answer.coverage ≈ 0.222`，所以 final action 是 `abstain`。
 
 它的 `citation.syntax_status` 是 `not_applicable`，表示拒答不进入引用门禁。引用门禁只处理回答动作：
 答案必须至少带一个已知 source ID 并通过语法检查；缺少引用时，最终动作会变成 `reject`。
