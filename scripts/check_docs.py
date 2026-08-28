@@ -18,6 +18,7 @@ DOCS = ROOT / "docs"
 READABILITY_BASELINE = DOCS / "reference" / "readability-baseline.json"
 GLOSSARY = DOCS / "reference" / "glossary.md"
 GLOSSARY_MINIMUM_TERMS = 120
+GLOSSARY_MINIMUM_PAGE_LINKS = 3
 READABILITY_DEFAULTS = {
     "line_count": 600,
     "heading_count": 45,
@@ -56,6 +57,7 @@ GLOSSARY_TERM_RE = re.compile(
 )
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 TERM_REFERENCE_RE = re.compile(r"#term-([a-z0-9]+(?:-[a-z0-9]+)*)")
+GLOSSARY_LINK_RE = re.compile(r"glossary\.md#term-[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 @dataclass
@@ -339,6 +341,33 @@ def check_glossary_graph(
     return errors
 
 
+def check_glossary_reach(
+    *,
+    root: Path = ROOT,
+    directory: Path | None = None,
+    minimum_links: int = GLOSSARY_MINIMUM_PAGE_LINKS,
+) -> list[str]:
+    """Require entry-level pages to link into the glossary, not just define terms.
+
+    The glossary is only useful to a beginner if the page where a word first
+    appears points at it. ``check_glossary_graph`` validates the glossary as a
+    standalone artifact; this check validates that readers can actually reach it.
+    """
+
+    pages = directory if directory is not None else DOCS / "foundations"
+    errors: list[str] = []
+    for source in sorted(pages.glob("*.md")):
+        text = source.read_text(encoding="utf-8")
+        display_path = source.relative_to(root)
+        found = len(GLOSSARY_LINK_RE.findall(text))
+        if found < minimum_links:
+            errors.append(
+                f"{display_path}: entry-level page needs at least {minimum_links} "
+                f"glossary term links, found {found}"
+            )
+    return errors
+
+
 def check_learning_contracts(files: list[Path], *, root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     for source in files:
@@ -461,6 +490,7 @@ def main() -> int:
         + check_math_delimiters(files)
         + check_test_references(reference_files)
         + check_glossary_graph()
+        + check_glossary_reach()
         + check_learning_contracts(curriculum_files)
         + check_readability(reader_files)
         + check_evidence_entrypoints()

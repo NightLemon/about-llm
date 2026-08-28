@@ -13,7 +13,7 @@
 
 </div>
 
-普通实现先构造完整分数矩阵，再逐行 softmax：
+普通实现先构造完整分数[矩阵](../reference/glossary.md#term-matrix)，再逐行 [softmax](../reference/glossary.md#term-softmax)：
 
 \[
 S=\frac{QK^T}{\sqrt{d_h}}+M,
@@ -21,7 +21,7 @@ S=\frac{QK^T}{\sqrt{d_h}}+M,
 O=\operatorname{softmax}(S)V.
 \]
 
-序列长度为 \(T\) 时，\(S\) 有 \(T^2\) 个元素。FlashAttention 不改变这个数学目标；它把 key/value 分块读取，
+序列长度为 \(T\) 时，\(S\) 有 \(T^2\) 个元素。[FlashAttention](../reference/glossary.md#term-flashattention)不改变这个数学目标；它把 key/value 分块读取，
 算完当前块就更新少量逐行状态，避免把完整分数和概率矩阵写回高带宽显存（HBM）。
 
 先记住结论：它主要减少中间存储和 HBM 读写。对精确的稠密 Attention，\(QK^T\) 与 \(AV\) 的算术复杂度通常仍是
@@ -119,7 +119,7 @@ python -m pytest tests/test_attention_numpy.py -q
 
 CPU 对照能够验证递推公式、mask 边界和数值误差，但它没有执行 CUDA。
 
-Kernel 是否正确、FlashAttention backend 是否启用，以及 HBM 流量与速度是否改善，还要在目标 GPU 和固定版本的
+[Kernel](../reference/glossary.md#term-kernel)是否正确、FlashAttention backend 是否启用，以及 HBM 流量与速度是否改善，还要在目标 GPU 和固定版本的
 运行时中测量。
 
 继续阅读 [Transformer 的 kernel 边界](../core/transformer.md#10-kernel) 可以把这套数值算法放回完整模型；

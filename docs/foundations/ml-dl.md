@@ -40,7 +40,7 @@ python projects/transformers-basics/ticket_classification_walkthrough.py
 
 第三步为了把计算压缩到一屏，直接把三个 logits 当作可以更新的参数。真实模型更新的是网络权重，梯度还要通过
 线性层和前面的网络继续反向传播。因此，这个局部步骤只验证交叉熵推动当前样本的方向；它没有训练真实模型，
-也不能证明模型能够泛化或改善业务结果。
+也不能证明模型能够[泛化](../reference/glossary.md#term-generalization)或改善业务结果。
 
 带着这四个观察，下面再把任务定义、切分、loss、反向传播和评测逐一拆开。
 
@@ -85,7 +85,7 @@ R(\theta)=\mathbb{E}_{(X,Y)\sim P}
 | 模板改写或镜像网页 | 去重簇/来源簇 | 只换表述的近重复 |
 | 会随时间变化的业务 | 时间窗口 | 用未来规则预测过去 |
 
-训练集用于拟合参数；validation 用于选模型、阈值和超参数；锁定 test 用于最后估计。每看一次 test 再修改系统，
+训练集用于拟合参数；validation 用于选模型、阈值和[超参数](../reference/glossary.md#term-hyperparameter)；锁定 test 用于最后估计。每看一次 test 再修改系统，
 都在把它逐渐变成 validation。
 
 LLM 评测还要检查 benchmark 是否出现在预训练、SFT、few-shot 示例或 RAG 语料中。Exact match 只能发现完全相同
@@ -140,7 +140,7 @@ LLM 评测还要检查 benchmark 是否出现在预训练、SFT、few-shot 示�
 | 语言建模 | 有效 token 的 NLL | Shift、padding、prompt 与文档边界 |
 | 偏好学习 | Pairwise preference objective | 选择偏差与 reference policy |
 
-训练 loss 下降说明优化器更好地拟合了这份代理目标。它没有自动回答“新用户是否更满意”或“模型是否更安全”。
+训练 loss 下降说明[优化器](../reference/glossary.md#term-optimizer)更好地拟合了这份代理目标。它没有自动回答“新用户是否更满意”或“模型是否更安全”。
 
 ## 从线性模型走到神经网络
 
@@ -164,7 +164,7 @@ LoRA 只训练低秩增量，并不把底座的前向表示能力缩成同样的
 
 ## 反向传播到底在算什么
 
-前向计算得到 loss 后，自动微分沿计算图反向应用链式法则。若标量 \(L\) 经过中间量 \(h\)：
+前向计算得到 loss 后，自动微分沿计算图反向应用[链式法则](../reference/glossary.md#term-chain-rule)。若标量 \(L\) 经过中间量 \(h\)：
 
 \[
 \frac{\partial L}{\partial x}
@@ -176,7 +176,7 @@ LoRA 只训练低秩增量，并不把底座的前向表示能力缩成同样的
 框架能生成梯度代码，并不代表你的训练目标正确。意外 `detach`、原地修改、错误 mask、错误 reduction 和混合精度
 溢出，都可能让程序继续运行却更新了错误方向。
 
-一个可靠的第一步是让小模型过拟合一个极小 batch。如果做不到，先打印输入、labels、mask、有效监督数和梯度，
+一个可靠的第一步是让小模型[过拟合](../reference/glossary.md#term-overfitting)一个极小 [batch](../reference/glossary.md#term-batch)。如果做不到，先打印输入、labels、mask、有效监督数和梯度，
 再考虑扩大数据或模型。
 
 残差块 \(x+F(x)\) 为梯度提供较短路径，也让子层学习对输入的更新。LayerNorm 同时使用均值和方差，RMSNorm

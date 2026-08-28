@@ -104,7 +104,7 @@ p(x_{1:T})=\prod_{t=1}^{T}p(x_t\mid x_{<t}).
 乘积变成求和，更容易计算和聚合。因为 log 是单调函数，最大化 log probability 与最大化原 probability
 会选出同一个参数解。
 
-## 4. Stable softmax：为什么先减最大 logit
+## 4. Stable [softmax](../reference/glossary.md#term-softmax)：为什么先减最大 [logit](../reference/glossary.md#term-logit)
 
 Softmax 为：
 
@@ -223,7 +223,7 @@ p(H\mid E)=\frac{p(E\mid H)p(H)}{p(E)}.
 
 即使召回很高，极低的 base rate 仍会让阳性结果以误报为主。这对安全检测、内容审核、成员推断和异常告警都很重要。
 
-## 9. 熵与交叉熵：平均要花多少信息
+## 9. 熵与[交叉熵](../reference/glossary.md#term-cross-entropy)：平均要花多少信息
 
 分布 \(p\) 的熵：
 

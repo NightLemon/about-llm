@@ -14,7 +14,7 @@
 
 </div>
 
-训练不是“模型看见答案后自动记住”。程序先用 forward 计算预测与 loss，再用 backward 求出每个参数附近的
+训练不是“模型看见答案后自动记住”。程序先用 forward 计算预测与 [loss](../reference/glossary.md#term-loss)，再用 backward 求出每个参数附近的
 变化方向，最后由 optimizer 更新参数：
 
 ~~~text
@@ -60,7 +60,7 @@ w_{\text{new}}=w-\eta\frac{dL}{dw}.
 
 有限差分能帮助检查小实现，但训练大模型不会为每个参数额外做两次 forward；参数太多，成本也太高。
 
-??? note "自测：若梯度为 5，learning rate 为 0.1，一次 SGD 更新量是多少？"
+??? note "自测：若梯度为 5，learning rate（[术语](../reference/glossary.md#term-learning-rate)）为 0.1，一次 SGD 更新量是多少？"
 
     \(w_{\text{new}}=w-0.1\times5=w-0.5\)，参数减小 0.5。
 
@@ -111,7 +111,7 @@ Forward 从左到右保存必要中间量。Backward 从 \(L\) 开始，沿反�
 真实 Transformer 计算图很大，但每个节点仍是矩阵乘法、加法、归一化、激活或其他局部运算。
 自动微分系统只需知道每种局部运算怎样把上游梯度传给输入。
 
-## 4. 链式法则：沿依赖关系相乘
+## 4. [链式法则](../reference/glossary.md#term-chain-rule)：沿依赖关系相乘
 
 若 \(w\rightarrow a\rightarrow b\rightarrow L\)，则：
 

@@ -9,7 +9,8 @@
 - **先修**：知道加减乘除，会把数字代入简单公式；不要求会 Python。
 - **首次阅读**：沿着“天空通常是”这个例子一直读到两-token Attention，不必先看三个深入页。
 - **完成信号**：能用自己的话解释向量、矩阵乘法、logit、softmax、loss 和梯度，并手算本页的小例子。
-- **卡住时**：矩阵看[线性代数](math-linear-algebra.md)，概率看[概率与信息论](math-probability.md)，梯度看[训练数学](math-training.md)。
+- **卡住时**：矩阵看[线性代数](math-linear-algebra.md)，概率看[概率与信息论](math-probability.md)，梯度看[训练数学](math-training.md)；
+  遇到不认识的词先查[术语知识图谱](../reference/glossary.md)，本页关键词都在里面。
 
 </div>
 
@@ -17,7 +18,7 @@ LLM 公式常把许多简单步骤压缩在一行里，因此初看时信息量�
 
 > 模型读到“天空通常是”，要在“红”“蓝”“。”三个候选 token 中预测下一个 token。
 
-我们会让一组很小的数字依次经过输出矩阵、softmax 和 loss，再沿梯度更新一次。最后把相同工具用于
+我们会让一组很小的数字依次经过输出矩阵、[softmax](../reference/glossary.md#term-softmax) 和 [loss](../reference/glossary.md#term-loss)，再沿[梯度](../reference/glossary.md#term-gradient)更新一次。最后把相同工具用于
 两-token Attention。第一次阅读只需抓住这条线：
 
 ~~~text
@@ -39,11 +40,11 @@ LLM 公式常把许多简单步骤压缩在一行里，因此初看时信息量�
 |---|---|---|
 | \(x_i\) | x 的第 i 个元素 | 从一组数中取一个 |
 | \(\sum_i x_i\) | 把所有 x 加起来 | 重复做加法 |
-| \(W^T\) | W 的转置 | 把矩阵的行和列互换 |
+| \(W^T\) | W 的[转置](../reference/glossary.md#term-transpose) | 把矩阵的行和列互换 |
 | \(e^x\) 或 \(\exp(x)\) | e 的 x 次方 | 把任意数变成正数，且放大差距 |
 | \(\ln x\) 或 \(\log x\) | x 的自然对数 | 指数的反操作；本书未注明时用自然对数 |
 | \(\frac{\partial L}{\partial w}\) | L 对 w 的导数 | w 稍微增大时，L 会怎样变化 |
-| \(\mathbb R^{2\times3}\) | 2 行 3 列的实数 | 只是在说明 shape |
+| \(\mathbb R^{2\times3}\) | 2 行 3 列的实数 | 只是在说明 [shape](../reference/glossary.md#term-shape) |
 | \(\approx\) | 约等于 | 为便于阅读，数字经过四舍五入 |
 
 例如：
@@ -64,10 +65,10 @@ LLM 公式常把许多简单步骤压缩在一行里，因此初看时信息量�
 
 | 名称 | 小例子 | 需要几个下标 | 在本例中的角色 |
 |---|---|---:|---|
-| 标量（scalar） | \(0.5\) | 0 | learning rate 或一个 loss |
-| 向量（vector） | \([1,1]\) | 1 | 当前 token 的 hidden state |
-| 矩阵（matrix） | \(\begin{bmatrix}1&0&0\\1&1&0\end{bmatrix}\) | 2 | 把两个特征映射成三个分数 |
-| 张量（tensor） | shape 为 <code>[B,T,D]</code> 的数值块 | 3 或更多 | 一批序列中所有 token 的 hidden states |
+| 标量（[scalar](../reference/glossary.md#term-scalar)） | \(0.5\) | 0 | [learning rate](../reference/glossary.md#term-learning-rate) 或一个 [loss](../reference/glossary.md#term-loss) |
+| 向量（[vector](../reference/glossary.md#term-vector)） | \([1,1]\) | 1 | 当前 token 的 [hidden state](../reference/glossary.md#term-hidden-state) |
+| 矩阵（[matrix](../reference/glossary.md#term-matrix)） | \(\begin{bmatrix}1&0&0\\1&1&0\end{bmatrix}\) | 2 | 把两个特征映射成三个分数 |
+| 张量（[tensor](../reference/glossary.md#term-tensor)） | shape 为 <code>[B,T,D]</code> 的数值块 | 3 或更多 | 一批序列中所有 token 的 hidden states |
 
 “张量”在深度学习代码里常被用作总称：标量、向量和矩阵也可以看作 0 维、1 维和 2 维张量。
 
@@ -151,7 +152,7 @@ z_j=\sum_{i=1}^{2}h_iW_{ij},
      ^     ^
 ~~~
 
-内侧的两个 2 必须相等，因为一次点积需要把左边的两个数与右边一列的两个数一一配对。
+内侧的两个 2 必须相等，因为一次[点积](../reference/glossary.md#term-dot-product)需要把左边的两个数与右边一列的两个数一一配对。
 外侧的 1 和 3 留下来，表示结果有 1 行、3 列。
 
 ### 在 LLM 中的位置
@@ -327,7 +328,7 @@ p-y
 \]
 
 本例 \(h=[1,1]\)，所以 \(W\) 的两行恰好都是
-\([0.6652,-0.7553,0.0900]\)。真实网络会继续用链式法则，把信号传回更早的 Transformer 层。
+\([0.6652,-0.7553,0.0900]\)。真实网络会继续用[链式法则](../reference/glossary.md#term-chain-rule)，把信号传回更早的 Transformer 层。
 
 ### 在 LLM 中的位置
 
