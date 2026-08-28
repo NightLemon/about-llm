@@ -139,7 +139,7 @@ Candidate 的成功率是 1.0，baseline 是 0.2。逐 case 差值为 `[1,1,1,1,
 \]
 
 这说明 candidate 在五条固定样例上改善了四条，没有退化。它还不能说明目标流量上的真实提升就是 80%；
-后面的区间和检验只处理抽样不确定性，样例是否代表目标用户仍要由数据来源证明。
+后面的区间和检验只处理抽样不确定性（相关概念见 [p-value](../reference/glossary.md#term-p-value)），样例是否代表目标用户仍要由数据来源证明。
 
 ### 配对要求相同 case identity
 
@@ -164,7 +164,7 @@ s^2=\frac1{n-1}\sum_i(x_i-\bar x)^2.
 在独立同分布的近似下，均值的标准误差约为 \(s/\sqrt n\)。真实 LLM case 往往来自重复用户、文档或模板，
 未必相互独立。因此，重采样单位要跟真实的数据生成过程一致。
 
-### Paired bootstrap 在做什么
+### [Paired bootstrap](../reference/glossary.md#term-paired-bootstrap) 在做什么
 
 对 case ID 做有放回抽样，每次把该 case 的 baseline 和 candidate 一起取出，再计算新的 \(\bar d\)：
 
@@ -208,7 +208,7 @@ Bootstrap distribution 可以形成区间或 improvement probability。它不能
 区间很宽，因为真正独立的用户只有两位。把用户 A 的五条请求伪装成五个独立样本，会让样本量看起来更大，
 却没有增加五位独立用户的信息。这里的精确枚举只是把当前两组数据算清楚，不保证只有两个 cluster 时的区间覆盖率。
 
-### 置信区间怎样解释
+### [置信区间](../reference/glossary.md#term-confidence-interval)怎样解释
 
 频率学 95% 置信区间的含义是：若反复执行同一套采样和区间构造方法，长期来看，约 95% 的区间会覆盖真实参数。
 

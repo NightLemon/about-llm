@@ -23,7 +23,7 @@
 
 ## 1. Shape 不只是尺寸，还包含语义
 
-假设一批输入的 hidden states 为：
+假设一批输入的 [hidden states](../reference/glossary.md#term-hidden-state) 为：
 
 \[
 X\in\mathbb R^{B\times T\times D}.
@@ -36,7 +36,7 @@ X\in\mathbb R^{B\times T\times D}.
 若 \(X\) 的 shape 是 <code>[2,3,4]</code>，它共有 \(2\times3\times4=24\) 个数字。
 但只知道 24 还不够：<code>[2,3,4]</code> 与 <code>[3,2,4]</code> 的元素数相同，batch 和 token 的含义却交换了。
 
-调试张量时，建议同时写四件事：
+调试[张量](../reference/glossary.md#term-tensor)时，建议同时写四件事：
 
 | 量 | shape | 轴的含义 | 备注 |
 |---|---|---|---|
@@ -47,7 +47,7 @@ X\in\mathbb R^{B\times T\times D}.
 
 Shape 能对上只说明计算在尺寸上合法，不保证轴的含义正确。
 
-## 2. 矩阵乘法是在做许多次点积
+## 2. [矩阵](../reference/glossary.md#term-matrix)乘法是在做许多次[点积](../reference/glossary.md#term-dot-product)
 
 对于：
 
@@ -92,7 +92,7 @@ w_{21}&w_{22}&w_{23}
 
     是 <code>[4,8,32]</code>。16 被收缩，batch 4 和 token 8 保留，最后一个特征轴变成 32。
 
-## 3. 转置：交换轴，不是改变数字
+## 3. [转置](../reference/glossary.md#term-transpose)：交换轴，不是改变数字
 
 二维矩阵转置会交换行和列：
 
@@ -282,7 +282,7 @@ B\in\mathbb R^{d_{\text{out}}\times r}.
 
     只有在 loss 震荡、不同方向学习速度差异很大时再深入。
 
-一个矩阵若把某个方向放大很多、另一个方向压缩很多，就会让优化地形像狭长山谷：同一 learning rate
+一个矩阵若把某个方向放大很多、另一个方向压缩很多，就会让优化地形像狭长山谷：同一 [learning rate](../reference/glossary.md#term-learning-rate)
 在陡峭方向可能太大，在平缓方向又太小。Condition number（条件数）概括最大与最小尺度的差异。
 
 Normalization、初始化、自适应 optimizer 和 preconditioning 会从不同层面改善尺度问题，

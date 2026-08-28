@@ -9,6 +9,7 @@ from scripts.check_docs import (
     READABILITY_DEFAULTS,
     check_evidence_entrypoints,
     check_glossary_graph,
+    check_glossary_reach,
     check_internal_links,
     check_learning_contracts,
     check_math_delimiters,
@@ -189,6 +190,30 @@ def test_glossary_graph_rejects_unknown_dependency_and_missing_binding(
 
     assert any("canonical needs a local link" in error for error in errors)
     assert any("unknown term 'missing'" in error for error in errors)
+
+
+def test_glossary_reach_requires_entry_pages_to_link_into_glossary(
+    tmp_path: Path,
+) -> None:
+    pages = tmp_path / "docs" / "foundations"
+    pages.mkdir(parents=True)
+    (pages / "linked.md").write_text(
+        "# 已接入\n\n"
+        "[标量](../reference/glossary.md#term-scalar) 与"
+        "[学习率](../reference/glossary.md#term-learning-rate) 以及"
+        "[损失](../reference/glossary.md#term-loss)。\n",
+        encoding="utf-8",
+    )
+    (pages / "orphan.md").write_text(
+        "# 未接入\n\n这一页用到了 learning rate 和 loss，却没有任何跳转。\n",  # noqa: RUF001
+        encoding="utf-8",
+    )
+
+    errors = check_glossary_reach(root=tmp_path, directory=pages, minimum_links=3)
+
+    assert len(errors) == 1
+    assert "orphan.md" in errors[0]
+    assert "found 0" in errors[0]
 
 
 def test_readability_uses_strict_defaults_for_new_pages(tmp_path: Path) -> None:

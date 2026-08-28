@@ -40,13 +40,13 @@ python projects/transformers-basics/trace_language_model_sample.py
 程序实际训练了 BPE，并构造了特殊 token、因果 mask 和计分位置。运行到这里便停在模型前向计算之前，
 所以输出中没有 logits、loss 或 perplexity。
 
-ID `264` 只属于这次训练出来的微型词表。Qwen、Llama 等真实 checkpoint 必须使用各自配套的 tokenizer。
+ID `264` 只属于这次训练出来的微型词表。Qwen、Llama 等真实 checkpoint 必须使用各自配套的 [tokenizer](../reference/glossary.md#term-tokenizer)。
 
 你可以先只记住三条边界：
 
 ```text
 字符串不是 token IDs
-因果 attention mask 决定“能看哪些输入位置”
+因果 [attention](../reference/glossary.md#term-attention) mask 决定“能看哪些输入位置”
 loss mask 决定“哪些预测目标参与计分”
 ```
 
@@ -57,7 +57,7 @@ python projects/transformers-basics/trace_minigpt_training_step.py
 ```
 
 第二条命令复用同一组 IDs，把它们送入仓库从零实现的 MiniGPT。这个模型只有 1 层、16 维和 6496 个参数。
-它会依次执行词嵌入、因果注意力、前馈网络和词表输出，再计算交叉熵、反向传播并完成一步 SGD 更新。
+它会依次执行词嵌入、因果注意力、前馈网络和词表输出，再计算[交叉熵](../reference/glossary.md#term-cross-entropy)、反向传播并完成一步 SGD 更新。
 
 模型会在四个位置都输出 268 个 logits，所以输出形状是 `[1, 4, 268]`。前三个目标参与 loss；最后一个位置
 虽然也会得到 `<PAD>` 的概率，却被 `-100` 排除。固定 seed 下，逐位置结果如下：
@@ -73,7 +73,7 @@ python projects/transformers-basics/trace_minigpt_training_step.py
 约 266.6。随机初始化时，268 个词表项的概率接近均匀，因此这个数量级并不意外。
 
 一步 SGD 后，同一小样本上的 NLL 降到 5.134247，12 个参数张量都发生了变化。这只说明训练接线工作正常：
-模型刚刚朝记住这三个目标的方向走了一步。它没有因此学会中文，也没有在新样本上证明泛化。
+模型刚刚朝记住这三个目标的方向走了一步。它没有因此学会中文，也没有在新样本上证明[泛化](../reference/glossary.md#term-generalization)。
 
 ## 1. 语言的层次
 
@@ -327,7 +327,7 @@ Teacher forcing 仍然提供清晰、密集且可并行的最大似然监督。�
 - 以有效 token 为单位记录 loss，并明确跨设备 reduction；
 - 监控来源/语言切片 loss，而不只看全局平均；
 - 保存数据游标和 tokenizer hash，验证 checkpoint 恢复；
-- 对极小样本做过拟合，排除 shift、mask 和 optimizer 错误。
+- 对极小样本做[过拟合](../reference/glossary.md#term-overfitting)，排除 shift、mask 和 optimizer 错误。
 
 ### 13.3 评测与部署
 
