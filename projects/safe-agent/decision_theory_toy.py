@@ -112,6 +112,25 @@ def run_experiment() -> dict[str, Any]:
     terminal = [False, False, False, True]
 
     return {
+        "fixture": {
+            "prior_belief": prior,
+            "state_transition_during_observation": identity_transition,
+            "strong_signal_likelihoods": strong_signal,
+            "weak_signal_likelihoods": weak_signal,
+            "action_utilities_by_state": utilities,
+            "allowed_actions": allowed_actions,
+            "observation_cost": 1.0,
+            "transition_graph_state_labels": [
+                "start",
+                "branch_a",
+                "branch_b",
+                "terminal",
+            ],
+            "terminating_graph": terminating_graph,
+            "cycling_graph": cycling_graph,
+            "initial_state_mask": initial,
+            "terminal_state_mask": terminal,
+        },
         "state_labels": ["fault_a", "fault_b"],
         "action_labels": ["repair_a", "repair_b", "escalate", "forbidden_shortcut"],
         "belief_update_after_observation_a": {

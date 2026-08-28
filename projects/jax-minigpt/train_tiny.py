@@ -84,6 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parameter_count = sum(int(leaf.size) for leaf in jax.tree.leaves(params))
     steady = step_seconds[1:] or step_seconds
     report = {
+        "schema_version": 1,
         "versions": {
             "jax": jax.__version__,
             "jaxlib": jaxlib.__version__,
@@ -96,6 +97,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         "network_performed": False,
         "seed": args.seed,
         "steps": args.steps,
+        "configuration": {
+            "learning_rate": args.learning_rate,
+            "optimizer": "AdamW",
+            "weight_decay": 0.0,
+            "max_gradient_norm": 1.0,
+            "model": {
+                "vocab_size": config.vocab_size,
+                "context_length": config.context_length,
+                "model_dim": config.model_dim,
+                "num_heads": config.num_heads,
+                "num_layers": config.num_layers,
+                "mlp_ratio": config.mlp_ratio,
+            },
+        },
+        "fixture": {
+            "input_ids": np.asarray(input_ids).tolist(),
+            "targets": np.asarray(targets).tolist(),
+            "target_semantics": "each target is the next token for the input at the same position",
+            "same_fixed_batch_reused_for_every_step": True,
+        },
         "parameter_count": parameter_count,
         "initial_loss": initial_loss,
         "final_loss": final_loss,
@@ -103,6 +124,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "final_preclip_gradient_norm": float(gradient_norm),
         "compile_plus_first_step_seconds": step_seconds[0],
         "mean_steady_step_seconds": sum(steady) / len(steady),
+        "scope": {
+            "jit_compiled_forward_gradient_and_optimizer_executed": True,
+            "fixed_batch_overfit_executed": True,
+            "text_tokenizer_or_generation_executed": False,
+            "generalization_or_target_model_quality_measured": False,
+            "multi_device_or_target_gpu_performance_measured": False,
+        },
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if final_loss < initial_loss else 1

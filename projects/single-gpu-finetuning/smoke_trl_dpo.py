@@ -9,7 +9,9 @@ from __future__ import annotations
 import copy
 import json
 import math
+import sys
 import tempfile
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -250,7 +252,8 @@ def run_smoke(steps: int = 20) -> dict[str, object]:
             raise AssertionError("TRL did not prepare the preference dataset")
         batch, prompt_tokens, completion_tokens = _collated_batch(trainer, prepared)
         initial_loss = _loss(trainer, batch)
-        trainer.train()
+        with redirect_stdout(sys.stderr):
+            train_result = trainer.train()
         final_loss = _loss(trainer, batch)
     if not math.isclose(initial_loss, math.log(2), rel_tol=1e-3, abs_tol=5e-4):
         raise AssertionError(
@@ -264,6 +267,12 @@ def run_smoke(steps: int = 20) -> dict[str, object]:
         if not torch.equal(parameter.detach(), reference_before[name]):
             raise AssertionError(f"reference parameter changed during DPO: {name}")
     return {
+        "task_contract": {
+            "training_unit": "one authored prompt with chosen and rejected completions",
+            "supervision": "prompt tokens are masked; completion log probabilities enter DPO",
+            "reference_model": "frozen copy of the initial policy",
+            "objective": "increase chosen-vs-rejected preference under beta-scaled DPO loss",
+        },
         "evidence_boundary": (
             "Random tiny GPT-2, local WordLevel tokenizer, and authored pairs prove only "
             "the offline TRL 0.29 control path, completion masking, frozen reference, and "
@@ -283,7 +292,13 @@ def run_smoke(steps: int = 20) -> dict[str, object]:
         "initial_dpo_loss": initial_loss,
         "final_dpo_loss": final_loss,
         "steps": steps,
+        "trainer_metrics": train_result.metrics,
         "reference_parameters_unchanged": True,
+        "outcome": {
+            "prompt_masking_contract_passed": True,
+            "reference_parameters_unchanged": True,
+            "training_loss_decreased": final_loss < initial_loss,
+        },
     }
 
 

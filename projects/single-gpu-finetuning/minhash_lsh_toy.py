@@ -63,6 +63,13 @@ def run_toy(
     return {
         "schema_version": 1,
         "authored_fixture": True,
+        "authored_texts": AUTHORED_TEXTS,
+        "authored_relationships": {
+            "validation-copy": "whitespace-only copy of train-1 after normalization",
+            "test-near": "near rewrite of train-1",
+            "test-unrelated": "different topic from train-1",
+            "validation-other": "different topic from train-1",
+        },
         "network_used": False,
         "normalization_profile": NearDuplicateProfile.NFC_WHITESPACE.value,
         "ngram_size": ngram_size,
@@ -87,6 +94,10 @@ def run_toy(
                 rows_per_band=config.rows_per_band,
             ),
         },
+        "conclusion": (
+            "LSH produces candidates only; exact Jaccard confirms candidates, and the "
+            "exhaustive pair audit measures misses for this authored fixture"
+        ),
         "scope": {
             "candidate_source": "Unicode-codepoint character n-gram sets",
             "exact_recheck_required_before_action": True,

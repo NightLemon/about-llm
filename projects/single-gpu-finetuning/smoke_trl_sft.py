@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import tempfile
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -222,13 +224,19 @@ def run_smoke(steps: int = 12) -> dict[str, object]:
             raise AssertionError("TRL did not prepare the training dataset")
         batch, supervised, ignored = _assert_collator_labels(trainer, prepared)
         initial_loss = _loss(model, batch)
-        trainer.train()
+        with redirect_stdout(sys.stderr):
+            train_result = trainer.train()
         final_loss = _loss(model, batch)
     if final_loss >= initial_loss:
         raise AssertionError(
             f"tiny SFT failed to overfit: initial={initial_loss}, final={final_loss}"
         )
     return {
+        "task_contract": {
+            "training_unit": "one authored chat conversation",
+            "supervision": "assistant tokens only; prompt and padding tokens use label -100",
+            "objective": "next-token cross-entropy on supervised assistant tokens",
+        },
         "evidence_boundary": (
             "Random tiny GPT-2, local WordLevel tokenizer, and authored fixture prove only "
             "the offline TRL control path and label contract; they do not prove target-model "
@@ -247,6 +255,11 @@ def run_smoke(steps: int = 12) -> dict[str, object]:
         "initial_loss": initial_loss,
         "final_loss": final_loss,
         "steps": steps,
+        "trainer_metrics": train_result.metrics,
+        "outcome": {
+            "assistant_only_label_contract_passed": True,
+            "training_loss_decreased": final_loss < initial_loss,
+        },
     }
 
 

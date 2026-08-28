@@ -228,6 +228,13 @@ def run_experiment(config: ToyConfig | None = None) -> dict[str, Any]:
     config_payload["replay_old_fraction_at_task_b"] = 0.5
     return {
         "experiment": "about-llm.task-incremental-replay-toy.v1",
+        "mode": "single_seed_no_replay_vs_full_replay",
+        "strategies_compared": ["no_replay", "full_replay"],
+        "extended_mode": {
+            "command_option": "--benchmark",
+            "adds_strategy": "finite_reservoir",
+            "adds_multiple_seeds_and_paired_bootstrap": True,
+        },
         "torch_version": torch.__version__,
         "device": "cpu",
         "dtype": "float32",

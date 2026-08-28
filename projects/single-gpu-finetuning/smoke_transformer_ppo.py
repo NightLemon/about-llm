@@ -261,6 +261,12 @@ def run_smoke(
     )
     return {
         "model_class": "GPT2Model+policy_head+value_head",
+        "task_contract": {
+            "input": "BOS token followed by at most two sampled action tokens",
+            "reward_rule": "each generated target_token_id earns reward 1; other tokens earn 0",
+            "maximum_task_reward_per_episode": HORIZON,
+            "target_token_has_no_natural_language_meaning": True,
+        },
         "configuration": {
             "seed": 61,
             "vocab_size": VOCAB_SIZE,

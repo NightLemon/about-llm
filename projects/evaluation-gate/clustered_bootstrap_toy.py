@@ -20,6 +20,15 @@ def main() -> None:
     clusters = ["user-a"] * 5 + ["user-b"]
     # case weighting 让大 cluster 权重更高；equal weighting 让两个用户各占一半。
     artifact = {
+        "experiment": {
+            "paired_case_unit": "one scored case",
+            "cluster_unit": "one user",
+            "case_weighted_estimand": "mean change for a randomly selected authored case",
+            "equal_cluster_estimand": (
+                "mean user-level change for a randomly selected authored user"
+            ),
+            "authored_cluster_sizes": {"user-a": 5, "user-b": 1},
+        },
         "authored_case_scores": {
             "baseline": baseline,
             "candidate": candidate,
@@ -37,6 +46,10 @@ def main() -> None:
             clusters,
             cluster_weighting="equal",
         ).to_dict(),
+        "conclusion": (
+            "case and equal-cluster weighting answer different population questions; "
+            "choose the estimand before inspecting outcomes"
+        ),
         "scope": {
             "bca_or_small_cluster_coverage_guarantee": False,
             "case_and_equal_weighting_treated_as_same_estimand": False,

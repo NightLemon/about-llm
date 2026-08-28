@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import numpy as np
+
 from about_llm.rag import (
     ContrastiveRetrievalReport,
     contrastive_retrieval_loss,
@@ -64,23 +66,54 @@ def run_experiment() -> dict[str, Any]:
         [[True, True, False]],
     )
 
+    late_query_tokens = [[1.0, 0.0], [0.0, 1.0]]
+    late_documents = [
+        [[1.0, 0.0], [0.0, 1.0], [100.0, 100.0]],
+        [[0.8, 0.8], [0.0, 0.0], [0.0, 0.0]],
+    ]
+    late_document_mask = [[True, True, False], [True, False, False]]
     maxsim = late_interaction_scores(
-        [[1.0, 0.0], [0.0, 1.0]],
-        [
-            [[1.0, 0.0], [0.0, 1.0], [100.0, 100.0]],
-            [[0.8, 0.8], [0.0, 0.0], [0.0, 0.0]],
-        ],
-        document_mask=[[True, True, False], [True, False, False]],
+        late_query_tokens,
+        late_documents,
+        document_mask=late_document_mask,
     )
+    expected_maxsim = np.array([2.0, 1.6])
+    sparse_token_activations = [
+        [[1.0, -2.0, 0.5], [100.0, 100.0, 100.0]],
+        [[0.0, 2.0, -1.0], [3.0, 1.0, 4.0]],
+    ]
+    sparse_token_mask = [[True, False], [True, True]]
     sparse_vectors = splade_max_pool(
+        sparse_token_activations,
+        sparse_token_mask,
+    )
+    expected_sparse_vectors = np.array(
         [
-            [[1.0, -2.0, 0.5], [100.0, 100.0, 100.0]],
-            [[0.0, 2.0, -1.0], [3.0, 1.0, 4.0]],
-        ],
-        [[True, False], [True, True]],
+            [np.log(2.0), 0.0, np.log(1.5)],
+            [np.log(4.0), np.log(3.0), np.log(5.0)],
+        ]
     )
 
     return {
+        "fixture": {
+            "dense": {
+                "query_vectors": query,
+                "positive": positive,
+                "easy_negative": easy_negative,
+                "hard_negative": hard_negative,
+                "duplicate_relevant": duplicate_relevant,
+                "unrelated": unrelated,
+            },
+            "late_interaction": {
+                "query_token_vectors": late_query_tokens,
+                "document_token_vectors": late_documents,
+                "document_mask": late_document_mask,
+            },
+            "learned_sparse": {
+                "token_activations": sparse_token_activations,
+                "token_mask": sparse_token_mask,
+            },
+        },
         "contrastive_objective": {
             "easy_negative": _summary(easy),
             "hard_negative": _summary(hard),
@@ -93,6 +126,18 @@ def run_experiment() -> dict[str, Any]:
         },
         "learned_sparse": {
             "splade_max_pooled_vectors": sparse_vectors.tolist(),
+        },
+        "observations": {
+            "hard_negative_has_higher_loss_than_easy_negative": (hard.mean_loss > easy.mean_loss),
+            "multi_positive_labels_reduce_false_negative_loss": (
+                multi_positive.mean_loss < false_negative.mean_loss
+            ),
+            "masked_large_padding_value_is_excluded_from_maxsim": bool(
+                np.allclose(maxsim, expected_maxsim)
+            ),
+            "masked_large_padding_value_is_excluded_from_sparse_pooling": bool(
+                np.allclose(sparse_vectors, expected_sparse_vectors)
+            ),
         },
         "scope": {
             "device": "CPU",

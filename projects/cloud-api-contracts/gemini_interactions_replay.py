@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -37,7 +38,23 @@ def main() -> int:
     args = parser.parse_args()
 
     # loader 会验证事件顺序、ID 关联和结束状态，而不是简单拼接 data 行。
+    event_bytes = args.events.read_bytes()
     payload = load_gemini_interactions_sse(args.events).to_dict()
+    payload["input_artifact"] = {
+        "path": str(args.events),
+        "size_bytes": len(event_bytes),
+        "sha256": hashlib.sha256(event_bytes).hexdigest(),
+    }
+    payload["conclusion"] = {
+        "stream_reached_typed_terminal_event": True,
+        "additional_action_required": payload["resource_status"] == "requires_action",
+        "provider_result_available": payload["provider_result_available"],
+        "business_result_verified": payload["business_result_verified"],
+    }
+    payload["evidence_boundary"] = (
+        "This offline replay validates the recorded SSE lifecycle and projection only; "
+        "it does not contact Gemini or verify a current provider or business result."
+    )
     rendered = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if args.output is None:
         sys.stdout.buffer.write(rendered.encode("utf-8"))

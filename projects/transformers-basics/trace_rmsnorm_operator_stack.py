@@ -3,7 +3,7 @@
 
 同一个数学公式会在 PyTorch 中经过多个抽象层。本实验先构造非连续张量，再比较手写
 RMSNorm 与框架实现，接着查看 FX 图和 export 后的 ATen 图，最后可选地记录真实运行事件。
-重点是理解各层的边界，而不是把图节点误认为一一对应的 GPU kernel。
+重点是理解各层的边界，以及图节点与 GPU kernel 之间并非一一对应的关系。
 """
 
 from __future__ import annotations

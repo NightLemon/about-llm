@@ -60,7 +60,7 @@ def _prepared_outputs() -> dict[str, str]:
     missing_status = _base_output()
     missing_status.pop("status")
 
-    # 正确做法不是猜币种，而是显式返回 insufficient_evidence 与 null。
+    # 证据不足时显式返回 insufficient_evidence，并把币种设为 null。
     corrected = _base_output()
     corrected["status"] = "insufficient_evidence"
     corrected["currency"] = None

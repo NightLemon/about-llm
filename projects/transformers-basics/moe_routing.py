@@ -38,6 +38,12 @@ def run_experiment() -> dict[str, Any]:
     output = routed_linear_expert_forward(hidden, expert_weights, routing)
     return {
         "schema_version": 1,
+        "fixture": {
+            "router_logits_by_token": logits.tolist(),
+            "token_hidden_states": hidden.tolist(),
+            "expert_weight_matrices": expert_weights.tolist(),
+            "router_logits_semantics": "each row scores one token against three experts",
+        },
         "configuration": {
             "top_k": 2,
             "capacity_factor": 0.75,

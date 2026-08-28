@@ -1,7 +1,7 @@
 """在真实 Qwen 生成外层运行 fail-closed RAG 策略。
 
 有授权证据时才调用 ``GenerationMixin.generate``；授权后候选为空时，策略直接返回拒答，
-不让模型凭参数记忆猜测。该实验展示控制面如何包住模型，而不是修补模型输出。
+不让模型凭参数记忆猜测。该实验展示控制面如何在模型调用外层实施策略门禁。
 """
 
 from __future__ import annotations

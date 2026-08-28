@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from contextlib import redirect_stdout
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,7 @@ from about_llm.finetuning import (
     load_preference_training_readiness,
     validate_preference_training_readiness,
 )
+from about_llm.finetuning.training_runtime import normalize_trainer_metrics
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--chat-template-path", type=Path)
     parser.add_argument("--data-preflight-only", action="store_true")
+    parser.add_argument("--tokenization-preflight-only", action="store_true")
     parser.add_argument("--qlora", action="store_true")
     parser.add_argument("--target-modules", default="q_proj,k_proj,v_proj,o_proj")
     parser.add_argument("--rank", type=int, default=16)
@@ -56,6 +60,8 @@ def parse_args() -> argparse.Namespace:
     )
     if any(value <= 0 for value in positive):
         parser.error("all numeric training arguments must be positive")
+    if args.data_preflight_only and args.tokenization_preflight_only:
+        parser.error("choose at most one preflight-only mode")
     return args
 
 
@@ -63,10 +69,16 @@ def _write_json(path: Path, payload: object) -> None:
     """以 UTF-8 严格 JSON 写入 preflight 或训练报告。"""
 
     path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",
         newline="\n",
     )
+
+
+def _print_report(payload: object) -> None:
+    """把完成状态作为单个严格 JSON 对象写到 stdout。"""
+
+    print(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False))
 
 
 def main() -> None:
@@ -83,12 +95,31 @@ def main() -> None:
         args.output_dir / "preference-training-readiness.json", readiness.to_dict()
     )
     if args.data_preflight_only:
+        _print_report(
+            {
+                "report_version": "about-llm.dpo-preflight.v1",
+                "mode": "data_preflight",
+                "status": "completed",
+                "model": {"model_id": args.model_id, "revision": args.revision},
+                "pair_count": len(records),
+                "model_loaded": False,
+                "data": {
+                    "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+                    "audit_manifest_fingerprint": audit.manifest_fingerprint,
+                },
+                "artifacts": [
+                    str(args.output_dir / "preference-train-audit.json"),
+                    str(args.output_dir / "preference-training-readiness.json"),
+                ],
+                "evidence_boundary": (
+                    "Preference structure, split, and readiness were checked; tokenizer, "
+                    "policy, reference computation, and optimization were not executed."
+                ),
+            }
+        )
         return
 
-    from datasets import Dataset
-    from peft import LoraConfig
     from transformers import AutoTokenizer
-    from trl import DPOConfig, DPOTrainer
 
     # chosen/rejected 必须由同一个固定 tokenizer/template 渲染，才能比较条件 log-prob。
     tokenizer = AutoTokenizer.from_pretrained(
@@ -157,6 +188,37 @@ def main() -> None:
         args.output_dir / "preference-tokenization-audit.json",
         tokenization_audit.to_dict(),
     )
+    if args.tokenization_preflight_only:
+        _print_report(
+            {
+                "report_version": "about-llm.dpo-preflight.v1",
+                "mode": "tokenization_preflight",
+                "status": "completed",
+                "model": {"model_id": args.model_id, "revision": args.revision},
+                "pair_count": len(records),
+                "model_loaded": False,
+                "tokenizer_loaded": True,
+                "data": {
+                    "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+                    "tokenization_manifest_fingerprint": (
+                        tokenization_audit.manifest_fingerprint
+                    ),
+                },
+                "artifacts": [
+                    str(args.output_dir / "preference-tokenization-audit.json"),
+                ],
+                "evidence_boundary": (
+                    "Preference data and DPO prompt/chosen/rejected tokenization were "
+                    "checked; policy and reference weights, optimization, and held-out "
+                    "evaluation were not executed."
+                ),
+            }
+        )
+        return
+
+    from datasets import Dataset
+    from peft import LoraConfig
+    from trl import DPOConfig, DPOTrainer
 
     targets = [item.strip() for item in args.target_modules.split(",") if item.strip()]
     if not targets:
@@ -260,9 +322,56 @@ def main() -> None:
         processing_class=tokenizer,
         peft_config=peft_config,
     )
-    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    with redirect_stdout(sys.stderr):
+        train_output = trainer.train(
+            resume_from_checkpoint=args.resume_from_checkpoint
+        )
     trainer.save_model()
     tokenizer.save_pretrained(args.output_dir)
+    run_report = {
+        "report_version": "about-llm.dpo-training-run.v1",
+        "status": "completed",
+        "model": {"model_id": args.model_id, "revision": args.revision},
+        "data": {
+            "pair_count": len(records),
+            "readiness_manifest_fingerprint": readiness.manifest_fingerprint,
+            "tokenization_manifest_fingerprint": (
+                tokenization_audit.manifest_fingerprint
+            ),
+            "held_out_dataset_passed_to_trainer": False,
+        },
+        "training": {
+            "qlora": args.qlora,
+            "target_modules": targets,
+            "rank": args.rank,
+            "alpha": args.alpha,
+            "beta": args.beta,
+            "max_length": args.max_length,
+            "per_device_batch_size": args.batch_size,
+            "gradient_accumulation_steps": args.gradient_accumulation,
+            "learning_rate": args.learning_rate,
+            "epochs": args.epochs,
+            "mixed_precision_mode": "bf16" if use_bf16 else "fp16" if use_fp16 else "disabled",
+            "resume_from_checkpoint": args.resume_from_checkpoint,
+            "reference_mode": "disable_current_peft_adapter",
+        },
+        "outcome": {
+            "optimizer_step_count": int(trainer.state.global_step),
+            "trainer_metrics": normalize_trainer_metrics(train_output.metrics),
+        },
+        "artifacts": {
+            "output_directory": str(args.output_dir),
+            "run_contract": str(args.output_dir / "dpo-run-contract.json"),
+            "model_and_tokenizer_saved": True,
+        },
+        "evidence_boundary": (
+            "This report records one local DPO training run and its authored training "
+            "pairs. It does not evaluate held-out preference quality, human-label validity, "
+            "safety alignment, or production convergence."
+        ),
+    }
+    _write_json(args.output_dir / "dpo-training-run.json", run_report)
+    _print_report(run_report)
 
 
 if __name__ == "__main__":

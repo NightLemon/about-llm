@@ -78,8 +78,14 @@ def test_cli_output_explains_what_each_number_means(
     module.main()
 
     output = capsys.readouterr().out
-    assert "逐行切分的跨集合 thread: ['thread-100', 'thread-200']" in output
-    assert "按 thread 切分的跨集合 thread: []" in output
+    assert "本例把一个 thread_id 当作一段完整会话" in output
+    assert "train: thread-100(row-001), thread-200(row-003), thread-300(row-005)" in output
+    assert "test: thread-100(row-002), thread-200(row-004)" in output
+    assert "跨集合 thread: ['thread-100', 'thread-200']" in output
+    assert "train: thread-100(row-001, row-002), thread-200(row-003, row-004)" in output
+    assert "跨集合 thread: []" in output
+    assert "此处只检查切分结构" in output
+    assert "没有训练模型" in output
     assert "dL/dlogits = p-y" in output
     assert "99% accuracy 可以与风险类 recall=0 同时出现" in output
     assert "本实验没有训练真实模型" in output

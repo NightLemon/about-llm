@@ -141,8 +141,10 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 
 这一步不下载 tokenizer 或权重。它会核对训练记录的顺序、内容、字段和 readiness 指纹。
 
-**成功时这一步不打印任何日志**：退出码 0、`--output-dir` 下出现 `sft-data-audit.json` 与
-`sft-training-readiness.json` 两个文件，就是通过。沉默在这里是正确结果，不是命令没跑。
+成功时它会打印一份 `about-llm.sft-preflight.v1` 报告，重点看这几个字段：`status` 为 `completed`、
+`model_loaded` 为 `false`（证明确实没加载权重）、`data` 里的两个 manifest fingerprint，
+以及 `artifacts` 列出的 `sft-data-audit.json` 与 `sft-training-readiness.json`。
+末尾的 `evidence_boundary` 直接写明了这一步检查了什么、没检查什么。
 （`--readiness-json` 是第 1 步产出的**输入**文件，不是这一步要写的产物；路径写错会直接 `FileNotFoundError`。）
 失败时先找出哪条数据发生了变化，再决定是否重新发布数据包。
 
