@@ -424,7 +424,7 @@ python projects/transformers-basics/run_target_checkpoint.py --local-files-only
 
 ~~~powershell
 python projects/transformers-basics/math_learning_walkthrough.py
-python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
+python projects/transformers-basics/train_byte_bpe.py --vocab-size 280  # 与前文 --text 那次是不同实验：这里训练更大词表
 python projects/transformers-basics/trace_language_model_sample.py
 python projects/transformers-basics/online_softmax_demo.py
 python projects/transformers-basics/trace_rmsnorm_operator_stack.py

@@ -453,7 +453,7 @@ softmax 概率约为 \([0.582,0.418]\)，NLL 为：
 
     因果语言模型预测当前位置时不能偷看未来。mask 在 softmax 前把未来位置设为极小值，使其概率为 0。
 
-## 10. 真实 Attention 的 shape 与存储 {#attention-storage-online-softmax}
+## 10.（选读）真实 Attention 的 shape 与存储 {#attention-storage-online-softmax}
 
 加回 batch 和多头后，常见 shape 是：
 

@@ -7,7 +7,8 @@
 
 - **适合读者**：理解 loss 和梯度正负号，想继续看反向传播、梯度累积与 AdamW 的读者。
 - **先修**：[数学主线](math.md)中的一次负梯度更新。
-- **首次阅读**：导数 → 计算图 → 链式法则 → 反向传播 → SGD。AdamW、浮点误差与 VJP 可按需阅读。
+- **首次阅读**：导数 → 计算图 → 链式法则 → 反向传播 → gradient accumulation（§7）→ SGD。
+  AdamW、gradient clipping、浮点误差与 VJP 可按需阅读。
 - **完成信号**：能区分 backward 与 optimizer step，并解释 gradient accumulation 的分母。
 - **卡住时**：回到[数学基础主线](math.md#one-update)，先只判断一个梯度的正负号。
 

@@ -34,7 +34,8 @@ python projects/transformers-basics/ticket_classification_walkthrough.py
 1. 逐行切分会让 `thread-100` 和 `thread-200` 同时出现在训练集与测试集；按 `thread_id` 切分则不会。
 2. logits `[2.0, 0.5, -1.0]` 经过 softmax 后，真实类别 `fraud_review` 的概率约为 `0.0391`，
    对应的 negative log-likelihood（NLL）约为 `3.2413`。
-3. 交叉熵对 logits 的梯度是 `p-y`。沿负梯度走一步后，真实类别概率上升，NLL 下降。
+3. 交叉熵对 logits 的梯度是 `p-y`。沿负梯度走一步（脚本里 `learning_rate=2.0`，故意取大值好让一步就看得出变化）后，
+   真实类别概率上升，NLL 下降。
 4. 只错一条工单可以得到 `99% accuracy`，但如果错的正是唯一一条欺诈工单，`fraud_review recall` 仍然是 0。
 
 第三步为了把计算压缩到一屏，直接把三个 logits 当作可以更新的参数。真实模型更新的是网络权重，梯度还要通过
