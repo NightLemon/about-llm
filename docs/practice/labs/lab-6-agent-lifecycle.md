@@ -45,7 +45,7 @@ tests/test_agent_refund_lifecycle.py
 
 脚本每次创建临时 SQLite 数据库，不会调用网络、写入真实订单或留下待清理的退款。
 
-## 第一步：先预测九个阶段
+## 第一步：先预测七个阶段
 
 先不要运行脚本。已知条件如下：
 
@@ -266,13 +266,15 @@ recovery.revoked_replay_negative_control.status = policy_denied
 
 回答：如果 provider 只返回 `{"status": "accepted"}`，为什么 verifier 仍不应通过？
 
+（提示：想一想 verifier 要独立确认的是「provider 说它接受了」还是「那笔金额确实记在了那个 receipt 上」。一个不含金额和 receipt id 的响应，能区分开这两件事吗？）
+
 ## 第十步：运行高风险回归
 
 ~~~powershell
 python -m pytest tests/test_agent_refund_lifecycle.py -q
 ~~~
 
-这两个测试只锁定本章最关键的判定条件：
+这两个测试合起来锁定本章最关键的五条判定条件：
 
 - closed schema 和跨 tenant 请求在 Handler 前被拒绝；
 - pending replay 不重复调用 provider；
@@ -286,7 +288,7 @@ python -m pytest tests/test_agent_refund_lifecycle.py -q
 
 ```text
 任务：subject、tenant、order、amount、capability
-运行前预测：九个阶段的状态和 handler 是否运行
+运行前预测：七个阶段的状态和 handler 是否运行
 信任边界：模型提出 / 可信上下文提供 / 服务端解析
 ACL 负例：资源、reason code、provider attempts
 故障时间线：claim、effect、timeout、pending

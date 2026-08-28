@@ -69,7 +69,33 @@ K 和 V 各有一份。Float64 每元素 8 bytes，所以固定 tensor payload �
 
 在纸上画四个物理块：`0 1 2 3`。每块有三个 token slot。
 
-### 预测 append prefix 后的状态
+### 三个预测点
+
+在动手前，先只用「block 有三个 slot、allocator 优先取最小可用 id、fork 不复制 K/V、写共享块前必须 COW」
+这四条规则，自己推出下面三个时刻的状态，再往下看：
+
+1. **append 5-token prefix 之后**：request-a 的 block table 是什么？哪一块是 partial tail？
+2. **fork 之后**：物理块数变了吗？每块的 refcount 是多少？逻辑 block reference 有几个？
+3. **A 再 append 一个 token 之后**：这个 token 写在哪里？为什么不能直接写进 partial tail？
+
+再填写预测表，然后运行命令：
+
+| 指标 | 你的预测 |
+|---|---:|
+| `allocated_blocks` |  |
+| `free_blocks` |  |
+| `logical_block_references` |  |
+| `sharing_saved_blocks` |  |
+| `logical_tokens` |  |
+| `physical_token_values` |  |
+| `allocated_token_slots` |  |
+| `internal_fragmentation_slots` |  |
+
+### 三个预测点的推导
+
+填完表之后再核对下面的推导。
+
+**1. append prefix 后的状态**
 
 Allocator 总是先使用最小可用 block id。五个 token 应得到：
 
@@ -81,7 +107,7 @@ block 1: 2/3
 
 此时 block 1 是 partial tail，仍有一个空位。
 
-### 预测 fork 后的状态
+**2. fork 后的状态**
 
 Fork 不复制 K/V。Request B 先共享 A 的两个物理块：
 
@@ -94,7 +120,7 @@ block 1 refcount: 2
 
 逻辑上有四个 block reference，物理上仍只有两个 block。
 
-### 预测 A 再 append 一个 token
+**3. A 再 append 一个 token**
 
 Block 1 还有空间，但它被 A/B 共享。如果 A 原地写入，B 的前缀会被污染。
 
@@ -112,19 +138,6 @@ copied partial block: 1 -> 2
 - block 1 有 2 个物理 token，只属于 B；
 - block 2 有 3 个物理 token，只属于 A；
 - block 3 仍空闲。
-
-先填写预测表，再运行命令：
-
-| 指标 | 你的预测 |
-|---|---:|
-| `allocated_blocks` |  |
-| `free_blocks` |  |
-| `logical_block_references` |  |
-| `sharing_saved_blocks` |  |
-| `logical_tokens` |  |
-| `physical_token_values` |  |
-| `allocated_token_slots` |  |
-| `internal_fragmentation_slots` |  |
 
 ## 第二步：运行并解释输出
 
@@ -199,8 +212,14 @@ internal_fragmentation_slots = 1
 
 把脚本中的 `total_blocks=4` 临时改为 `total_blocks=2`，先预测异常发生在哪一步。
 
-五 token prefix 已经占满两个可分配 block。Fork 不需要新块，但 A append 时必须为共享 partial tail 执行 COW，
-因此需要第三个物理块。正确行为是抛出容量错误，而不是先改坏 block 1。
+五 token prefix 已经占满两个可分配 block，free block 归零。Fork 不需要新块，但 A append 时必须为共享
+partial tail 执行 COW，而 COW 需要一个空闲块。正确行为是抛出容量错误，而不是先改坏 block 1：
+
+```text
+KVCapacityError: append requires 1 free block(s), only 0 available
+```
+
+注意错误信息说的是**空闲块不足**，而不是「总块数不够」——allocator 只在真正要拿块的那一刻失败。
 
 仓库中的原子失败测试会比较异常前后的 allocator 和 tensor：
 

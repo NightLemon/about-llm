@@ -76,11 +76,15 @@ principals = [engineering]
 
 打开 `reranker-scores.example.jsonl`。不要先看教材里的答案，只根据三条 score 填表：
 
-| Chunk 摘要 | Recorded score | 预测 rerank rank |
-|---|---:|---:|
-| ACL 必须先于排序 | 0.95 |  |
-| 一般引用与评测 | 0.10 |  |
-| 引用不等于语义蕴含 | 0.70 |  |
+| Chunk 摘要 | `document_id` | Recorded score | 预测 rerank rank |
+|---|---|---:|---:|
+| ACL 必须先于排序 | `chk_bd3e8a67…` | 0.95 |  |
+| 一般引用与评测 | `chk_2371a63e…` | 0.10 |  |
+| 引用不等于语义蕴含 | `chk_8d8a68a0…` | 0.70 |  |
+
+fixture 是按 `document_id` 而不是按顺序匹配的：JSONL 里三行的顺序与最终 rank 无关，
+score 才决定排序。这也是为什么每行都要带 `query_sha256` 和 `content_sha256`——
+换了 query 或改了 chunk 内容，这份 score 就应当失效而不是被悄悄复用。
 
 假设 top-k 为 2、预算充足，你预计 context 中有几个短 source ID？
 两个 chunk 来自同一个 stable source，为什么仍要给它们不同的 `S1/S2`？
@@ -136,7 +140,8 @@ final action:      answer
 
 ## 第四步：去掉 principal，观察安全负例
 
-再次运行同一个查询，但不传 `--principal engineering`：
+第三步跑的是 walkthrough 脚本，它内部固定带上 `engineering`。这一步改用 CLI 手工发同一个查询，
+并且**故意不传** `--principal`，看看少了 principal 之后可见集合会怎么缩小：
 
 ~~~powershell
 python -m about_llm.rag.cli retrieve `
@@ -186,6 +191,9 @@ covered query tokens       = 2
 coverage                   = 2 / 9
 final action               = abstain
 ```
+
+想自己数一遍 `meaningful query tokens = 9` 的话，先记住分词规则：中文按**单字**切分，不是按词。
+所以「灾备」是两个 token，不是一个。这也是本实验只用 coverage 做粗粒度拒答信号、不用它衡量语义相关性的原因之一。
 
 这个 case 刻意区分三件事：
 

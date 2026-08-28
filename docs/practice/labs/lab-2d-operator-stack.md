@@ -1,5 +1,10 @@
 # 实验 2D：跟一次 RMSNorm 走过 PyTorch 算子栈
 
+**定位**：进阶选做，预计 60–90 分钟；第一到第三步只需 CPU，第四步需要一块 NVIDIA GPU。
+
+**实验导航**：[返回总览](../labs.md) · [LLM 算子与计算栈](../../systems/operator-stack.md)
+{ .doc-nav }
+
 这个实验回答一个很具体的问题：模型代码中的一次 `RMSNorm`，怎样一路变成张量布局、FX 节点、ATen 算子和
 运行时事件？我们会逐层保存证据，让你能分清当前看到的是框架算子，还是已经下钻到设备 kernel。
 
@@ -68,9 +73,13 @@ x * rsqrt(mean(x², dim=-1) + eps) * weight
 最后对比两层图：
 
 ```text
-FX:          operator.mul → mean → operator.add → torch.rsqrt → ...
-torch.export: aten.mul.Tensor → aten.mean.dim → aten.add.Tensor → aten.rsqrt.default → ...
+FX:           operator.mul → mean → operator.add → torch.rsqrt → operator.mul → operator.mul
+torch.export: aten.mul.Tensor → aten.mean.dim → aten.add.Tensor → aten.rsqrt.default
+              → aten.mul.Tensor → aten.mul.Tensor
 ```
+
+这里可以回答第一步的第三个预测：一个 RMSNorm Module 展开成 **6 个**节点，两张图在本例中一一对应。
+但节点数不等于 kernel 数——报告里的 `scope.kernel_count_inferred_from_fx_or_export` 就是 `false`。
 
 FX 更接近捕获到的 Python 运算；export graph 把它表达成带 overload 的 ATen operator。两张图都还不是
 目标设备的 kernel 列表。
@@ -94,6 +103,9 @@ Profiler 展示的是当前 PyTorch build 的运行事件。编译器可能融�
 GPU 时间线还需要按目标设备进一步观察。
 
 ## 第四步：在 3070 Laptop 上确认 CUDA 路径
+
+没有 NVIDIA GPU 也不必跳过这一步的**结论**：直接读下面的命令与支持卡模板，把「这些证据我拿不到」
+写进支持卡的空缺项即可——承认覆盖面缺口，本身就是这个实验要练的能力。有 GPU 再往下执行。
 
 先记录环境：
 
@@ -134,6 +146,7 @@ python projects/transformers-basics/trace_rmsnorm_operator_stack.py `
 
 | 项目 | 本次观察 | 证据 | 尚未验证 |
 |---|---|---|---|
+| 版本 | `torch.__version__` 与 `torch.version.cuda` | JSON 的 runtime 字段与环境记录 | 其他 PyTorch 版本上的图与事件 |
 | 语义 | reference 与 framework 的误差 | JSON 中的最大绝对误差 | 更大数值范围和极端 epsilon |
 | Layout | 非连续输入能否执行 | stride、copy/profile 事件 | 更多 stride/alignment |
 | Dtype | FP32/FP16/BF16 各自结果 | 每个 run 的成功或错误 | 混合累加精度 |
