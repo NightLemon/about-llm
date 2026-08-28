@@ -110,7 +110,7 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"*.ipynb" = ["RUF001"]  # Full-width punctuation is intentional in Chinese examples.
+"*.ipynb" = ["RUF001", "RUF002", "RUF003", "E402"]  # Full-width punctuation and per-cell imports are intentional in Chinese teaching notebooks.
 "projects/**/*.py" = ["RUF002", "RUF003"]  # 中文教学注释与 docstring 使用全角标点。
 
 [tool.mypy]
