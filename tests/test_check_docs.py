@@ -205,7 +205,7 @@ def test_glossary_reach_requires_entry_pages_to_link_into_glossary(
         encoding="utf-8",
     )
     (pages / "orphan.md").write_text(
-        "# 未接入\n\n这一页用到了 learning rate 和 loss，却没有任何跳转。\n",
+        "# 未接入\n\n这一页用到了 learning rate 和 loss, 却没有任何跳转。\n",
         encoding="utf-8",
     )
 
