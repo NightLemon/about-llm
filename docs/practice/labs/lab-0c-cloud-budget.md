@@ -74,7 +74,14 @@ python -m pytest tests/test_usage_budget.py `
 
 ## 第二部分：持久化与恢复
 
-为每次运行选择一个尚不存在的数据库文件：
+为每次运行选择一个尚不存在的数据库文件。本部分和第三、四部分的三个脚本都会**拒绝复用**已有文件：
+
+```text
+ValueError: refusing to reuse existing database: ...
+```
+
+想重跑就先删掉对应的 `.sqlite`（父目录不存在时脚本会自动创建，不用手工 mkdir）。
+这不是不便，而是账本语义的一部分——预算账本一旦被追加过，就不该被第二次运行悄悄改写。
 
 ~~~powershell
 python projects/cloud-api-contracts/sqlite_usage_budget_demo.py `
@@ -110,7 +117,7 @@ python projects/cloud-api-contracts/budgeted_http_demo.py `
 
 最终 `committed_estimated_microusd` 应为 146。HTTP 500 说明响应失败，不说明供应商一定没有处理请求。
 
-再运行失败路径测试：
+再运行失败路径测试（下面的 `-k` 写了三个名字，但其中一个是参数化用例，实际应为 `4 passed`）：
 
 ~~~powershell
 python -m pytest tests/test_budgeted_cloud.py `

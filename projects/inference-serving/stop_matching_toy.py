@@ -61,7 +61,8 @@ def main() -> None:
         if update.stopped:
             break
 
-    # 当 BC 与 ABC 在同一字符位置结束时，matcher 应按明确规则选择更长的 ABC。
+    # 当 BC 与 ABC 在同一字符位置结束时，matcher 按**配置顺序**取第一个命中，
+    # 即先声明的 "BC"，而不是更长的 "ABC"。这是一条契约，不是最优性结论。
     overlap = IncrementalStopMatcher(("BC", "ABC"))
     overlap_update = overlap.feed(b"ABCZ")
     artifact = {

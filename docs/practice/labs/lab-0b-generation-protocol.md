@@ -17,7 +17,33 @@
 python projects/inference-serving/beam_search_toy.py
 ~~~
 
-逐步复算 beam 1 为什么剪掉最终概率 0.4 的 B 路径、beam 2 为什么能保留它；再复算 `log_probability / generated_length**alpha` 在 alpha 0/2 下为何翻转长短候选。
+脚本内的两张概率表就是全部输入，不涉及模型：
+
+```text
+剪枝反例（vocab = A B EOS，EOS id = 2，max_new_tokens = 2）
+  前缀 ()   → A 0.6, B 0.4, EOS 0.0
+  前缀 (A)  → A 0.49, B 0.0, EOS 0.51
+  前缀 (B)  → A 0.0,  B 0.0, EOS 1.0
+
+长度惩罚反例（vocab = A B C EOS，EOS id = 3，max_new_tokens = 3）
+  前缀 ()     → A 0.6, B 0.4
+  前缀 (A)    → EOS 1.0
+  前缀 (B)    → C 1.0
+  前缀 (B,C)  → EOS 1.0
+```
+
+先手算再运行：beam 1 在第一步只留 A（0.6 > 0.4），于是最终概率 `0.4 × 1.0 = 0.4` 的 `B EOS`
+根本没机会展开，而它优于 beam 1 保留的 `A EOS`（`0.6 × 0.51 = 0.306`）；beam 2 两条都留，因此能找到它。
+
+长度惩罚这组要对照 `normalized_score = cumulative_log_probability / generated_length**alpha`：
+
+| 候选 | `generated_length` | `cumulative_log_probability` | alpha=0 | alpha=2 |
+|---|---:|---:|---:|---:|
+| `A EOS` | 2 | ln 0.6 ≈ −0.5108 | −0.5108 | −0.1277 |
+| `B C EOS` | 3 | ln 0.4 ≈ −0.9163 | −0.9163 | −0.1018 |
+
+alpha=0 时短的 `A EOS` 赢；alpha=2 时排名翻转，长的 `B C EOS` 赢。注意 `length_definition` 明确写着
+"generated tokens only; emitted EOS included; prompt excluded"——换一种长度定义，这个结论就变了。
 
 **最低通过**：修改 EOS 是否计入长度、early stopping 或 candidate cap，并明确把修改后的行为记录为新算法契约。
 
@@ -27,7 +53,21 @@ python projects/inference-serving/beam_search_toy.py
 python projects/inference-serving/constrained_decoding_toy.py
 ~~~
 
-解释为什么 `1]` 不能因首字符 `1` 合法而进入候选，手算合法质量 0.35 如何变成 `1}`/`2}` 的 `5/7`/`2/7`。
+合法最终文本只有 `{"x":1}` 和 `{"x":2}`。token 表与关键第三步的概率是：
+
+```text
+token_texts = ('{"x"', ':', '1}', '1]', '2}', <EOS>, 'garbage')
+前缀 ()        → '{"x"' 0.8, 'garbage' 0.2
+前缀 (0,)      → ':' 0.9,   'garbage' 0.1
+前缀 (0,1)     → '1}' 0.25, '1]' 0.65, '2}' 0.10   ← 关键步
+前缀 (0,1,2)   → <EOS> 1.0
+```
+
+第三步概率最高的是非法的 `1]`（0.65）。逐 token 检查的是**整个 token 的字符串转移**，不是首字符：
+`1]` 会把前缀带成 `{"x":1]`，两个合法字符串都不再可能完成，因此它在采样前就被 mask 掉。
+剩下 `1}` 0.25 与 `2}` 0.10，合法质量 0.35，重新归一化得 `0.25/0.35 = 5/7` 与 `0.10/0.35 = 2/7`。
+
+运行后重点看 `critical_step` 这个字段，它单独输出了第三步的允许集合与归一化结果。
 
 **最低通过**：分别构造“语法已接受但 length 截断”“EOS 在非接受状态概率最高”“所有合法 token 概率为零”，证明三者不能合并为成功状态。
 
@@ -37,7 +77,23 @@ python projects/inference-serving/constrained_decoding_toy.py
 python projects/inference-serving/stop_matching_toy.py
 ~~~
 
-解释 partial `<EN` 为什么不能立刻显示、emoji 的 UTF-8 byte split 为什么不应改变结果，以及 overlap 的优先级如何影响匹配。
+两组 fixture 是：
+
+```text
+UTF-8 分块组：文本 "甲🙂乙<END>尾"，stop = ("<END>", "STOP")
+              按字节切成 4 块，边界故意落在 emoji 内部和 <END> 内部
+
+重叠组：      输入 "ABCZ"，stop = ("BC", "ABC")
+```
+
+先预测再运行，重点核对这几个字段：`updates[].emitted_text`、`updates[].held_characters`、
+`utf8_split_fixture.returned_text`，以及重叠组的 `matched_stop`。
+
+`<EN` 不能立刻显示，因为它还可能长成 `<END>`；一旦显示就撤不回来了。emoji 被切开时，
+matcher 按**字符**而不是字节匹配，所以分块方式不改变结果——这正是 `held_characters` 存在的意义。
+
+重叠组的答案可能与直觉相反：`matched_stop` 是 **`BC`** 而不是更长的 `ABC`。规则是**按配置顺序取第一个命中**，
+`"BC"` 声明在前。这是一条需要写进文档的契约，不是"更长优先"这类最优性结论。
 
 **最低通过**：画出 byte fragment、可见文本、partial prefix 和 terminal event 的状态变化，并指出客户端隐藏文本不等于服务端停止生成或计费。
 
