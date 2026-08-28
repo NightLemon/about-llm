@@ -79,6 +79,28 @@ nav:
       - 如何使用: guide/how-to-use.md
       - 新手知识地图: guide/beginner-map.md
       - 学习路径: guide/learning-paths.md
+      - 四周速成（应用+服务）:
+          - 总览: guide/sprint/index.md
+          - 第 1 天: guide/sprint/day-01.md
+          - 第 2 天: guide/sprint/day-02.md
+          - 第 3 天: guide/sprint/day-03.md
+          - 第 4 天: guide/sprint/day-04.md
+          - 第 5 天: guide/sprint/day-05.md
+          - 第 6 天: guide/sprint/day-06.md
+          - 第 7 天: guide/sprint/day-07.md
+          - 第 8 天: guide/sprint/day-08.md
+          - 第 9 天: guide/sprint/day-09.md
+          - 第 10 天: guide/sprint/day-10.md
+          - 第 11 天: guide/sprint/day-11.md
+          - 第 12 天: guide/sprint/day-12.md
+          - 第 13 天: guide/sprint/day-13.md
+          - 第 14 天: guide/sprint/day-14.md
+          - 第 15 天: guide/sprint/day-15.md
+          - 第 16 天: guide/sprint/day-16.md
+          - 第 17 天: guide/sprint/day-17.md
+          - 第 18 天: guide/sprint/day-18.md
+          - 第 19 天: guide/sprint/day-19.md
+          - 第 20 天: guide/sprint/day-20.md
       - 完整知识地图: guide/knowledge-map.md
       - 仓库地图与实现契约: guide/repo-map.md
       - 环境与硬件矩阵: guide/environment.md
