@@ -42,8 +42,10 @@ python projects/inference-serving/beam_search_toy.py
 | `A EOS` | 2 | ln 0.6 ≈ −0.5108 | −0.5108 | −0.1277 |
 | `B C EOS` | 3 | ln 0.4 ≈ −0.9163 | −0.9163 | −0.1018 |
 
-alpha=0 时短的 `A EOS` 赢；alpha=2 时排名翻转，长的 `B C EOS` 赢。注意 `length_definition` 明确写着
-"generated tokens only; emitted EOS included; prompt excluded"——换一种长度定义，这个结论就变了。
+alpha=0 时短的那条赢；alpha=2 时排名翻转，长的那条赢。
+
+还要注意报告里的 `length_definition` 字段：长度只数**生成的** token，其中包含发出的 EOS，不包含 prompt。
+换一种长度定义（比如把 EOS 排除掉），上面的排名就可能又翻回去——所以长度惩罚的结论离不开长度的定义。
 
 **最低通过**：修改 EOS 是否计入长度、early stopping 或 candidate cap，并明确把修改后的行为记录为新算法契约。
 
@@ -77,7 +79,7 @@ token_texts = ('{"x"', ':', '1}', '1]', '2}', <EOS>, 'garbage')
 python projects/inference-serving/stop_matching_toy.py
 ~~~
 
-两组 fixture 是：
+两组[固定样例](../../reference/glossary.md#term-fixture)是：
 
 ```text
 UTF-8 分块组：文本 "甲🙂乙<END>尾"，stop = ("<END>", "STOP")
@@ -101,7 +103,7 @@ matcher 按**字符**而不是字节匹配，所以分块方式不改变结果�
 
 - 只比较最后文本，不保存 beam 的逐步候选与剪枝原因。
 - 只校验字符前缀，不按 tokenizer 的完整 token transition 枚举合法候选。
-- 把 length cap、EOS、stop string、连接断开和 provider finish reason 当作同一状态。
+- 把这五件事当成同一个状态：长度上限、模型发出 EOS、命中 stop string、连接断开、供应商返回的 finish reason。
 
 ## 交付与结论边界
 

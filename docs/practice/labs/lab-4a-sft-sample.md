@@ -92,11 +92,13 @@ Notebook 用另一个问题分别计算 base 和 adapter loss，但不要求 ada
 
 ### 改 seed 后重载 adapter
 
-保持 adapter 不变，但用不同 seed 构造 fresh base。即使 shape 完全匹配，输出也会改变。这就是为什么真实 adapter artifact 必须绑定精确 base model/revision，而不是只保存 A、B。
+保持 adapter 不变，只换一个随机种子重新初始化底座模型。张量形状完全对得上，加载也不报错，但输出就是变了。
+所以一份 adapter 产物必须绑定它训练时用的**确切**底座模型与 revision；只存 A、B 两个矩阵是不够的。
 
 ### 用训练 loss 做发布判断
 
-删掉 held-out cell，只展示最后一个 training loss。你仍能证明优化器拟合了这个样本，却无法比较 base、Prompt/RAG baseline 与 adapter，更无法发现回归。
+删掉留出（held-out）那一格，只展示最后一次训练 loss。这样你仍能证明优化器把这个样本拟合住了，
+但没法把「原始模型」「Prompt / RAG 基线」和「微调后」三者放在一起比，也就发现不了退步。
 
 ## 从教学模型迁移到 Qwen/PEFT 时替换什么
 
@@ -109,7 +111,11 @@ Notebook 用另一个问题分别计算 base 和 adapter loss，但不要求 ada
 | 一个 held-out loss | 固定 cases、切片、任务指标与发布 gate |
 | CPU 随机 MiniGPT | 目标 checkpoint、3070 Laptop 实测显存与吞吐 |
 
-不要把教学代码直接换一个模型名就称为生产训练。真实路径还要处理 padding、截断、multi-turn/tool messages、gradient accumulation、AMP、checkpoint resume、数据许可、近重复和敏感信息。
+不要把教学代码换个模型名就当成生产训练。真实链路至少还要处理这几类问题：
+
+- **数据形状**：padding、截断、多轮对话与 tool message；
+- **训练机制**：梯度累积、混合精度（AMP）、断点续训；
+- **数据治理**：许可、近重复、敏感信息。
 
 ## 交付物
 
@@ -126,4 +132,5 @@ Notebook 用另一个问题分别计算 base 和 adapter loss，但不要求 ada
 8. 已证明与未证明
 ```
 
-如果你能解释“为什么 all-token loss 更低也可能是坏消息”，就可以进入真实 tokenizer/template preflight；如果还说不清 target shift，先回到 [MiniGPT Notebook](../labs.md#lab-3)。
+如果你能解释「为什么 all-token loss 更低反而可能是坏消息」，就可以进入真实 tokenizer 与模板的预检了。
+如果还说不清标签左移（target shift）是怎么回事，先回到 [MiniGPT Notebook](../labs.md#lab-3)。

@@ -82,8 +82,8 @@ principals = [engineering]
 | 一般引用与评测 | `chk_2371a63e…` | 0.10 |  |
 | 引用不等于语义蕴含 | `chk_8d8a68a0…` | 0.70 |  |
 
-fixture 是按 `document_id` 而不是按顺序匹配的：JSONL 里三行的顺序与最终 rank 无关，
-score 才决定排序。这也是为什么每行都要带 `query_sha256` 和 `content_sha256`——
+这份[固定样例](../../reference/glossary.md#term-fixture)是按 `document_id` 匹配的，不是按顺序匹配的。
+JSONL 里三行的先后与最终 rank 无关，只有 score 决定排序。这也是为什么每行都要带 `query_sha256` 和 `content_sha256`——
 换了 query 或改了 chunk 内容，这份 score 就应当失效而不是被悄悄复用。
 
 假设 top-k 为 2、预算充足，你预计 context 中有几个短 source ID？

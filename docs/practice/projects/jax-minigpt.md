@@ -317,7 +317,7 @@ AdamW 一阶与二阶矩、更新后的参数和 logits，误差均落在录制�
 各项精确误差在脚本输出的 `comparison` 与 `assertions` 里；整份报告的摘要则是顶层的 `report_fingerprint` 字段。
 覆盖面结论另见[项目控制台账](../../evidence/project-controls.md)。
 
-`report_fingerprint` 的用法是**跨运行比较**：同一环境重跑应得到同一串；一旦变了，就说明 fixture、
+`report_fingerprint` 的用法是**跨运行比较**：同一环境重跑应得到同一串；一旦变了，就说明固定输入、
 容差或实现有改动，需要先解释差异再继续引用旧结论。它不证明 PyTorch 与 JAX bitwise 相同。
 
 为了确认 parity 不是“容差太宽”，实验还把 JAX 使用的三张 mask 循环移位。最终参数随即出现明显差异。

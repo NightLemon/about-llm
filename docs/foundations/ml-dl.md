@@ -218,19 +218,26 @@ Clipping 能限制一次异常更新，却修不好持续的脏数据或错标�
 
 ## 为什么 Gradient Accumulation 容易悄悄换目标
 
-设第 \(i\) 个 micro-batch 有 \(n_i\) 个有效 token，token loss 为 \(\ell_{ij}\)。若训练目标是整个 update window 的
-token mean：
+一次参数更新会把若干个小批次（micro-batch）的梯度累加起来，这一整组小批次称为一个更新窗口。
+设窗口里第 \(i\) 个小批次有 \(n_i\) 个有效 token，其中第 \(j\) 个 token 的 loss 为 \(\ell_{ij}\)。
+如果训练目标是整个窗口按 token 求平均：
 
 \[
 L_{token}=\frac{1}{N}\sum_i\sum_{j=1}^{n_i}\ell_{ij},
 \qquad N=\sum_i n_i.
 \]
 
-直接平均每个 micro-batch 的 mean，会让短 batch 中的单个 token 获得更大权重。正确实现要累计 loss sum 与有效
-token count，再按全窗口分母缩放；`ignore_index` 位置既不进分子，也不进分母。
+注意分母 \(N\) 是整个窗口的 token 总数。如果改成「每个小批次先各自求平均、再把这些平均值平均一次」，
+短批次里的单个 token 就会拿到过大的权重——目标函数被悄悄换掉了。
 
-分布式训练还要确认框架对各 rank 梯度做 sum 还是 mean。DDP 默认取 rank mean 时，全局 token mean 的缩放需要
-显式包含 world size。AMP 则要求先 unscale 再做 global-norm clipping，checkpoint 也要保存 scaler。
+正确做法只有两步：每个小批次累加 loss 的**总和**与有效 token 的**个数**，
+等窗口结束时再用全窗口的 token 总数去除。被 `ignore_index` 标记的位置既不进分子，也不进分母。
+
+多卡训练还要多问一句：框架把各张卡的梯度**相加**还是**求平均**？
+PyTorch DDP 默认求平均，所以想得到全局 token mean，缩放系数里必须显式带上卡数（world size）。
+
+混合精度（AMP）也有固定顺序：先把梯度反缩放回真实尺度，再做全局范数裁剪；顺序反了裁剪阈值就没有意义。
+存 checkpoint 时别忘了把 scaler 一起存下来。
 
 这些不是只靠文字记忆的细节。下面三个小实验分别改变 reduction、`no_sync` 的作用范围和 AMP 顺序，
 你可以直接观察梯度怎样随之变化：

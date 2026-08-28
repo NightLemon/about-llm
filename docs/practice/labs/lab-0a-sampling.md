@@ -38,7 +38,7 @@ python projects/inference-serving/sampling_toy.py
 
 ## 预期现象
 
-- 本次 fixture 固定 `temperature=1`，所以 `temperature_scaled_logits` 与 `input_logits` 完全相同——
+- 本次[固定样例](../../reference/glossary.md#term-fixture)固定 `temperature=1`，所以 `temperature_scaled_logits` 与 `input_logits` 完全相同——
   这本身就是一个检查点。想观察缩放效果，请自行改成 0.5 或 2.0 再对比 `probabilities`。
 - top-k 先限制候选数量（留下 `{0,1,2}`），top-p 再按累计概率保留 crossing token：0.4 < 0.7 ≤ 0.7，
   所以只剩 `{0,1}`，归一化后是 `4/7` 与 `3/7`。
