@@ -65,6 +65,8 @@
 
 优先引用论文原文、官方文档、标准和可信的一手工程资料。论文用“作者，标题，会议/期刊或 arXiv，年份，链接”的格式。对存在争议的结论至少展示两方证据。
 
+会变化的 API、模型目录、价格、配额或政策必须先登记到 `docs/reference/official-sources.json`。正文用 `[SOURCE:stable-id]` 绑定登记项；构建时它会显示来源状态。`verified` 只表示人工在 `checked_at` 核对过登记范围，`stale`、`unknown` 和 `pending-review` 分别表示超过复核日期、网络探测失败和 fingerprint 变化。状态降级不得替代语义复核。
+
 ## 贡献许可
 
 提交贡献即表示你有权提供相应内容，并同意按仓库的双许可证规则发布：源码、配置、测试和 Notebook 代码单元采用 [MIT License](LICENSE-CODE)；正文、图表和 Notebook Markdown 单元采用 [CC BY 4.0](LICENSE-DOCS)。第三方内容必须保留来源、许可证和必要的归属信息；无法确认授权范围时不要提交。

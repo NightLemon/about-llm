@@ -498,5 +498,5 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 
 - Meta，[Llama models repository](https://github.com/meta-llama/llama-models)。
 - Touvron 等，[LLaMA](https://arxiv.org/abs/2302.13971)。
-- Hugging Face，[Chat templates](https://huggingface.co/docs/transformers/en/chat_templating)。
+- Hugging Face，[Chat templates](https://huggingface.co/docs/transformers/en/chat_templating)。[SOURCE:transformers-chat-template]
 - 本仓库使用的 model-card revision 与核对内容见[Llama 证据台账](../evidence/llama-controls.md)。

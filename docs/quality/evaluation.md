@@ -137,7 +137,7 @@ Hosted Evals 服务擅长编排：读取数据、调用模型、运行 grader、
 | String/model grader | rubric 有效性、人工校准与指标 revision |
 | 报告入口 | 切片、统计比较、发布阈值和回滚条件 |
 
-截至 2026-08-19，OpenAI 官方 [Evals guide](https://developers.openai.com/api/docs/guides/evals)使用
+截至 2026-08-19，OpenAI 官方 [Evals guide](https://developers.openai.com/api/docs/guides/evals)[SOURCE:openai-evals]使用
 `data_source_config` 描述数据，用 `testing_criteria`/graders 描述评分条件。接入这类平台时，把异步失败、缺失 case、
 grader 变化和多次试验选择一起写入本地决策记录。
 

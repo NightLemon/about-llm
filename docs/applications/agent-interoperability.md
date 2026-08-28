@@ -336,8 +336,10 @@ python projects/safe-agent/a2a_loopback_control.py --verify-official-schema
   [Lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)、
   [Cancellation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation) 和
   [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)。
+- MCP 当前入口状态：[SOURCE:mcp-introduction] [SOURCE:mcp-specification]
 - A2A Protocol：[Specification](https://a2a-protocol.org/latest/specification/)、
   [v1.0.0 JSON Schema](https://a2a-protocol.org/v1.0.0/spec/a2a.json) 和
   [Python SDK](https://github.com/a2aproject/a2a-python)。
+- A2A 当前规范与 SDK 状态：[SOURCE:a2a-latest-specification] [SOURCE:a2a-python-sdk]
 
 协议细节核对日期为 2026-08-13；本仓库示例使用 A2A protocol 1.0.0 与 Python SDK 1.1.2。

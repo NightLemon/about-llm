@@ -275,7 +275,7 @@ Agent 续接时还可能需要重新提供 environment。
 
 ## 一手资料
 
-- Google，[Interactions API overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，资源、服务端历史、存储与当前支持范围；核对日期 2026-08-26。
-- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE event、step、函数参数增量和未知事件策略；核对日期 2026-08-26。
+- Google，[Interactions API overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，资源、服务端历史、存储与当前支持范围；核对日期 2026-08-26。[SOURCE:gemini-interactions-overview]
+- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE event、step、函数参数增量和未知事件策略；核对日期 2026-08-26。[SOURCE:gemini-interactions-streaming]
 - Google，[Background execution](https://ai.google.dev/gemini-api/docs/background-execution)，后台状态、轮询、恢复、取消与删除；核对日期 2026-08-26。
 - Google，[Function calling](https://ai.google.dev/gemini-api/docs/function-calling)，函数声明、`function_call` 与 `function_result` 多轮流程；核对日期 2026-08-26。

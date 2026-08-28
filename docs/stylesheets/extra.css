@@ -157,6 +157,33 @@ input {
   overflow-wrap: anywhere;
 }
 
+.md-typeset .source-badge {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-left: 0.35em;
+  padding: 0.08rem 0.42rem;
+  text-decoration: none;
+  vertical-align: 0.08em;
+}
+
+.md-typeset .source-status-verified {
+  color: #217a4b;
+}
+
+.md-typeset .source-status-stale,
+.md-typeset .source-status-pending-review {
+  color: #9a5b00;
+}
+
+.md-typeset .source-status-unknown,
+.md-typeset .source-status-rejected {
+  color: #b42318;
+}
+
 .md-typeset table:not([class]) code {
   overflow-wrap: normal;
   white-space: nowrap;

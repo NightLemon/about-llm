@@ -456,11 +456,11 @@ temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格
 
 ## 一手资料
 
-- OpenAI，[模型目录](https://developers.openai.com/api/docs/models)，当前产品目录与 Responses 入口；核对日期 2026-08-19。
-- OpenAI，[创建 Response](https://developers.openai.com/api/reference/resources/responses/methods/create)，请求与响应对象；核对日期 2026-08-19。
-- OpenAI，[流式返回指南](https://developers.openai.com/api/docs/guides/streaming-responses)，Responses 流式处理方法；核对日期 2026-08-19。
-- OpenAI，[流式事件参考](https://developers.openai.com/api/reference/resources/responses/streaming-events)，事件类型与字段；核对日期 2026-08-19。
-- OpenAI，[结构化输出指南](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON Schema 子集、JSON 模式、拒答与非完整终态；核对日期 2026-08-19。
-- OpenAI，[函数调用指南](https://developers.openai.com/api/docs/guides/function-calling)，候选调用、应用执行与结果回传；核对日期 2026-08-19。
+- OpenAI，[模型目录](https://developers.openai.com/api/docs/models)，当前产品目录与 Responses 入口；核对日期 2026-08-19。[SOURCE:openai-model-catalog]
+- OpenAI，[创建 Response](https://developers.openai.com/api/reference/resources/responses/methods/create)，请求与响应对象；核对日期 2026-08-19。[SOURCE:openai-responses-create]
+- OpenAI，[流式返回指南](https://developers.openai.com/api/docs/guides/streaming-responses)，Responses 流式处理方法；核对日期 2026-08-19。[SOURCE:openai-responses-streaming]
+- OpenAI，[流式事件参考](https://developers.openai.com/api/reference/resources/responses/streaming-events)，事件类型与字段；核对日期 2026-08-19。[SOURCE:openai-streaming-events]
+- OpenAI，[结构化输出指南](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON Schema 子集、JSON 模式、拒答与非完整终态；核对日期 2026-08-19。[SOURCE:openai-structured-outputs]
+- OpenAI，[函数调用指南](https://developers.openai.com/api/docs/guides/function-calling)，候选调用、应用执行与结果回传；核对日期 2026-08-19。[SOURCE:openai-function-calling]
 - Brown 等，[GPT-3 论文](https://arxiv.org/abs/2005.14165)，上下文学习（in-context learning）。
 - Ouyang 等，[InstructGPT 论文](https://arxiv.org/abs/2203.02155)，监督示范、偏好排序与强化学习。

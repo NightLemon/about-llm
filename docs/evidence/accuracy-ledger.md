@@ -114,8 +114,8 @@ RAG 教材用两个固定请求建立同一条证据链：请求 A 在授权 BM2
 | Qwen2.5-0.5B-Instruct config | 固定 config 显式给出 24 层、14 query heads、2 KV heads、hidden 896 与 max-position 32768；由标准字段可推 head dim 64 和理想 K/V payload，不能推有效上下文或权重行为 | [immutable config](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/config.json)；raw SHA-256 `18e18afc…f45`；核对日期 2026-08-13 |
 | Qwen2.5-0.5B-Instruct 权重执行 | 固定 `model.safetensors` 及其余 6 个执行文件的长度/hash，加载前重哈希实际 bytes，并在已记录环境执行一个 CPU FP32 eager prefill/cache/full/generate case；这不是来源签名、质量/上下文/许可/GPU/性能证据 | [immutable model.safetensors](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/model.safetensors)；988,097,824 bytes；raw SHA-256 `fdf756fa…b7fe`；核对日期 2026-08-13 |
 | DeepSeek-V3 config | 固定 config 同时含 KV-head、MLA latent/dimension 与 routed/shared-expert 字段；本仓库据此拒绝标准 dense K/V 公式，不推断运行时 MLA layout | [immutable config](https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/e815299b0bcbac849fa540c768ef21845365c9eb/config.json)；raw SHA-256 `cbf0b95d…35d9`；核对日期 2026-08-13 |
-| TRL `SFTTrainer` | `assistant_only_loss` 仅用于 conversational 数据并依赖 generation mask；prompt-completion 的 completion-only 默认值不同，仍需检查实际 mask/labels | [SFT Trainer](https://huggingface.co/docs/trl/en/sft_trainer)；核对日期 2026-08-12 |
-| vLLM CLI | `vllm serve` 提供 OpenAI-compatible server；参数和支持矩阵应按安装版本与 stable 文档核对 | [vLLM stable CLI](https://docs.vllm.ai/en/stable/cli/) |
+| TRL `SFTTrainer` | `assistant_only_loss` 仅用于 conversational 数据并依赖 generation mask；prompt-completion 的 completion-only 默认值不同，仍需检查实际 mask/labels | [SFT Trainer](https://huggingface.co/docs/trl/en/sft_trainer)；核对日期 2026-08-12 [SOURCE:trl-sft-trainer] |
+| vLLM CLI | `vllm serve` 提供 OpenAI-compatible server；参数和支持矩阵应按安装版本与 stable 文档核对 | [vLLM stable CLI](https://docs.vllm.ai/en/stable/cli/) [SOURCE:vllm-cli-stable] |
 | Transformers chat template | 模板序列化 role/control tokens；训练与生成格式、generation prompt 和 assistant mask 要按 tokenizer 模板验证 | [Chat templates](https://huggingface.co/docs/transformers/en/chat_templating) |
 
 ## 论文与历史协议案例

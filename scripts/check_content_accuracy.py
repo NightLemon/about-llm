@@ -14,7 +14,7 @@ def main() -> int:
         print("Content source checks failed:")
         print("\n".join(f"- {error}" for error in errors))
         return 1
-    print(f"OK: checked UTF-8 in {len(files)} files and reviewed official sources")
+    print(f"OK: checked UTF-8 in {len(files)} files and validated the source registry")
     return 0
 
 

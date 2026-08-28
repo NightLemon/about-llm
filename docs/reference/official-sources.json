@@ -1,200 +1,470 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "sources": [
     {
+      "id": "openai-model-catalog",
+      "fingerprint": "sha256:5836534648ff7ec4b230362e84d2ab112c0a396a43b4a1de306c360f85a92e61",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 350456,
       "url": "https://developers.openai.com/api/docs/models",
       "checked_at": "2026-08-19",
-      "scope": "OpenAI current model catalog and Responses entrypoint"
+      "next_review_at": "2026-09-19",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "OpenAI current model catalog and Responses entrypoint",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "models/gpt.md"]
     },
     {
+      "id": "openai-responses-create",
+      "fingerprint": "sha256:bf5c5886954abd734ecae5778aac1eb841be5c3e6b817a6bb31f3563481a8571",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://developers.openai.com/api/reference/resources/responses/methods/create",
       "checked_at": "2026-08-19",
-      "scope": "OpenAI Responses create method and response object reference"
+      "next_review_at": "2026-09-19",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "OpenAI Responses create method and response object reference",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "models/gpt.md"]
     },
     {
+      "id": "openai-responses-streaming",
+      "fingerprint": "sha256:9e37a1e65836bfc20fdd4234642081f9365c8077d764c81be2ae6e2f3a491498",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 491757,
       "url": "https://developers.openai.com/api/docs/guides/streaming-responses",
       "checked_at": "2026-08-19",
-      "scope": "OpenAI Responses streaming guide and typed-event processing model"
+      "next_review_at": "2026-09-19",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "OpenAI Responses streaming guide and typed-event processing model",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "models/cloud-api-contracts.md", "models/gpt.md"]
     },
     {
+      "id": "openai-streaming-events",
+      "fingerprint": "sha256:1c0767e111a2d441ee149d1ebc6491477a48d7f03efbd0c2d988f11d9dc9860e",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://developers.openai.com/api/reference/resources/responses/streaming-events",
       "checked_at": "2026-08-19",
-      "scope": "OpenAI Responses typed streaming-event reference"
+      "next_review_at": "2026-09-19",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "OpenAI Responses typed streaming-event reference",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "models/gpt.md"]
     },
     {
+      "id": "openai-structured-outputs",
+      "fingerprint": "sha256:d25d0be0bb817f4314ffd7be65091b7017ae1cf7d0206e38f4a1ed9eedd9ae11",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://developers.openai.com/api/docs/guides/structured-outputs",
       "checked_at": "2026-08-19",
-      "scope": "OpenAI Structured Outputs and JSON mode boundary"
+      "next_review_at": "2026-09-19",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "OpenAI Structured Outputs and JSON mode boundary",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "models/gpt.md"]
     },
     {
+      "id": "openai-function-calling",
+      "fingerprint": "sha256:2fbf33386dfd3522dfb287f3a23110b93b616a75996b279db6fb4ed93949bed6",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://developers.openai.com/api/docs/guides/function-calling",
       "checked_at": "2026-08-19",
-      "scope": "OpenAI tool-call, application execution, call_id, and function_call_output flow"
+      "next_review_at": "2026-09-19",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "OpenAI tool-call, application execution, call_id, and function_call_output flow",
+      "used_by": ["evidence/accuracy-ledger.md", "models/gpt.md"]
     },
     {
+      "id": "openai-evals",
+      "fingerprint": "sha256:70c401eba4a751d51e3ad1a0e10d839e12478565ee4f7e52e5db314fd54b648e",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://developers.openai.com/api/docs/guides/evals",
       "checked_at": "2026-08-19",
-      "scope": "OpenAI Evals data source, testing criteria, graders, and asynchronous run workflow"
+      "next_review_at": "2026-09-19",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "OpenAI Evals data source, testing criteria, graders, and asynchronous run workflow",
+      "used_by": ["evidence/accuracy-ledger.md", "quality/evaluation.md"]
     },
     {
+      "id": "anthropic-messages",
+      "fingerprint": "sha256:db3af480f01fceee2c78969a8f0f01bc48625b951547182a3082ab42e2aff501",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://platform.claude.com/docs/en/api/messages",
       "checked_at": "2026-08-12",
-      "scope": "Anthropic Messages request, content, usage, and stop fields"
+      "next_review_at": "2026-09-12",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Anthropic Messages request, content, usage, and stop fields",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/claude-controls.md", "evidence/cloud-api-controls.md", "reference/resources.md"]
     },
     {
+      "id": "gemini-interactions-overview",
+      "fingerprint": "sha256:2c8fbfc2d5840f6683bb98f525d5c76cb0aa651b4e7fe14ec8e9e1f98053b4ac",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 107364,
       "url": "https://ai.google.dev/gemini-api/docs/interactions-overview",
       "checked_at": "2026-08-15",
-      "scope": "Gemini Interactions API lifecycle and state model"
+      "next_review_at": "2026-09-15",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Gemini Interactions API lifecycle and state model",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "evidence/gemini-controls.md", "models/gemini-interactions.md", "models/gemini-production.md"]
     },
     {
+      "id": "gemini-interactions-reference",
+      "fingerprint": "sha256:0ae2a4173d7f6134dc0e5ac41fd39764821f5434f010f710d0dd0219f581cbb2",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://ai.google.dev/api/interactions-api",
       "checked_at": "2026-08-15",
-      "scope": "Gemini Interaction resource, status, step, method and API-version reference"
+      "next_review_at": "2026-09-15",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Gemini Interaction resource, status, step, method and API-version reference",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-production.md"]
     },
     {
+      "id": "gemini-interactions-streaming",
+      "fingerprint": "sha256:59da8839928287b1ca2f45e420f902d567dc3b9a853a5c5574b81660c43670fb",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 408886,
       "url": "https://ai.google.dev/gemini-api/docs/streaming",
       "checked_at": "2026-08-15",
-      "scope": "Gemini Interactions SSE event and step lifecycle"
+      "next_review_at": "2026-09-15",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Gemini Interactions SSE event and step lifecycle",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-interactions.md", "models/gemini-production.md"]
     },
     {
+      "id": "gemini-generate-content",
+      "fingerprint": "sha256:02130bd372690eb1b85c18f973b5987b183bdc0808790cf4ffec5a425bcc8e85",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://ai.google.dev/api/generate-content",
       "checked_at": "2026-08-15",
-      "scope": "Gemini GenerateContent request and response fields"
+      "next_review_at": "2026-09-15",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Gemini GenerateContent request and response fields",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "evidence/gemini-controls.md", "models/gemini-production.md", "reference/resources.md"]
     },
     {
+      "id": "gemini-text-generation",
+      "fingerprint": "sha256:601a5661fd5d63fe0c5a47309422e68ee520c21195078413701f3f923d30454e",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 254949,
       "url": "https://ai.google.dev/gemini-api/docs/text-generation",
       "checked_at": "2026-08-15",
-      "scope": "Gemini text-generation API recommendation"
+      "next_review_at": "2026-09-15",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Gemini text-generation API recommendation",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-production.md"]
     },
     {
+      "id": "mcp-introduction",
+      "fingerprint": "sha256:a542cdfab23c0ecd06ba1ee4f0a68e17329a430be519f2cf7cee65fef730d111",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 274704,
       "url": "https://modelcontextprotocol.io/docs/getting-started/intro",
       "checked_at": "2026-08-12",
-      "scope": "MCP host, client, server, tools, resources, and prompts"
+      "next_review_at": "2026-09-12",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "MCP host, client, server, tools, resources, and prompts",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "mcp-specification",
+      "fingerprint": "sha256:2f2193562ed6eb0875860a1c577b9bfe60297b23515272e39d541a425c1ea745",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 293658,
       "url": "https://modelcontextprotocol.io/specification/",
       "checked_at": "2026-08-12",
-      "scope": "MCP versioning and capability negotiation"
+      "next_review_at": "2026-09-12",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "MCP versioning and capability negotiation",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "mcp-transports-2025-11-25",
       "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports",
       "checked_at": "2026-08-13",
-      "scope": "MCP 2025-11-25 stdio newline framing and Streamable HTTP boundary"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "2025-11-25",
+      "scope": "MCP 2025-11-25 stdio newline framing and Streamable HTTP boundary",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "mcp-lifecycle-2025-11-25",
       "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle",
       "checked_at": "2026-08-13",
-      "scope": "MCP 2025-11-25 initialization, version and capability negotiation lifecycle"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "2025-11-25",
+      "scope": "MCP 2025-11-25 initialization, version and capability negotiation lifecycle",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "mcp-cancellation-2025-11-25",
       "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation",
       "checked_at": "2026-08-13",
-      "scope": "MCP 2025-11-25 explicit cancellation notification behavior and race boundary"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "2025-11-25",
+      "scope": "MCP 2025-11-25 explicit cancellation notification behavior and race boundary",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md"]
     },
     {
+      "id": "mcp-tools-2025-11-25",
       "url": "https://modelcontextprotocol.io/specification/2025-11-25/server/tools",
       "checked_at": "2026-08-13",
-      "scope": "MCP 2025-11-25 tools list/call schemas, structured results and error split"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "2025-11-25",
+      "scope": "MCP 2025-11-25 tools list/call schemas, structured results and error split",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "a2a-latest-specification",
+      "fingerprint": "sha256:383694607d1fe2471df61c1662ee331568f67e24bac505a5322f2a5dcaf9c7b4",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://a2a-protocol.org/latest/specification/",
       "checked_at": "2026-08-13",
-      "scope": "A2A 1.0 Agent Card, task, message, artifact, version header, and protocol bindings"
+      "next_review_at": "2026-09-13",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "A2A 1.0 Agent Card, task, message, artifact, version header, and protocol bindings",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "a2a-schema-1-0-0",
       "url": "https://a2a-protocol.org/v1.0.0/spec/a2a.json",
       "checked_at": "2026-08-13",
-      "scope": "Frozen A2A v1.0.0 Draft 2020-12 JSON Schema used by the optional hash-pinned control"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "1.0.0",
+      "scope": "Frozen A2A v1.0.0 Draft 2020-12 JSON Schema used by the optional hash-pinned control",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "a2a-python-sdk",
+      "fingerprint": "sha256:5d1ff15a6d59f89e8232c4a075e611daef868b0fb6d01bd10ff67cb206fa39f7",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 364864,
       "url": "https://github.com/a2aproject/a2a-python",
       "checked_at": "2026-08-13",
-      "scope": "Official Python SDK 1.1.2 compatibility with A2A spec 1.0 and JSON-RPC client/server support"
+      "next_review_at": "2026-09-13",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Official Python SDK 1.1.2 compatibility with A2A spec 1.0 and JSON-RPC client/server support",
+      "used_by": ["applications/agent-interoperability.md", "evidence/accuracy-ledger.md", "reference/resources.md"]
     },
     {
+      "id": "llama-3-2-model-card",
       "url": "https://raw.githubusercontent.com/meta-llama/llama-models/0e0b8c519242d5833d8c11bffc1232b77ad7f301/models/llama3_2/MODEL_CARD.md",
       "checked_at": "2026-08-13",
-      "scope": "Immutable Meta Llama 3.2 text-only vendor model-card claims and exact-byte evidence"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "0e0b8c519242d5833d8c11bffc1232b77ad7f301",
+      "scope": "Immutable Meta Llama 3.2 text-only vendor model-card claims and exact-byte evidence",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/llama-controls.md"]
     },
     {
+      "id": "qwen-2-5-config",
       "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/config.json",
       "checked_at": "2026-08-13",
-      "scope": "Immutable Qwen2.5-0.5B-Instruct config bytes and conservative standard-GQA projection"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "scope": "Immutable Qwen2.5-0.5B-Instruct config bytes and conservative standard-GQA projection",
+      "used_by": ["evidence/accuracy-ledger.md"]
     },
     {
+      "id": "qwen-2-5-weights",
       "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/model.safetensors",
       "checked_at": "2026-08-13",
-      "scope": "Immutable Qwen2.5-0.5B-Instruct safetensors bytes used by the reviewed CPU FP32 execution control"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "scope": "Immutable Qwen2.5-0.5B-Instruct safetensors bytes used by the reviewed CPU FP32 execution control",
+      "used_by": ["evidence/accuracy-ledger.md"]
     },
     {
+      "id": "deepseek-v3-config",
       "url": "https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/e815299b0bcbac849fa540c768ef21845365c9eb/config.json",
       "checked_at": "2026-08-13",
-      "scope": "Immutable DeepSeek-V3 config bytes and MLA/MoE fail-closed projection"
+      "next_review_at": "2027-08-13",
+      "status": "verified",
+      "volatility": "immutable",
+      "revision": "e815299b0bcbac849fa540c768ef21845365c9eb",
+      "scope": "Immutable DeepSeek-V3 config bytes and MLA/MoE fail-closed projection",
+      "used_by": ["evidence/accuracy-ledger.md"]
     },
     {
+      "id": "trl-sft-trainer",
+      "fingerprint": "sha256:0a82b3757242b4b7fdaeeeb5143b8639d5ef74bc31802808e843ef63c91ba02a",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 325013,
       "url": "https://huggingface.co/docs/trl/en/sft_trainer",
       "checked_at": "2026-08-12",
-      "scope": "TRL SFTTrainer assistant-only loss and template requirements"
+      "next_review_at": "2026-09-12",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "TRL SFTTrainer assistant-only loss and template requirements",
+      "used_by": ["evidence/accuracy-ledger.md"]
     },
     {
+      "id": "vllm-cli-stable",
+      "fingerprint": "sha256:d6af96a4fa138f998d44c77d549febf082e0bf7345beb84b7b26c11ea3dee5fe",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://docs.vllm.ai/en/stable/cli/",
       "checked_at": "2026-08-12",
-      "scope": "vLLM stable CLI and serve entrypoint"
+      "next_review_at": "2026-09-12",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "vLLM stable CLI and serve entrypoint",
+      "used_by": ["evidence/accuracy-ledger.md"]
     },
     {
+      "id": "transformers-chat-template",
+      "fingerprint": "sha256:78c94f1a7301bf41edcd1e0ef1682f5b597019ba5e64f355ea581378e4f593fe",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 266042,
       "url": "https://huggingface.co/docs/transformers/en/chat_templating",
       "checked_at": "2026-08-12",
-      "scope": "Transformers chat-template serialization and generation prompt"
+      "next_review_at": "2026-09-12",
+      "status": "verified",
+      "volatility": "high",
+      "scope": "Transformers chat-template serialization and generation prompt",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/llama-controls.md", "evidence/qwen-controls.md", "models/llama.md"]
     },
     {
+      "id": "hf-papers-2026-w32",
+      "fingerprint": "sha256:1f0eb88d60508fcf9987a13524cf415833a77e956c71c2cdc371bcee1e2e3cff",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://huggingface.co/papers/week/2026-W32",
       "checked_at": "2026-08-12",
-      "scope": "Hugging Face Daily Papers 2026-W32 selection snapshot"
+      "next_review_at": "2026-11-12",
+      "status": "verified",
+      "volatility": "medium",
+      "scope": "Hugging Face Daily Papers 2026-W32 selection snapshot",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "hf-papers-2026-07",
+      "fingerprint": "sha256:1f0eb88d60508fcf9987a13524cf415833a77e956c71c2cdc371bcee1e2e3cff",
+      "fingerprint_kind": "visible-text-v1",
+      "fingerprint_bytes": 524288,
       "url": "https://huggingface.co/papers/month/2026-07",
       "checked_at": "2026-08-12",
-      "scope": "Hugging Face Daily Papers July 2026 selection snapshot"
+      "next_review_at": "2026-11-12",
+      "status": "verified",
+      "volatility": "medium",
+      "scope": "Hugging Face Daily Papers July 2026 selection snapshot",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-kimi-k3-v2",
       "url": "https://arxiv.org/abs/2607.24653",
       "checked_at": "2026-08-12",
-      "scope": "Kimi K3 v2 primary paper metadata, model claims, and evaluation boundary"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "Kimi K3 v2 primary paper metadata, model claims, and evaluation boundary",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-recursive-synthesis-v2",
       "url": "https://arxiv.org/abs/2608.05466",
       "checked_at": "2026-08-12",
-      "scope": "Recursive Synthesis v2 task-generation method, results, and version conflict"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "Recursive Synthesis v2 task-generation method, results, and version conflict",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-longhorizon-harness-v1",
       "url": "https://arxiv.org/abs/2608.01964",
       "checked_at": "2026-08-12",
-      "scope": "LongHorizon-Harness v1 state-management method, evaluations, and limitations"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "LongHorizon-Harness v1 state-management method, evaluations, and limitations",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-swantale-v2",
       "url": "https://arxiv.org/abs/2608.02023",
       "checked_at": "2026-08-12",
-      "scope": "SwanTale v2 data, model, evaluation, and technical-report boundary"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "SwanTale v2 data, model, evaluation, and technical-report boundary",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-orca-v3",
       "url": "https://arxiv.org/abs/2606.30534",
       "checked_at": "2026-08-12",
-      "scope": "Orca v3 world-latent method, readouts, and inventory-versus-training boundary"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "Orca v3 world-latent method, readouts, and inventory-versus-training boundary",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-abot-world-0-v1",
       "url": "https://arxiv.org/abs/2607.19191",
       "checked_at": "2026-08-12",
-      "scope": "ABot-World-0 v1 rollout, deployment measurements, and precision boundary"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "ABot-World-0 v1 rollout, deployment measurements, and precision boundary",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-cracks-foundation-v1",
       "url": "https://arxiv.org/abs/2608.10296",
       "checked_at": "2026-08-12",
-      "scope": "Cracks in the Foundation v1 controlled long-context architecture study"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "Cracks in the Foundation v1 controlled long-context architecture study",
+      "used_by": ["evidence/accuracy-ledger.md", "papers/2026-08.md"]
     },
     {
+      "id": "arxiv-opaque-reasoning-case",
       "url": "https://arxiv.org/abs/2608.09867",
       "checked_at": "2026-08-12",
-      "scope": "Primary paper for the July 2026 opaque reasoning replay case, trajectory study, disclosure, and August mitigation boundary"
+      "next_review_at": "2027-08-12",
+      "status": "verified",
+      "volatility": "low",
+      "scope": "Primary paper for the July 2026 opaque reasoning replay case, trajectory study, disclosure, and August mitigation boundary",
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/claude-controls.md", "evidence/cloud-api-controls.md", "papers/2026-08.md", "quality/reasoning-artifact-security.md", "reference/resources.md"]
     }
   ]
 }

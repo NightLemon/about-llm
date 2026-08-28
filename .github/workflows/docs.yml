@@ -38,19 +38,27 @@ jobs:
       - run: python scripts/check_repo_hygiene.py
       - run: python scripts/check_docs.py
       - run: python scripts/check_content_accuracy.py
+      - if: github.event_name == 'schedule'
+        run: python scripts/probe_sources.py --output artifacts/source-health.json
       - run: python scripts/report_readability.py --scope reader --top 30
       - run: python scripts/doctor.py --profile docs
       - run: mkdocs build --strict
       - run: python scripts/check_built_site.py
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site
+      - if: github.event_name == 'schedule'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: source-health
+          path: artifacts/source-health.json
+          retention-days: 30
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
