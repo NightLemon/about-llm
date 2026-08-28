@@ -1,7 +1,8 @@
 """比较分块 online softmax Attention 与完整矩阵实现。
 
 普通 Attention 会一次性构造完整分数矩阵；online softmax 则逐块读取 K/V，并用递推状态
-维护当前最大值、归一化分母和加权和。本实验验证两条路径的数值结果接近，但不测 GPU 性能。
+维护当前最大值、归一化分母和加权和。本实验验证两条路径在实数算术上等价（float64 下最大
+误差约 1 个 ULP），但不主张 bitwise 相同，也不测 GPU 性能。
 """
 
 from __future__ import annotations

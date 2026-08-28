@@ -343,7 +343,7 @@ def _state_component(report: dict[str, object], when: str, field: str) -> object
 
 
 def run_control() -> dict[str, object]:
-    """Execute the three real two-process controls and validate invariants."""
+    """执行三组真实的双进程对照，并校验不变量。"""
 
     if not dist.is_available() or not dist.is_gloo_available():
         raise RuntimeError("torch.distributed with the Gloo backend is required")

@@ -465,7 +465,7 @@ def _pid(report: dict[str, object]) -> int:
 
 
 def run_control(script_path: Path | None = None) -> dict[str, object]:
-    """Run uninterrupted, committed-resume, and emitted-resume processes."""
+    """运行未中断、committed-resume 与 emitted-resume 三个进程。"""
 
     entry = Path(__file__).resolve() if script_path is None else script_path.resolve()
     with tempfile.TemporaryDirectory(prefix="about-llm-dataloader-prefetch-") as temp:

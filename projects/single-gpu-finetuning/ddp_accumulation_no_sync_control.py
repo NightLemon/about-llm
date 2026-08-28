@@ -1,7 +1,9 @@
 """用两个真实 DDP 进程解释梯度累积时 ``no_sync`` 应包住哪里。
 
 每个 rank 连续反向传播两个 microbatch：第一个放在 ``no_sync`` 的 forward 与 backward
-作用域内，最后一个正常同步。实验用通信 hook 计数，并加入“只在 backward 外层写
+作用域内，最后一个正常同步。实验对两个参照 case 注册通信 hook 计数 all-reduce 次数
+（内置 ``no_sync`` 路径由 reducer 在内部收集，不被直接插桩，见输出的
+``builtin_reducer_collective_count_directly_instrumented``），并加入“只在 backward 外层写
 ``no_sync``”的错误对照，说明 DDP 在 forward 时就决定是否准备梯度同步。最后将同步梯度、
 裁剪结果和 SGD 更新与单进程 full-batch 手算参考比较；这里只覆盖 CPU/Gloo 小模型。
 """

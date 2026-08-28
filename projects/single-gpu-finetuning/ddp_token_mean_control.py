@@ -1,9 +1,10 @@
 """用两个真实 DDP 进程推导全局 masked-token mean 的正确缩放。
 
-两个 rank 的有效 token 数故意设成 1 和 3。实验比较三种 loss：正确的 ``D/N`` 缩放、
-漏乘 world size，以及直接对各 rank 的局部 token 求均值。DDP 默认会平均各 rank 梯度，
-因此只有先对全局有效 token 数做 all-reduce，再让局部 loss sum 乘 ``D/N``，才与把所有
-token 放在单进程中求均值一致。本实验只验证 CPU/Gloo 上的这个梯度恒等式。
+两个 rank 的有效 token 数故意设成 1 和 3。记 ``D`` 为 world size、``N`` 为全局有效 token
+总数。实验比较三种 loss：正确的 ``D/N`` 缩放、漏乘 world size，以及直接对各 rank 的局部
+token 求均值。DDP 默认会平均各 rank 梯度，因此只有先对全局有效 token 数做 all-reduce，
+再让局部 loss sum 乘 ``D/N``，才与把所有 token 放在单进程中求均值一致。
+本实验只验证 CPU/Gloo 上的这个梯度恒等式。
 """
 
 from __future__ import annotations

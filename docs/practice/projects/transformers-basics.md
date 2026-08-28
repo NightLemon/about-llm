@@ -143,11 +143,12 @@ python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
 `<|im_end|>`、assistant 起始标记，以及禁用 thinking 时模板补上的空 `<think>...</think>` 区间。
 因此，不能只编码消息正文来估算 prefill 长度。
 
-输出中的 tokenizer 类名是 `Qwen2TokenizerFast`。Qwen3 checkpoint 复用了这个 Transformers tokenizer 实现，
-模型权重仍然属于 Qwen3。
+加上 `--json` 后，报告的 `model.tokenizer_class` 字段是 `Qwen2TokenizerFast`。Qwen3 checkpoint 复用了这个
+Transformers tokenizer 实现，模型权重仍然属于 Qwen3。
 
-`<think>` 和 `</think>` 展示了另一个边界：它们是 added tokens，却不在当前 `all_special_ids` 中。
-因此，“模板控制词”和“解码时会跳过的 special token”需要分开判断。
+`<think>` 和 `</think>` 展示了另一个边界：在默认输出的逐 token 表格里，它们被标为 `added` 而不是 `special`
+（这一列区分 `get_added_vocab()` 与 `all_special_ids`）。因此，“模板控制词”和“解码时会跳过的 special token”
+需要分开判断。
 
 这一步没有加载权重、计算 logits 或进入 nano-vLLM。它只把真实应用输入接到目标 tokenizer；模型执行和调度要在
 后续实验中分别观察。
