@@ -2,7 +2,9 @@
 
 作品集的目标不是证明你使用过多少框架，而是让面试官能沿着一个真实问题，看到你的判断、实现、实验和复盘。
 
-**求职导航**：[岗位路线](roadmap.md) · [面试题](interview-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md) · [工程项目索引](../practice/project-index.md)
+**求职导航**：[岗位路线](roadmap.md) · [面试题](interview-questions.md) ·
+[应用与治理题](applied-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) ·
+[行为面试](behavioral.md) · [工程项目索引](../practice/project-index.md)
 { .doc-nav }
 
 ## 面试官真正想确认什么

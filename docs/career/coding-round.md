@@ -300,7 +300,7 @@ def reciprocal_rank_fusion(rankings, *, rank_constant=60, top_k=10):
     for ranking in rankings:
         seen = set()
         for result in ranking:
-            document_id = result.document_id
+            document_id = result.document.document_id
             if document_id in seen:      # 同一列表内去重，防止自我加权
                 continue
             seen.add(document_id)
@@ -323,7 +323,7 @@ def reciprocal_rank_fusion(rankings, *, rank_constant=60, top_k=10):
 | 同列表重复文档 | 该文档被重复加分，等于自我投票 | 构造重复项，断言只计一次 |
 | 只有一个列表 | 应退化为原排序 | 断言输出顺序与输入一致 |
 | 融合分并列 | 排序不稳定 | 断言按 `document_id` 打破并列 |
-| `rank_constant=0` 且排名从 0 开始 | 除零 | 断言抛异常或要求排名从 1 开始 |
+| `rank_constant=0` 且排名从 0 开始 | 除零 | 断言抛异常，或在契约里要求排名从 1 开始 |
 | 空输入 | 崩溃 | 断言返回空列表 |
 
 **面试官的下一个追问**：
@@ -334,7 +334,10 @@ def reciprocal_rank_fusion(rankings, *, rank_constant=60, top_k=10):
 - *融合之后还要重新检查权限吗？* 要，理由同上一题。
 
 **仓库参考实现**：`src/about_llm/rag/rank_fusion.py` 的 `reciprocal_rank_fusion`，
-测试见 `tests/test_rag.py`。
+测试见 `tests/test_rag.py`。它与上面的最小实现有两处差别值得注意：返回的是重新编号的
+`SearchResult` 而不是裸 id，并且把每个文档**命中过哪些检索器**记录进 `source`
+（形如 `rrf:bm25+dense`）。融合之后无法回答"这条是谁召回的"，
+线上归因就断了——这是最小实现最容易丢掉的一环。
 
 ## 题目五：LoRA Linear { #q-lora }
 

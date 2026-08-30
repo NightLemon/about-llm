@@ -14,7 +14,8 @@
 </div>
 
 **求职导航**：[岗位路线](roadmap.md) · [面试题与回答方法](interview-questions.md) ·
-[编码轮](coding-round.md) · [系统设计](system-design.md) · [简历项目](resume-projects.md)
+[应用与治理题](applied-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) ·
+[简历项目](resume-projects.md)
 { .doc-nav }
 
 行为轮常被当成"软技能"或表达技巧考核，于是准备方式变成背几个漂亮故事。这个理解偏了。
