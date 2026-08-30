@@ -215,7 +215,10 @@ nav:
   - 求职:
       - 岗位路线: career/roadmap.md
       - 面试题与回答方法: career/interview-questions.md
+      - 应用、发布与治理面试题: career/applied-questions.md
+      - 编码轮: career/coding-round.md
       - LLM 系统设计: career/system-design.md
+      - 行为面试与非技术环节: career/behavioral.md
       - 简历项目与作品集: career/resume-projects.md
   - 参考:
       - 概念依赖与易混淆地图: reference/concept-map.md

@@ -13,7 +13,8 @@
 
 </div>
 
-**求职导航**：[岗位路线](roadmap.md) · [系统设计](system-design.md) · [简历项目](resume-projects.md) · [深挖题与验证台账](../evidence/interview-controls.md)
+**求职导航**：[岗位路线](roadmap.md) · [应用与治理题](applied-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md) · [简历项目](resume-projects.md)
+· [深挖题与验证台账](../evidence/interview-controls.md)
 { .doc-nav }
 
 面试不是关键词召回测试。面试官通常在确认三件事：你是否真的理解机制，是否知道结论何时失效，以及是否能设计一个实验把争论变成证据。
@@ -94,12 +95,14 @@ MHA、MQA、GQA 的全部定义。
 | RAG / Agent | 检索归因、ACL、授权、幂等与恢复 | [RAG](../applications/rag.md)、[Agent](../applications/agents.md) |
 | 评测 | evaluation unit、配对比较、切片、judge 校准 | [评测方法](../quality/evaluation-methodology.md) |
 | 推理系统 | TTFT/TPOT、容量、量化、取消与重试 | [Serving](../systems/serving.md)、[推理优化](../systems/inference-optimization.md) |
+| 多模态 / 对话状态 | 视觉 token 化、metric 口径、记忆分层与修正 | [应用题 31-35](applied-questions.md)、[多模态](../frontier/multimodal.md) |
+| 产品 / 发布 / 治理 | 发布身份、校准与拒答、数据血缘、群体影响 | [应用题 36-40](applied-questions.md)、[治理与影响](../quality/governance-impact.md) |
 
 下面的题不是背诵答案，而是示范怎样把回答落到机制和实验。
 
 ## Transformer 与生成
 
-### 1. 为什么 attention score 要除以 \(\sqrt{d}\)？
+### 1. 为什么 attention score 要除以 \(\sqrt{d}\)？ { #attention-scaling }
 
 **30 秒回答**：若 Q/K 各维近似独立且方差稳定，点积方差会随 head dimension \(d\) 增长。除以 \(\sqrt{d}\) 可稳定 score 尺度，避免 softmax 过早饱和。
 
@@ -161,7 +164,7 @@ MHA、MQA、GQA 的全部定义。
 **边界**：可训练参数少，不表示峰值显存按同一比例下降。训练激活、优化器状态、量化缓冲区、适配的层数和序列长度
 都会占用显存。
 
-### 9. QLoRA 为什么不等于“用 4-bit 做全部训练”？
+### 9. QLoRA 为什么不等于“用 4-bit 做全部训练”？ { #qlora-scope }
 
 **30 秒回答**：QLoRA 通常以低比特保存冻结的基础权重，计算时再反量化到 BF16 或 FP16 等计算精度。
 训练更新的是较高精度的 LoRA adapter；梯度和优化器状态并非全部变成 4-bit。
@@ -224,7 +227,7 @@ ACL 必须进入 retrieval query，或者在候选进入共享排序、缓存和
 
 **追问**：多 Agent 只有在权限隔离、上下文隔离、并行或独立验证有价值时才值得，否则只是增加协调失败和成本。
 
-### 17. 怎样避免 Agent 重复转账或重复发消息？
+### 17. 怎样避免 Agent 重复转账或重复发消息？ { #effect-idempotency }
 
 不能只让模型“记住不要重复”。应为逻辑动作生成稳定 ID，并持久化提议、审批、尝试和外部效果四阶段状态。
 外部系统还要支持幂等键（idempotency key）或可查询的执行回执。
@@ -272,7 +275,7 @@ Paired bootstrap 用于估计差异的不确定性；randomization/sign-flip tes
 
 还要按用户、thread、来源或 problem family 分组切分，并检查 exact、near-duplicate、语义改写和时间穿越。Hash 相同门禁只覆盖字节身份。
 
-### 24. 总体提升但中文用户下降，怎样决策？
+### 24. 总体提升但中文用户下降，怎样决策？ { #slice-regression }
 
 先确认 slice 是预定义还是事后发现，检查样本量、区间和流量权重。然后判断中文是否是发布硬约束，而不是用总体平均把它抵消。
 
@@ -395,7 +398,7 @@ connect 前的明确失败与发送后 timeout 不同。后者可能已经生成
 验收时用同一个 request ID 关联客户端请求、服务端任务、调度器、内存分配器和计费用量。
 至少分别报告“断连到计算停止”和“断连到资源释放”两段延迟。
 
-### 30. 模型版本相同，为什么请求仍未必可重放？
+### 30. 模型版本相同，为什么请求仍未必可重放？ { #replay-identity }
 
 模型名称只覆盖了输入身份的一小部分。一次结果还取决于：
 
@@ -413,16 +416,17 @@ connect 前的明确失败与发送后 timeout 不同。后者可能已经生成
 
 至少能现场写出一个最小实现，并为它补正例、边界和失败例：
 
-| 代码题 | 必须测的边界 | 仓库练习 |
-|---|---|---|
-| stable softmax / causal attention | 极大 logit、fully masked row、未来 token 不变性 | [Transformers Basics](../practice/projects/transformers-basics.md) |
-| top-k / top-p sampling | crossing token、tie、全非法 logits、seed | [推理服务项目](../practice/projects/inference-serving.md) |
-| BM25 / RRF | 空查询、重复文档、排序 tie、ACL | [RAG Foundations](../practice/projects/rag-foundations.md) |
-| LoRA Linear | shape、scale、冻结 base、保存/重载 | [单卡微调](../practice/projects/single-gpu-finetuning.md) |
-| paired metric / bootstrap | case 对齐、空分母、cluster | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
-| 幂等工具执行 | 重复 call、timeout unknown、审批变化 | [Safe Agent](../practice/projects/safe-agent.md) |
+| 代码题 | 必须测的边界 | 完整题面 | 仓库练习 |
+|---|---|---|---|
+| stable softmax / causal attention | 极大 logit、fully masked row、未来 token 不变性 | [题 1](coding-round.md#q-softmax-attention) | [Transformers Basics](../practice/projects/transformers-basics.md) |
+| top-k / top-p sampling | crossing token、tie、全非法 logits、seed | [题 2](coding-round.md#q-sampling) | [推理服务项目](../practice/projects/inference-serving.md) |
+| BM25 / RRF | 空查询、重复文档、排序 tie、ACL | [题 3](coding-round.md#q-bm25) · [题 4](coding-round.md#q-rrf) | [RAG Foundations](../practice/projects/rag-foundations.md) |
+| LoRA Linear | shape、scale、冻结 base、保存/重载 | [题 5](coding-round.md#q-lora) | [单卡微调](../practice/projects/single-gpu-finetuning.md) |
+| paired metric / bootstrap | case 对齐、空分母、cluster | — | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
+| 幂等工具执行 | 重复 call、timeout unknown、审批变化 | [题 6](coding-round.md#q-idempotent-effect) | [Safe Agent](../practice/projects/safe-agent.md) |
 
-代码能跑只是起点。面试时要主动说明复杂度、数值稳定性、错误契约和怎样验证。
+代码能跑只是起点。面试时要主动说明复杂度、数值稳定性、错误契约和怎样验证——
+可照做的模板见[编码轮](coding-round.md)。
 
 ## 怎样使用深挖题库
 

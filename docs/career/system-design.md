@@ -14,7 +14,7 @@
 </div>
 
 **求职导航**：[面试题与回答方法](interview-questions.md) · [岗位路线](roadmap.md) ·
-[简历项目](resume-projects.md) · [RAG 请求主线](../applications/rag-request-lifecycle.md)
+[编码轮](coding-round.md) · [应用与治理题](applied-questions.md) · [行为面试](behavioral.md) · [简历项目](resume-projects.md) · [RAG 请求主线](../applications/rag-request-lifecycle.md)
 { .doc-nav }
 
 面试官说：
@@ -27,7 +27,7 @@
 好的系统设计回答像一次公开的工程推理：先把模糊需求变成约束，再给最小闭环，估算数量级，
 沿故障链说明降级和恢复，最后指出哪些结论仍需压测或线上证据。
 
-## 先看 40 分钟怎样分配
+## 先看 40 分钟怎样分配 { #forty-minute-plan }
 
 系统设计面试不是把下面所有内容一次讲完。可以按这条时间线推进，并在每个节点停下来让面试官追问：
 
