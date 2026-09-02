@@ -1,6 +1,6 @@
 # Safe Agent：一笔退款怎样安全完成
 
-**项目导航**：[项目索引](../project-index.md) · [退款生命周期](../../applications/agent-task-lifecycle.md) ·
+**项目导航**：[项目索引](../project-index.md) · [一次 Agent 退款任务](../../applications/agent-task-lifecycle.md) ·
 [Agent Runtime](../../applications/agent-runtime.md) · [互操作协议](../../applications/agent-interoperability.md) ·
 [实验 6](../labs/lab-6-agent-lifecycle.md)
 { .doc-nav }

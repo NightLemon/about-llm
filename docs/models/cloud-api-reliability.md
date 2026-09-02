@@ -13,7 +13,7 @@
 
 </div>
 
-**学习入口**：[契约基础](cloud-api-contracts.md) · [实验 0C](../practice/labs/lab-0c-cloud-budget.md) · [生产检查表](../practice/production-checklist.md) · [证据台账](../evidence/cloud-api-controls.md)
+**学习入口**：[云 API 契约](cloud-api-contracts.md) · [实验 0C](../practice/labs/lab-0c-cloud-budget.md) · [生产检查表](../practice/production-checklist.md) · [证据台账](../evidence/cloud-api-controls.md)
 { .doc-nav }
 
 云模型调用最棘手的失败，不是明确的 400 或成功的 200，而是“客户端不知道远端做了什么”。

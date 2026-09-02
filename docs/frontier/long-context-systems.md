@@ -13,7 +13,7 @@
 
 </div>
 
-**专题导航**：[前沿总览](reasoning-long-context-moe.md) · [RAG](../applications/rag.md) · [推理优化](../systems/inference-optimization.md) · [证据台账](../evidence/frontier-controls.md)
+**专题导航**：[前沿总览](reasoning-long-context-moe.md) · [RAG 总览](../applications/rag.md) · [推理优化](../systems/inference-optimization.md) · [证据台账](../evidence/frontier-controls.md)
 { .doc-nav }
 
 Context window 是一个容量上限，不是能力分数。模型接受长输入、runtime 成功完成和任务在远距离仍可靠，是三种不同结论。

@@ -1,6 +1,6 @@
 # 环境与硬件矩阵
 
-**相关导航**：[学习路径](learning-paths.md) · [仓库地图](repo-map.md) · [实验与项目](../practice/labs.md) · [工程项目索引](../practice/project-index.md)
+**相关导航**：[学习路径](learning-paths.md) · [仓库地图](repo-map.md) · [实验目录](../practice/labs.md) · [项目索引](../practice/project-index.md)
 { .doc-nav }
 
 ## 推荐基线
@@ -74,7 +74,7 @@ python scripts/doctor.py --profile cpu-starter
 python -m pip freeze > outputs/environment-lock.txt
 ~~~
 
-## 常见环境错误
+## 常见环境错误 { #common-errors }
 
 - torch.cuda.is_available 为 false：wheel 可能是 CPU 版，或驱动不兼容。
 - CUDA OOM 后仍 OOM：旧进程/张量未释放，或显存碎片；先确认进程和峰值位置。

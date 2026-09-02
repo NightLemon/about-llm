@@ -1,7 +1,7 @@
 # Cloud API Contracts：失败以后，能不能再试一次？
 
 **项目导航**：[项目索引](../project-index.md) · [云 API 契约](../../models/cloud-api-contracts.md) ·
-[服务请求生命周期](../../systems/serving.md) · [实验 0C](../labs/lab-0c-cloud-budget.md) ·
+[服务与可观测性](../../systems/serving.md) · [实验 0C](../labs/lab-0c-cloud-budget.md) ·
 [实验 0D](../labs/lab-0d-reasoning-artifact-security.md)
 { .doc-nav }
 

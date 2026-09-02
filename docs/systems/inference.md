@@ -13,7 +13,7 @@
 
 </div>
 
-**实践导航**：[请求生命周期](inference-request-lifecycle.md) ·
+**实践导航**：[一次请求如何穿过推理引擎](inference-request-lifecycle.md) ·
 [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md) ·
 [Qwen3 + nano-vLLM](../practice/labs/lab-7b-nano-vllm-qwen3.md) ·
 [Inference Serving 项目](../practice/projects/inference-serving.md)

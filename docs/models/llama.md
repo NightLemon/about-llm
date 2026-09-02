@@ -14,7 +14,7 @@
 </div>
 
 **模型导航**：[Transformer](../core/transformer.md) · [Transformers 项目](../practice/projects/transformers-basics.md) ·
-[单卡微调](../practice/projects/single-gpu-finetuning.md) · [Llama 证据台账](../evidence/llama-controls.md)
+[单卡微调项目](../practice/projects/single-gpu-finetuning.md) · [Llama 证据台账](../evidence/llama-controls.md)
 { .doc-nav }
 
 Llama 是学习开放权重模型工程的好入口：你可以检查 config、tokenizer、weights，运行 forward，再把静态推导与真实显存、质量和延迟对账。

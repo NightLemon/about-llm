@@ -779,7 +779,18 @@ def main() -> None:
     wheels = sorted(args.wheel_dir.glob("*.whl"))
     if len(wheels) != 1:
         raise SystemExit(f"Expected exactly one wheel in {args.wheel_dir}, found {len(wheels)}")
-    smoke_wheel(wheels[0])
+    try:
+        smoke_wheel(wheels[0])
+    except subprocess.CalledProcessError as error:
+        # capture_output=True hides the child's own traceback; surface it so the
+        # actual failure is visible instead of a bare non-zero exit code.
+        command = " ".join(str(part) for part in error.cmd)
+        details = [f"Command failed with exit code {error.returncode}: {command}"]
+        if error.stdout:
+            details.append(f"--- stdout ---\n{error.stdout.rstrip()}")
+        if error.stderr:
+            details.append(f"--- stderr ---\n{error.stderr.rstrip()}")
+        raise SystemExit("\n".join(details)) from error
 
 
 if __name__ == "__main__":

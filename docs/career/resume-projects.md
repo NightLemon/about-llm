@@ -1,10 +1,23 @@
 # 简历项目与作品集
 
+<!-- learning-contract -->
+<div class="learning-contract" markdown="1">
+
+**学习导航**
+
+- **适合读者**：已经做过至少一个 LLM 相关项目，需要把它写成简历和作品集的开发者。
+- **先修**：手上有一个能跑起来的项目，并保留了代码、配置与部分结果。
+- **首次阅读**：先看"面试官真正想确认什么"和"一页纸的取舍"，再对照自己现有的简历逐条删改。
+- **完成信号**：简历上每个数字都能反向追到 workload、配置和失败样例，并能按目标 JD 改写同一段经历。
+- **卡住时**：先补"证据怎样组织"里的下钻链路，不要先纠结措辞。
+
+</div>
+
 作品集的目标不是证明你使用过多少框架，而是让面试官能沿着一个真实问题，看到你的判断、实现、实验和复盘。
 
-**求职导航**：[岗位路线](roadmap.md) · [面试题](interview-questions.md) ·
+**求职导航**：[岗位路线](roadmap.md) · [面试题与回答方法](interview-questions.md) ·
 [应用与治理题](applied-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) ·
-[行为面试](behavioral.md) · [工程项目索引](../practice/project-index.md)
+[行为面试](behavioral.md) · [项目索引](../practice/project-index.md)
 { .doc-nav }
 
 ## 面试官真正想确认什么
@@ -143,7 +156,7 @@ resume bullet
 - **技能清单里的长尾**。列出十五个框架，面试官只会挑你最不熟的那个问。
 - **和目标路线无关的旧项目**。留一行说明背景即可，不要占 bullet。
 - **课程与证书**。除非该课程有可展示的产出，否则它证明的是投入时间而不是能力。
-- **"熟悉"、"精通"这类自评词**。用[能力四级](roadmap.md#ownership-levels)
+- **"熟悉"、"精通"这类自评词**。用[能力四级](roadmap.md#capability-levels)
   的实际证据替代，或者干脆不写。
 
 bullet 的写法、反向审计链和不同证据等级的措辞边界，

@@ -4,7 +4,7 @@
 claim 审计使用。第一次学习请先读[云 API 契约基础](../models/cloud-api-contracts.md)，再读
 [可靠性进阶](../models/cloud-api-reliability.md)。
 
-**读者入口**：[契约基础](../models/cloud-api-contracts.md) · [可靠性进阶](../models/cloud-api-reliability.md) · [可运行项目](../practice/projects/cloud-api-contracts.md)
+**读者入口**：[云 API 契约](../models/cloud-api-contracts.md) · [可靠性进阶](../models/cloud-api-reliability.md) · [Cloud API 项目](../practice/projects/cloud-api-contracts.md)
 { .doc-nav }
 
 <!-- learning-contract -->

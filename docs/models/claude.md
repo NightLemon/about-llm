@@ -13,7 +13,7 @@
 
 </div>
 
-**模型导航**：[云 API 契约](cloud-api-contracts.md) · [Agent 总览](../applications/agents.md) · [评测项目](../practice/projects/evaluation-gate.md) · [Claude 证据台账](../evidence/claude-controls.md)
+**模型导航**：[云 API 契约](cloud-api-contracts.md) · [Agent 总览](../applications/agents.md) · [Evaluation Gate](../practice/projects/evaluation-gate.md) · [Claude 证据台账](../evidence/claude-controls.md)
 { .doc-nav }
 
 学习 Claude 的重点不是记忆某一代模型的参数，而是学会连接一个持续变化的闭源产品和 API 契约。

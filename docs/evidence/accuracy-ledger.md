@@ -3,7 +3,7 @@
 本页保存官方来源快照、论文边界、逐项验证记录和尚未证明的事项，供内容审计和维护使用。第一次学习请从
 [怎样判断教材结论是否可靠](../reference/accuracy.md)开始，不要把下列长表当作课程顺序。
 
-**证据导航**：[准确性方法](../reference/accuracy.md) · [项目实验台账](project-controls.md) ·
+**证据导航**：[内容准确性台账](../reference/accuracy.md) · [项目实验台账](project-controls.md) ·
 [RAG 请求证据](rag-answer-controls.md) · [Gemini 接入证据](gemini-controls.md) ·
 [机器可读来源](../reference/official-sources.json)
 { .doc-nav }

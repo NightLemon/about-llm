@@ -2,7 +2,7 @@
 
 **项目导航**：[项目索引](../project-index.md) · [JAX 与 Optax](../../training/jax-optax.md) ·
 [Transformer](../../core/transformer.md) · [分布式训练](../../systems/distributed-training.md) ·
-[环境矩阵](../../guide/environment.md)
+[环境配置](../../guide/environment.md)
 { .doc-nav }
 
 <!-- learning-contract -->

@@ -26,7 +26,7 @@ flowchart TD
 
 对应项目目录会保存固定版本、完整参数和机器报告；本页只负责告诉你为什么做、先观察什么、完成后进入哪里。
 
-**实践导航**：[选择学习路径](../guide/learning-paths.md) · [配置环境](../guide/environment.md) · [工程项目索引](project-index.md) · [生产检查表](production-checklist.md)
+**实践导航**：[学习路径](../guide/learning-paths.md) · [环境配置](../guide/environment.md) · [项目索引](project-index.md) · [生产检查表](production-checklist.md)
 { .doc-nav }
 
 ## 怎样选择实验

@@ -4,7 +4,7 @@
 供实现复核和 claim 审计使用。第一次学习请先读[对齐入门](../training/alignment-basics.md)和
 [对齐进阶教材](../training/alignment.md)。
 
-**读者入口**：[对齐入门](../training/alignment-basics.md) · [对齐进阶教材](../training/alignment.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md)
+**读者入口**：[对齐入门](../training/alignment-basics.md) · [对齐](../training/alignment.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md)
 { .doc-nav }
 
 <!-- learning-contract -->

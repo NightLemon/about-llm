@@ -3,7 +3,7 @@
 **实验导航**：[返回实验目录](../labs.md) ·
 [微调总览](../../training/finetuning.md) ·
 [SFT 数据管线](../../training/sft-data-pipeline.md) ·
-[Single-GPU Finetuning](../projects/single-gpu-finetuning.md)
+[单卡微调项目](../projects/single-gpu-finetuning.md)
 { .doc-nav }
 
 很多微调教程从 `Trainer(...)` 开始，于是最重要的事实被藏起来了：模型究竟看到了哪些 token，哪些位置产生 loss，梯度更新了谁，保存的 adapter 又依赖哪一个基座？

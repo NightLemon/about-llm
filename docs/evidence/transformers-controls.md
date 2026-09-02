@@ -3,10 +3,10 @@
 本页保存 byte BPE、attention、generation、固定 checkpoint、activation patching 与 MoE 实验的录制数字、命令和边界，
 供实验复核使用。第一次实践请从[Transformers Basics 主项目](../practice/projects/transformers-basics.md)开始。
 
-**读者入口**：[主项目](../practice/projects/transformers-basics.md) · [实验目录](../practice/labs.md) · [Transformer 原理](../core/transformer.md)
+**读者入口**：[Transformers 项目](../practice/projects/transformers-basics.md) · [实验目录](../practice/labs.md) · [Transformer](../core/transformer.md)
 { .doc-nav }
 
-**项目导航**：[返回项目索引](../practice/project-index.md) · [Transformer 原理](../core/transformer.md) · [生成机制](../core/generation.md) · [实验 1–3](../practice/labs.md#lab-1)
+**项目导航**：[返回项目索引](../practice/project-index.md) · [Transformer](../core/transformer.md) · [生成与解码](../core/generation.md) · [实验 1–3](../practice/labs.md#lab-1)
 { .doc-nav }
 
 这不是一页“运行几个脚本”的索引，而是一条从 tokenizer、attention 和生成协议走到真实 checkpoint、因果干预与

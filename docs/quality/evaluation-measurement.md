@@ -13,7 +13,7 @@
 
 </div>
 
-**学习入口**：[评测总览](evaluation.md) · [评测统计](../foundations/evaluation-statistics.md) · [方法与发布决策](evaluation-methodology.md) · [Evaluation Gate](../practice/projects/evaluation-gate.md)
+**学习入口**：[评测总览](evaluation.md) · [评测统计](../foundations/evaluation-statistics.md) · [评测方法](evaluation-methodology.md) · [Evaluation Gate](../practice/projects/evaluation-gate.md)
 { .doc-nav }
 
 团队升级了退款助手。两位标注者都觉得新回答更像“问题已经解决”，彼此也非常一致；事务日志却显示，

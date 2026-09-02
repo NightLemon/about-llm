@@ -152,7 +152,7 @@ def sample_next_token(logits, *, temperature=1.0, top_k=None, top_p=None, unifor
     token_ids = np.arange(scaled.size)
     order = np.lexsort((token_ids, -scaled))
 
-    keep = order[: top_k] if top_k is not None else order
+    keep = order[: top_k] if top_k is not None else order  # 见下方边界说明
     probabilities = _masked_softmax(scaled, keep)
 
     if top_p is not None and top_p < 1:
@@ -177,6 +177,10 @@ def _masked_softmax(scaled, keep):
 
 注意 top-p 之后**重新归一化**了一次。如果沿用 top-k 阶段的概率直接采样，
 累计和小于 1，落在尾部的 `uniform` 会取不到任何 token。
+
+上面的 `order[: top_k]` 在 `top_k` 大于词表时会静默退化成"全部保留"——这是 Python
+切片的默认行为，不是被验证过的决定。面试时要主动说出这一点：**要么显式抛异常，
+要么把"全部保留"写进 docstring 当作契约**。下表第一行测的就是它。
 
 **必须自己补的边界测试**：
 
@@ -266,7 +270,7 @@ def bm25_scores(query_terms, term_frequencies, lengths, *, k1=1.5, b=0.75):
 
 **面试官的下一个追问**：
 
-- *为什么不直接用向量检索替代 BM25？* 见[深挖题 16](../evidence/interview-controls.md)。
+- *为什么不直接用向量检索替代 BM25？* 见[深挖题 16](../evidence/interview-controls.md#dense-vs-bm25)。
 - *重排序阶段还需要再检查一次 ACL 吗？* 需要。重排器可能引入索引之外的候选，
   权限必须在每一层重新成立，而不是依赖上游。
 

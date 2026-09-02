@@ -1,7 +1,7 @@
 # 同一次 RAG 问答怎样通过 LangChain 与 LlamaIndex
 
 **项目导航**：[项目索引](../project-index.md) · [RAG Foundations](rag-foundations.md) ·
-[RAG 检索](../../applications/rag-retrieval.md) · [RAG 生产化](../../applications/rag-production.md) ·
+[召回与重排](../../applications/rag-retrieval.md) · [RAG 生产化](../../applications/rag-production.md) ·
 [实验 5A](../labs.md#lab-5a)
 { .doc-nav }
 

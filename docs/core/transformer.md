@@ -296,7 +296,7 @@ NumPy 测试验证局部代数。PyTorch 和 JAX 的 tiny GPT 测试再向外走
 具体输入、反事实差值和未覆盖项集中在
 [Transformers 控制台账](../evidence/transformers-controls.md)。
 
-## 10. 复杂度和 kernel 边界
+## 10. 复杂度和 kernel 边界 { #10-kernel }
 
 标准稠密注意力的每个 head 都有 \(T_qT_k\) 个分数和对应概率。计算分数、再按概率聚合 V，主要算术量随
 \(T_qT_kD\) 增长。线性投影和 MLP 则通常包含 \(Td^2\) 量级的计算。

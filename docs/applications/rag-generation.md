@@ -16,7 +16,7 @@
 **实践导航**：[一次 RAG 请求](rag-request-lifecycle.md) ·
 [运行实验 5](../practice/labs/lab-5-rag-request.md) ·
 [RAG Foundations](../practice/projects/rag-foundations.md) ·
-[证据与测试边界](../evidence/rag-answer-controls.md)
+[RAG 请求证据](../evidence/rag-answer-controls.md)
 { .doc-nav }
 
 检索结束时，系统只有一组候选；用户需要的是一个答案。

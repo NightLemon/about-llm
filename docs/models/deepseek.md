@@ -13,8 +13,8 @@
 
 </div>
 
-**模型导航**：[模型全景](landscape.md) · [前沿专题](../frontier/reasoning-long-context-moe.md) ·
-[单卡微调](../practice/projects/single-gpu-finetuning.md) · [DeepSeek 证据台账](../evidence/deepseek-controls.md)
+**模型导航**：[模型全景](landscape.md) · [前沿总览](../frontier/reasoning-long-context-moe.md) ·
+[单卡微调项目](../practice/projects/single-gpu-finetuning.md) · [DeepSeek 证据台账](../evidence/deepseek-controls.md)
 { .doc-nav }
 
 DeepSeek 不是一种固定的模型结构。这个名字可以指技术报告、开放权重、R1 推理模型、

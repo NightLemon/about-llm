@@ -4,7 +4,7 @@
 它只帮你决定三件事：今天先做什么，做完接哪一章，以及什么时候适合进入项目。
 完整目录和实现状态留在[知识地图](knowledge-map.md)里，需要时再查。
 
-**新手导航**：[30 分钟最小成功](#30-minutes) · [六周入门路径](learning-paths.md#beginner) · [环境配置](environment.md) · [术语表](../reference/glossary.md)
+**新手导航**：[30 分钟最小成功](#30-minutes) · [学习路径](learning-paths.md#beginner) · [环境配置](environment.md) · [术语表](../reference/glossary.md)
 { .doc-nav }
 
 ## 先做五项自检
@@ -62,7 +62,7 @@ python projects/transformers-basics/train_byte_bpe.py
 4. 换一个 `--sample`。先猜 token 数会上升还是下降，再运行核对。
 
 若出现模块导入失败，通常是因为命令不在仓库根目录执行，或者还没有安装 `-e .`。PowerShell 拒绝激活脚本时，
-按[环境常见错误](environment.md#_5)处理，先让虚拟环境本身工作正常。
+按[环境常见错误](environment.md#common-errors)处理，先让虚拟环境本身工作正常。
 
 ## 接下来怎样走
 

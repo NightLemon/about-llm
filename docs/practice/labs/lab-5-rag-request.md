@@ -4,7 +4,7 @@
 上下文 packing、逐字抽取、引用检查和最终决策，再用无答案问题验证拒答。
 
 **相关教材**：[RAG 总览](../../applications/rag.md) ·
-[一次 RAG 请求的生命周期](../../applications/rag-request-lifecycle.md) ·
+[一次 RAG 请求](../../applications/rag-request-lifecycle.md) ·
 [RAG Foundations](../projects/rag-foundations.md)
 { .doc-nav }
 

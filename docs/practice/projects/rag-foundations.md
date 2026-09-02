@@ -2,9 +2,9 @@
 
 **项目导航**：[返回项目索引](../project-index.md) ·
 [RAG 总览](../../applications/rag.md) ·
-[请求生命周期](../../applications/rag-request-lifecycle.md) ·
+[一次 RAG 请求](../../applications/rag-request-lifecycle.md) ·
 [实验 5](../labs/lab-5-rag-request.md) ·
-[证据页](../../evidence/rag-answer-controls.md)
+[RAG 请求证据](../../evidence/rag-answer-controls.md)
 { .doc-nav }
 
 这个项目不是“用框架把 PDF 接到聊天模型”。它用小而透明的组件回答五个工程问题：

@@ -1,9 +1,9 @@
 # Inference Serving：从一个请求到容量报告
 
 **项目导航**：[项目索引](../project-index.md) ·
-[请求生命周期](../../systems/inference-request-lifecycle.md) ·
+[一次请求如何穿过推理引擎](../../systems/inference-request-lifecycle.md) ·
 [Paged KV 实验](../labs/lab-7a-paged-kv.md) ·
-[Qwen3 + nano-vLLM 实验](../labs/lab-7b-nano-vllm-qwen3.md) ·
+[Qwen3 + nano-vLLM](../labs/lab-7b-nano-vllm-qwen3.md) ·
 [vLLM 部署](../../systems/vllm-serving.md) ·
 [证据账本](../../evidence/inference-serving-controls.md)
 { .doc-nav }

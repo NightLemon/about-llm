@@ -13,7 +13,7 @@
 
 </div>
 
-**章节导航**：[Interactions API](gemini-interactions.md) · [generateContent 与多模态](gemini-generate-content.md) · [生产接入](gemini-production.md) · [证据台账](../evidence/gemini-controls.md)
+**章节导航**：[Interactions API](gemini-interactions.md) · [generateContent 与多模态](gemini-generate-content.md) · [生产接入](gemini-production.md) · [Gemini 接入证据](../evidence/gemini-controls.md)
 { .doc-nav }
 
 “我们要接入 Gemini”还不是一个可执行的需求。Gemini 既是模型家族名，也出现在开发者 API、

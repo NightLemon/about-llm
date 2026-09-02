@@ -13,7 +13,7 @@
 
 </div>
 
-**准确性导航**：[证据台账](../evidence/accuracy-ledger.md) · [机器可读来源](official-sources.json) · [评测方法](../quality/evaluation-methodology.md) · [项目证据](../evidence/project-controls.md)
+**准确性导航**：[证据台账](../evidence/accuracy-ledger.md) · [机器可读来源](official-sources.json) · [评测方法](../quality/evaluation-methodology.md) · [项目实验台账](../evidence/project-controls.md)
 { .doc-nav }
 
 内容准确不是“引用越多越好”，而是结论、证据与边界彼此匹配。一个公式推导、一次 CPU 测试、官方产品页和生产压测都可以是好证据，但它们回答的是不同问题。

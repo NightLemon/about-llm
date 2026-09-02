@@ -8,7 +8,7 @@
 沿途还会看到它怎样复用 256-token 的 KV block，怎样经历预填充（prefill）与逐 token 解码（decode），以及完成后
 怎样释放所有活动引用。
 
-**相关教材**：[请求生命周期](../../systems/inference-request-lifecycle.md) ·
+**相关教材**：[一次请求如何穿过推理引擎](../../systems/inference-request-lifecycle.md) ·
 [Qwen3 tokenizer 实验](../labs.md#lab-1b) ·
 [Paged KV 实验](lab-7a-paged-kv.md) ·
 [Qwen](../../models/qwen.md) ·

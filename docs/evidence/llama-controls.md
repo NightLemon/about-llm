@@ -3,7 +3,7 @@
 本页保存固定 model-card revision、config/weight 检查方法、公式前提、命令与验证边界，供供应链和 claim 审计使用。
 它不是第一次学习 Llama 的入口；请先读[Llama 教材](../models/llama.md)，再来核对精确证据。
 
-**读者入口**：[Llama 教材](../models/llama.md) · [Transformer](../core/transformer.md) · [单卡微调](../training/peft-qlora-engineering.md)
+**读者入口**：[Llama 教材](../models/llama.md) · [Transformer](../core/transformer.md) · [PEFT/QLoRA](../training/peft-qlora-engineering.md)
 { .doc-nav }
 
 <!-- learning-contract -->

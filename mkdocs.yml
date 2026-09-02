@@ -45,6 +45,7 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      slugify: !!python/name:markdown.extensions.toc.slugify_unicode
   - pymdownx.arithmatex:
       generic: true
   - pymdownx.details
@@ -244,6 +245,7 @@ nav:
       - 资料与论文: reference/resources.md
       - 内容准确性与核验台账: reference/accuracy.md
       - 教材测试与证据策略: reference/testing.md
+      - 导航链接的规范名: reference/nav-names.md
       - 治理决策:
           - 证据边界: decisions/0001-evidence-boundaries.md
           - 学习契约: decisions/0002-learning-contract.md

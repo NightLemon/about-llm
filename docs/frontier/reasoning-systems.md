@@ -13,7 +13,7 @@
 
 </div>
 
-**专题导航**：[前沿总览](reasoning-long-context-moe.md) · [对齐](../training/alignment.md) · [推理服务](../practice/projects/inference-serving.md) · [证据台账](../evidence/frontier-controls.md)
+**专题导航**：[前沿总览](reasoning-long-context-moe.md) · [对齐](../training/alignment.md) · [Inference Serving 项目](../practice/projects/inference-serving.md) · [证据台账](../evidence/frontier-controls.md)
 { .doc-nav }
 
 [LLM 强化学习](../training/reinforcement-learning.md)用一道代码题解释了训练怎样改变模型生成回答的概率。

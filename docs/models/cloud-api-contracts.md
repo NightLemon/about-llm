@@ -13,7 +13,7 @@
 
 </div>
 
-**学习入口**：[模型选型](landscape.md) · [可靠性进阶](cloud-api-reliability.md) · [Cloud API 项目](../practice/projects/cloud-api-contracts.md) · [证据台账](../evidence/cloud-api-controls.md)
+**学习入口**：[模型全景](landscape.md) · [可靠性进阶](cloud-api-reliability.md) · [Cloud API 项目](../practice/projects/cloud-api-contracts.md) · [证据台账](../evidence/cloud-api-controls.md)
 { .doc-nav }
 
 许多大模型 API 都能接收对话并返回文字，但这不等于它们使用同一套协议。

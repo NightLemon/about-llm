@@ -13,10 +13,10 @@
 
 </div>
 
-**实践导航**：[退款任务生命周期](agent-task-lifecycle.md) ·
+**实践导航**：[一次 Agent 退款任务](agent-task-lifecycle.md) ·
 [运行退款实验](../practice/labs/lab-6-agent-lifecycle.md) ·
-[RAG 证据链](rag-request-lifecycle.md) ·
-[产品与系统评测](../quality/evaluation.md)
+[一次 RAG 请求](rag-request-lifecycle.md) ·
+[评测总览](../quality/evaluation.md)
 { .doc-nav }
 
 AI 产品设计要让用户看懂系统准备做什么、已经做了什么，以及结果何时仍然未知。流畅的回答只是界面内容，

@@ -13,7 +13,7 @@
 
 </div>
 
-**章节导航**：[总览](gemini.md) · [Interactions API](gemini-interactions.md) · [generateContent 与多模态](gemini-generate-content.md) · [证据台账](../evidence/gemini-controls.md)
+**章节导航**：[总览](gemini.md) · [Interactions API](gemini-interactions.md) · [generateContent 与多模态](gemini-generate-content.md) · [Gemini 接入证据](../evidence/gemini-controls.md)
 { .doc-nav }
 
 总览中的任务是：维修人员上传设备告警截图，系统识别错误码、指出证据位置，并生成维修工单建议。

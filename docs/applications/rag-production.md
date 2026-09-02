@@ -13,7 +13,7 @@
 
 </div>
 
-**实践导航**：[请求生命周期](rag-request-lifecycle.md) ·
+**实践导航**：[一次 RAG 请求](rag-request-lifecycle.md) ·
 [数据摄取](rag-ingestion.md) ·
 [RAG Foundations](../practice/projects/rag-foundations.md) ·
 [生产检查表](../practice/production-checklist.md)

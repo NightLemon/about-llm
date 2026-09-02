@@ -2,7 +2,7 @@
 
 **定位**：工程选修，预计 90–120 分钟；全部实验默认离线运行，不需要 API key，也不会向模型供应商发送请求。
 
-**实验导航**：[返回总览](../labs.md#lab-0) · [云 API 契约](../../models/cloud-api-contracts.md) · [项目入口](../projects/cloud-api-contracts.md#run)
+**实验导航**：[返回总览](../labs.md#lab-0) · [云 API 契约](../../models/cloud-api-contracts.md) · [Cloud API 项目](../projects/cloud-api-contracts.md#run)
 { .doc-nav }
 
 ## 开始前

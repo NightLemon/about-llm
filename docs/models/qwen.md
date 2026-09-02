@@ -14,8 +14,8 @@
 </div>
 
 **模型导航**：[模型全景](landscape.md) · [Transformers 项目](../practice/projects/transformers-basics.md) ·
-[Qwen3 + nano-vLLM 实验](../practice/labs/lab-7b-nano-vllm-qwen3.md) ·
-[单卡微调](../practice/projects/single-gpu-finetuning.md) · [Qwen 证据台账](../evidence/qwen-controls.md)
+[Qwen3 + nano-vLLM](../practice/labs/lab-7b-nano-vllm-qwen3.md) ·
+[单卡微调项目](../practice/projects/single-gpu-finetuning.md) · [Qwen 证据台账](../evidence/qwen-controls.md)
 { .doc-nav }
 
 Qwen 是一个模型与产品家族，而不是某一种固定架构。纯文本、视觉语言和音频模型都可能使用这个名字，

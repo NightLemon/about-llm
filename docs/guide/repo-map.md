@@ -1,7 +1,7 @@
 # 仓库地图：遇到一个问题时，下一步打开哪里
 
 **相关导航**：[如何使用](how-to-use.md) · [学习路径](learning-paths.md) · [知识地图](knowledge-map.md) ·
-[环境配置](environment.md) · [工程项目索引](../practice/project-index.md)
+[环境配置](environment.md) · [项目索引](../practice/project-index.md)
 { .doc-nav }
 
 这个仓库同时包含教材、实验、代码和工程项目。第一次使用时不用先记目录结构，只需判断自己下一步想做什么：

@@ -1,7 +1,7 @@
 # Synthetic Data Audit：四条候选为什么只剩一条新内容
 
 **项目导航**：[返回项目索引](../project-index.md) · [合成数据](../../training/synthetic-data.md) ·
-[SFT 数据流水线](../../training/sft-data-pipeline.md) · [生产检查表](../production-checklist.md)
+[SFT 数据管线](../../training/sft-data-pipeline.md) · [生产检查表](../production-checklist.md)
 { .doc-nav }
 
 输入文件里只有四条合成数据候选。`syn-001` 和 `syn-002` 通过了两项必要验证，但正文完全相同；`syn-003`

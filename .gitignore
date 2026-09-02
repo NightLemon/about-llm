@@ -27,3 +27,6 @@ checkpoints/
 learning-plans/
 .DS_Store
 Thumbs.db
+
+# 本地审阅/工作笔记，不进仓库历史
+*.local.md

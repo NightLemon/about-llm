@@ -2,7 +2,7 @@
 
 这个板块把快速变化的研究动态与稳定教材分开。它不追求收录最多论文，而是帮助工程师回答三个问题：论文真正解决了什么、证据支持到哪里、下一步怎样转成可验证的工程问题。
 
-**板块导航**：[2026 年 8 月快照](2026-08.md) · [稳定主题地图](../guide/knowledge-map.md) · [内容准确性台账](../reference/accuracy.md) · [长期参考资料](../reference/resources.md)
+**板块导航**：[2026 年 8 月快照](2026-08.md) · [知识地图](../guide/knowledge-map.md) · [内容准确性台账](../reference/accuracy.md) · [长期参考资料](../reference/resources.md)
 { .doc-nav }
 
 ## 怎样选择论文

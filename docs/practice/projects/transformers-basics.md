@@ -13,7 +13,7 @@
 
 </div>
 
-**项目导航**：[项目索引](../project-index.md) · [实验 1–3](../labs.md#lab-1) · [生成机制](../../core/generation.md) · [证据台账](../../evidence/transformers-controls.md)
+**项目导航**：[项目索引](../project-index.md) · [实验 1–3](../labs.md#lab-1) · [生成与解码](../../core/generation.md) · [证据台账](../../evidence/transformers-controls.md)
 { .doc-nav }
 
 这个项目不是教你记住 Transformers API，而是建立一条可验证链路：

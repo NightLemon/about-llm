@@ -3,7 +3,7 @@
 本页保留完整技术追问、公式、反例和仓库验证边界，供第二轮深挖与证据复核。第一次准备面试请从
 [面试题与回答方法](../career/interview-questions.md)开始，不要按编号逐题背诵本页。
 
-**证据导航**：[回答方法与核心题](../career/interview-questions.md) · [系统设计](../career/system-design.md) · [简历项目](../career/resume-projects.md) · [项目实验台账](project-controls.md)
+**证据导航**：[面试题与回答方法](../career/interview-questions.md) · [系统设计](../career/system-design.md) · [简历项目](../career/resume-projects.md) · [项目实验台账](project-controls.md)
 { .doc-nav }
 
 ## 怎样使用
@@ -269,7 +269,7 @@ Replay 后旧任务不掉，不等于方法普遍有效。先排除任务本身�
 
 小块匹配精确但上下文不足；大块语义完整但噪声与 token 成本高。按文档结构、答案跨度和检索模型实验，比较 Recall@k、上下文覆盖、冗余和最终忠实度。
 
-### 16. 为什么 dense retrieval 不能完全替代 BM25？
+### 16. 为什么 dense retrieval 不能完全替代 BM25？ { #dense-vs-bm25 }
 
 Embedding 擅长语义相似，BM25 擅长型号、错误码、姓名等精确稀有词。混合召回后用 RRF 或 reranker。向量分数跨 query/模型不可直接用统一阈值。
 

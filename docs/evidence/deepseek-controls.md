@@ -4,7 +4,7 @@
 它不是第一次学习 DeepSeek 的入口；若你还不能解释 MoE、MLA 与 reasoning post-training 分别解决什么问题，
 请先读[DeepSeek 教材](../models/deepseek.md)。
 
-**读者入口**：[DeepSeek 教材](../models/deepseek.md) · [Transformer](../core/transformer.md) · [前沿专题](../frontier/reasoning-long-context-moe.md)
+**读者入口**：[DeepSeek](../models/deepseek.md) · [Transformer](../core/transformer.md) · [前沿总览](../frontier/reasoning-long-context-moe.md)
 { .doc-nav }
 
 <!-- learning-contract -->

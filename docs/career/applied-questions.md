@@ -13,7 +13,7 @@
 
 </div>
 
-**求职导航**：[岗位路线](roadmap.md) · [核心面试题](interview-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md) · [简历项目](resume-projects.md)
+**求职导航**：[岗位路线](roadmap.md) · [面试题与回答方法](interview-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md) · [简历项目](resume-projects.md)
 { .doc-nav }
 
 [核心 30 题](interview-questions.md)覆盖 Transformer、训练、RAG/Agent、评测和推理系统。

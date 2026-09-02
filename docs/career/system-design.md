@@ -14,7 +14,7 @@
 </div>
 
 **求职导航**：[面试题与回答方法](interview-questions.md) · [岗位路线](roadmap.md) ·
-[编码轮](coding-round.md) · [应用与治理题](applied-questions.md) · [行为面试](behavioral.md) · [简历项目](resume-projects.md) · [RAG 请求主线](../applications/rag-request-lifecycle.md)
+[编码轮](coding-round.md) · [应用与治理题](applied-questions.md) · [行为面试](behavioral.md) · [简历项目](resume-projects.md) · [一次 RAG 请求](../applications/rag-request-lifecycle.md)
 { .doc-nav }
 
 面试官说：
@@ -154,11 +154,11 @@ R_{token}=QPS\,(t_{in}+t_{out}).
 因此，“每个实例能处理多少 QPS”必须来自目标模型、推理运行时、量化方式、硬件和真实长度分布下的压测。
 为了继续手算，假设压测已经表明：单实例在满足 TTFT/TPOT 门槛时可以稳定处理 4 QPS。此时：
 
-| 计划条件 | 算法 | 需要的实例数 |
+| 计划条件（逐行累加） | 算法 | 累计实例数 |
 |---|---:|---:|
-| 只满足 20 QPS | \(\lceil 20/4\rceil\) | 5 |
-| 预留 25% 流量余量 | \(\lceil 20\times1.25/4\rceil\) | 7 |
-| 再允许 1 个实例不可用 | \(\lceil 20\times1.25/4\rceil+1\) | 8 |
+| 仅算术下限：满足 20 QPS | \(\lceil 20/4\rceil\) | 5 |
+| + 预留 25% 流量余量 | \(\lceil 20\times1.25/4\rceil\) | 7 |
+| + 允许 1 个实例不可用（最终） | \(\lceil 20\times1.25/4\rceil+1\) | 8 |
 
 5 是算术下限，不是生产建议。表中最终的 8 表示：失去一个实例后，剩余 7 个仍能承担规划的 25 QPS。
 如果团队把滚动发布和单实例故障视为同一个“最多一个不可用”条件，就只加一次；不能看到两个名词便重复加余量。
