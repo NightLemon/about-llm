@@ -4,3 +4,10 @@
 /projects/synthetic-data-audit/*.json text eol=lf
 /projects/synthetic-data-audit/*.jsonl text eol=lf
 /projects/transformers-basics/release-evidence/*.json text eol=lf
+
+# MiMo RL public snapshots and producer hashes bind exact bytes.
+/docs/evidence/mimo-rl/snapshots/**/*.json text eol=lf
+/docs/evidence/mimo-rl/snapshots/**/viewer.html text eol=lf
+/docs/evidence/mimo-rl/snapshots/**/*.gz binary
+/scripts/mimo_rl_archive.py text eol=lf
+/scripts/mimo_rl_viewer.html text eol=lf

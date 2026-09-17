@@ -117,6 +117,12 @@ RAG 教材用两个固定请求建立同一条证据链：请求 A 在授权 BM2
 | TRL `SFTTrainer` | `assistant_only_loss` 仅用于 conversational 数据并依赖 generation mask；prompt-completion 的 completion-only 默认值不同，仍需检查实际 mask/labels | [SFT Trainer](https://huggingface.co/docs/trl/en/sft_trainer)；核对日期 2026-08-12 [SOURCE:trl-sft-trainer] |
 | vLLM CLI | `vllm serve` 提供 OpenAI-compatible server；参数和支持矩阵应按安装版本与 stable 文档核对 | [vLLM stable CLI](https://docs.vllm.ai/en/stable/cli/) [SOURCE:vllm-cli-stable] |
 | Transformers chat template | 模板序列化 role/control tokens；训练与生成格式、generation prompt 和 assistant mask 要按 tokenizer 模板验证 | [Chat templates](https://huggingface.co/docs/transformers/en/chat_templating) |
+| MiMo RL 公开训练看板（待复核登记） | `xiaomi-mimo-rl-dashboard` 保持 `pending-review`；范围为公开数值曲线、运行状态与检查点评测标识。采集窗口、覆盖与缺口随[每份快照](mimo-rl/index.md)保存；文件完整性不证明训练真实性、指标语义或再分发许可 | [MiMo 官方 RL 看板](https://mimo.xiaomi.com/rl/)；登记检查日期 `checked_at=2026-09-17`，下次复核 `next_review_at=2026-09-24`，易变性 `high` |
+
+MiMo 行仅登记待复核来源，尚无人工核验通过结论；该日期不替代实际采集时间。原始 URL 保留在注册表中，
+不以派生快照替换，也不登记未经复核的 raw fingerprint。自动归档和文件校验均不将来源改为 `verified`。
+公开完整性限于当次可取得的数值事实投影；原站截图、说明文案、HTML、JavaScript、CSS 与原始响应体均排除，
+仅可保存在本地私有材料中。许可仍待核对，详见[归档与证据边界](mimo-rl-controls.md)。
 
 ## 论文与历史协议案例
 

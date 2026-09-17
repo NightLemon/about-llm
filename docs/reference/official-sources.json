@@ -465,6 +465,16 @@
       "volatility": "low",
       "scope": "Primary paper for the July 2026 opaque reasoning replay case, trajectory study, disclosure, and August mitigation boundary",
       "used_by": ["evidence/accuracy-ledger.md", "evidence/claude-controls.md", "evidence/cloud-api-controls.md", "papers/2026-08.md", "quality/reasoning-artifact-security.md", "reference/resources.md"]
+    },
+    {
+      "id": "xiaomi-mimo-rl-dashboard",
+      "url": "https://mimo.xiaomi.com/rl/",
+      "checked_at": "2026-09-17",
+      "next_review_at": "2026-09-24",
+      "status": "pending-review",
+      "volatility": "high",
+      "scope": "MiMo public RL dashboard numerical curves, run status and checkpoint evaluation identifiers; pending human review, no training-truth or redistribution-permission claim",
+      "used_by": ["models/mimo-rl.md", "evidence/mimo-rl-controls.md", "evidence/mimo-rl/index.md"]
     }
   ]
 }

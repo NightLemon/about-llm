@@ -88,6 +88,7 @@ nav:
       - Llama: models/llama.md
       - Qwen: models/qwen.md
       - DeepSeek: models/deepseek.md
+      - MiMo RL 公开训练案例: models/mimo-rl.md
       - Claude: models/claude.md
       - Gemini:
           - 总览: models/gemini.md
@@ -234,6 +235,8 @@ nav:
           - DeepSeek 模型证据: evidence/deepseek-controls.md
           - Claude 模型证据: evidence/claude-controls.md
           - Llama 模型证据: evidence/llama-controls.md
+          - MiMo RL 归档与证据: evidence/mimo-rl-controls.md
+          - MiMo RL 快照入口: evidence/mimo-rl/index.md
           - 对齐与偏好优化证据: evidence/alignment-controls.md
           - 云 API 证据: evidence/cloud-api-controls.md
           - Transformers Basics 证据: evidence/transformers-controls.md

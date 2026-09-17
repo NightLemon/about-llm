@@ -1,0 +1,245 @@
+name: mimo-rl-archive
+
+on:
+  # Scheduled collection is intentionally disabled; run manually when needed.
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: mimo-rl-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    if: >-
+      github.repository == 'NightLemon/about-llm' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      ARCHIVE_BRANCH: mimo-rl-archive
+      ARCHIVE_ROOT: docs/evidence/mimo-rl/snapshots
+      PUBLIC_OUTPUT: outputs/mimo-rl-public
+      PUBLIC_BACKUP: outputs/mimo-rl-backup
+      PYTHONUTF8: "1"
+    steps:
+      - name: Check out the collector, never the archive branch
+        id: checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Use stdlib Python only
+        id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Capture an immutable complete or partial report
+        id: capture
+        continue-on-error: true
+        timeout-minutes: 14
+        run: |
+          mkdir -p artifacts/mimo-rl-private
+          # Diagnostics can contain upstream text; keep them private too.
+          set +e
+          python scripts/mimo_rl_archive.py collect --output outputs/mimo-rl-public --private-output artifacts/mimo-rl-private > artifacts/mimo-rl-private/collector.log 2>&1
+          code=$?
+          set -e
+          printf 'exit_code=%s\n' "$code" >> "$GITHUB_OUTPUT"
+          printf 'Collector exit code: %s (2 means partial).\n' "$code"
+          exit "$code"
+
+      - name: Verify every candidate before copying any public files
+        id: verify
+        if: ${{ always() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success' }}
+        run: |
+          python - <<'PY'
+          import gzip
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import subprocess
+          import sys
+
+          root = Path(os.environ["PUBLIC_OUTPUT"])
+          backup = Path(os.environ["PUBLIC_BACKUP"]) / "snapshots"
+          expected = {"manifest.json", "facts.json.gz", "viewer.html"}
+          if root.is_symlink() or not root.is_dir():
+              raise SystemExit("No public snapshot directory; capture did not finish a report.")
+          candidates = sorted(root.iterdir())
+          if not candidates:
+              raise SystemExit("No public snapshots; an empty capture is not success.")
+          partial = False
+          for snapshot in candidates:
+              if (snapshot.is_symlink() or not snapshot.is_dir()
+                      or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", snapshot.name)):
+                  raise SystemExit("Unsafe public snapshot path.")
+              entries = list(snapshot.iterdir())
+              if ({p.name for p in entries} != expected
+                      or any(p.is_symlink() or not p.is_file() for p in entries)):
+                  raise SystemExit("Unexpected public inventory; no raw files may be uploaded.")
+              result = subprocess.run(
+                  [sys.executable, "scripts/mimo_rl_archive.py", "verify", str(snapshot)],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+              )
+              if result.returncode != 0:
+                  raise SystemExit("Snapshot verification failed; all candidates withheld.")
+              manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
+              if (manifest.get("snapshot_id") != snapshot.name
+                      or manifest.get("status") not in {"complete", "partial"}):
+                  raise SystemExit("Snapshot identity/status mismatch.")
+              partial |= manifest["status"] == "partial"
+          # Only verified public bundles enter the upload/publish area. Private
+          # bodies, collector logs and original site assets never enter it.
+          backup.mkdir(parents=True, exist_ok=False)
+          for snapshot in candidates:
+              shutil.copytree(snapshot, backup / snapshot.name)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"partial={str(partial).lower()}\ncount={len(candidates)}\n")
+          PY
+
+      - name: Append public snapshots to the durable orphan branch
+        id: publish
+        if: ${{ always() && steps.verify.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Authentication is scoped to this step, not written to either repo.
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.${GITHUB_SERVER_URL}/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          archive="$RUNNER_TEMP/mimo-rl-archive-git"
+          source="$GITHUB_WORKSPACE/$PUBLIC_BACKUP/snapshots"
+          git init --initial-branch=archive-bootstrap "$archive"
+          cd "$archive"
+          git config --local user.name 'github-actions[bot]'
+          git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config --local core.autocrlf false
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+
+          # ls-remote exit 2 means absent; transport/auth errors must not create
+          # a replacement history. Fetch only the dedicated archive branch.
+          set +e
+          git ls-remote --exit-code --heads origin "refs/heads/$ARCHIVE_BRANCH" > "$RUNNER_TEMP/mimo-rl-remote-ref"
+          remote_status=$?
+          set -e
+          case "$remote_status" in
+            0)
+              git fetch --no-tags --depth=1 origin "refs/heads/$ARCHIVE_BRANCH:refs/remotes/origin/$ARCHIVE_BRANCH"
+              git switch --create "$ARCHIVE_BRANCH" "refs/remotes/origin/$ARCHIVE_BRANCH"
+              ;;
+            2) git switch --orphan "$ARCHIVE_BRANCH" ;;
+            *) echo '::error::Cannot inspect archive branch; no publication attempted.'; exit "$remote_status" ;;
+          esac
+
+          for parent in docs docs/evidence docs/evidence/mimo-rl "$ARCHIVE_ROOT"; do
+            if [[ -L "$parent" || ( -e "$parent" && ! -d "$parent" ) ]]; then
+              echo '::error::Unsafe archive parent path.'
+              exit 1
+            fi
+          done
+          mkdir -p "$ARCHIVE_ROOT"
+          new_files=()
+          # The orphan branch does not inherit main's .gitattributes. Keep
+          # checkout rules inside the configured archive root, outside bundles.
+          attributes="$ARCHIVE_ROOT/.gitattributes"
+          rules='**/*.json text eol=lf\n**/viewer.html text eol=lf\n**/*.gz binary\n'
+          if [[ -L "$attributes" || ( -e "$attributes" && ! -f "$attributes" ) ]]; then
+            echo '::error::Unsafe archive attributes path.'
+            exit 1
+          elif [[ -e "$attributes" ]]; then
+            if ! printf '%b' "$rules" | cmp -s - "$attributes"; then
+              echo '::error::Archive checkout rules differ; review without overwriting.'
+              exit 1
+            fi
+          else
+            printf '%b' "$rules" > "$attributes"
+            new_files+=("$attributes")
+          fi
+          for snapshot in "$source"/*; do
+            target="$ARCHIVE_ROOT/$(basename "$snapshot")"
+            if [[ -L "$target" ]]; then
+              echo '::error::Archive snapshot symlink refused.'
+              exit 1
+            elif [[ -e "$target" ]]; then
+              # An identical replay is harmless; an identity collision is not.
+              if ! diff -qr -- "$snapshot" "$target" > /dev/null; then
+                echo '::error::Existing snapshot differs; immutable history preserved.'
+                exit 1
+              fi
+              continue
+            fi
+            cp -a -- "$snapshot" "$target"
+            for name in manifest.json facts.json.gz viewer.html; do
+              new_files+=("$target/$name")
+            done
+          done
+          if (( ${#new_files[@]} )); then
+            git add -- "${new_files[@]}"
+            # Check the staged bytes as well: Git attributes/filters must not
+            # silently change a file after the offline verifier has read it.
+            for path in "${new_files[@]}"; do
+              git show ":$path" | cmp - "$path"
+            done
+            git commit -m "Archive public MiMo RL snapshots (run $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT)"
+            # Normal fast-forward only. A competing writer/protection failure
+            # leaves the public backup available; never force, reset or prune.
+            git push origin "HEAD:refs/heads/$ARCHIVE_BRANCH"
+          fi
+
+      - name: Report capture, integrity and durable publication separately
+        if: ${{ always() }}
+        env:
+          CAPTURE_EXIT: ${{ steps.capture.outputs.exit_code }}
+          CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          PARTIAL: ${{ steps.verify.outputs.partial }}
+          SNAPSHOT_COUNT: ${{ steps.verify.outputs.count }}
+        run: |
+          mkdir -p "$PUBLIC_BACKUP"
+          # Only workflow-generated status fields, never raw logs/errors.
+          printf '{"capture_exit_code":"%s","capture":"%s","verify":"%s","publish":"%s","partial":"%s","snapshot_count":"%s"}\n' \
+            "${CAPTURE_EXIT:-unknown}" "$CAPTURE_OUTCOME" "$VERIFY_OUTCOME" "$PUBLISH_OUTCOME" "${PARTIAL:-unknown}" "${SNAPSHOT_COUNT:-0}" \
+            > "$PUBLIC_BACKUP/run-status.json"
+          {
+            echo '## MiMo RL archive'
+            printf '\nCapture: %s; exit: %s.\n' "$CAPTURE_OUTCOME" "${CAPTURE_EXIT:-unknown}"
+            printf '\nFile verification: %s; snapshots: %s; partial: %s.\n' "$VERIFY_OUTCOME" "${SNAPSHOT_COUNT:-0}" "${PARTIAL:-unknown}"
+            printf '\nDurable publication: %s.\n' "$PUBLISH_OUTCOME"
+            echo 'Partial is an audit record, not successful complete collection or human verification.'
+            echo 'Raw responses, original site materials and private logs are excluded from all uploads.'
+            echo 'Durable branch: https://github.com/NightLemon/about-llm/tree/mimo-rl-archive/docs/evidence/mimo-rl/snapshots'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Always back up public bundles and status for 30 days
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mimo-rl-public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: outputs/mimo-rl-backup/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Fail after reporting and backup if capture was partial or any stage failed
+        if: ${{ always() }}
+        env:
+          CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          PARTIAL: ${{ steps.verify.outputs.partial }}
+        run: |
+          if [[ "$CAPTURE_OUTCOME" != success || "$VERIFY_OUTCOME" != success || "$PUBLISH_OUTCOME" != success || "$PARTIAL" != false ]]; then
+            echo '::error::Archive incomplete or failed. See the stage report; retained partial files remain audit-only.'
+            exit 1
+          fi

@@ -86,6 +86,7 @@ OFFICIAL_URLS = {
     "https://arxiv.org/abs/2607.19191",
     "https://arxiv.org/abs/2608.10296",
     "https://arxiv.org/abs/2608.09867",
+    "https://mimo.xiaomi.com/rl/",
 }
 
 
