@@ -25,9 +25,18 @@ BASE = "https://mimo.xiaomi.com/rl/"
 SCHEMA = "mimo-rl-archive/v1"
 MAX_BYTES = 16 * 1024 * 1024
 MAX_FACTS_BYTES = 128 * 1024 * 1024
+SERIES_BATCH_SIZE = 24
 TEMPLATE = Path(__file__).with_name("mimo_rl_viewer.html")
 USER_AGENT = "about-llm-educational-archive/1.0 (bounded public dashboard snapshot)"
-BENCHMARKS = {"deepswe": ("DeepSWE v1.1", "mini-swe-agent, avg@3")}
+BENCHMARKS = {
+    "deepswe": ("DeepSWE v1.1", ("mini-swe-agent, avg@3",)),
+    "inhouse-coding": ("In-house Coding Bench", ("avg@3",)),
+    # Keep the earlier empty label distinct from the later explicit protocol.
+    "automation": ("AutomationBench v1.0.6", ("", "avg@3")),
+}
+# Freeze the denominator for v1's optional coverage record. A future catalogue
+# expansion needs a new coverage contract, not reinterpretation of old records.
+BENCHMARK_KEYS_V1 = ("automation", "deepswe", "inhouse-coding")
 STATUS_KEYS = {"run", "cost", "clock", "version", "step", "totals", "events", "headline"}
 LIVE_KEYS = {"log_time", "latest", "entries"}
 IDENTIFIER = re.compile(r"[A-Za-z0-9_@./()=-]{1,512}")
@@ -108,7 +117,12 @@ def project_status(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(event, dict) or event.get("kind") not in {"restart", "step"}:
             raise ValueError("status event schema changed")
         numeric_tree({k: v for k, v in event.items() if k != "kind"}, strict=True)
-    return {"version": data["version"], "observations": numeric_tree(data)}
+    observations = numeric_tree(data)
+    # These reviewed enum identifiers distinguish restarts from completed steps.
+    # Arbitrary status labels and incident prose remain excluded.
+    for original, projected in zip(data["events"], observations["events"], strict=True):
+        projected["kind"] = original["kind"]
+    return {"version": data["version"], "observations": observations}
 
 
 def project_live(data: dict[str, Any]) -> dict[str, Any]:
@@ -123,10 +137,12 @@ def project_live(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def project_benchmark(item: dict[str, Any], runs: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(item, dict) or not isinstance(item.get("key"), str):
+        raise ValueError("benchmark item schema changed")
     protocol = BENCHMARKS.get(item.get("key"))
     results = item.get("results")
     if (protocol is None or not isinstance(results, dict) or set(results) - runs.keys()
-            or (item.get("title"), item.get("note")) != protocol):
+            or item.get("title") != protocol[0] or item.get("note") not in protocol[1]):
         raise ValueError("benchmark schema/protocol changed")
     for scores in results.values():
         if not isinstance(scores, dict):
@@ -136,7 +152,20 @@ def project_benchmark(item: dict[str, Any], runs: dict[str, Any]) -> dict[str, A
                     (score is not None and (type(score) not in (int, float)
                                            or not math.isfinite(score)))):
                 raise ValueError("benchmark checkpoint/score changed")
-    return {"key": item["key"], "title": protocol[0], "note": protocol[1], "results": results}
+    return {"key": item["key"], "title": protocol[0], "note": item["note"], "results": results}
+
+
+def benchmark_coverage(items: list[dict[str, Any]], expected: list[str],
+                       duplicates: list[str]) -> dict[str, Any]:
+    received = [item["key"] for item in items]
+    if (expected != list(BENCHMARK_KEYS_V1)
+            or duplicates != sorted(set(duplicates)) or set(duplicates) - set(expected)
+            or len(received) != len(set(received)) or set(received) - set(expected)
+            or set(received) & set(duplicates)):
+        raise ValueError("benchmark coverage identity changed")
+    return {"expected_keys": expected, "received_keys": sorted(received),
+            "missing_keys": sorted(set(expected) - set(received)),
+            "duplicate_keys": duplicates}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -291,9 +320,10 @@ def capture(collector: Collector, facts: dict[str, Any]) -> None:
                     or not IDENTIFIER.fullmatch(tags_doc["version"])):
                 raise ValueError("tag catalogue schema changed")
             run.update(tags=tags, version=tags_doc["version"])
-            # Below the site's own 96-tag batch. Sequential, bounded requests.
-            for start in range(0, len(tags), 48):
-                chunk = tags[start:start + 48]
+            # A repeatedly failing 48-tag request succeeded as two 24-tag requests
+            # during supervised collection. Keep requests sequential and bounded.
+            for start in range(0, len(tags), SERIES_BATCH_SIZE):
+                chunk = tags[start:start + SERIES_BATCH_SIZE]
                 endpoint = query("series", run=key, v=run["version"], tags=",".join(chunk))
                 data = collector.get(endpoint)
                 if data is not None:
@@ -313,12 +343,32 @@ def capture(collector: Collector, facts: dict[str, Any]) -> None:
         if run["coverage"]["missing_tags"] or not run["coverage"]["version_consistent"]:
             collector.issues.append(f"{key}: incomplete catalogue or version changed")
     benchmarks = collector.get("api/benchmarks")
+    seen_benchmarks: set[str] = set()
+    duplicate_benchmarks: set[str] = set()
     if benchmarks is not None:
         if not isinstance(benchmarks.get("benchmarks"), list):
             collector.issues.append("benchmark schema changed")
         else:
-            for item in benchmarks["benchmarks"]:
-                facts["benchmarks"].append(project_benchmark(item, facts["runs"]))
+            for index, item in enumerate(benchmarks["benchmarks"], start=1):
+                try:
+                    projected = project_benchmark(item, facts["runs"])
+                except ValueError:
+                    # Keep the original response privately and the capture partial,
+                    # but still collect other evaluations, notices and site assets.
+                    collector.issues.append(f"benchmark item {index}: schema/protocol changed")
+                    continue
+                key = projected["key"]
+                if key in seen_benchmarks:
+                    duplicate_benchmarks.add(key)
+                    collector.issues.append(f"benchmark item {index}: duplicate reviewed key")
+                    continue
+                seen_benchmarks.add(key)
+                facts["benchmarks"].append(projected)
+    facts["benchmarks"] = [b for b in facts["benchmarks"] if b["key"] not in duplicate_benchmarks]
+    facts["benchmark_coverage"] = benchmark_coverage(
+        facts["benchmarks"], sorted(BENCHMARKS), sorted(duplicate_benchmarks))
+    if facts["benchmark_coverage"]["missing_keys"]:
+        collector.issues.append("benchmark coverage incomplete")
     notices = collector.get("api/notices")
     if notices is not None:
         if not isinstance(notices.get("notices"), list):
@@ -383,6 +433,9 @@ def collect(output_root: Path, private_root: Path) -> Path:
         (private / "collection-error.txt").write_text(str(exc), encoding="utf-8")
     for run in facts["runs"].values():
         run["coverage"] = coverage(run)
+    if "benchmark_coverage" not in facts:
+        facts["benchmark_coverage"] = benchmark_coverage(
+            facts["benchmarks"], sorted(BENCHMARKS), [])
     manifest = {
         "schema": SCHEMA, "snapshot_id": snapshot_id, "source": BASE,
         "started_at": started, "finished_at": utc_now(),
@@ -392,7 +445,8 @@ def collect(output_root: Path, private_root: Path) -> Path:
         "viewer_template_sha256": digest(TEMPLATE.read_bytes()),
         "limits": {"requests": 256, "response_bytes": MAX_BYTES,
                "total_response_bytes": collector.max_total_bytes,
-               "collection_seconds": 600, "retries_per_request": 0},
+             "collection_seconds": 600, "retries_per_request": 0,
+             "series_batch_tags": SERIES_BATCH_SIZE},
         "python": sys.version.split()[0], "user_agent": USER_AGENT,
         "policy": {"public": "numerical observations, metric identifiers, original viewer",
                    "private": "original response bodies, site code, notices and descriptions",
@@ -460,6 +514,16 @@ def verify(snapshot: Path, private_root: Path | None = None) -> dict[str, Any]:
         if (set(benchmark) != {"key", "title", "note", "results"}
             or project_benchmark(benchmark, facts["runs"]) != benchmark):
             raise ValueError("unreviewed benchmark protocol")
+    # v1 snapshots made before this review have no benchmark denominator. Do not
+    # reinterpret their historical status using a catalogue discovered later.
+    benchmark_incomplete = False
+    if "benchmark_coverage" in facts:
+        recorded = facts["benchmark_coverage"]
+        expected = benchmark_coverage(facts["benchmarks"], recorded["expected_keys"],
+                                      recorded["duplicate_keys"])
+        if recorded != expected:
+            raise ValueError("benchmark coverage mismatch")
+        benchmark_incomplete = bool(expected["missing_keys"] or expected["duplicate_keys"])
     # Viewer is self-contained and must embed exactly the verified facts and metadata.
     html = (snapshot / "viewer.html").read_text(encoding="utf-8")
     match = re.search(r'<script id="archive-data" type="application/json">(.*?)</script>',
@@ -469,7 +533,7 @@ def verify(snapshot: Path, private_root: Path | None = None) -> dict[str, Any]:
     if embedded != {"facts": facts, "manifest": embedded_manifest}:
         raise ValueError("viewer and facts disagree")
     if manifest["status"] == "complete" and (
-        not calculated or manifest["issues"]
+        not calculated or manifest["issues"] or benchmark_incomplete
         or any(not r["ok"] for r in manifest["requests"])
         or any(c["missing_tags"] or not c["version_consistent"] for c in calculated.values())
     ):

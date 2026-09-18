@@ -222,9 +222,6 @@ R(x,y)-\beta
 
 工程上要同时记录奖励、KL、回答长度、熵和真实任务指标。只看总目标，可能掩盖奖励上升其实来自更长输出或分布漂移。
 
-[MiMo RL 看板案例](../models/mimo-rl.md#train-infer)提供另一种 KL 读图练习：
-其中 `train_infer_diff/new_infer/kl` 比较训练侧与推理侧的一致性，需与本节相对参考策略的 KL 约束分开解释。
-
 ## DPO：直接学习相对参考策略的偏好
 
 DPO 不需要单独训练一个在线调用的奖励模型。它把偏好模型与 KL 正则化策略之间的关系，
@@ -484,6 +481,7 @@ prompt、路由和流量组成也可能发生变化。
 ## 继续学习
 
 - [LLM 强化学习](reinforcement-learning.md)：从奖励、策略梯度和序列决策进入 GAE/PPO、GRPO 与 RLVR。
+- [MiMo RL 真实图表专题](../models/mimo-rl-series.md)：对着奖励、梯度、采样与评测截图，理解训练循环中的实际观测。
 - [单卡微调项目](../practice/projects/single-gpu-finetuning.md)：SFT、LoRA 与 DPO 的渐进路线。
 - [SFT 数据闭环](sft-data-pipeline.md)：模板、标签、数据治理和切分。
 - [Agent Runtime](../applications/agent-runtime.md)：权限、副作用和回放。

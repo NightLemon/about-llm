@@ -1,0 +1,131 @@
+{
+  "schema": 1,
+  "figures": [
+    {
+      "file": "status.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-17T08:05:57.499Z",
+      "finished_at": "2026-09-17T08:05:57.549Z"
+    },
+    {
+      "file": "benchmark.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-17T08:05:57.578Z",
+      "finished_at": "2026-09-17T08:05:57.633Z"
+    },
+    {
+      "file": "composition.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-17T08:05:57.657Z",
+      "finished_at": "2026-09-17T08:05:57.712Z"
+    },
+    {
+      "file": "harness.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-17T08:08:49.813Z",
+      "finished_at": "2026-09-17T08:08:49.896Z"
+    },
+    {
+      "file": "sampler.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-17T08:08:49.928Z",
+      "finished_at": "2026-09-17T08:08:49.996Z"
+    },
+    {
+      "file": "sampler-sources.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-17T08:08:50.013Z",
+      "finished_at": "2026-09-17T08:08:50.065Z"
+    },
+    {
+      "file": "reward.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/critic%2Frewards%2Fmean",
+      "started_at": "2026-09-17T08:05:58.978Z",
+      "finished_at": "2026-09-17T08:05:59.041Z"
+    },
+    {
+      "file": "entropy.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/actor%2Fentropy_loss",
+      "started_at": "2026-09-17T08:05:59.093Z",
+      "finished_at": "2026-09-17T08:05:59.153Z"
+    },
+    {
+      "file": "pg-loss.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/actor%2Fpg_loss",
+      "started_at": "2026-09-17T08:05:59.202Z",
+      "finished_at": "2026-09-17T08:05:59.268Z"
+    },
+    {
+      "file": "gradient.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/actor%2Fgrad_norm",
+      "started_at": "2026-09-17T08:05:59.317Z",
+      "finished_at": "2026-09-17T08:05:59.380Z"
+    },
+    {
+      "file": "consistency.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/train_infer_diff%2Fnew_infer%2Fkl",
+      "started_at": "2026-09-17T08:05:59.432Z",
+      "finished_at": "2026-09-17T08:05:59.489Z"
+    },
+    {
+      "file": "staleness.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/partial%2Favg_staleness",
+      "started_at": "2026-09-17T08:05:59.535Z",
+      "finished_at": "2026-09-17T08:05:59.599Z"
+    },
+    {
+      "file": "length.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/ctx_total_length%2Fmean",
+      "started_at": "2026-09-17T08:05:59.650Z",
+      "finished_at": "2026-09-17T08:05:59.706Z"
+    },
+    {
+      "file": "turns.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/dynsam%2Fagg_turn%2Fmean",
+      "started_at": "2026-09-17T08:05:59.753Z",
+      "finished_at": "2026-09-17T08:05:59.819Z"
+    },
+    {
+      "file": "timing.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/timing_s%2Fstep",
+      "started_at": "2026-09-17T08:05:59.875Z",
+      "finished_at": "2026-09-17T08:05:59.951Z"
+    },
+    {
+      "file": "all-fail.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/dynsam%2Fpassrate%2Fzero",
+      "started_at": "2026-09-17T08:06:00.002Z",
+      "finished_at": "2026-09-17T08:06:00.071Z"
+    },
+    {
+      "file": "all-pass.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/dynsam%2Fpassrate%2Fone",
+      "started_at": "2026-09-17T08:06:00.123Z",
+      "finished_at": "2026-09-17T08:06:00.180Z"
+    },
+    {
+      "file": "infra-error.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/dynsam%2Finfra_error%2Fseq_rate",
+      "started_at": "2026-09-17T08:06:00.226Z",
+      "finished_at": "2026-09-17T08:06:00.283Z"
+    },
+    {
+      "file": "environments.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/env%2Factive",
+      "started_at": "2026-09-17T08:06:00.341Z",
+      "finished_at": "2026-09-17T08:06:00.396Z"
+    },
+    {
+      "file": "penalty.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/train%2Fadv_pos_sum_post_penalty",
+      "started_at": "2026-09-17T08:06:00.747Z",
+      "finished_at": "2026-09-17T08:06:00.825Z"
+    },
+    {
+      "file": "metric-browser.png",
+      "source": "https://mimo.xiaomi.com/rl/#metrics",
+      "started_at": "2026-09-17T08:08:50.486Z",
+      "finished_at": "2026-09-17T08:08:50.553Z"
+    }
+  ]
+}

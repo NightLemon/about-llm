@@ -1,0 +1,28 @@
+{
+  "figures": [
+    {
+      "file": "benchmarks.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-18T06:09:48.441Z",
+      "finished_at": "2026-09-18T06:09:48.518Z"
+    },
+    {
+      "file": "composition-pro.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-18T06:09:48.542Z",
+      "finished_at": "2026-09-18T06:09:48.608Z"
+    },
+    {
+      "file": "sampler-pro.png",
+      "source": "https://mimo.xiaomi.com/rl/#overview",
+      "started_at": "2026-09-18T06:09:48.626Z",
+      "finished_at": "2026-09-18T06:09:48.692Z"
+    },
+    {
+      "file": "avgn.png",
+      "source": "https://mimo.xiaomi.com/rl/#chart/dynsam%2Favg%40n",
+      "started_at": "2026-09-18T06:09:48.735Z",
+      "finished_at": "2026-09-18T06:09:48.814Z"
+    }
+  ]
+}

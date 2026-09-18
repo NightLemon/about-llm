@@ -88,7 +88,19 @@ nav:
       - Llama: models/llama.md
       - Qwen: models/qwen.md
       - DeepSeek: models/deepseek.md
-      - MiMo RL 公开训练案例: models/mimo-rl.md
+      - MiMo RL 看图学训练:
+          - 专题总览: models/mimo-rl-series.md
+          - 01 采样成功率: models/mimo-rl.md
+          - 02 进度、批次与费用: models/mimo-rl-progress.md
+          - 03 奖励、优势与惩罚: models/mimo-rl-reward.md
+          - 04 熵、目标与梯度: models/mimo-rl-update.md
+          - 05 训练与推理一致性: models/mimo-rl-consistency.md
+          - 06 长轨迹与多轮交互: models/mimo-rl-trajectories.md
+          - 07 难度与采样流水线: models/mimo-rl-sampling.md
+          - 08 数据与执行器配比: models/mimo-rl-data-mix.md
+          - 09 耗时与吞吐: models/mimo-rl-throughput.md
+          - 10 评测与系统健康: models/mimo-rl-evaluation.md
+          - 11 指标筛选与读图: models/mimo-rl-metrics.md
       - Claude: models/claude.md
       - Gemini:
           - 总览: models/gemini.md
@@ -235,8 +247,10 @@ nav:
           - DeepSeek 模型证据: evidence/deepseek-controls.md
           - Claude 模型证据: evidence/claude-controls.md
           - Llama 模型证据: evidence/llama-controls.md
-          - MiMo RL 归档与证据: evidence/mimo-rl-controls.md
-          - MiMo RL 快照入口: evidence/mimo-rl/index.md
+          - MiMo RL 图表与数据:
+              - 图表与数据: evidence/mimo-rl/index.md
+              - MiMo RL 9 月 18 日回看: evidence/mimo-rl/reviews/2026-09-18.md
+              - MiMo RL 维护记录: evidence/mimo-rl-controls.md
           - 对齐与偏好优化证据: evidence/alignment-controls.md
           - 云 API 证据: evidence/cloud-api-controls.md
           - Transformers Basics 证据: evidence/transformers-controls.md

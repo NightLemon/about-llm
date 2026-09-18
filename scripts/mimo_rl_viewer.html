@@ -83,7 +83,7 @@ function draw(){
  $('summary').textContent=`${tag} · ${values.length} 个位置 / ${valid.length} 个有效值 · 原始曲线，无平滑；纵轴自动缩放 · 最新位置：${values.at(-1)??'缺失'}`;
 }
 for(const b of facts.benchmarks){const heading=document.createElement('h3');heading.textContent=`${b.title} · ${b.note}`;$('benchmarks').append(heading);const table=document.createElement('table');const head=document.createElement('tr');['运行','检查点 step','分数'].forEach(t=>cell(head,t));table.append(head);for(const [run,scores] of Object.entries(b.results))for(const [step,score] of Object.entries(scores)){const row=document.createElement('tr');[run,step,score].forEach(t=>cell(row,t));table.append(row);}$('benchmarks').append(table);}
-$('metadata').textContent=JSON.stringify({manifest,runs:Object.fromEntries(Object.entries(facts.runs).map(([k,r])=>[k,{coverage:r.coverage,status_before:r.status_before,status_after:r.status_after,live:r.live}]))},null,2);
+$('metadata').textContent=JSON.stringify({manifest,benchmark_coverage:facts.benchmark_coverage??null,runs:Object.fromEntries(Object.entries(facts.runs).map(([k,r])=>[k,{coverage:r.coverage,status_before:r.status_before,status_after:r.status_after,live:r.live}]))},null,2);
 $('download').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(facts,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='mimo-rl-facts.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('run').onchange=choose;$('filter').oninput=choose;$('metric').onchange=draw;$('axis').onchange=draw;choose();
 </script>

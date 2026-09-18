@@ -145,10 +145,19 @@ def test_decompression_budget(bundle: tuple[Path, Path], monkeypatch: pytest.Mon
     assert gzip.decompress((public / "facts.json.gz").read_bytes()).endswith(b"\n")
 
 
-def test_fake_capture_covers_all_tags_and_omits_original_text(tmp_path: Path) -> None:
+@pytest.mark.parametrize("unsupported", [
+    None, "unknown", "changed", "malformed", "empty", "missing", "duplicate",
+])
+def test_fake_capture_covers_all_tags_and_omits_original_text(
+    tmp_path: Path, unsupported: str | None,
+) -> None:
+    assets = []
+    batches = []
+
     class FakeCollector(archive.Collector):
         def get(self, endpoint: str, *, parse: bool = True) -> object:
             if not parse:
+                assets.append(endpoint)
                 return b"original site code"
             path = urlsplit(endpoint).path
             params = parse_qs(urlsplit(endpoint).query)
@@ -159,14 +168,35 @@ def test_fake_capture_covers_all_tags_and_omits_original_text(tmp_path: Path) ->
             if path == "api/tags":
                 return {"run": "pro", "version": "v1", "tags": [f"tag/{i}" for i in range(100)]}
             if path == "api/series":
-                return series() | {"series": {t: [0, None] for t in params["tags"][0].split(",")}}
+                tags = params["tags"][0].split(",")
+                batches.append(tags)
+                return series() | {"series": {t: [0, None] for t in tags}}
             if path == "api/live":
                 return {"log_time": 120, "latest": {"t": 120, "step": 2, "accept": 1,
                                                     "target": 2, "judged": None}, "entries": []}
             if path == "api/benchmarks":
-                return {"benchmarks": [{"key": "deepswe", "title": "DeepSWE v1.1",
-                                        "note": "mini-swe-agent, avg@3",
-                                        "results": {"pro": {"1": 58}}}]}
+                items = [
+                    {"key": "deepswe", "title": "DeepSWE v1.1",
+                     "note": "mini-swe-agent, avg@3", "results": {"pro": {"1": 58}}},
+                    {"key": "inhouse-coding", "title": "In-house Coding Bench",
+                     "note": "avg@3", "results": {"pro": {"1": 57, "2": None}}},
+                    {"key": "automation", "title": "AutomationBench v1.0.6",
+                     "note": "", "results": {"pro": {"1": 46}}},
+                ]
+                if unsupported == "empty":
+                    items = []
+                elif unsupported == "missing":
+                    items.pop()
+                elif unsupported == "duplicate":
+                    items.append(copy.deepcopy(items[0]))
+                    items[-1]["results"]["pro"]["1"] = 999
+                elif unsupported:
+                    bad = (None if unsupported == "malformed" else
+                           {"key": "future" if unsupported == "unknown" else "deepswe",
+                            "title": "private unreviewed title", "note": "changed protocol",
+                            "results": {"pro": {"1": 999}}})
+                    items.insert(1, bad)
+                return {"benchmarks": items}
             if path == "api/notices":
                 return {"notices": [{"t": 110, "text": "private incident narrative"}]}
             raise AssertionError(endpoint)
@@ -174,11 +204,86 @@ def test_fake_capture_covers_all_tags_and_omits_original_text(tmp_path: Path) ->
     collector = FakeCollector(tmp_path, interval=0)
     facts = {"runs": {}, "benchmarks": []}
     archive.capture(collector, facts)
-    assert collector.issues == []
+    assert bool(collector.issues) is bool(unsupported)
+    expected = ["deepswe", "inhouse-coding", "automation"]
+    if unsupported == "empty":
+        expected = []
+    elif unsupported == "missing":
+        expected.remove("automation")
+    elif unsupported == "duplicate":
+        expected.remove("deepswe")  # Conflicting records have no unambiguous score.
+    assert [b["key"] for b in facts["benchmarks"]] == expected
+    assert facts["benchmark_coverage"] == {
+        "expected_keys": sorted(archive.BENCHMARKS),
+        "received_keys": sorted(expected),
+        "missing_keys": sorted(set(archive.BENCHMARKS) - set(expected)),
+        "duplicate_keys": ["deepswe"] if unsupported == "duplicate" else [],
+    }
+    for item in facts["benchmarks"]:
+        if item["key"] == "inhouse-coding":
+            assert item["results"]["pro"]["2"] is None
+    assert facts["notices"]["count"] == 1
+    assert assets == ["", "style.css", "favicon.svg", "js/theme.js", "js/format.js",
+                      "js/charts.js", "js/app.js"]
     assert facts["runs"]["pro"]["coverage"]["received_tags"] == 100
     assert facts["runs"]["pro"]["series"]["tag/99"] == [0, None]
-    text = json.dumps(facts)
-    assert "not redistributable" not in text and "private incident narrative" not in text
+    assert [len(batch) for batch in batches] == [24, 24, 24, 24, 4]
+    assert [tag for batch in batches for tag in batch] == [f"tag/{i}" for i in range(100)]
+    text = json.dumps({"facts": facts, "issues": collector.issues})
+    assert all(t not in text for t in ["not redistributable", "private incident narrative",
+                                      "private unreviewed title", "changed protocol"])
+
+
+def test_reviewed_status_event_kinds_survive_projection() -> None:
+    data = status()
+    data["events"] = [{"kind": "restart", "t": 110},
+                      {"kind": "step", "t": 120, "step": 2, "redo": True}]
+    events = archive.project_status(data)["observations"]["events"]
+    assert events == data["events"]
+    data["events"][0]["kind"] = "private unreviewed narrative"
+    with pytest.raises(ValueError, match="event schema"):
+        archive.project_status(data)
+
+
+@pytest.mark.parametrize("note", ["", "avg@3"])
+def test_automation_preserves_each_reviewed_protocol_label(note: str) -> None:
+    item = {"key": "automation", "title": "AutomationBench v1.0.6", "note": note,
+            "results": {"pro": {"1": 48.7}}}
+    assert archive.project_benchmark(item, {"pro": {}}) == item
+    with pytest.raises(ValueError, match="protocol"):
+        archive.project_benchmark(item | {"note": "unreviewed future protocol"}, {"pro": {}})
+
+
+@pytest.mark.parametrize("advertised_complete", [False, True])
+def test_reviewed_benchmark_gap_cannot_be_advertised_as_complete(
+    bundle: tuple[Path, Path], tmp_path: Path, advertised_complete: bool,
+) -> None:
+    public, _ = bundle
+    facts = archive.read_facts(public / "facts.json.gz")
+    facts["benchmark_coverage"] = {
+        "expected_keys": sorted(archive.BENCHMARKS), "received_keys": [],
+        "missing_keys": sorted(archive.BENCHMARKS), "duplicate_keys": [],
+    }
+    manifest = json.loads((public / "manifest.json").read_bytes())
+    manifest.pop("files")
+    manifest["status"] = "complete" if advertised_complete else "partial"
+    manifest["issues"] = [] if advertised_complete else ["benchmark coverage incomplete"]
+    fresh_public, fresh_private = tmp_path / "new-public", tmp_path / "new-private"
+    fresh_public.mkdir()
+    fresh_private.mkdir()
+    archive.write_snapshot(fresh_public, fresh_private, facts, manifest)
+    if advertised_complete:
+        with pytest.raises(ValueError, match="incomplete capture"):
+            archive.verify(fresh_public)
+    else:
+        assert archive.verify(fresh_public)["status"] == "partial"
+
+
+def test_benchmark_denominator_cannot_shrink_to_received_subset() -> None:
+    item = {"key": "deepswe", "title": "DeepSWE v1.1", "note": "mini-swe-agent, avg@3",
+            "results": {"pro": {"1": 58}}}
+    with pytest.raises(ValueError, match="coverage identity"):
+        archive.benchmark_coverage([item], ["deepswe"], [])
 
 
 @pytest.mark.parametrize("mode", ["timeout", "oversize", "html"])

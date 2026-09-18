@@ -474,7 +474,14 @@
       "status": "pending-review",
       "volatility": "high",
       "scope": "MiMo public RL dashboard numerical curves, run status and checkpoint evaluation identifiers; pending human review, no training-truth or redistribution-permission claim",
-      "used_by": ["models/mimo-rl.md", "evidence/mimo-rl-controls.md", "evidence/mimo-rl/index.md"]
+      "used_by": [
+        "models/mimo-rl.md", "models/mimo-rl-series.md", "models/mimo-rl-progress.md",
+        "models/mimo-rl-reward.md", "models/mimo-rl-update.md", "models/mimo-rl-consistency.md",
+        "models/mimo-rl-trajectories.md", "models/mimo-rl-sampling.md", "models/mimo-rl-data-mix.md",
+        "models/mimo-rl-throughput.md", "models/mimo-rl-evaluation.md", "models/mimo-rl-metrics.md",
+        "evidence/mimo-rl-controls.md", "evidence/mimo-rl/index.md",
+        "evidence/mimo-rl/reviews/2026-09-18.md"
+      ]
     }
   ]
 }
