@@ -15,10 +15,12 @@ flowchart TD
   D --> F[RAG]
   D --> G[Agent]
   C --> H[推理与服务]
+  E --> M[集合通信与数据中心网络]
+  H --> M
   E --> I[微调与对齐]
   F --> J[应用安全与治理]
   G --> J
-  H --> K[系统可靠性]
+  M --> K[系统可靠性]
   I --> L[模型评测与发布]
 ```
 
@@ -47,6 +49,7 @@ flowchart TD
 3. [微调](../training/finetuning.md)：SFT、LoRA/QLoRA 与方法选择。
 4. [对齐入门](../training/alignment-basics.md)：偏好数据、DPO/RLHF 的基本问题。
 5. [分布式训练](../systems/distributed-training.md)：显存、并行策略和通信成本。
+6. [集合通信与数据中心网络](../systems/collective-communication-network.md)：结果布局、ring 载荷、ready time、rail 与割集。
 
 出口成果：一份包含数据契约、训练曲线、基线、失败样例和 held-out 评测的实验报告。
 
@@ -77,6 +80,7 @@ flowchart TD
 6. [vLLM 与单卡服务](../systems/vllm-serving.md)：服务启动、请求和容量实验。
 7. [服务与可观测性](../systems/serving.md)：排队、限流、取消、SLO 和回滚。
 8. [硬件与端侧](../systems/hardware-edge.md)：带宽、算力、显存和设备约束。
+9. [集合通信与数据中心网络](../systems/collective-communication-network.md)：把多卡算法放回 NIC、NUMA、rail 和交换机路径。
 
 出口成果：一份区分 TTFT、TPOT、吞吐、错误率和资源占用的压测报告。
 

@@ -166,6 +166,18 @@ MLA 的数学结构允许运行时保存压缩表示和必要的位置分量，�
 - **激活参数**描述单个 token 实际经过多少参数；
 - **系统成本**还包括路由、容量限制、负载不均、通信和 kernel 效率。
 
+部署时把这三本账展开成四个彼此不能替代的观测量：
+
+| 观测量 | 它回答什么 | 还不能推出什么 |
+|---|---|---|
+| Total parameters | checkpoint 与全局分片要容纳多少唯一权重 | 单个 token 的计算量 |
+| Active parameters | 一个 token 经过哪些公共模块和专家 | 权重实际驻留在哪个设备 |
+| Resident / offloaded bytes | 当前 rank 的 HBM、主机内存或远端层级各持有什么 | 目标 workload 的吞吐 |
+| Accepted assignments | 本轮 capacity 后各专家真正处理多少 token 行 | kernel 是否高效、尾延迟是否合格 |
+
+因此，`A3B` 一类名称适合描述条件计算，部署容量仍要结合 dtype、量化元数据、专家放置、
+prefill/decode 组合和实际 accepted assignments。四项中任意一项都不能单独成为显存或性能结论。
+
 ### 为什么多卡 MoE 很依赖运行时
 
 如果专家分布在不同 GPU，路由器选完专家后，运行时要把 token 发送到拥有该专家的设备。

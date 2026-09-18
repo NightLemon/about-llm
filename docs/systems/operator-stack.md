@@ -154,6 +154,21 @@ Eager 模式遇到一次调用就派发一次。Compiled 模式先捕获一段�
 
 ## 第四层：kernel 才真正面对硬件
 
+低精度或分块 kernel 的审计先固定五种可能不同的格式和驻留位置：
+
+| 项目 | 至少记录 | 为什么要分开 |
+|---|---|---|
+| 输入与权重 | storage dtype、layout、alignment | 文件格式不等于 MMA 实际输入格式 |
+| 乘法 | operand dtype、dense/sparse 条件 | 稀疏峰值不能替代稠密路径 |
+| 累加器 | accumulator dtype、register/shared-memory 驻留 | FP32 累加可能主导 tile 容量 |
+| 输出 | output dtype、cast 与 epilogue | 写回和转换会增加流量 |
+| Tile | 逻辑 tile、硬件 MMA tile、寄存器/共享内存用量 | 更大的 tile 可能降低 occupancy |
+
+例如 BF16 输入和权重、FP32 累加器的单缓冲工作集包含
+\(2mk+2kn+4mn\) bytes。增大 \(m,n\) 可以提高复用，却也增加累加器驻留；
+若寄存器或共享内存使并发 block 数下降，接口字节更少的 tile 仍可能更慢。
+最终判断要同时记录 occupancy、实际 L2/DRAM 流量和 kernel 时间。
+
 GPU kernel 会把工作逐级分给网格（grid）、线程块（block）和线程（thread）。
 
 在 NVIDIA GPU 上，线程再以 warp 为单位调度。

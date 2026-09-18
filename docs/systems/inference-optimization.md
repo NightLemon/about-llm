@@ -76,16 +76,16 @@ Decode 每条序列每轮通常只增加一个输入位置，却要反复读取�
 I=\frac{\text{FLOPs}}{\text{bytes moved}}.
 \]
 
-若 (I) 很低，性能上限更容易受内存带宽限制；若 (I) 很高，则更容易接近计算吞吐上限。
+若 \(I\) 很低，性能上限更容易受内存带宽限制；若 \(I\) 很高，则更容易接近计算吞吐上限。
 
-小 batch decode 中，一次权重读取只服务少量序列，(I) 较低。增大 batch 能提高权重复用和总吞吐，
+小 batch decode 中，一次权重读取只服务少量序列，\(I\) 较低。增大 batch 能提高权重复用和总吞吐，
 但请求需要等待更大的执行批次，TTFT 或单请求延迟可能上升。
 
 在线服务真正要找的是“满足 SLO 时的持续吞吐”，不是脱离延迟和失败率的最大 batch。
 
 ## Attention：先区分计算量与数据搬运
 
-朴素因果自注意力在 prefill 中会形成随长度约 (O(L^2)) 增长的分数区域。
+朴素因果自注意力在 prefill 中会形成随长度约 \(O(L^2)\) 增长的分数区域。
 FlashAttention 使用分块计算和在线 softmax，减少完整分数与概率矩阵在 GPU 高带宽显存中的反复读写。
 
 它优化的是 IO 路径，不是把精确 attention 的一般计算量变成线性，也不会减少长期保存的标准 KV 容量。
@@ -187,6 +187,19 @@ Scheduler 仍需明确：
 一个很长的 Prompt 若在单轮完成，可能让所有 decode 请求等待。分块 prefill 把输入拆成多轮，
 让 decode 在中间获得调度机会。分块太小，则会增加调度次数和内核启动开销。
 
+用一个不包含启动开销的 toy 时间线先看调度差异。请求 A 已进入 decode，还要执行 4 轮、每轮 10 ms；
+请求 B 的 prefill 需要 40 ms，之后 decode 1 轮、耗时 10 ms。三种调度都在 90 ms 完成，
+但 A 的最长输出间隔不同：
+
+| Policy | 执行顺序 | A 的最长 ITL | 两请求完成时间 |
+|---|---|---:|---:|
+| Fixed admission | A 的 4 轮 decode → B prefill → B decode | 10 ms | 90 ms |
+| Continuous、整段 prefill | A decode 1 轮 → B prefill → A 余下 3 轮 → B decode | 50 ms | 90 ms |
+| 两个 20 ms prefill chunks | A decode 与 B 的两个 chunk 交错，再完成两条请求 | 30 ms | 90 ms |
+
+这个例子没有声称 chunk 一定改善 makespan。它只展示相同总工作如何产生不同的最大 Inter-Token Latency（ITL，
+token 间延迟）。真实系统还要加入每个 chunk 的调度、launch、KV 和抢占成本，再同时比较 makespan 与 ITL。
+
 因此必须用混合长短输入的真实 workload 测量 p95/p99，而不是只跑固定长度的满 batch。
 
 ### Preemption 的账不能只记输出 token
@@ -223,7 +236,7 @@ Prefix cache 只减少可复用的 prefill。它不会减少后续 decode 的权
 
 ### Weight-only quantization
 
-若 (N) 个权重从 FP32 变为 4-bit，单看量化编码，理论存储可以缩小 8 倍。
+若 \(N\) 个权重从 FP32 变为 4-bit，单看量化编码，理论存储可以缩小 8 倍。
 真实格式还要保存每组缩放因子、可选零点、对齐填充、容器和索引，并保留未量化层。
 
 Group 越小，量化尺度越能适应局部范围，但 metadata 和 kernel 处理开销更高。
@@ -245,13 +258,13 @@ python projects/inference-serving/quantization_toy.py `
 Activation 分布和 outlier 会影响量化误差。KV quantization 还会把误差带入后续每一步 attention，
 需要按长度、任务和 head/layer 切片评价。
 
-若一个长度为 (D) 的 FP32 向量使用 INT8 code 加一个 FP32 scale，理想 payload ratio 是：
+若一个长度为 \(D\) 的 FP32 向量使用 INT8 code 加一个 FP32 scale，理想 payload ratio 是：
 
 \[
 \frac{4D}{D+4}.
 \]
 
-若原始是 BF16，则分子应为 (2D)。Allocator、alignment 和 workspace 尚未计入。
+若原始是 BF16，则分子应为 \(2D\)。Allocator、alignment 和 workspace 尚未计入。
 
 Weight RMSE 或单层 attention parity 都不能替代目标任务质量、长上下文和安全切片评测。
 
@@ -260,19 +273,29 @@ Weight RMSE 或单层 attention parity 都不能替代目标任务质量、长�
 Draft 模型先提出若干 token，target 模型并行验证。Sampling 版本要保持 target distribution，
 不能简单理解为“大模型挑选小模型草稿”。
 
-对同一 proposal token，draft 与 target 概率分别为 (q) 和 (p)：
+对同一 proposal token，draft 与 target 概率分别为 \(q\) 和 \(p\)：
 
 \[
 P(accept)=\min(1,p/q).
 \]
 
-第一次拒绝时，要从归一化后的正残差 ((p-q)_+) 中采样，并丢弃草稿中位于它后面的 token。
+第一次拒绝时，要从归一化后的正残差 \((p-q)_+\) 中采样，并丢弃草稿中位于它后面的 token。
 如果整段草稿全部接受，再从目标模型多计算出的下一个位置采样一个额外 token。
 
-这里要求 (p) 和 (q) 使用相同的分词器、词表、已接受前缀和实际采样变换。
+这里要求 \(p\) 和 \(q\) 使用相同的分词器、词表、已接受前缀和实际采样变换。
 贪心投机解码采用另一套接受规则，不套用随机采样的残差分布。
 
 是否加速取决于接受率、draft 成本、验证长度、batch 和 kernel。分布正确不等于 wall-clock 更快。
+
+把 KV quantization 和 speculative decoding 放进同一张验收表，可以防止局部收益被写成服务结论：
+
+| 变化 | Payload / peak | 新增工作 | TTFT | TPOT / ITL | E2E | 质量与终态 |
+|---|---|---|---|---|---|---|
+| KV quantization | cache payload、scale、allocator、workspace | quantize/dequantize 与新 kernel | 单列 | 按长度与 batch | 含排队和重试 | 长上下文、任务与安全切片 |
+| Speculative decoding | draft/target KV 与临时状态 | draft、验证、拒绝后残差采样 | 单列 | 接受 token/轮与尾部 | 含 draft 启动 | 分布、答案、失败与超时 |
+
+只有 payload 变小或 decode-only 时间下降时，表中其他格仍是未知。最终结论应同时固定 checkpoint、
+runtime、硬件、输入输出分布、并发、重复次数和完整失败分母。
 
 ## Parallelism、kernel 与编译
 

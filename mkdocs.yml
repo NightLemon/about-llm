@@ -150,6 +150,7 @@ nav:
           - 算子、KV Cache 与量化优化（进阶）: systems/inference-optimization.md
           - vLLM 与单卡服务: systems/vllm-serving.md
       - 高效与分布式训练: systems/distributed-training.md
+      - 集合通信与数据中心网络: systems/collective-communication-network.md
       - 服务与可观测性: systems/serving.md
       - 硬件与端侧部署: systems/hardware-edge.md
   - 应用:

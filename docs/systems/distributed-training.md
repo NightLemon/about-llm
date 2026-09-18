@@ -55,6 +55,21 @@ allocator fragmentation / runtime context
 18 B/P 只是某一配置的账本。实现可能没有 master weights，gradient 可以是 BF16，moments 也可能量化或分片。
 真实报告应列出每项 dtype、复制数和分片组，不能把一个经验常数当成框架规范。
 
+### 训练峰值与 checkpoint payload 是两本账
+
+上表的 18 B/P 描述一种可能同时驻留的训练状态，其中包含 4 B/P 的梯度。
+若在完整 optimizer step 结束后保存 checkpoint，下一批梯度可以由 backward 重新生成。
+在“BF16 forward weights + FP32 master weights + 两份 FP32 Adam moments”的固定条件下，
+持久 tensor payload 为：
+
+\[
+2+4+2\times4=14\ \text{bytes/parameter}.
+\]
+
+14 B/P 没有包含 scheduler、scaler、RNG、data cursor、shard metadata、压缩和文件对齐，
+也没有描述保存时 staging buffer 与训练临时状态的峰值。实现若没有 master weights、保存梯度，
+或使用不同 optimizer/dtype，就必须重新枚举实际 state tensors。
+
 ### Activation 为什么单独列
 
 Activation 的主要驱动因素是 micro-batch \(B\)、序列长度 \(T\)、隐藏维度 \(H\)、层数 \(L\)、数值格式和算子实现。
@@ -288,6 +303,10 @@ T\approx\alpha+\frac{n}{\beta},
 
 真实实现还受协议、拓扑、竞争和 compute overlap 影响。异步 API 返回只表示操作已排队，
 不表示通信已经被计算隐藏；要从 device trace 观察依赖和实际 overlap。
+
+需要继续手算结果布局、ring 轮次、ready time、分层跨域字节和割集时，进入
+[集合通信与数据中心网络](collective-communication-network.md)。该页的算法账本用于建立检查方法，
+目标 NCCL/runtime 的带宽和 tail 仍由本节要求的 run manifest 与 trace 验收。
 
 ## 用计算换显存时，账本要同时记时间
 
