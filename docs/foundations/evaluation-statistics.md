@@ -59,7 +59,7 @@ model + prompt/template + sampling
 
 ## 第二个问题：采样单位和分母是什么
 
-一个 case 可以产生多个 attempts、candidates、tool steps 和 judge records：
+一个评测样本可以产生多次尝试、多个候选、工具步骤和评审记录：
 
 ~~~text
 case
@@ -143,7 +143,7 @@ Candidate 的成功率是 1.0，baseline 是 0.2。逐 case 差值为 `[1,1,1,1,
 
 ### 配对要求相同 case identity
 
-Baseline 与 candidate 必须使用同一输入、gold、工具状态和评测规则。若一边 timeout 后被删除，或两边使用了不同 case revision，配对关系已经破坏。
+基线与候选系统必须使用同一输入、参考标签、工具状态和评测规则。若一边超时后被删除，或两边使用了不同的样本版本，配对关系已经破坏。
 
 随机模型输出可以使用固定 seed policy，但不要误以为相同 seed 保证不同模型产生可逐 token 对齐的随机轨迹。
 
@@ -191,7 +191,7 @@ Bootstrap distribution 可以形成区间或 improvement probability。它不能
 
 - 题库污染；
 - case 选择偏差；
-- judge 错误；
+- 评审模型错误；
 - 重复或泄漏；
 - 错误的独立采样单位；
 - 样本覆盖不足。
@@ -291,9 +291,9 @@ Simpson's paradox 的直觉是：流量配比变化可能让 overall 提升，�
 
 切片太多又会回到多重比较问题。预先指定核心 slices，其他作为诊断。
 
-## LLM-as-judge 是一个测量仪器
+## 用大模型评分（LLM-as-a-Judge）是一种测量方法
 
-Judge 不是真值来源。它也可能有：
+评审模型不是真值来源。它也可能有：
 
 - position bias；
 - verbosity/style bias；
@@ -314,23 +314,23 @@ Judge 不是真值来源。它也可能有：
 | 是否漏判关键错误 | recall by failure type |
 | 是否偏好更长答案 | win rate by matched length |
 | 不同语言是否可靠 | slice agreement |
-| Judge 是否稳定 | repeated-decision consistency |
+| 评审模型是否稳定 | 重复判定的一致性 |
 
-高相关性只描述总体上的同向变化，无法告诉我们 judge 是否漏掉了关键安全错误。除了 correlation，
-还应保存 judge 与人工标注不一致的样本，逐个查看漏判发生在哪里。
+高相关性只描述总体上的同向变化，无法告诉我们评审模型是否漏掉了关键安全错误。除了相关性，
+还应保存评审模型与人工标注不一致的样本，逐个查看漏判发生在哪里。
 
 ## 一个发布门禁怎样组合指标
 
 一次 release decision 可以按顺序做：
 
-1. **Artifact gate**：case、baseline、candidate、scorer identity 完整。
-2. **Protocol gate**：全部 attempts 有 typed terminal，分母无丢失。
-3. **Quality gate**：primary effect 与 interval 达标。
-4. **Safety gate**：关键风险无超过容忍度的退化。
-5. **System gate**：latency、cost、capacity 与 failure rate 达标。
-6. **Human review**：审阅新增失败和关键 disagreements。
+1. **产物完整性门禁**：评测样本、基线、候选结果和评分器标识完整。
+2. **协议门禁**：所有尝试都有明确的终态，分母没有丢失。
+3. **质量门禁**：主要效果与区间达到预设要求。
+4. **安全门禁**：关键风险没有超过容忍度的退化。
+5. **系统门禁**：延迟、成本、容量与失败率达标。
+6. **人工复核**：审阅新增失败和关键分歧。
 
-任何一项 fail，都不应该被其他平均分补偿。门禁规则要在看 candidate 结果前固定。
+任何一项失败，都不应该被其他平均分补偿。门禁规则要在看候选结果前固定。
 
 ## 可运行配对实验
 
@@ -362,7 +362,7 @@ Toy 输出证明统计实现对固定输入的行为，不证明你的 case set 
 - 只看 p-value，不定义最小业务效应。
 - 尝试很多 Prompt/指标后只报告最佳结果。
 - 用 overall 掩盖关键语言或安全 slice 退化。
-- Judge 分数很高就当 ground truth，不做人工校准。
+- 评审分数很高就当作参考真值（ground truth），不做人工校准。
 - 只对两条自编样例做 bootstrap，就声称生产效果已经提升。
 
 ## 面试时怎样回答
@@ -373,7 +373,7 @@ Toy 输出证明统计实现对固定输入的行为，不证明你的 case set 
 2. 对同一 cases 做 paired baseline/candidate 运行，保留全部 failures。
 3. 计算 per-case difference，并按真实独立单位 bootstrap/cluster。
 4. 同时报告 effect、interval、关键 slices、安全和成本。
-5. 预先固定 release gate，并审阅 judge disagreements 和新增失败。
+5. 预先固定发布门禁，并审阅评审模型与人工标注的分歧和新增失败。
 
 继续追问时，应能说明 paired design 为什么降方差、confidence interval 的频率学含义，以及为什么统计显著不等于值得发布。
 
@@ -383,12 +383,12 @@ Toy 输出证明统计实现对固定输入的行为，不证明你的 case set 
 2. 配对比较要求 baseline 与 candidate 固定哪些 identity？
 3. Bootstrap 能处理抽样不确定性，却不能修复哪些问题？
 4. Overall 上升时，你会检查哪些 slices 和流量权重？
-5. 怎样验证一个 LLM judge 足以用于你的 release gate？
+5. 怎样验证一个评审模型足以用于你的发布门禁？
 
 ## 继续学习
 
 - [评测方法](../quality/evaluation-methodology.md)：指标、错误分类与实验设计。
-- [Evaluation Gate](../practice/projects/evaluation-gate.md)：可运行统计与发布 artifact。
+- [Evaluation Gate](../practice/projects/evaluation-gate.md)：可运行统计与发布记录。
 - [Agent 评测](../quality/agent-evaluation.md)：task success、安全与副作用。
 - [RAG 生产实践](../applications/rag-production.md)：retrieval、citation 与端到端分层。
 - [数学基础主线](math.md)：从 logits、概率到一次更新。

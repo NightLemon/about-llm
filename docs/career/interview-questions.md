@@ -70,7 +70,7 @@ M_{KV}=2LBTH_{kv}d_hs,
 **面试官最后追问**：怎样验证？
 
 **你**：先说清要验证哪一个主张：容量就测真实 cache layout 和峰值显存；性能就固定 checkpoint、长度分布、并发和
-硬件后测 TPOT 与吞吐；质量就用 held-out task。每项都配一个会推翻它的 workload，例如长上下文 decode。
+硬件后测 TPOT 与吞吐；质量就用留出的任务集。每项都配一个会推翻它的工作负载，例如长上下文解码。
 若只测短 Prompt 或只看显存，无法回答长上下文 decode 和质量取舍。
 
 这就是一条完整的回答链：先用一句话指出主因，再按追问加入算术、反例和实验。不要一上来横向罗列
@@ -94,7 +94,7 @@ MHA、MQA、GQA 的全部定义。
 | Transformer / 生成 | attention、KV Cache、prefill/decode、采样 | [Transformer](../core/transformer.md)、[推理原理](../systems/inference.md) |
 | 训练 / 对齐 | loss mask、LoRA/QLoRA、分布式归一化、偏好优化 | [微调](../training/finetuning.md)、[对齐](../training/alignment.md) |
 | RAG / Agent | 检索归因、ACL、授权、幂等与恢复 | [RAG](../applications/rag.md)、[Agent](../applications/agents.md) |
-| 评测 | evaluation unit、配对比较、切片、judge 校准 | [评测方法](../quality/evaluation-methodology.md) |
+| 评测 | 评测单位、配对比较、切片、评审模型校准 | [评测方法](../quality/evaluation-methodology.md) |
 | 推理系统 | TTFT/TPOT、容量、量化、取消与重试 | [Serving](../systems/serving.md)、[推理优化](../systems/inference-optimization.md) |
 | 多模态 / 对话状态 | 视觉 token 化、metric 口径、记忆分层与修正 | [应用题 31-35](applied-questions.md)、[多模态](../frontier/multimodal.md) |
 | 产品 / 发布 / 治理 | 发布身份、校准与拒答、数据血缘、群体影响 | [应用题 36-40](applied-questions.md)、[治理与影响](../quality/governance-impact.md) |
@@ -159,7 +159,7 @@ MHA、MQA、GQA 的全部定义。
 
 **30 秒回答**：易变、私有、需要引用的事实优先 RAG；稳定的行为、格式和风格可以微调。先按错误类型判断问题来自知识、检索、指令遵循还是输出格式。
 
-**验证路径**：至少比较 Prompt baseline、RAG、LoRA 和组合方案，并使用同一 held-out set。不要因为训练 loss 下降就跳过更便宜的基线。
+**验证路径**：至少比较 Prompt 基线、RAG、LoRA 和组合方案，并使用同一留出集。不要因为训练损失下降就跳过更便宜的基线。
 
 ### 8. LoRA 的公式与参数量是什么？
 
@@ -196,13 +196,13 @@ MHA、MQA、GQA 的全部定义。
 **30 秒回答**：DPO 从 chosen/rejected 样本对和参考策略直接构造偏好目标。PPO 通常从当前策略采样，
 再用奖励与价值估计 advantage，并通过概率比裁剪和 KL 约束限制更新幅度。
 
-**边界**：DPO 简单不代表数据无偏，PPO reward 上升也不代表人类效用改善。两者都需要 held-out preference、任务 verifier、安全回归和分布漂移检查。
+**边界**：DPO 简单不代表数据无偏，PPO 奖励上升也不代表人类效用改善。两者都需要留出的偏好数据、任务验证器、安全回归和分布漂移检查。
 
 ### 13. 训练 loss 下降为什么不保证产品质量？
 
 Loss 只衡量训练目标在当前数据和 reduction 下的改善。数据泄漏、错误 labels、shortcut、reward hacking、格式过拟合和通用能力回归都可能与 loss 同时发生。
 
-**怎样验证**：冻结 held-out set，按任务和失败类型报告指标；同时保留简单 baseline、人工复核和真实约束下的延迟/成本。
+**怎样验证**：预先留出测试数据并固定版本，按任务和失败类型报告指标；同时保留简单基线、人工复核和真实约束下的延迟与成本。
 
 ## RAG 与 Agent
 
@@ -259,9 +259,9 @@ ACL 必须进入 retrieval query，或者在候选进入共享排序、缓存和
 
 如果同一用户或文档贡献多条 case，统计不再独立，应按相应 cluster 重采样或至少报告 cluster slice。
 
-### 21. LLM-as-judge 有哪些偏差，怎样校准？
+### 21. 用大模型评分（LLM-as-a-Judge）有哪些偏差，怎样校准？
 
-Judge 常见位置、篇幅、风格、自偏好和 Prompt 敏感性等偏差。先把候选顺序交换后再评一次，并保留平局与原始理由。
+评审模型常见位置、篇幅、风格、自偏好和 Prompt 敏感性等偏差。先把候选顺序交换后再评一次，并保留平局与原始理由。
 然后与盲化人工标注或确定性验证程序对照。
 
 报告 agreement、混淆矩阵和按语言/长度/难度的切片。高总体一致率不能掩盖某个关键 slice 的系统误判。

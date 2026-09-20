@@ -207,7 +207,7 @@ python projects/rag-framework-adapters/demo.py
 | 需要固定的部分 | 原因 |
 |---|---|
 | 同一份 corpus、切块版本和权限策略 | 防止输入或可见集合不同 |
-| 同一批 held-out queries 与 qrels | 防止用演示问题代替评测集 |
+| 同一批留出查询与 qrels | 防止用演示问题代替评测集 |
 | 各自的 Embedding、索引和 reranker 版本 | 解释候选与分数来自哪里 |
 | 相同的 Prompt、模型和生成参数 | 把检索差异与生成差异分开 |
 | 相同的并发、超时和冷热启动条件 | 公平比较延迟与失败率 |

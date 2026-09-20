@@ -17,8 +17,16 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 READABILITY_BASELINE = DOCS / "reference" / "readability-baseline.json"
 GLOSSARY = DOCS / "reference" / "glossary.md"
-GLOSSARY_MINIMUM_TERMS = 120
+GLOSSARY_MINIMUM_TERMS = 280
 GLOSSARY_MINIMUM_PAGE_LINKS = 3
+GLOSSARY_USAGE_STATUSES = {
+    "中文通行",
+    "中英并用",
+    "英文/缩写为主",
+    "多译并存",
+    "讲解性表达",
+    "不建议作术语",
+}
 READABILITY_DEFAULTS = {
     "line_count": 600,
     "heading_count": 45,
@@ -262,9 +270,9 @@ def check_glossary_graph(
         graph_rows += 1
         term_line_numbers.append(line_number)
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) != 7:
+        if len(cells) != 8:
             errors.append(
-                f"{display_path}:{line_number}: glossary term row needs 7 columns, "
+                f"{display_path}:{line_number}: glossary term row needs 8 columns, "
                 f"found {len(cells)}"
             )
             continue
@@ -281,21 +289,34 @@ def check_glossary_graph(
             )
         terms[term_id] = (line_number, cells)
 
-        if len(cells[1]) < 8:
+        source_targets = MARKDOWN_LINK_RE.findall(cells[0])
+        if not any(
+            urlsplit(target).scheme == "https" and urlsplit(target).netloc
+            for target in source_targets
+        ):
+            errors.append(
+                f"{display_path}:{line_number}: term needs an external HTTPS source"
+            )
+        if cells[1] not in GLOSSARY_USAGE_STATUSES:
+            errors.append(
+                f"{display_path}:{line_number}: invalid Chinese usage status "
+                f"'{cells[1]}'"
+            )
+        if len(cells[2]) < 8:
             errors.append(
                 f"{display_path}:{line_number}: definition is too short to be useful"
             )
-        if not cells[2]:
+        if not cells[3]:
             errors.append(f"{display_path}:{line_number}: missing concept category")
-        if "#term-" not in cells[3] and "根概念" not in cells[3]:
+        if "#term-" not in cells[4] and "根概念" not in cells[4]:
             errors.append(
                 f"{display_path}:{line_number}: prerequisites need term links or 根概念"
             )
-        if "#term-" not in cells[4] and cells[4] != "—":
+        if "#term-" not in cells[5] and cells[5] != "—":
             errors.append(
                 f"{display_path}:{line_number}: confusion cell needs term links or —"
             )
-        for column_name, cell in (("canonical", cells[5]), ("experiment", cells[6])):
+        for column_name, cell in (("canonical", cells[6]), ("experiment", cells[7])):
             targets = MARKDOWN_LINK_RE.findall(cell)
             if not targets:
                 errors.append(
@@ -332,7 +353,7 @@ def check_glossary_graph(
 
     known = set(terms)
     for term_id, (line_number, cells) in terms.items():
-        for referenced in TERM_REFERENCE_RE.findall(" ".join(cells[3:5])):
+        for referenced in TERM_REFERENCE_RE.findall(" ".join(cells[4:6])):
             if referenced not in known:
                 errors.append(
                     f"{display_path}:{line_number}: term '{term_id}' references "

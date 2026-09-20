@@ -127,11 +127,11 @@ flowchart TD
 2. deterministic rule、checksum、约束求解；
 3. compiler、unit test、math solver、数据库最终状态；
 4. source-grounded entailment/引用检查；
-5. domain model 或 LLM judge；
+5. 领域模型或用于评分的大模型（LLM-as-a-Judge）；
 6. 专家人工复核；
 7. 真实环境/用户结果。
 
-低层检查无法回答高层语义问题，高层 judge 也不该重新猜测编译器或数据库已经能确定的事实。每个 verifier 都要写清
+低层检查无法回答高层语义问题，高层评审模型也不该重新猜测编译器或数据库已经能确定的事实。每个验证器都要写清
 它检查了什么。例如，`syn-003` 的 grounding 没有运行，和 `syn-004` 已运行但失败是两种不同状态。
 
 `syn-002` 中，`teacher@v1` 同时出现在 generator 和 grounding verifier 字段里。审计会报告这项相关性风险，同时
@@ -172,7 +172,7 @@ q_{accept}(x)=\frac{q(x)A(x)}{\mathbb E_{x\sim q}[A(x)]}.
 - 按群体/类别设 coverage，不只全局 top confidence；
 - 保留低置信但重要的人工探索样本；
 - teacher 与 student 的错误按 slice 比较；
-- 每代固定 untouched real holdout；
+- 每一代都固定一份从未回灌的真实留出集；
 - 不把 test/线上反馈直接回灌后继续宣称同一 test 独立。
 
 一致性、低 entropy（熵）或多数投票只是选择信号。多个 sample 来自同一模型时，错误也可能高度相关。
@@ -231,7 +231,7 @@ rationale 是模型生成的解释，其中可能包含无法验证的细节。
 
 更可靠的过程记录应能重新执行或检查，例如代码、方程、检索来源、工具回执和环境状态变化。
 
-不要默认保存或训练 provider 隐藏的 chain-of-thought。使用可公开的简要解释、结构化中间状态或 teacher 明确返回的训练 artifact，并遵守模型/API 条款和隐私策略。
+不要默认保存或训练模型服务提供方隐藏的思维链。使用可公开的简要解释、结构化中间状态或教师模型明确返回的训练产物，并遵守模型/API 条款和隐私策略。
 
 ## 不同任务需要不同的验证方法
 
@@ -345,7 +345,7 @@ D_{g+1}=\rho D_{real}+(1-\rho)S(M_g,D_g,V_g),
 - 少数语言、边界输入和拒答先退化。
 
 判断是否退化，需要做同预算对照：只用真实数据、加入一代合成数据，以及多代反馈且保留或移除真实锚点。每一代都
-在从未回灌的真实 holdout 上检查平均表现、长尾、多样性、校准、安全和污染。
+在从未回灌的真实留出集上检查平均表现、长尾、多样性、校准、安全和污染。
 
 因此，“用了合成数据就一定 collapse”和“平均 benchmark 上升就没有 collapse”都缺少必要证据。结论应限定到具体
 数据比例、反馈代数、筛选方法和评测切片。
@@ -370,7 +370,7 @@ Generator 可能复述训练记忆、seed 中的个人信息、secret 或受限�
 | Gate | missing/fail/infra、acceptance、人工混淆 | 无共享盲点 |
 | Identity | exact/near duplicate、unique/consumed | 语义多样 |
 | Mixture | synthetic fraction、重复倍数、每代消耗 | 模型会利用数据 |
-| Student | target/real holdout、slice、calibration | 生产长期结果 |
+| 学生模型 | 目标任务/真实留出集、切片、校准 | 生产长期结果 |
 | Safety | 泄露、越权、拒答、攻击 | 所有攻击已覆盖 |
 | Multi-generation | tail、diversity、错误放大 | collapse 已被普遍解决 |
 
@@ -431,7 +431,7 @@ python -m about_llm.synthetic_data_cli `
 ### 先确认数据能追溯
 
 - generator/prompt/verifier/parent/round 可解析；
-- raw candidate 与所有失败保留在受控 artifact；
+- 原始候选与所有失败都保留在受控产物中；
 - internal/external parent、cycle 与 round monotonicity 分账；
 - fingerprint profile、dedup/split/mixture 明确；
 - candidate、eligible、unique 和 consumed 数分别报告。
@@ -441,7 +441,7 @@ python -m about_llm.synthetic_data_cli `
 - required verifier 版本冻结，infra failure 不当 reject/pass；
 - verifier 在独立人工集按 slice 校准；
 - accepted set 的分布变化和 coverage 可解释；
-- real untouched holdout 与 baseline 对比。
+- 未回灌的真实留出集与基线对比。
 
 ### 最后确认下一代能够停止和回滚
 
@@ -467,7 +467,7 @@ python -m about_llm.synthetic_data_cli `
 
 - **“生成一百万条就有一百万条信息”**：先报 unique、cluster 和重复暴露。
 - **“Verifier 通过就是真实正确”**：它只验证编码的性质，并可能被投机。
-- **“换一个 LLM judge 就独立”**：训练来源、族谱和 benchmark 可能相关。
+- **“换一个评审模型就独立”**：训练来源、模型谱系和评测基准仍可能相关。
 - **“Synthetic 没有隐私/版权问题”**：seed 和记忆复述仍带来源义务。
 - **“Pass rate 提高表示 generator 变强”**：任务、重复或 gate 可能变化。
 - **“蒸馏模型继承 teacher 架构”**：student 架构由自己的 checkpoint 决定。

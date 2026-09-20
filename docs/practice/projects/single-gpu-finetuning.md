@@ -27,7 +27,7 @@
 
 ```mermaid
 flowchart LR
-  A["原始会话 + held-out"] --> B["split / duplicate / governance"]
+  A["原始会话 + 留出集"] --> B["划分 / 去重 / 治理"]
   B --> C["train-only readiness"]
   C --> D["tokenizer + chat template"]
   D --> E["assistant mask + final labels"]
@@ -37,7 +37,7 @@ flowchart LR
   H --> I["发布或回退"]
 ```
 
-训练进程只拿 train 与 readiness，不读取 validation/test 原文。评测进程再用 held-out artifact 比较候选。
+训练进程只拿训练数据与就绪证明，不读取验证集或测试集原文。评测进程再用留出集产物比较候选。
 这不要求三台机器，但要求权限与数据流确实分开。
 
 ## 你的 3070 学习进度对应哪条路线
@@ -65,7 +65,7 @@ TRL 的训练后端。
 Laptop GPU 还可能受到功耗、散热与共享显存影响。稳妥顺序是：
 
 1. 零下载 data preflight；
-2. CPU/tiny smoke，验证数据和 artifact plumbing；
+2. CPU 小模型冒烟运行，验证数据和产物流转；
 3. 用目标 tokenizer 生成并检查 assistant mask；
 4. 以 batch 1、长度 512、LoRA rank 8 跑一个 optimizer update；
 5. 再逐步提高 sequence length、rank 或有效 batch。
@@ -92,7 +92,7 @@ QLoRA 还需要 `.[qlora]`。安装后应核对 PyTorch、CUDA、bitsandbytes �
 
 这次微调要修复什么错误？例如：
 
-> 售后模型经常漏掉订单核验步骤；希望在固定 held-out 工单上提高流程完整率，同时不降低拒答与越权切片。
+> 售后模型经常漏掉订单核验步骤；希望在固定版本的留出工单上提高流程完整率，同时不降低拒答与越权切片。
 
 先保存同一 base checkpoint 的零样本或少样本结果，再保存 Prompt 基线。
 
@@ -363,7 +363,7 @@ python projects/single-gpu-finetuning/run_qwen_target_lora_control.py `
 
 这条人工编写样本的 loss 反而上升。因此只能说训练与发布链路执行过，不能说 LoRA 已改善模型。
 
-### 第 7 步：用 held-out gate 决定是否发布
+### 第 7 步：用留出集门禁决定是否发布
 
 不要用 train loss 选择上线版本。
 
@@ -376,9 +376,9 @@ python projects/single-gpu-finetuning/run_qwen_target_lora_control.py `
 - Peak VRAM、训练时间和 adapter 大小；
 - Missing、timeout 与人工排除怎样进入分母。
 
-[Evaluation Gate](evaluation-gate.md)提供 paired comparison 与 release artifact。结论应写成：
+[Evaluation Gate](evaluation-gate.md)提供配对比较与发布记录。结论应写成：
 
-> 在固定 held-out artifact 与预注册阈值上，adapter 相对 base 通过任务 gate，关键切片未越界；资源结果只适用于
+> 在固定版本的留出集产物与预注册阈值上，adapter 相对基座模型通过任务门禁，关键切片未越界；资源结果只适用于
 > 记录的 GPU、runtime 与配置。
 
 它比“模型学会了领域知识”“不会幻觉”更窄，却是证据真正支持的说法。
@@ -389,7 +389,7 @@ DPO 和奖励模型数据，不是给 SFT JSONL 多加两个字段。
 
 优选与拒选回答必须共享可比上下文。平局、无效标注和标注者分歧不能静默改成胜者。
 
-训练集与 held-out 数据仍要分权。
+训练集与留出数据仍要分权。
 
 ```powershell
 python -m about_llm.preference_cli prepare-training `
@@ -406,7 +406,7 @@ python projects/single-gpu-finetuning/smoke_trl_dpo.py
 
 固定 Qwen DPO 运行只用人工编写的 pair 检查 TRL、LoRA backward 与文件路径。它没有人类偏好或安全标签。
 
-正式训练前仍要检查数据和 tokenizer，测量显存，并在 held-out preference 数据上评测。
+正式训练前仍要检查数据和 tokenizer，测量显存，并在留出的偏好数据上评测。
 
 ## 从 SFT/LoRA 闭环进入可选后续路线 {#next-routes}
 
@@ -415,14 +415,14 @@ python projects/single-gpu-finetuning/smoke_trl_dpo.py
 
 | 你已经拥有的反馈 | 下一步 | 仍须独立回答的问题 |
 |---|---|---|
-| 固定、可靠的 chosen/rejected 对，不需要在线探索 | DPO | 偏好对是否覆盖目标问题，Adapter 是否通过 held-out preference 与安全 gate |
+| 固定、可靠的 chosen/rejected 对，不需要在线探索 | DPO | 偏好对是否覆盖目标问题，Adapter 是否通过留出偏好数据与安全门禁 |
 | 可复用的评分器需求 | 先训练并审计 Reward Model | 评分器是否在长度/风格/风险切片上有效，不能用 train loss 代替 |
 | 当前回答必须在验证器或环境中执行后才能评分 | 先做 PPO/RLVR 机制练习 | reward 是否可审计、rollout 是否可复现、独立任务是否仍通过 |
 
 ### DPO：先做不加载权重的目标数据预检
 
 以下命令沿用本页固定的 Qwen3 revision 和第 8 步产出的 readiness。它只核对 train-only preference records 与
-readiness；不会下载 tokenizer 或权重，也没有执行 DPO、CUDA 或 held-out 评测。
+就绪证明；不会下载 tokenizer 或权重，也没有执行 DPO、CUDA 或留出集评测。
 
 ```powershell
 python projects/single-gpu-finetuning/train_trl_dpo.py `
@@ -436,14 +436,14 @@ python projects/single-gpu-finetuning/train_trl_dpo.py `
 
 通过后，先阅读[对齐进阶](../../training/alignment.md#dpo)，在目标 tokenizer 上运行
 `--tokenization-preflight-only`，再决定是否以 batch 1 的 LoRA/QLoRA 小步实验开始。仓库没有执行这里的目标 GPU
-示例；正式运行应记录 CLI 实际输出的 run contract、显存与失败终态，并用第 7 步同一 held-out gate 比较 base、
+示例；正式运行应记录 CLI 实际输出的运行契约、显存与失败终态，并用第 7 步同一留出集门禁比较基座模型、
 Prompt/RAG 与候选 Adapter。DPO loss 下降不构成偏好质量或安全结论。
 
 ### Reward Model 与 PPO：先证明机制，再决定是否扩展
 
 `train_reward_model.py` 与 `train_trl_dpo.py` 使用相同的 train-only/readiness 输入约束；前者的
 `--data-preflight-only` 和 `--tokenization-preflight-only` 可先检查奖励模型数据与目标 tokenizer。它训练过一次也只
-说明该训练集上的 pairwise optimization 执行过，必须另用 held-out pair、长度/风格反例、风险切片和冻结版本审计评分器。
+说明该训练集上的成对优化执行过，必须另用留出的样本对、长度/风格反例、风险切片和固定版本的审计评分器。
 
 本仓库暂不提供目标 checkpoint 的 PPO 发布命令。先用下面三个 CPU 控制实验理解 rollout 契约：
 
@@ -459,11 +459,11 @@ top-p 或 allowlist 改变行为分布时，为什么不能把原始 logits 的�
 
 ## Task B 更新卡片 {#task-b-update}
 
-当一个已发布 Adapter 需要学习 Task B 时，把它当成新的发布候选。冻结 Task A held-out、安全/工具 anchors 与旧工件
+当一个已发布 Adapter 需要学习 Task B 时，把它当成新的发布候选。固定 Task A 留出集、安全/工具锚点与旧工件的版本，
 身份；anchors 不进入 Task B 训练。为 Task B 重新发布 train-only readiness，固定父 base、tokenizer/template 与训练配置，
 然后小步训练并在新进程重载旧、新 Adapter。
 
-在同一 Task A anchors 和 Task B held-out 上比较 base、旧 Adapter 与新 Adapter，报告新任务收益、逐项 retention、
+在同一批 Task A 锚点和 Task B 留出集上比较基座模型、旧 Adapter 与新 Adapter，报告新任务收益、逐项保留率、
 资源增量和 missing/timeout 分母。未过 gate 时回滚兼容的 Adapter、Prompt、索引和工具 schema。
 `--resume-from-checkpoint` 只恢复同一次被中断的运行（同一配置与工件身份），不能替代这种新旧版本评测。持续学习的 replay 控制实验只解释机制，
 不提供目标 LLM 的 replay 结论，见[持续学习](../../training/continual-learning.md#single-gpu-task-b)。
@@ -481,7 +481,7 @@ top-p 或 allowlist 改变行为分布时，为什么不能把原始 logits 的�
 | 某 rank overflow 后分叉 | Skip 决策是否跨 rank 一致 | `ddp_amp_overflow_consensus_control.py` |
 | Resume 漏样本 | Emitted、consumed、committed cursor | DataLoader/commit 实验 |
 | Resume 参数仍漂移 | RNG、pending gradients、scheduler/scaler | Checkpoint 实验 |
-| Adapter 能加载但回答退化 | Base/template/config 与 held-out slice | Reload + Evaluation Gate |
+| Adapter 能加载但回答退化 | 基座模型、模板、配置与留出切片 | 重新加载 + 评测门禁 |
 
 这些实验各自回答一个具体机制问题，不需要在第一次单卡实验前全部跑完。
 
@@ -523,12 +523,12 @@ python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
 
 发布或写入简历前做一次自查：
 
-- [ ] Trainer 没有读取 held-out 原文。
+- [ ] 训练器没有读取留出集原文。
 - [ ] Final labels 已在真实 collator batch 上抽查。
 - [ ] Target modules 来自当前 model tree。
 - [ ] 至少记录一个成功配置与一个资源边界。
 - [ ] Adapter 在新进程、新 base load 上重载过。
-- [ ] Base 与 adapter 使用同一 held-out cases 和解码配置。
+- [ ] 基座模型与 adapter 使用同一批留出样本和解码配置。
 - [ ] 退化样本、安全 slice 与失败分母一同报告。
 - [ ] CPU/tiny/recorded 证据没有被写成 CUDA 或生产质量结论。
 
@@ -546,6 +546,6 @@ python scripts/check_content_accuracy.py
 
 面试时先讲“问题与基线 → 数据身份 → 监督 mask → 小步训练”。
 
-接着讲“新进程重载 → held-out 发布门禁”。这条因果链比背 LoRA 公式更能说明微调项目为什么可信。
+接着讲“新进程重载 → 留出集发布门禁”。这条因果链比背 LoRA 公式更能说明微调项目为什么可信。
 
 完整代码位于 [projects/single-gpu-finetuning](https://github.com/NightLemon/about-llm/tree/main/projects/single-gpu-finetuning)。

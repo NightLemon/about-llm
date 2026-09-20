@@ -304,7 +304,7 @@ GPU↔CPU↔SSD offload 扩大容量，但每 token 若反复跨 PCIe/存储读�
 
 端侧价值：离线、隐私边界、低网络依赖、可控成本；限制：RAM、包大小、存储、功耗、热、后台竞争和更新。
 
-### 11.1 Artifact
+### 11.1 交付产物（artifact）
 
 端侧工件要明确记录模型、tokenizer、chat template、量化和运行时版本，以及哈希、签名与最低设备要求。
 同一个格式名称在不同运行时中也可能存在支持差异，需要用目标运行时实际加载验证。
@@ -366,7 +366,7 @@ E=\int P(t)dt.
 
 ## 14. 安全与可靠性
 
-- artifact hash/signature 与安全更新；
+- 产物哈希/签名与安全更新；
 - 不加载不可信 pickle/remote code；
 - runtime/driver 供应链；
 - 设备丢失时本地数据/模型保护；
@@ -385,7 +385,7 @@ E=\int P(t)dt.
 5. 在目标 workload 测 cold/warm、短/长、low/high concurrency。
 6. 做量化质量与性能 Pareto。
 7. 测 sustained thermal、OOM 和 fallback。
-8. 固定 artifact/环境并保留 raw measurements。
+8. 固定产物和环境，并保留原始测量值。
 
 ## 16. 当前仓库证据边界
 

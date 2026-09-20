@@ -10,7 +10,7 @@
 - **首次阅读**：沿着“天空通常是”这个例子一直读到两-token Attention，不必先看三个深入页。
 - **完成信号**：能用自己的话解释向量、矩阵乘法、logit、softmax、loss 和梯度，并手算本页的小例子。
 - **卡住时**：矩阵看[线性代数](math-linear-algebra.md)，概率看[概率与信息论](math-probability.md)，梯度看[训练数学](math-training.md)；
-  遇到不认识的词先查[术语知识图谱](../reference/glossary.md)，本页关键词都在里面。
+  遇到不认识的词先查[术语表](../reference/glossary.md)，本页关键词都在里面。
 
 </div>
 
@@ -369,7 +369,7 @@ W_{\text{new}}=W-\eta\nabla_WL.
 ### 在 LLM 中的位置
 
 真实训练会用 mini-batch、AdamW、学习率调度和许多次更新。单个样本 loss 下降只检查“训练链路能工作”，
-不等于模型已经学会泛化。validation/test split 和任务评测仍然不可缺少。
+不等于模型已经学会泛化。验证集/测试集划分和任务评测仍然不可缺少。
 
 可以运行仓库中的纯 Python 版本，对照每个中间数字：
 

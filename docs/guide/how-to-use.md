@@ -90,7 +90,7 @@ python -m pytest tests/test_tokenizer.py -q
 
 ## 卡住时怎么办
 
-- 遇到陌生术语，先查[术语知识图谱](../reference/glossary.md)；若总把两个概念混在一起，再看[概念依赖地图](../reference/concept-map.md)。
+- 遇到陌生术语，先查[术语表](../reference/glossary.md)；若总把两个概念混在一起，再看[概念依赖地图](../reference/concept-map.md)。
 - 数学完全没有起点时，先走完[一次三候选预测](../foundations/math.md)；只卡在某一点时，直接查
   [线性代数](../foundations/math-linear-algebra.md)、[概率与信息论](../foundations/math-probability.md)或
   [训练数学](../foundations/math-training.md)。

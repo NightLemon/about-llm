@@ -188,7 +188,7 @@ U(c)=\sum_k w_k\tilde m_k(c),\qquad \sum_k w_k=1
 |---|---|---|---|
 | RAG | corpus/snapshot、ACL、retriever、packing、prompt | answer、citation、claim-evidence、abstention、latency/cost | 语料缺失、召回、rerank、packing、生成未用证据 |
 | Agent | tool schema、权限、状态、预算、verifier | task success、unauthorized attempt、重复 effect、pending、成本 | planning、schema、policy、handler、环境观察、verifier |
-| SFT/LoRA | base revision、train/held-out、template/mask、seed | held-out task/slice、格式、安全回归、显存/时间 | 数据泄漏、mask、过拟合、base drift、adapter/runtime |
+| SFT/LoRA | 基座版本、训练集/留出集、模板/掩码、随机种子 | 留出任务/切片、格式、安全回归、显存/时间 | 数据泄漏、掩码、过拟合、基座漂移、adapter/运行时 |
 | 推理服务 | checkpoint、dtype/quant、采样、长度/arrival 分布 | TTFT/TPOT/terminal、throughput、OOM、quality delta | client queue、server queue、prefill、decode、取消/超时 |
 | 结构化抽取 | schema、业务规则、无答案/冲突 case | parse、schema、field exact、abstention | JSON 合法、schema 合法、值错误、业务冲突 |
 | 多模态 | 媒体 bytes、processor、文本对照、扰动集 | task score、grounding、media-use counterfactual | 模态未被读取、OCR、定位、语言先验、媒体安全 |
@@ -400,7 +400,7 @@ NormalizedResult
 
 ### 把 benchmark 第一名当部署答案
 
-榜单可能使用不同 prompt、采样、工具权限、judge、污染控制和预算。先复现 harness，再运行自己的 case；无法复现时只把榜单作为作者/平台报告。
+榜单可能使用不同提示词、采样、工具权限、评审模型、污染控制和预算。先复现评测框架，再运行自己的样例；无法复现时只把榜单作为作者或平台报告。
 
 ### 比较不同质量约束下的吞吐
 

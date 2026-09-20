@@ -44,7 +44,7 @@ Agent 重复发出业务操作时，谁负责状态机和恢复？
 
 | 线上现象 | 第一个需要回答的问题 | 更接近的责任域 |
 |---|---|---|
-| 答案引用了错误文档 | gold 文档没召回、被重排丢掉，还是生成器误用证据？ | RAG / 搜索算法 |
+| 答案引用了错误文档 | 参考文档没召回、被重排丢掉，还是生成器误用证据？ | RAG / 搜索算法 |
 | 输出字段错误或接口超时 | Prompt、状态、API、依赖和降级哪一层先偏离？ | LLM 应用 / 后端 |
 | 同一退款被请求两次 | 审批、幂等、pending 与 verifier 怎样恢复？ | Agent / 平台 |
 | 微调后中文能力退化 | 数据 mixture、loss、checkpoint 或评测切片哪里变化？ | 模型 / 训练算法 |
@@ -103,9 +103,9 @@ Agent 重复发出业务操作时，谁负责状态机和恢复？
 | LLM 应用/后端 | API 产品、RAG/Agent workflow、业务集成 | 答案错误、接口失败、权限/成本/延迟失控 | Python/后端、Prompt、RAG、Agent、云 API、测试与可观测 | 有 ACL、引用、typed state、预算、故障注入和逐 case 评测的服务 |
 | RAG/搜索算法 | ingestion、索引、retriever/reranker、context | 召回、排序、过滤、packing 或引用失败 | IR、embedding、学习排序、数据、检索评测、在线服务 | 分层 retrieval→rerank→answer 评测、消融、切片和索引更新/删除 |
 | Agent/平台 | tool/runtime、状态、审批、恢复、互操作 | 越权、重复 effect、循环、pending、跨系统不一致 | 状态机、schema、IAM、幂等、队列/事务、MCP/A2A、verifier | proposal/execution 分离、typed approval、崩溃恢复、outbox 与安全 trace |
-| 模型/训练算法 | 数据配方、SFT/PEFT、RM/DPO/PPO、checkpoint | loss/梯度异常、泄漏、过拟合、能力/安全回归 | Transformer、PyTorch/JAX、优化、数据、分布式、实验设计 | 数据门禁、训练恢复、baseline/消融、held-out 与多切片回归 |
+| 模型/训练算法 | 数据配方、SFT/PEFT、RM/DPO/PPO、checkpoint | loss/梯度异常、泄漏、过拟合、能力/安全回归 | Transformer、PyTorch/JAX、优化、数据、分布式、实验设计 | 数据门禁、训练恢复、baseline/消融、留出集与多切片回归 |
 | 推理/系统 | runtime、serving、kernel、调度、容量 | OOM、吞吐不足、尾延迟、取消/抢占/缓存错误 | GPU/内存、KV、量化、batching、并行、profiling、网络服务 | 固定 offered-load 下的 TTFT/TPOT/吞吐、显存账本和瓶颈归因 |
-| 评测/数据 | case、标注、benchmark、统计、发布 gate | 指标无效、标注偏差、污染、切片退化、错误发布 | sampling、taxonomy、统计、judge 校准、数据治理、实验平台 | 可复算 case/result/manifest、人工 judgment、区间、切片和门禁 |
+| 评测/数据 | 评测样本、标注、评测基准、统计、发布门禁 | 指标无效、标注偏差、污染、切片退化、错误发布 | 采样、分类体系、统计、评审模型校准、数据治理、实验平台 | 可复算的样本、结果和清单，人工判断、区间、切片和门禁 |
 | 安全/治理平台 | policy、红队、审计、模型/系统卡、事件流程 | 注入、泄漏、滥用、越权、供应链与证据断裂 | 威胁建模、IAM、隐私、安全测试、治理流程、跨团队沟通 | 攻击路径、模型外控制、可重放证据、exception/incident/retirement 闭环 |
 
 ### 应用工程与算法工程怎样区分
@@ -160,7 +160,7 @@ LangChain、Transformers 或 vLLM 都可能出现在多条路线中。真正区�
 | 安全、隐私、治理 | V | V | O | V | V | V | O |
 | 产品约束与跨团队交付 | O | V | O | V | O | O | O |
 
-矩阵的价值是暴露证据缺口。例如自评“训练 O”却没有可恢复 checkpoint、数据 lineage、held-out regression 或失败诊断，说明等级写高了，而不是应该再背更多名词。
+矩阵的价值是暴露证据缺口。例如自评“训练 O”却没有可恢复 checkpoint、数据血缘、留出集回归或失败诊断，说明等级写高了，而不是应该再背更多名词。
 
 ## 从已有背景迁移
 
@@ -208,7 +208,7 @@ LangChain、Transformers 或 vLLM 都可能出现在多条路线中。真正区�
 | 信息 | 从 JD 找什么 | 应形成的问题 |
 |---|---|---|
 | 动词 | 研究、训练、构建、部署、优化、运营、评测、治理 | 日常主要是在提出方法、写系统还是承担服务？ |
-| 对象 | 数据、模型、retriever、runtime、Agent、平台、客户方案 | 主要 artifact 和上下游是谁？ |
+| 对象 | 数据、模型、检索器、运行时、Agent、平台、客户方案 | 主要产物和上下游是谁？ |
 | 规模 | 单卡/集群、QPS、数据量、租户、区域、端侧 | 哪些容量/分布式能力是真的必要？ |
 | 生命周期 | prototype、上线、on-call、迭代、事故、合规 | 是否需要 O 级证据？ |
 | 评价 | 质量、收入、SLO、GPU 利用率、安全、交付速度 | 团队怎样判断工作成功？ |
@@ -254,7 +254,7 @@ JD 中的技术栈是约束，不是完整能力定义。使用过某个框架�
 | Agent/平台 | [Safe Agent](../practice/projects/safe-agent.md) | [云 API 契约](../practice/projects/cloud-api-contracts.md) | typed state、outbox、budget ledger |
 | 模型/训练 | [单 GPU 微调](../practice/projects/single-gpu-finetuning.md) | [合成数据审计](../practice/projects/synthetic-data-audit.md) | attention、LoRA、checkpoint resume |
 | 推理/系统 | [推理服务](../practice/projects/inference-serving.md) | [Transformers 基础](../practice/projects/transformers-basics.md) | sampling、KV allocator、batch scheduler |
-| 评测/数据 | [评测门禁](../practice/projects/evaluation-gate.md) | RAG 或 Agent 主项目 | paired/cluster statistics、artifact verifier |
+| 评测/数据 | [评测门禁](../practice/projects/evaluation-gate.md) | RAG 或 Agent 主项目 | 配对/聚类统计、产物验证器 |
 
 主项目证明你能把模糊需求变成系统和发布决定；相邻项目证明你理解上下游；底层实现证明你不是只会调用框架。它们可以共享代码和数据，但必须避免把同一次实验包装成三份独立证据。
 
@@ -309,7 +309,7 @@ resume bullet
 |---|---|---|
 | 编码 | 正确性、边界、测试、复杂度、可读性 | 算法偏张量/统计，系统偏并发/缓存，应用偏 API/data |
 | 基础机制 | Transformer、tokenizer、generation、训练与评测边界 | 深度按岗位主要对象增加 |
-| 项目深挖 | 数据、baseline、指标、失败、取舍、本人贡献 | 必须能打开 artifact 或重建关键数字 |
+| 项目深挖 | 数据、基线、指标、失败、取舍、本人贡献 | 必须能打开实验产物或重建关键数字 |
 | 实验设计 | 假设、控制变量、切片、不确定性、停止条件 | 算法/评测权重更高，但任何路线都不能缺失 |
 | 系统设计 | 需求量化、数据流/控制流、容量、安全、降级 | 应用/Agent/推理强调不同瓶颈 |
 | 故障排查 | 从现象到分层假设、最小观测、止损、复盘 | RAG 召回、训练 NaN、OOM、尾延迟、重复 effect 等 |
@@ -405,7 +405,7 @@ CPU 样例、loopback、作者自编数据、schema 校验和模型拒答各自�
 
 ## Evidence map
 - strongest K/I/V/O evidence:
-- flagship project and artifact links:
+- 主项目和实验产物链接：
 - adjacent evidence:
 
 ## Gaps
@@ -431,7 +431,7 @@ CPU 样例、loopback、作者自编数据、schema 校验和模型拒答各自�
 - [ ] 用失败责任而不是 title 选择了一条主线。
 - [ ] 对一个真实 JD 完成了动词、对象、规模、生命周期和评价拆解。
 - [ ] 每个 must-have 都有证据、相邻证据或明确缺口。
-- [ ] 有一个主项目能下钻到逐 case/逐请求 artifact。
+- [ ] 有一个主项目能下钻到逐样本或逐请求的实验产物。
 - [ ] 能解释当前证据的 L0–L4 等级和不能外推的边界。
 - [ ] 简历每个数字都能反向追到 workload、配置、代码 revision 和失败样本。
 - [ ] 能完成机制、实验、系统设计、故障和项目深挖五类追问。

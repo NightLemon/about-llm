@@ -67,7 +67,7 @@
 | 对称分组量化 | \(s_g=\max_{i\in g}\lvert w_i\rvert/(2^{b-1}-1),\ q_i=\operatorname{clip}(\operatorname{round}(w_i/s_g),-q_{max},q_{max})\) | code-range/rounding/zero-group 约定必须显式 |
 | 理想分组量化字节 | \(\lceil bRC/8\rceil+4R\lceil C/G\rceil\) | FP32 scale；不含 alignment、容器、zero point、未量化层和 workspace |
 | 本仓库 packed code 映射 | \(u_i=q_i+q_{max}\in[0,2^b-2]\) | row-major、LSB-first；全 1 code 非法，末 byte 高 padding bit 为 0；不是通用 runtime 格式 |
-| 本仓库单矩阵 v1 artifact | \(M_{file}=32+\lceil bRC/8\rceil+4R\lceil C/G\rceil+32\) bytes | fixed header + code + little-endian FP32 scales + unkeyed SHA-256；不含文件系统开销，不是整模型格式 |
+| 本仓库单矩阵 v1 产物 | \(M_{file}=32+\lceil bRC/8\rceil+4R\lceil C/G\rceil+32\) 字节 | 固定头部 + 编码 + 小端 FP32 缩放值 + 无密钥 SHA-256；不含文件系统开销，不是整模型格式 |
 | INT8 KV payload（\(B\) 条、各 \(T\) token） | \(M=2BH_{kv}T(D+4)\) bytes；\(\rho_{FP32/INT8}=4D/(D+4)\) | K/V head dim 同为 \(D\)，各自每 token/head 有一个 FP32 scale；\(\rho\) 是无量纲的 payload 大小比，不含 block、alignment、workspace 或其他 runtime allocation |
 | Speculative 接受率 | \(\alpha(x)=\min(1,p(x)/q(x))\) | \(x\sim q\)，故被采到时 \(q(x)>0\) |
 | Speculative 拒绝分布 | \(r(i)=(p(i)-q(i))_+/\sum_j(p(j)-q(j))_+\) | 拒绝概率 \(=TV(p,q)\)，一步总输出边际恢复为 \(p\) |

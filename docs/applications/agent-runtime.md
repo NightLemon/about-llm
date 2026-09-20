@@ -49,13 +49,13 @@ python projects/safe-agent/refund_lifecycle.py
 
 输出中的 `execution.status` 是 `failed`，表示这次本地 Handler 调用没有拿到成功响应；
 它不表示退款没有发生。与此同时，`local_ledger_state` 是 `pending`；固定模拟支付服务报告的
-`provider_effect_count` 为 1。这个字段是 fixture 的内部观测，不是本地控制面在 timeout 当时已经取得的证据。
+`provider_effect_count` 为 1。这个字段是[固定样例](../reference/glossary.md#term-fixture)的内部观测，不是本地控制面在超时时已经取得的证据。
 
 随后，验证器按同一个幂等键查询支付服务。回执匹配后，账本才进入完成状态，最终回答是：
 
 > 退款已由支付服务确认受理，退款单号 refund-provider-7001。
 
-接下来的章节都在解释：为什么这五个阶段会在当前 fixture 中拦住一次 pending 重放，并让未知结果通过查询得到确认。
+接下来的章节都在解释：为什么这五个阶段会在当前固定样例中拦住一次待定操作的重放，并让未知结果通过查询得到确认。
 
 ## 先看事故发生在哪个窗口
 
@@ -326,7 +326,7 @@ python projects/safe-agent/outbox_demo.py `
   --database artifacts/agent/outbox-demo-001.db
 ```
 
-预期会看到两次对模拟 provider 的请求继续使用同一个幂等键。该 fixture 记录一个模拟业务 effect，最终投递状态为 `delivered`；真实服务是否按键去重仍取决于其契约和对账证据。
+预期会看到两次对模拟服务提供方的请求继续使用同一个幂等键。该固定样例记录一个模拟业务副作用，最终投递状态为 `delivered`；真实服务是否按键去重仍取决于其契约和对账证据。
 完整测试矩阵、SQLite 固定故障样例以及每个字段适用于哪些结论，见
 [Safe Agent 项目页](../practice/projects/safe-agent.md)和[项目控制台账](../evidence/project-controls.md)。
 

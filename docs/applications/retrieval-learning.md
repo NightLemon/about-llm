@@ -311,7 +311,7 @@ Qrels pooling 会产生依赖既有系统的漏标：没有进入候选池的文
 
 评测协议应固定：
 
-- query 的独立单位以及 train/validation/test split；
+- 查询的独立单位以及训练集、验证集和测试集的划分；
 - corpus snapshot、chunk identity、权限视图；
 - graded relevance、多个正确 passage 和 no-answer 定义；
 - unjudged item 如何处理；
@@ -412,7 +412,7 @@ model recall 单独衡量。
 1. 定义 relevance、query 独立单位、corpus 与 qrels；
 2. 选择 bi-encoder、pooling、normalization 与 score；
 3. 写出 InfoNCE 分母，说明 positive/negative 来源和 false-negative mask；
-4. train 内 mining，validation 选配置，test 冻结；
+4. 只在训练集内挖掘负例，用验证集选配置，最后固定测试集版本并限制查看；
 5. exact search 测表示质量，再测 ANN approximation recall；
 6. 对授权后的候选做 cross-encoder rerank；
 7. 保存 checkpoint、tokenizer、index、qrels 和 metric 分母；

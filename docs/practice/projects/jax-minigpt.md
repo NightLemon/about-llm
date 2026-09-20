@@ -356,7 +356,7 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 Python、NumPy、data worker、accelerator RNG 和分片拓扑没有进入这份文件。如果实际训练使用了它们，
 就要扩展状态面，不能照搬当前清单。
 
-### Artifact 格式
+### 实验产物格式
 
 `ALLMJAX1` 是本仓库为教学实现的单文件格式：
 
@@ -475,7 +475,7 @@ object-store consistency。单文件 `ALLMJAX1` 只服务于当前教学实验�
 - [ ] 能用 wrong-mask、RMSNorm、wrong-PRNG、wrong-cursor 四个反例解释因果；
 - [ ] 能说明 bit-exact resume 需要比较 trace 和 full state，而不只是最终 loss；
 - [ ] 能把 CPU、单 accelerator、多设备、目标模型证据分栏；
-- [ ] 能说明带完整字段和 hash 的 artifact，其完整性、真实性与 durability 是三个不同问题。
+- [ ] 能说明字段完整且带哈希的产物，其完整性、真实性与持久性是三个不同问题。
 
 面试中可以沿一条因果链讲解：纯函数状态 → tiny overfit → 模型身份对账 → optimizer 轨迹 →
 checkpoint 状态面 → accelerator/sharding 扩展。

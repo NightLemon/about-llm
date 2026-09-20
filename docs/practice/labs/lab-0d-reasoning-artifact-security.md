@@ -2,7 +2,7 @@
 
 **定位**：安全工程选修，预计 60–90 分钟；默认全部离线，不发送请求、不加载模型，也不需要 API key。
 
-**实验导航**：[返回总览](../labs.md#lab-0) · [Reasoning 工件安全](../../quality/reasoning-artifact-security.md) · [云 API 契约](../../models/cloud-api-contracts.md) · [项目入口](../projects/cloud-api-contracts.md#run)
+**实验导航**：[返回总览](../labs.md#lab-0) · [推理产物安全](../../quality/reasoning-artifact-security.md) · [云 API 契约](../../models/cloud-api-contracts.md) · [项目入口](../projects/cloud-api-contracts.md#run)
 { .doc-nav }
 
 ## 从一次跨会话重放开始 {#running-example}

@@ -337,7 +337,7 @@ Unicode and multilingual input
 - compute 与 accumulation dtype；
 - KV Cache dtype；
 - fused kernel 和 workspace；
-- artifact、resident 与 peak memory。
+- 产物、常驻显存与峰值显存。
 
 因此 4-bit 不等于每个参数严格占 0.5 byte，也不保证速度更快。没有匹配 kernel 时，dequant 和数据搬运可能抵消收益。
 
@@ -476,7 +476,7 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 
 ## 一个最小学习项目
 
-选择一个许可允许且资源可承受的 text-only Instruct checkpoint，交付四个 artifact：
+选择一个许可允许且资源可承受的纯文本指令模型检查点，交付四类产物：
 
 1. **identity report**：revision、文件、config、tokenizer、template、license。
 2. **execution report**：prefill/cache/greedy 对账和峰值显存。

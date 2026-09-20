@@ -17,9 +17,9 @@ messages
 → assistant-only labels
 → loss / backward
 → LoRA A、B
-→ adapter-only artifact
+→ 仅含 adapter 的产物
 → fresh base reload
-→ held-out comparison
+→ 留出样本对比
 ```
 
 ## 你要回答的六个问题
@@ -31,7 +31,7 @@ messages
 3. LoRA 的 B 为零时，包装前后的 logits 是否应完全一致？
 4. 第一次 backward 时，A 和 B 是否都会有非零梯度？
 5. adapter 能在当前对象里工作，是否证明它能被独立重载？
-6. 训练样本 loss 下降，是否说明 held-out 质量提升？
+6. 训练样本的损失下降，是否说明留出样本质量提升？
 
 ## 运行
 
@@ -81,9 +81,9 @@ B 从零开始，所以刚包装时 \(BA=0\)。Notebook 要求包装前后 logit
 
 这比打印“trainable params 百分比”更有说服力：百分比是配置描述，权重未改变才是这次运行的观察。
 
-### 4. Held-out 单独报告
+### 4. 留出样本单独报告
 
-Notebook 用另一个问题分别计算 base 和 adapter loss，但不要求 adapter 必须更好。一个随机初始化的小模型、一个训练样本和一个 held-out 样本没有资格支持质量结论。
+Notebook 用另一个问题分别计算基座模型和 adapter 的损失，但不要求 adapter 必须更好。一个随机初始化的小模型、一个训练样本和一个留出样本没有资格支持质量结论。
 
 这里真正要学的是：训练闭环和发布评测是两条相连但不同的证据链。
 
@@ -111,7 +111,7 @@ Notebook 用另一个问题分别计算 base 和 adapter loss，但不要求 ada
 | ByteTokenizer | 固定 revision 的目标 tokenizer |
 | 输出头一个 LoRA module | 从真实 module tree 审核出的 target modules |
 | `torch.save(adapter_state_dict)` | PEFT `save_pretrained` + manifest/base identity |
-| 一个 held-out loss | 固定 cases、切片、任务指标与发布 gate |
+| 一个留出样本的损失 | 固定评测样本、切片、任务指标与发布门禁 |
 | CPU 随机 MiniGPT | 目标 checkpoint、3070 Laptop 实测显存与吞吐 |
 
 上面的 `answer_start - 1` 只属于这个手写、预先 shift 的教学 Notebook。真实 Qwen/Transformers 路径先在未移动的
@@ -135,7 +135,7 @@ logits 与 labels 做 next-token 对齐；不要把 toy 的下标规则直接贴
 4. 初始函数与冻结基座断言
 5. training loss 首尾值
 6. fresh-base reload 误差
-7. base/adapter held-out 两列
+7. 基座模型与 adapter 的留出结果两列
 8. 已证明与未证明
 ```
 

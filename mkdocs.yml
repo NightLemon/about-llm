@@ -257,7 +257,7 @@ nav:
           - 云 API 证据: evidence/cloud-api-controls.md
           - Transformers Basics 证据: evidence/transformers-controls.md
           - 前沿系统证据: evidence/frontier-controls.md
-      - LLM 术语知识图谱: reference/glossary.md
+      - LLM 术语表: reference/glossary.md
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md
       - 资料与论文: reference/resources.md

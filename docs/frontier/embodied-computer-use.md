@@ -133,7 +133,7 @@ World model（世界模型）预测后续观察、状态、奖励、终止条件
 - Domain randomization：在仿真中随机改变环境参数；
 - System identification：用真实观测估计系统参数；
 - 真实数据微调：让模型接触目标设备和环境；
-- Residual control：学习基础控制器没有解释的剩余误差。
+- 残差控制（residual control）：学习基础控制器没有解释的剩余误差。
 
 这些方法都不会把仿真成功自动变成真实机器人成功。
 

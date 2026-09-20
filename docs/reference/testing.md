@@ -99,7 +99,7 @@ Collection 门禁要求每个测试至少声明一种证据性质；否则新增
 
 `formula`、`contract`、`security`、`smoke` 是证据性质，说明测试回答什么。`integration`、`slow`、`network`、`gpu` 是运行属性，说明组件边界、成本或资源要求。`extended` 则决定 CI 调度，且必须同时带 `integration` 或 `slow`；它本身不提高证据等级。
 
-每项 claim 都要能指出 oracle：手算值、标准定义、独立参考实现、固定人工标注，或明确标为 supplied fixture。报告分数时写出 case 总数及 answer、abstain、error/timeout、未判定等终态；不能只筛选通过或已回答的 case 作为分母。fixture、mock 和 spy 可以可靠地检验本地契约与调用边界，却不能证明真实模型、GPU、provider、数据分布或生产结果。
+每项主张都要能指出判定依据（oracle）：手算值、标准定义、独立参考实现、固定人工标注，或明确说明由外部提供的固定样例。报告分数时写出样本总数及回答、拒答、错误/超时、未判定等终态；不能只筛选通过或已回答的样本作为分母。固定样例、模拟对象和调用监视器可以可靠地检验本地契约与调用边界，却不能证明真实模型、GPU、服务提供方、数据分布或生产结果。
 
 ## 本地命令
 

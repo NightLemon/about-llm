@@ -72,10 +72,10 @@ flowchart TD
 | 必做 | [0A：从 logits 到采样](labs/lab-0a-sampling.md) | top-k、top-p 与 repetition penalty 怎样改变候选分布，处理顺序为什么是契约？ |
 | 推荐 | [0B：生成、停止与流式协议](labs/lab-0b-generation-protocol.md) | EOS、长度上限、stop string 和断流如何形成终态？ |
 | 工程选修 | [0C：云 API 预算、重试与对账](labs/lab-0c-cloud-budget.md) | 一次逻辑请求为什么可能产生多次调用和费用？ |
-| 安全选修 | [0D：Opaque Reasoning 工件安全](labs/lab-0d-reasoning-artifact-security.md) | 哪些内部字段可以保存、重放或返回给用户？ |
+| 安全选修 | [0D：不透明推理块安全](labs/lab-0d-reasoning-artifact-security.md) | 哪些内部字段可以保存、重放或返回给用户？ |
 
 交付物：0A 的一张手算表，0B 的一张状态图，以及至少一个“输出看似合理但协议已经失败”的例子。
-0A 的 oracle 是固定 logits 和 inverse-CDF 手算；0B 的 oracle 是有限概率表和状态机。二者通过只能说明
+0A 的判定依据（oracle）是固定 logits 和逆累积分布函数手算；0B 的判定依据是有限概率表和状态机。二者通过只能说明
 本仓库教学契约在固定输入上成立，不能推出真实模型、远端服务或账单语义。
 
 ## 实验 1：从教学 tokenizer 走到真实 Qwen3 输入 { #lab-1 }
@@ -214,10 +214,10 @@ attention 结构改为 MLA。目标是找出标准公式在哪一步失去适用
 
 实验顺序：
 
-1. 检查 train/validation/test 的来源隔离、重复和模板泄漏。
+1. 检查训练集、验证集和测试集的来源隔离、重复和模板泄漏。
 2. 打印最终 token IDs、assistant labels 与截断位置。
 3. 核对可训练参数、冻结基座和 optimizer step。
-4. 比较训练曲线与 held-out 行为，不用同 batch loss 代替质量。
+4. 比较训练曲线与留出集上的行为，不用同一批次的训练损失代替质量。
 5. 独立重载 adapter，并检查通用能力与安全回归。
 
 交付物：数据说明、基线、曲线、失败分类、资源使用和发布边界。详细实现见 [Single-GPU Finetuning](projects/single-gpu-finetuning.md)。
@@ -325,7 +325,7 @@ CPU 小实验中的离散步骤和逻辑字节只用于解释控制流。GPU 性
 3. 引用 span 存在但不支持 claim 时，句法与语义评价如何分开？
 4. 多次查看结果、挑 slice 或比较多模型时，显著性怎样失真？
 
-再用独立 held-out 集评价自己的系统，报告逐例结果和错误 taxonomy。七个人工编写的 case 或一个较高分数
+再用独立留出集评价自己的系统，报告逐例结果和错误分类。七个人工编写的样例或一个较高分数
 都不能代表通用能力；指标首先要匹配任务 construct。
 
 ## 综合项目验收

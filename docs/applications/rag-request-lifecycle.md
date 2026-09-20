@@ -349,9 +349,9 @@ final action + reason code
 
 | 第一个异常 | 归因 |
 |---|---|
-| Gold source 不在 snapshot | corpus / ingestion |
-| Gold 被 ACL 挡住 | 标注 security context 或 policy |
-| 可见 gold 未被召回 | retriever / ANN |
+| 参考来源不在当前快照 | 语料或摄取流程 |
+| 参考来源被 ACL 挡住 | 标注安全上下文或权限策略 |
+| 当前可见的参考来源未被召回 | 检索器或 ANN |
 | 召回后被降到预算外 | reranker |
 | Top result 没进入 Prompt | packing |
 | Prompt 有证据却回答错误 | generator |

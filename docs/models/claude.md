@@ -463,5 +463,5 @@ python -m pytest tests/test_cloud_api.py tests/test_cloud_stream.py `
 - [云 API 契约](cloud-api-contracts.md)：跨 provider 的 canonical model 与 adapter。
 - [Agent Runtime](../applications/agent-runtime.md)：授权、执行、回放与可观测性。
 - [Evaluation Gate](../practice/projects/evaluation-gate.md)：paired cases 与发布决策。
-- [Opaque Reasoning 工件安全](../quality/reasoning-artifact-security.md)：不透明状态与轨迹发布。
+- [不透明推理块安全](../quality/reasoning-artifact-security.md)：不透明状态与轨迹发布。
 - [Claude 证据台账](../evidence/claude-controls.md)：具体检查程序、命令和目前尚未验证的部分。

@@ -158,7 +158,7 @@ python -m about_llm.rag.cli rerank-recorded `
 进入 reranker 前会再次检查权限。样例分数同时绑定查询文本、chunk 字节和评分器身份。
 查询或内容发生变化、某个候选缺分或多分、分数出现 `NaN/Infinity` 时，命令都会失败。
 
-这个固定样例用于检查 query、chunk 和 score 的绑定能否正常工作。要声称质量提升，必须在 held-out qrels 上
+这个固定样例用于检查查询、文本块和分数的绑定能否正常工作。要声称质量提升，必须在留出的 qrels 上
 比较排序与延迟。
 
 ### 单独看 packing

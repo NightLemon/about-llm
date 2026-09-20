@@ -378,7 +378,7 @@ reverse-mode autodiff。
 3. 确认 gradient 非零且有限，optimizer step 后参数确实变化；
 4. 用极小 batch overfit，检查实现能否降低训练 loss；
 5. 与独立实现或单卡大 batch 对齐；
-6. 最后才看 held-out 数据、多个 seed 和真实任务指标。
+6. 最后才看留出数据、多个随机种子和真实任务指标。
 
 每一层回答的问题不同。Tiny-batch overfit 能发现训练闭环错误，不能证明泛化；训练 loss 下降也不能替代
 validation/test 评测。

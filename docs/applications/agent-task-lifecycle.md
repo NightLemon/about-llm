@@ -257,7 +257,7 @@ subject + task + call_id + execution_fingerprint + expiry
 `approval_rejected / approval_execution_mismatch`，provider 调用次数仍为零。这个负例说明系统验证的不是
 “用户曾经点过确认”，而是“这份确认是否仍对应眼前这一个 execution identity”。
 
-本仓库的 `ApprovalGrant` 是 typed artifact，不是加密签名或 bearer token 格式。生产系统仍需真实性、一次性消费、
+本仓库的 `ApprovalGrant` 是有明确类型的产物（typed artifact），不是加密签名或 bearer token 格式。生产系统仍需真实性、一次性消费、
 访问控制、撤销与安全存储。
 
 ## 阶段 5：本地超时，但退款可能已经受理
@@ -379,7 +379,7 @@ Verifier 对照订单、金额、原因、identity 和目标状态后给出 `pas
 | Provider 查询无记录 | Verifier indeterminate；等待、升级或按协议标记 abandoned |
 | Provider receipt 与订单/金额不符 | Verifier failed；安全事件或数据一致性调查 |
 | Reconciled 后 cache replay 被撤权 | Reauthorization；不向已撤权主体返回旧 payload |
-| Planner 重复 proposal 或耗尽预算 | Loop control；停止并说明 reason code |
+| 规划器重复提案或耗尽预算 | 循环控制；停止并说明原因码 |
 
 这些问题分属模型决策、控制面和外部系统。本例最危险的故障发生在模型已经给出正确 proposal 之后，
 需要靠幂等和对账处理。

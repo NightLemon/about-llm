@@ -242,7 +242,7 @@ flowchart TD
 用户审批后到工具真正执行前，价格、收件人、文件内容或权限都可能变化。这就是 TOCTOU：检查时与使用时
 看到的对象已经不同。
 
-审批 artifact 应绑定：
+审批产物应绑定：
 
 - 规范化后的工具参数；
 - Subject、task 与 call identity；
@@ -333,7 +333,7 @@ predecessor 和 model audience。缺少其中任何一项，合法 ciphertext �
 未知 opaque block 默认删除；发布结果要求 `opaque_reasoning_block_count == 0`。
 
 从外部取得的 trajectory 是不可信序列化状态。继续调用模型或工具前，必须重新解析、授权和验证。
-详见 [Opaque Reasoning 工件与轨迹安全](reasoning-artifact-security.md)和
+详见[不透明推理块与轨迹安全](reasoning-artifact-security.md)和
 [实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
 
 ## 9. 模型隐私
@@ -379,7 +379,7 @@ Federated 描述的是训练拓扑。隐私强度要由具体协议、攻击模�
 
 供应链控制可以分成四组：
 
-- **来源**：来源 allowlist、artifact digest/signature、model/data lineage；
+- **来源**：来源允许名单、产物摘要/签名、模型与数据血缘；
 - **依赖**：SBOM、版本 pin、dependency review；
 - **构建与加载**：隔离加载、最小 CI 权限、可复现构建；
 - **变更**：双人审批、版本升级回归和可靠 rollback。
@@ -469,7 +469,7 @@ calibration 则比较相同预测分数是否对应相近真实概率。Base rat
 
 ### 14.3 回归与独立性
 
-修复后的 exploit 进入永久回归集；同时保留未公开 holdout，避免只背固定 prompt。红队与开发团队应有适度独立性，严重问题有阻止发布的权限。
+修复后的攻击样例进入永久回归集；同时保留未公开的留出集，避免只背固定提示词。红队与开发团队应有适度独立性，严重问题有阻止发布的权限。
 
 ## 15. 事故发生后先保留事实链
 
@@ -512,7 +512,7 @@ controls:
   - parameter fingerprint approval
   - egress allowlist
 evidence:
-  - test IDs and artifact revisions
+  - 测试 ID 和产物版本
 residual_risk_owner: security-lead
 ```
 

@@ -55,7 +55,7 @@ assistant: 可以申请退款，最高 300 元。
 | Assistant mask | 每个 token 的 0/1 标记 | 只监督两个 assistant turns |
 | Collator | `input_ids`、`attention_mask`、`labels` | 非监督位置与 padding 是否为 `-100` |
 | Trainer | loss sum、有效 label count、gradients | Denominator 是否跨 accumulation 正确 |
-| Evaluation | 部署 generation 与 held-out cases | 学到的是任务行为，不只是训练文本 |
+| 评测 | 部署后生成与留出样本 | 学到的是任务行为，不只是训练文本 |
 
 表中前六步可以在模型下载前或一次 no-grad forward 中验证。先把它们跑通，
 比训练几小时后再猜“为什么 loss 很奇怪”便宜得多。
@@ -316,7 +316,7 @@ python projects/single-gpu-finetuning/amp_grad_scaler_control.py
 
 发生 overflow 时，还要核对 optimizer、scheduler 和 GradScaler 是否共同保持不变。
 
-## Readiness 把 held-out 数据挡在 Trainer 外
+## 就绪检查把留出数据挡在训练器外
 
 仓库采用两阶段边界：
 
@@ -324,7 +324,7 @@ python projects/single-gpu-finetuning/amp_grad_scaler_control.py
 audit process:
   train + combined splits + policy
   -> exact / near / governance / binding reports
-  -> readiness artifact
+  -> 就绪证明产物
 
 trainer process:
   train file + readiness
@@ -333,7 +333,7 @@ trainer process:
   -> model loading and training
 ```
 
-Trainer 只需要训练文件和 readiness，不读取 validation/test 原文。独立的审计进程先证明训练文件按顺序等于
+训练器只需要训练文件和就绪证明，不读取验证集或测试集原文。独立的审计进程先证明训练文件按顺序等于
 综合数据工件中的 train subset，再把数据划分、近重复检查和治理决定绑定到 readiness。
 
 ~~~powershell
@@ -357,7 +357,7 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 ~~~
 
 无密钥 readiness hash 可以发现当前文件与记录 identity 漂移，但不能认证签发者；
-能替换全套 artifact 的主体也能重新计算 hash。生产还需要最小权限、受控发布和独立审计日志。
+能替换全套产物的主体也能重新计算哈希。生产还需要最小权限、受控发布和独立审计日志。
 
 Readiness 回答“这份训练数据是否经过约定审计”。Tokenizer 和 mask 要在模型 revision 加载后继续检查。
 训练入口应拒绝静默截断，保存模板与 mask 报告，并核对实际 collator 产生的最终 labels。
@@ -375,7 +375,7 @@ Readiness 回答“这份训练数据是否经过约定审计”。Tokenizer 和
 python projects/single-gpu-finetuning/smoke_trl_sft.py
 ~~~
 
-接着运行 100–1000 steps smoke，检查 checkpoint、resume、adapter 加载和 held-out evaluation，
+接着运行 100–1000 步冒烟训练，检查 checkpoint、续训、adapter 加载和留出集评测，
 最后才启动完整实验。
 
 训练配置至少保存下面五类状态：
@@ -414,9 +414,9 @@ Gradient accumulation 崩溃时还可能存在 partial-window gradients。两种
 详细故障矩阵见
 [单 GPU 微调项目](../practice/projects/single-gpu-finetuning.md)。
 
-## Validation 与 test 回答不同问题
+## 验证集与测试集回答不同问题
 
-Validation 用于 early stopping 和超参数选择；最终 test 应限制查看次数。Teacher-forced loss 与真实生成质量不完全一致，
+验证集用于早停和超参数选择；最终测试集应限制查看次数。教师强制下的损失与真实生成质量不完全一致，
 开放生成评测要使用部署时的解码参数、对话模板和工具 schema。
 
 每个 checkpoint 至少比较：
@@ -457,5 +457,5 @@ Validation 用于 early stopping 和超参数选择；最终 test 应限制查�
 3. 同一客户的不同工单为什么可能需要按 group 切分？
 4. 两个 micro-batches 的有效 labels 分别为 1 和 9，等权 mean 会怎样改变 objective？
 5. Sampler emitted=7、consumed=3、optimizer committed=2 时，从哪个位置恢复，各需保存什么？
-6. SFT loss 下降而 held-out 任务变差时，你会沿哪几层定位？
-7. 怎样用权限和 artifact 边界证明 Trainer 没有读取 held-out 原文？
+6. SFT 损失下降而留出任务变差时，你会沿哪几层定位？
+7. 怎样用权限和产物边界证明训练器没有读取留出集原文？

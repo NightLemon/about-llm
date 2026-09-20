@@ -1,6 +1,6 @@
 # 概念依赖与易混淆地图
 
-这张地图把[术语知识图谱](glossary.md)从字母顺序还原成学习顺序。箭头表示“先理解左边，右边会更容易”，不是历史先后，也不表示左边足以推出右边。想直接选一条完整路线可回到[学习路径](../guide/learning-paths.md)；想从具体问题进入正文可回到[如何使用本书](../guide/how-to-use.md)。
+这张地图把[术语表](glossary.md)从字母顺序还原成学习顺序。箭头表示“先理解左边，右边会更容易”，不是历史先后，也不表示左边足以推出右边。想直接选一条完整路线可回到[学习路径](../guide/learning-paths.md)；想从具体问题进入正文可回到[如何使用本书](../guide/how-to-use.md)。
 
 词条会指向正文以及实验或验证思路；进入目标页后再确认它是否提供运行命令、固定输入和证据范围。实验的作用是隔离机制和暴露边界，不是用一个 toy 证明生产质量。
 
@@ -114,11 +114,11 @@ Observation 不是真实 state，context 也不是可审计 belief。Utility 只
 
 - Construct → Operationalization → Reliability → Estimand → Statistical power / MDE → Evaluation → Metric → Calibration → Brier score；Calibration → ECE；Calibration → Risk-coverage；
 - Operationalization → Construct / content / criterion validity → Estimand；
-- Baseline → Control → Artifact → Evidence boundary；
+- 基线 → 对照或验证项 → 实验产物 → 证据边界；
 - Dataset split → Evaluation；
 - Evaluation → Paired bootstrap → Confidence interval；Evaluation → P-value → Holm correction。
 
-先确定 construct 怎样被操作化，再分别检查 reliability 与 validity；二者共同约束 estimand 和 power 设计。统计量只有在系统身份、采样单位、分母和决策规则固定后才有意义。Artifact 保存观察；evidence boundary 约束能从观察推出什么。完整反例与 exact control 见[评测测量学](../quality/evaluation-measurement.md)。
+先确定构念怎样被操作化，再分别检查信度与效度；二者共同约束估计目标和统计功效设计。统计量只有在系统身份、采样单位、分母和决策规则固定后才有意义。实验产物保存观察；证据边界约束能从观察推出什么。完整反例与精确验证见[评测测量学](../quality/evaluation-measurement.md)。
 
 ## 最重要的易混淆概念
 
@@ -163,4 +163,4 @@ Observation 不是真实 state，context 也不是可审计 belief。Utility 只
 4. **验证**：运行词条绑定的实验，先写预测，再解释观察；
 5. **边界**：明确实验没有证明的外推结论。
 
-达到前两项是识别，达到前三项是理解，五项全部完成才算能用于工程判断。需要查定义时回到[术语知识图谱](glossary.md)，需要把某一分支接回课程时回到[学习路径](../guide/learning-paths.md)。
+达到前两项是识别，达到前三项是理解，五项全部完成才算能用于工程判断。需要查定义时回到[术语表](glossary.md)，需要把某一分支接回课程时回到[学习路径](../guide/learning-paths.md)。

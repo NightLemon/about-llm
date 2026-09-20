@@ -347,10 +347,10 @@ and p95/cost within budget
 - 文档 Prompt injection 与伪造 citation；
 - Timeout、parser error、provider error 和取消。
 
-线上 thumbs-up/down 很稀疏且有选择偏差，不能直接当 gold。
+线上的赞成/反对反馈很稀疏且有选择偏差，不能直接当作参考标签。
 将用户反馈用于 error discovery，再经过隐私、标注与切分流程进入评测集。
 
-Judge 模型也要固定 revision、rubric 和 calibration。Judge 通过不替代人工高风险抽查。
+评审模型也要固定版本标识（revision）、评分规则（rubric）和校准方法。评审模型判为通过，不能替代人工进行高风险抽查。
 
 ## 容量与成本账本
 

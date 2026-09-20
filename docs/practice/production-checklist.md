@@ -36,10 +36,10 @@
 - [ ] Tenant 与 principal 来自可信身份层，不能由 request body、Prompt 或模型输出自报。
 - [ ] 公开日志、trajectory 和固定样例由字段 allowlist 生成，而不是只对可见文本做字符串脱敏。
 - [ ] Provider 返回的 opaque reasoning、signature 和未知 block 有单独策略：不静默丢弃，也不无条件回传。
-- [ ] 数据或 reasoning artifact 泄露后，团队能够隔离工件、撤销凭据并清理下游副本。
+- [ ] 数据或推理产物泄露后，团队能够隔离产物、撤销凭据并清理下游副本。
 
-涉及 reasoning artifact、跨会话 replay 或第三方 trajectory 时，继续完成
-[Reasoning Artifact 安全审查](../quality/reasoning-artifact-security.md)。
+涉及推理产物、跨会话重放或第三方轨迹时，继续完成
+[推理产物安全审查](../quality/reasoning-artifact-security.md)。
 
 ## 模型、训练与发布工件
 
@@ -48,7 +48,7 @@
 - [ ] 发布 manifest 覆盖 config、tokenizer、template、权重与 shard index，并拒绝额外、缺失或漂移文件。
 - [ ] 完整性 hash 与来源认证分别处理；需要可信来源时有签名或受控发布链。
 - [ ] Loader 在分配大块内存前限制文件数、manifest 大小、tensor 数量和单 tensor 大小。
-- [ ] 训练改进由 held-out 结果支持；“成功 backward”或“adapter 可以 reload”不写成质量提升。
+- [ ] 训练改进由留出集结果支持；“成功反向传播”或“adapter 可以重新加载”不写成质量提升。
 - [ ] 上下文和输出有硬上限；结构化输出在应用层再次做 Schema 与语义校验。
 
 若本次发布包含训练、恢复或 adapter 导出，继续完成
@@ -91,7 +91,7 @@
 - [ ] Provider idempotency key、查询接口或补偿路径已经实测；没有恢复协议时转人工处理。
 - [ ] Completion 由业务 verifier 建立，不接受模型、远端 Agent 或自然语言状态自报成功。
 - [ ] Cache replay 会重新授权；步数、时间、token、费用、重复动作和循环都有硬上限。
-- [ ] 秘密由工具代理注入；网页、工具结果和远端 artifact 始终按不可信输入处理。
+- [ ] 秘密由工具代理注入；网页、工具结果和远端协议产物始终按不可信输入处理。
 
 先用[一次 Agent 退款](../applications/agent-task-lifecycle.md)逐阶段复核，再进入
 [Agent Runtime](../applications/agent-runtime.md)检查 pending、outbox 与 recovery。
@@ -113,7 +113,7 @@
 
 - [ ] 评测集覆盖真实、边界、对抗、无答案和相关语言，并避免按单条样本随机切分近重复数据。
 - [ ] 主指标、失败切片、置信区间和样本分母同时报告；平均分不会掩盖高风险失败。
-- [ ] LLM judge 用人工样本校准，并报告与人工分歧最大的切片。
+- [ ] 使用大模型评分（LLM-as-a-Judge）时，用人工样本校准，并报告与人工分歧最大的切片。
 - [ ] Prompt injection、越权、数据外传、滥用和供应链风险已经红队。
 - [ ] 安全漏拦和误拦一起进入回归，且每个门禁都有明确阻断阈值与 owner。
 - [ ] 报告区分真实线上观测、离线固定样例、模拟故障和作者声明，避免把局部实验外推到生产。

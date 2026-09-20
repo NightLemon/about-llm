@@ -107,9 +107,9 @@ flowchart TD
 | Response distillation | 最终文本或结构化结果 | Teacher 错误会变成训练标签 |
 | Process distillation | 经过筛选的中间步骤或轨迹 | 轨迹真实性、泄漏和 verifier 偏差 |
 | Feature distillation | 中间表示 | 层映射和架构兼容性 |
-| Preference distillation | Pair、ranking 或 judge 选择 | Judge calibration 与共享盲点 |
+| 偏好蒸馏 | 成对比较、排序或评审模型选择 | 评审模型校准与共享盲点 |
 
-Teacher 输出不是 ground truth。蒸馏报告应保存 teacher、Prompt、采样配置、过滤规则和失败样本，不能只展示学生在同源
+教师模型输出不是参考真值（ground truth）。蒸馏报告应保存教师模型、Prompt、采样配置、过滤规则和失败样本，不能只展示学生模型在同源
 测试集上的提升。
 
 ### PEFT 与压缩

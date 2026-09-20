@@ -260,7 +260,7 @@ python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
 ```
 
 第一条命令说明：密文保持完整时，仍要核对用户、租户、会话、上一条消息、允许模型、有效期和消费状态。完整解释见
-[看不见的 Reasoning Block](../../quality/reasoning-artifact-security.md)。
+[不透明推理块](../../quality/reasoning-artifact-security.md)。
 
 第二条命令只接受已经重新构造的发布对象。允许的 block 是 `text`、`tool_call`、`tool_result` 和 `citation`；reasoning、
 signature、encrypted 和未知字段会使发布停止。

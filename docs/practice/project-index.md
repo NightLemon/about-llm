@@ -18,11 +18,11 @@
 | 构建可诊断 RAG | [RAG Foundations](projects/rag-foundations.md) | 跑通一次 answer 与一次 abstain | 加入持久化、模型、服务与分层评测 |
 | 比较 RAG 框架 | [RAG Framework Adapters](projects/rag-framework-adapters.md) | 同一检索结果通过两个框架往返 | 检查 metadata、rank 与权限是否漂移 |
 | 构建安全工具 Agent | [Safe Agent](projects/safe-agent.md) | 跑通一次退款的九阶段生命周期 | 再接真实 Planner、框架、协议与外部服务 |
-| 完成单卡微调闭环 | [Single-GPU Finetuning](projects/single-gpu-finetuning.md) | 审计一批最终 labels | 比较 Prompt、RAG、LoRA 与 held-out 结果 |
+| 完成单卡微调闭环 | [Single-GPU Finetuning](projects/single-gpu-finetuning.md) | 审计一批最终标签 | 比较 Prompt、RAG、LoRA 与留出集结果 |
 | 理解云 API 契约 | [Cloud API Contracts](projects/cloud-api-contracts.md) | 预测并运行离线 500→200：两次 reservation、一次 `uncertain`、本地估值 146 micro-USD | 对比文本协议，再加入流式、重试、预算和不确定结果 |
 | 部署和测量推理服务 | [Inference Serving](projects/inference-serving.md) | 跑通采样与最小 HTTP 服务 | 测量排队、TTFT、TPOT、显存和取消 |
 | 建立发布评测门禁 | [Evaluation Gate](projects/evaluation-gate.md) | 对固定 cases 重算指标 | 加入配对比较、切片与发布判断 |
-| 审计合成数据 | [Synthetic Data Audit](projects/synthetic-data-audit.md) | 验证一份 lineage artifact | 加入去重、verifier 和训练暴露账本 |
+| 审计合成数据 | [Synthetic Data Audit](projects/synthetic-data-audit.md) | 验证一份带数据血缘的产物 | 加入去重、验证器和训练暴露账本 |
 
 如果这是你的第一个工程项目，优先选 RAG Foundations。它能同时练习数据、检索、权限、生成和评测，又不要求先拥有 GPU。
 

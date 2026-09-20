@@ -216,7 +216,7 @@ case-c: evidence at 90%
 
 - 程序生成新的实体、数字和关系；
 - 保留独立 final templates；
-- 使用业务领域的授权 held-out documents；
+- 使用业务领域内已获授权的留出文档；
 - 加入 counterfactual 和冲突版本；
 - 记录每次查看 test 的历史。
 

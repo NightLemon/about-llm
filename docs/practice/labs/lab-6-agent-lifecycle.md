@@ -43,7 +43,7 @@ src/about_llm/agents/sqlite_ledger.py
 tests/test_agent_refund_lifecycle.py
 ```
 
-脚本每次创建临时 SQLite 数据库，不会调用网络、写入真实订单或留下待清理的退款。Planner、订单和退款服务都是固定的进程内模拟器；输出中的 accepted receipt 与 effect count 只描述这组 fixture。
+脚本每次创建临时 SQLite 数据库，不会调用网络、写入真实订单或留下待清理的退款。规划器、订单和退款服务都是固定的进程内模拟器；输出中的已受理回执与副作用次数只描述这组固定样例。
 
 ## 第一步：先预测七个阶段
 
@@ -262,7 +262,7 @@ recovery.revoked_replay_negative_control.status = policy_denied
 
 前者说明 `accepted` 字样不能覆盖金额不匹配；后者说明 reconciliation 后的 cache replay 仍会重新授权。
 
-恢复后的 replay 为 `cached`，这组 fixture 的 provider effect count 仍为 1。现在才有依据组织“退款申请已受理”的最终用户答复；它不说明款项已经到账。
+恢复后的重放结果为 `cached`，这组固定样例中服务提供方的副作用次数仍为 1。现在才有依据组织“退款申请已受理”的最终用户答复；它不说明款项已经到账。
 
 回答：如果 provider 只返回 `{"status": "accepted"}`，为什么 verifier 仍不应通过？
 

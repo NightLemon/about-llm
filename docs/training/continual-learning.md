@@ -311,7 +311,7 @@ D_{KL}(p_{old}(\cdot\mid x)\|p_{new}(\cdot\mid x)).
 ## 8. 持续 SFT 与偏好更新
 
 新的 SFT 数据可能让回答风格变得单一、过度模板化，也可能改变拒答边界。
-偏好更新还会受评价规则版本、标注者群体和 judge 漂移影响。
+偏好更新还会受评价规则版本、标注者群体和评审模型漂移影响。
 
 维护：
 
@@ -409,11 +409,11 @@ Task B 更新不是一份孤立的 `model.safetensors`。每个模型工件至�
 
 ### 12.1 把 Task B 接到单卡 Adapter 闭环 {#single-gpu-task-b}
 
-已有 Task A 的单卡 Adapter 后，Task B 应视为一次新的更新，不是把旧输出目录接着跑。先冻结 Task A 的 held-out、
+已有 Task A 的单卡 Adapter 后，Task B 应视为一次新的更新，不是把旧输出目录接着跑。先固定 Task A 留出集的版本、
 安全/工具 anchor 与旧工件身份；这些 anchor 只用于比较，不能混入 Task B 的训练数据。随后为 Task B 重新发布
 train-only readiness，固定 tokenizer/template 和父 base revision，完成小步训练并在新进程分别重载旧、新 Adapter。
 
-发布判断至少同时比较 base、旧 Adapter 与新 Adapter 在同一 Task A anchors 和 Task B held-out 上的表现，报告新任务
+发布判断至少同时比较基座模型、旧 Adapter 与新 Adapter 在同一批 Task A 锚点和 Task B 留出集上的表现，报告新任务
 收益、逐项 retention、资源增量和失败分母。未过 gate 时，回滚兼容的 Adapter、Prompt、索引和工具契约。
 
 `--resume-from-checkpoint` 只用于同一次被中断的运行（同一配置与工件身份）恢复 optimizer、数据游标和随机状态；它不能替代这次新更新前后的
@@ -438,7 +438,7 @@ train-only readiness，固定 tokenizer/template 和父 base revision，完成�
 
 删除源数据与消除已训练模型中的影响是不同问题。
 
-### 14.1 Gold-standard 对照
+### 14.1 参考标注（gold standard）对照
 
 条件允许时，从未包含目标数据的数据集重新训练，是最清晰的对照。可以从头训练，也可以从目标数据进入前的安全 checkpoint 恢复。
 这种方法成本很高，而且随机训练会产生不同参数，因此应比较行为、攻击成功率和任务质量分布，而不是逐参数相等。

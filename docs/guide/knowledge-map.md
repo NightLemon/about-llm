@@ -1,6 +1,6 @@
 # 知识地图
 
-这张地图描述章节之间的依赖关系。要查询单个学术术语、先修概念和易混淆关系，请使用[术语知识图谱](../reference/glossary.md)与[概念依赖地图](../reference/concept-map.md)。
+这张地图描述章节之间的依赖关系。要查询单个学术术语、先修概念和易混淆关系，请使用[术语表](../reference/glossary.md)与[概念依赖地图](../reference/concept-map.md)。
 
 项目成熟度、实验记录和版本信息分别放在[项目索引](../practice/project-index.md)、[实验目录](../practice/labs.md)和[参考资料](../reference/accuracy.md)中。
 
@@ -51,7 +51,7 @@ flowchart TD
 5. [分布式训练](../systems/distributed-training.md)：显存、并行策略和通信成本。
 6. [集合通信与数据中心网络](../systems/collective-communication-network.md)：结果布局、ring 载荷、ready time、rail 与割集。
 
-出口成果：一份包含数据契约、训练曲线、基线、失败样例和 held-out 评测的实验报告。
+出口成果：一份包含数据契约、训练曲线、基线、失败样例和留出集评测的实验报告。
 
 ## 分支二：RAG 与 Agent 应用
 

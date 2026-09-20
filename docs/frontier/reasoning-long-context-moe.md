@@ -148,8 +148,8 @@ offered / admitted / completed / failed requests
 
 ### 4. 保留完整分母
 
-请求超时、显存不足、输入截断、输出无效、token 被丢弃、工具报错和 verifier 选择失败都要进入分母。若系统有 admission
-control，也分别报告 offered、admitted、completed 与各失败终态，不能只在已完成请求中比较质量或成本。
+请求超时、显存不足、输入截断、输出无效、token 被丢弃、工具报错和验证器选择失败都要进入分母。若系统有
+准入控制（admission control），也分别报告收到、接纳、完成的请求数与各失败终态，不能只在已完成请求中比较质量或成本。
 
 ### 5. 解释边界
 
@@ -215,7 +215,7 @@ MoE 仍需存储/分片总权重，并承担 routing、expert imbalance、all-to
 ## 常见错误
 
 - 用“reasoning model”品牌名代替具体训练和 test-time protocol。
-- 用长输出、judge 自信或 reward score代替 verified success。
+- 用长输出、评审模型自信度或奖励分数代替已经核验的成功结果。
 - 把 context window、KV capacity 和 effective context 写成同一个数字。
 - 把 Long context 当作 RAG 的替代，不做权限和来源管理。
 - 把 total、active、resident parameters 混为一谈。

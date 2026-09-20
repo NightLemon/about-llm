@@ -157,12 +157,16 @@ def test_glossary_graph_accepts_complete_linked_terms(tmp_path: Path) -> None:
     glossary.parent.mkdir(parents=True)
     glossary.write_text(
         "# 术语表\n\n"
-        "| 术语 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
-        "|---|---|---|---|---|---|---|\n"
-        "| <a id=\"term-logit\"></a>Logit | 归一化为概率以前的模型分数。 | 基础 |"
+        "| 术语与来源 | 中文用法 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| <a id=\"term-logit\"></a>"
+        "[Logit](https://example.com/logit) | 中英并用 | "
+        "归一化为概率以前的模型分数。 | 基础 |"
         " [Token](#term-token) | [概率](#term-token) | [正文](../../README.md) |"
         " [实验](../../CONTRIBUTING.md) |\n"
-        "| <a id=\"term-token\"></a>Token | tokenizer 词表中的离散单位。 | 基础 |"
+        "| <a id=\"term-token\"></a>"
+        "[Token](https://example.com/token) | 英文/缩写为主 | "
+        "tokenizer 词表中的离散单位。 | 基础 |"
         " 根概念 | — | [正文](../../README.md) | [实验](../../CONTRIBUTING.md) |\n",
         encoding="utf-8",
     )
@@ -179,9 +183,11 @@ def test_glossary_graph_rejects_unknown_dependency_and_missing_binding(
     glossary.parent.mkdir(parents=True)
     glossary.write_text(
         "# 术语表\n\n"
-        "| 术语 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
-        "|---|---|---|---|---|---|---|\n"
-        "| <a id=\"term-logit\"></a>Logit | 归一化为概率以前的模型分数。 | 基础 |"
+        "| 术语与来源 | 中文用法 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| <a id=\"term-logit\"></a>"
+        "[Logit](https://example.com/logit) | 中英并用 | "
+        "归一化为概率以前的模型分数。 | 基础 |"
         " [Missing](#term-missing) | — | 无 | [实验](../../CONTRIBUTING.md) |\n",
         encoding="utf-8",
     )
@@ -190,6 +196,44 @@ def test_glossary_graph_rejects_unknown_dependency_and_missing_binding(
 
     assert any("canonical needs a local link" in error for error in errors)
     assert any("unknown term 'missing'" in error for error in errors)
+
+
+def test_glossary_graph_rejects_missing_source_and_unknown_usage_status(
+    tmp_path: Path,
+) -> None:
+    glossary = tmp_path / "docs" / "reference" / "glossary.md"
+    glossary.parent.mkdir(parents=True)
+    glossary.write_text(
+        "# 术语表\n\n"
+        "| 术语与来源 | 中文用法 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| <a id=\"term-token\"></a>Token | 机器学习术语 | tokenizer 词表中的离散单位。 | 基础 |"
+        " 根概念 | — | [正文](../../README.md) | [实验](../../CONTRIBUTING.md) |\n",
+        encoding="utf-8",
+    )
+
+    errors = check_glossary_graph(glossary, root=tmp_path, minimum_terms=1)
+
+    assert any("term needs an external HTTPS source" in error for error in errors)
+    assert any("invalid Chinese usage status '机器学习术语'" in error for error in errors)
+
+
+def test_glossary_graph_rejects_non_https_source(tmp_path: Path) -> None:
+    glossary = tmp_path / "docs" / "reference" / "glossary.md"
+    glossary.parent.mkdir(parents=True)
+    glossary.write_text(
+        "# 术语表\n\n"
+        "| 术语与来源 | 中文用法 | 定义 | 分类 | 先修 | 易混淆 | 正文 | 实验 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| <a id=\"term-token\"></a>[Token](http://example.com/token) | "
+        "英文/缩写为主 | tokenizer 词表中的离散单位。 | 基础 | 根概念 | — | "
+        "[正文](../../README.md) | [实验](../../CONTRIBUTING.md) |\n",
+        encoding="utf-8",
+    )
+
+    errors = check_glossary_graph(glossary, root=tmp_path, minimum_terms=1)
+
+    assert any("term needs an external HTTPS source" in error for error in errors)
 
 
 def test_glossary_reach_requires_entry_pages_to_link_into_glossary(

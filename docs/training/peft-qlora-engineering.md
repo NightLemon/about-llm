@@ -346,5 +346,5 @@ python projects/single-gpu-finetuning/run_qwen_target_lora_control.py `
 - **质量**：售后任务、通用能力、安全切片和失败样本；
 - **可发布性**：保存前后输出误差、依赖身份和恢复实验。
 
-只有分别补齐目标 GPU 的一步运行、预先定义的 held-out 行为比较和新进程重载证据后，才能把这次 QLoRA 交付描述为
+只有分别补齐目标 GPU 的一步运行、预先定义的留出集行为比较和新进程重载证据后，才能把这次 QLoRA 交付描述为
 可运行、行为经评测、且可重载。

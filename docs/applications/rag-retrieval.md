@@ -193,7 +193,7 @@ Bi-encoder 常用 InfoNCE 或多正例对比目标。Negative 决定模型被要
 - Random negative 容易，但训练信号可能太弱。
 - In-batch negative 便宜，却可能包含漏标相关文档。
 - Hard negative 信号强，也最容易放大 false negative。
-- Mining 必须与 held-out split 隔离，避免把评测信息带回训练。
+- 负例挖掘必须与留出的数据划分隔离，避免把评测信息带回训练。
 
 完整公式、梯度和 ColBERT/SPLADE 路线见[检索表示学习](retrieval-learning.md)。
 
@@ -297,7 +297,7 @@ Cross-encoder 把 query–document 拼在一起，让 token 在打分前交互�
 
 ## 检索指标：每个数字都要写清分母
 
-设 gold evidence 集合为 (G_q)，前 (k) 个结果为 (R_q^k)：
+设参考证据集合（gold evidence）为 (G_q)，前 (k) 个结果为 (R_q^k)：
 
 \[
 \operatorname{Recall@k}(q)=
@@ -326,7 +326,7 @@ Recall 计算找回相关来源的比例。MRR 关注第一个相关结果的位
 
 ### 无答案问题与不完整标注
 
-No-answer query 的 gold 集合为空，不能塞进普通 Recall 分母。
+无答案查询的参考证据集合为空，不能塞进普通召回率分母。
 应显式标记 `answerable=false`，并分开评价 retrieval signal 与最终拒答行为。
 
 人工相关性标注往往不完备。新出现的高排名结果应先记为“尚未判断”，不能自动当作错误结果。
@@ -336,9 +336,9 @@ No-answer query 的 gold 集合为空，不能塞进普通 Recall 分母。
 
 | 观察 | 归因 |
 |---|---|
-| Gold source 不在 tenant corpus | 摄取或语料缺口 |
-| Gold source 被 ACL 挡住 | Case security context 或 policy |
-| 可见 gold 未进大候选集 | Sparse/dense/ANN |
+| 参考来源不在租户语料中 | 摄取或语料缺口 |
+| 参考来源被 ACL 挡住 | 样本安全上下文或权限策略 |
+| 当前可见的参考来源未进入大候选集 | 稀疏检索、稠密检索或 ANN |
 | 大候选中有、rerank 后消失 | Reranker 或截断 |
 | Rerank 后有、Prompt 中没有 | Packing |
 | Prompt 有证据、答案仍错 | Generation 或 citation |

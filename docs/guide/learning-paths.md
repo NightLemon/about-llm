@@ -7,7 +7,7 @@
 |---|---|---|
 | 想知道 LLM 到底怎样工作 | [基础路线](#beginner) | 一次从文本、token 到生成结果的手算与实验 |
 | 想构建 RAG 或 Agent | [应用工程路线](#application) | 一个会引用、会拒答、能处理权限失败的小系统 |
-| 想训练或适配模型 | [模型工程路线](#model-engineering) | 一次数据、loss、adapter 和 held-out 结果可对账的训练 |
+| 想训练或适配模型 | [模型工程路线](#model-engineering) | 一次数据、损失、adapter 和留出集结果可对账的训练 |
 | 想部署和压测模型 | [系统工程路线](#systems) | 一份包含 TTFT、TPOT、吞吐、容量和失败终态的报告 |
 | 想复现论文结论 | [研究路线](#research) | 一项带基线、消融和负结果的复现实验 |
 
@@ -18,7 +18,7 @@
 | 站点 | 先回答的问题 | 离开这一站时留下什么 |
 |---|---|---|
 | [数学基础](../foundations/math.md) | 两个 hidden-state 数字怎样变成 token 概率和一次参数更新？ | 三候选预测与两-token Attention 手算 |
-| [机器学习与 NLP](../foundations/ml-dl.md) | 模型从什么数据学习，怎样知道它没有只记住训练集？ | 一次 train/validation/test 切分解释和 logits→NLL 手算 |
+| [机器学习与 NLP](../foundations/ml-dl.md) | 模型从什么数据学习，怎样知道它没有只记住训练集？ | 一次训练集/验证集/测试集划分解释和 logits→NLL 手算 |
 | [Tokenization](../core/tokenization.md) | 文本为什么会变成不同长度的整数序列？ | 中英文、数字、代码和 emoji 的 byte/token 对照 |
 | [Transformer](../core/transformer.md) | 一个 token 怎样读取前文信息？ | 两 token Attention 手算和 `Q/K/V/score` shape 图 |
 | [生成入门](../core/generation-basics.md) | 下一 token 怎样被选中，循环为什么停？ | Greedy、temperature、top-p 的同分布对照 |
@@ -53,19 +53,19 @@
 
 ## 模型工程路线 { #model-engineering }
 
-模型工程路线围绕一次权重更新展开：数据从哪里来，哪些 token 产生 loss，参数怎样改变，以及 held-out 行为
+模型工程路线围绕一次权重更新展开：数据从哪里来，哪些 token 产生 loss，参数怎样改变，以及留出集上的行为
 是否真的改善。开始前需要 PyTorch、反向传播和基本优化算法。
 
 1. 从[数据工程](../training/data.md)追踪 `thread-8841`，亲手把来源版本、去重簇、token 区间和 checkpoint 连起来。
 2. 用[预训练](../training/pretraining.md)理解 token budget、优化器状态和 checkpoint 为什么必须一起保存。
 3. 阅读[微调总览](../training/finetuning.md)，先确认问题是否需要改权重，还是 Prompt 或 RAG 已经足够。
-4. 在 [SFT 数据流水线](../training/sft-data-pipeline.md)中打印最终 token、mask、截断和 held-out identity。
+4. 在 [SFT 数据流水线](../training/sft-data-pipeline.md)中打印最终 token、mask、截断和留出集标识。
 5. 进入 [LoRA/QLoRA](../training/peft-qlora-engineering.md)，建立显存预算、基线和 adapter 发布流程。
 6. 需要偏好优化时，再用[偏好对齐入门](../training/alignment-basics.md)中的同一组回答，比较 DPO 与
    “奖励模型加 PPO”两条路线，并解释为什么奖励分数提高后，回答仍可能变差。
 7. 最后用 [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md)把一个样本从模板追到独立重载。
 
-完成标准：报告数据版本、训练预算、曲线、基线、held-out 结果、失败样例和资源消耗；“loss 下降”不能单独作为完成信号。
+完成标准：报告数据版本、训练预算、曲线、基线、留出集结果、失败样例和资源消耗；“loss 下降”不能单独作为完成信号。
 
 ## 系统工程路线 { #systems }
 

@@ -15,7 +15,7 @@ flowchart TD
   C["cases + recorded answers"] --> S["score each system"]
   S --> M["run manifests"]
   M --> G["paired comparison + gate"]
-  G --> V["artifact verify / full recomputation"]
+  G --> V["产物校验 / 完整重算"]
   V --> R["HTML view + release ledger"]
 ```
 

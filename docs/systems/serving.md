@@ -46,7 +46,7 @@ flowchart LR
   S --> R["Runtime: weights / KV / kernels"]
   R --> O["Stream and terminal outcome"]
   O --> C
-  P["Control plane: revisions, routes, limits"] -.-> G
+  P["控制面：版本、路由、限额"] -.-> G
   P -.-> Q
   P -.-> R
   E["Evidence: attempts, traces, evals"] -.-> G
@@ -324,7 +324,7 @@ Canary 承接真实结果，因此要提前固定流量资格、观察窗口、�
 
 推荐按下面顺序推进：
 
-1. 验证不可变 artifact 的完整性、shape、loader、tokenizer/template 和最小生成；
+1. 验证不可变产物的完整性、张量形状、加载器、tokenizer/模板和最小生成；
 2. 在隔离环境运行质量、安全、协议和目标 workload；
 3. 预热副本，检查 readiness、显存/KV baseline 与关键 trace；
 4. 执行 shadow 或小比例 canary；

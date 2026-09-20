@@ -296,7 +296,7 @@ micro average 会掩盖小模态和难例；报告 macro、slice、failure taxon
 - 单位、范围、交叉字段 invariant；
 - 引用是否存在且获授权；
 - refusal/block/incomplete 与普通 JSON 分开；
-- raw response 与 parsed artifact fingerprint；
+- 原始响应与解析后产物的内容指纹；
 - retry 是否会产生不同业务 effect。
 
 “有效 JSON”不等于事实正确、引用正确或工具可执行。
@@ -344,7 +344,7 @@ provider proposal
 
 无论在哪一侧执行，都要保留 proposal、call/result identity 和最终业务验证，不能只保存模型生成的总结文本。
 
-## Thought/signature 是高风险 opaque artifact
+## Thought/signature 是不透明的高风险产物
 
 官方指南要求某些 stateless continuation 原样保留 thought/tool steps 与 signatures。安全设计应把它们视为：
 
@@ -353,7 +353,7 @@ provider proposal
 - 可能含敏感或不可公开内容；
 - 不供业务逻辑解释；
 - 不跨用户/租户/模型重放；
-- 不进入普通 analytics、前端或简历 artifact。
+- 不进入普通分析系统、前端或简历材料。
 
 存储最小化建议：
 

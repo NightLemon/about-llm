@@ -148,7 +148,7 @@ acceptance = B 已读取当前版本，并承诺先查询、再由 verifier 判�
 
 这里的 `acceptance` 只表示接手任务，不转移审批、身份或凭据。B 必须用自己的可信运行时重新检查当前 ACL、预算和任务版本；
 若调用仍是 `pending`，它先查询 provider，再由 verifier 决定是否对账或升级人工，不能重新发送退款。远端 Agent 的发现、
-task/artifact 跟踪和协议字段见 [MCP 与 A2A](agent-interoperability.md)；该专题同样说明远端 `completed` 仍需本地验收。
+任务和协议产物（`task` / `artifact`）的跟踪方式见 [MCP 与 A2A](agent-interoperability.md)；该专题同样说明远端 `completed` 仍需本地验收。
 
 选择规划模式时，应先把控制权留给普通程序。只有有限状态机无法表达合理的下一步时，再逐渐开放控制循环或搜索。
 

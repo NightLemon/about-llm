@@ -8,7 +8,7 @@
 - **适合读者**：第一次系统理解训练、泛化和评测的工程师。
 - **先修**：基本代数、均值与概率直觉；不要求先学完整微积分。
 - **首次阅读**：任务定义 → 数据切分 → 损失 → 梯度更新 → 测试与漂移。
-- **完成信号**：能为一个真实任务设计 train/validation/test，并解释训练 loss 与业务结果的差别。
+- **完成信号**：能为一个真实任务设计训练集、验证集和测试集，并解释训练损失与业务结果的差别。
 - **卡住时**：先走[数学基础主线](math.md)；再按问题查[概率](math-probability.md)、
   [训练数学](math-training.md)或[线性代数](math-linear-algebra.md)。
 
@@ -85,8 +85,9 @@ R(\theta)=\mathbb{E}_{(X,Y)\sim P}
 | 模板改写或镜像网页 | 去重簇/来源簇 | 只换表述的近重复 |
 | 会随时间变化的业务 | 时间窗口 | 用未来规则预测过去 |
 
-训练集用于拟合参数；validation 用于选模型、阈值和[超参数](../reference/glossary.md#term-hyperparameter)；锁定 test 用于最后估计。每看一次 test 再修改系统，
-都在把它逐渐变成 validation。
+[训练集](../reference/glossary.md#term-training-set)用于拟合参数；[验证集](../reference/glossary.md#term-validation-set)用于选择模型、阈值和
+[超参数](../reference/glossary.md#term-hyperparameter)；[测试集](../reference/glossary.md#term-test-set)用于最后估计。固定测试集的文件版本只是版本管理；
+每看一次测试结果再修改系统，都在把测试集逐渐变成验证集。
 
 LLM 评测还要检查 benchmark 是否出现在预训练、SFT、few-shot 示例或 RAG 语料中。Exact match 只能发现完全相同
 文本；近重复和语义改写需要额外检测，但检测器也会误报，所以结果应进入污染证据，而不是被当作绝对判决。
@@ -282,7 +283,7 @@ python projects/single-gpu-finetuning/amp_grad_scaler_control.py
 | 检索结果是否有用 | Recall@k、MRR、nDCG | 候选池与 relevance 标注 |
 | 生成系统是否完成任务 | Task outcome、事实/引用、人工偏好 | 长度偏差、失败分母和成本 |
 
-阈值在 validation 上按错误成本选择，再到锁定 test 报告。对同一批 case 比较两个系统时，保留逐 case difference
+阈值在验证集上按错误成本选择，再到固定版本的测试集报告。对同一批评测样本比较两个系统时，保留逐样本差值
 并使用 paired 分析；只比较两个独立均值会丢掉问题难度的配对信息。
 
 概率校准也有边界。一组 80% 置信度的预测若约 80% 正确，可以称为校准；它仍可能没有区分能力。

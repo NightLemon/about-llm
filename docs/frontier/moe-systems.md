@@ -85,7 +85,7 @@ Top-k 给出的下标是离散选择。被选中的 softmax 概率仍参与加�
 若代码误将该权重 `detach`，专家仍可能获得梯度，路由器会失去这条主任务梯度。
 
 这里的“能回到”只描述当前前向图中**已执行路径**的连续 gate。top-k、按分数排序和 capacity accept/drop
-都是离散决定；本页的 score-priority fixture 不为“某条被丢路径本来会被接收”提供主任务梯度。辅助
+都是离散决定；本页按分数排序的固定样例不为“某条被丢路径本来会被接收”提供主任务梯度。辅助
 load-balancing 或 router z-loss 可以另给 router 连续梯度，但它们回答的是负载或 logit 尺度，不替代该路径
 的任务损失。读训练代码时，先问每个 mask 是否留在 autograd 图中，再问具体实现怎样处理这个离散边界。
 
@@ -367,7 +367,7 @@ python projects/transformers-basics/moe_training_control.py
 python -m pytest tests/test_moe_routing.py tests/test_moe_training.py -q
 ```
 
-要把通信层也实际跑起来，四个脚本各自使用一个独立的 two-process CPU/Gloo fixture：
+要把通信层也实际跑起来，四个脚本各自使用一个独立的双进程 CPU/Gloo 固定样例：
 
 ```powershell
 python projects/transformers-basics/moe_distributed_capacity_control.py

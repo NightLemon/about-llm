@@ -443,7 +443,7 @@ logit 读数，才能区分“替换了来源”与“误把读取位置或未�
 程序在位置 25 始终计算 `logit(Paris) - logit(Berlin)`。
 
 这也是从 0 开始计数：残差 site 的形状为 `[1,26,896]`，source slice 是 `[0,19,:]`，metric 读取
-`logits[0,25,:]`。future negative control 会先追加一个第 26 位 token，再替换这个未来 slice，同时仍读
+`logits[0,25,:]`。未来位置负对照（future negative control）会先追加一个第 26 位 token，再替换这个未来切片，同时仍读
 位置 25；它检查因果方向，不是在原来 26 token 的张量上访问不存在的位置。
 
 ~~~powershell
@@ -522,7 +522,7 @@ f=\operatorname{ReLU}(W_{enc}x+b_{enc}),
 | 原表示保留了多少 | Reconstruction error、下游 loss 变化 |
 | 表示是否真的稀疏 | L0/L1、每条样本激活的 feature 数 |
 | 字典是否健康 | Activation frequency、dead features、不同宽度下的稳定性 |
-| 人类解释能否泛化 | Held-out 样本上的 precision/recall |
+| 人类解释能否泛化 | 留出样本上的精确率和召回率 |
 | Feature 是否影响行为 | 预先设计的 feature intervention |
 
 一个 feature 容易命名，不代表它对应真实且唯一的概念。随机种子、字典宽度或 regularization 改变后，
@@ -575,7 +575,7 @@ Module 名称不是可靠的概念边界。名为 `attention` 的 hook 可能拿
 
 仓库目前先用随机 MiniGPT 检查 hook，再在上述 Qwen checkpoint 上完成一次单事实干预。
 这说明实验流程和局部 intervention 可以运行。要研究目标模型的普遍机制，还需要多样本、事先写定的分析方案
-和 held-out 验证。
+和留出数据上的验证。
 
 ## 安全结论不能从一个 circuit 外推
 

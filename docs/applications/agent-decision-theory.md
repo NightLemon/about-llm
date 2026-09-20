@@ -47,7 +47,7 @@ POMDP、belief state、expected utility 和 value of information 都是在精确
 运行前先预测三件事：先验更偏向故障 A 时，哪个允许动作会胜出；准确率 0.85 的诊断是否值得花 1.0 成本；
 以及终态可达时，流程是否仍可能无限循环。
 
-这里的 `0.6`、`0.85`、`1.0` 与效用表都是仓库写定的教学 fixture。脚本据此精确复算概率和选择，
+这里的 `0.6`、`0.85`、`1.0` 与效用表都是仓库写定的[教学固定样例](../reference/glossary.md#term-fixture)。脚本据此精确复算概率和选择，
 并不从事故数据估计准确率，也不校准模型的 score。把模型说出的 `0.85` 直接填进表格之前，团队仍要定义事件、
 收集独立历史样本并检查校准误差。
 
@@ -157,7 +157,7 @@ P(A\mid o_A)=\frac{0.6\times0.85}{0.57}
 新的 belief 是 `[0.8947, 0.1053]`。这不是诊断工具直接吐出的 confidence，而是由先验、两个 likelihood
 和二状态假设共同算出的后验。
 
-同样，弱诊断里的 `0.51` 是这个 fixture 对“报告与真实状态相符”的 likelihood，不是 Agent 对自己答案的
+同样，弱诊断里的 `0.51` 是这个固定样例对“报告与真实状态相符”的似然，不是 Agent 对自己答案的
 可信度。它在当前效用表中没有改变动作；换一组先验、损失或允许动作集合，是否值得调用仍要重新计算。
 
 如果分母为零，说明当前模型认为这个 observation 不可能出现。程序会报错；真实系统应进入数据损坏、
@@ -297,7 +297,7 @@ Z(o\mid s',a)=P(O_{t+1}=o\mid S_{t+1}=s',A_t=a),
 |---|---|
 | Open-loop plan | 预先生成固定动作序列，中间结果变化也不改计划 |
 | Closed-loop policy | 每次得到新信号后重新选择动作 |
-| Receding-horizon planning | 规划未来若干步，只执行第一步，观察后再规划；也常称 model-predictive control |
+| 滚动时域规划（receding-horizon planning） | 规划未来若干步，只执行第一步，观察后再规划；相关方法也常称模型预测控制（model-predictive control） |
 
 `[诊断, 回滚, 完成]` 只是一个动作序列。它没有说明诊断指向 B、回滚失败或审批过期时怎么办。
 更完整的 policy 应包含分支：
@@ -405,7 +405,7 @@ Agent 之间的消息仍然只是 observation。接收方要验证消息格式�
 | 决策理论对象 | 本仓库中的工程对象 | 仍要向外部系统确认 |
 |---|---|---|
 | State | task、ledger、Provider effect | 真实世界是否与记录一致 |
-| Observation | 有类型的工具结果、receipt、artifact | 来源、可信度与完整性 |
+| 观测（observation） | 有类型的工具结果、回执或产物 | 来源、可信度与完整性 |
 | Belief | pending、known、uncertain 与人工结论 | 校准概率或领域状态模型 |
 | Action set | Tool registry、policy 与 approval | 集中 IAM 和真实 capability |
 | Utility / cost | token、费用、延迟与任务结果 | 用户偏好、风险尺度和业务价值 |

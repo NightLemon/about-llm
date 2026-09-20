@@ -1,13 +1,13 @@
-# 看不见的 Reasoning Block
+# 不透明推理块的安全边界
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：使用云 API、开发 Agent runtime，或需要保存和公开会话记录的工程师。
-- **先修**：[云 API 契约](../models/cloud-api-contracts.md)、[Agent runtime](../applications/agent-runtime.md)与基本认证加密概念。
-- **首次阅读**：导出会话 → 识别 opaque block → 分析一次错误重放 → 绑定使用上下文 → 安全发布。
+- **适合读者**：使用云 API、开发 Agent 运行时，或需要保存和公开会话记录的工程师。
+- **先修**：[云 API 契约](../models/cloud-api-contracts.md)、[Agent 运行时](../applications/agent-runtime.md)与基本认证加密概念。
+- **首次阅读**：导出会话 → 识别不透明块 → 分析一次错误重放 → 绑定使用上下文 → 安全发布。
 - **完成信号**：能解释为什么“密文验证成功”不等于“当前用户有权使用”，并通过[实验 0D](../practice/labs/lab-0d-reasoning-artifact-security.md)。
 - **卡住时**：先只画四个对象：可见文字、看不见的 block、当前请求的可信身份、准备公开的会话副本。
 
@@ -28,7 +28,7 @@ assistant response
 └── encrypted_reasoning: <客户端无法阅读的一段数据>
 ```
 
-第二项就是本章关注的 **opaque reasoning block**：客户端能保存并在后续请求中原样带回，但通常无法解释其内部内容。
+第二项就是本章关注的**不透明推理块（opaque reasoning block）**：客户端能保存并在后续请求中原样带回，但通常无法解释其内部内容。
 不同供应商的字段名和协议语义并不相同；上面的名字只用于说明对象边界。
 
 工程师不能因为“自己看不见”就把它当成无害元数据。它可能包含用户内容、模型状态或中间推理，也可能影响后续生成和
@@ -269,8 +269,8 @@ envelope，再把同一密文放到错误用户、租户、会话和模型下消
 发现公开轨迹中含有 opaque reasoning block 时，可以按以下顺序处理：
 
 1. **先止血**：停止新的发布和自动重放，隔离原始会话及可控的下游副本。
-2. **撤销可使用的能力**：轮换暴露的用户凭据；与 provider 协作撤销相关 artifact、session 或 key。
-3. **确定范围**：按用户、租户、会话、artifact id、key id、模型和发布时间查找副本。
+2. **撤销可使用的能力**：轮换暴露的用户凭据；与服务提供方协作撤销相关产物、会话或密钥。
+3. **确定范围**：按用户、租户、会话、产物 ID、密钥 ID、模型和发布时间查找副本。
 4. **传播删除**：覆盖日志、cache、备份策略、评测集、训练数据、replay buffer 和公开镜像。
 5. **完成通知**：根据合同、法规和组织流程通知平台、provider、数据主体与负责人。
 6. **恢复合法会话**：只为能够验证所有权的归档重新签发，并为迁移窗口设置结束日期。
