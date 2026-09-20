@@ -129,6 +129,11 @@ python -m pip install -c constraints/ci.txt -e ".[agents]"
 | Observation 的信息价值与 hard constraint | `decision_theory_toy.py` |
 | Recorded trajectory 怎样进入发布 gate | `python -m about_llm.agents.cli evaluate ...` |
 
+`decision_theory_toy.py` 中的概率、效用和成本是固定教学输入：它用来复算“先观察是否值得”，不校准真实模型或事故。
+`evaluate` 则只评估提供的离线轨迹；通过结果不认证远端 Provider、生产权限或发布批准。把两者接入真实工作流时，
+仍要由 Runtime 的 policy/approval 控制工具调用，由独立 receipt 或业务查询确认 effect，并把评测输入与候选发布版本
+一同交给有权的发布流程。
+
 框架、决策理论、MCP 和 A2A 的学习顺序见[项目扩展实验](../../docs/practice/projects/safe-agent.md#framework-tool-adapters)。
 精确输入、结果和适用范围保存在[项目实验台账](../../docs/evidence/project-controls.md)，避免把 transport round trip
 误写成业务权限、安全或生产互操作已经完成。

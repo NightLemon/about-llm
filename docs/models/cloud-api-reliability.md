@@ -25,6 +25,9 @@
 假设客服系统要生成一条回复。用户只点击一次，这叫一次**逻辑调用（logical call）**。程序每向供应商发送一次
 HTTP 请求，就产生一次**发送尝试（attempt）**。
 
+先完成[契约基础的固定 response](cloud-api-contracts.md#worked-request)：那里让你看见 text 之外的 terminal 和 usage。
+这里把同类信息放进失败路径，追问一次发送失败后是否还能发下一次，以及第一笔费用该怎样留下待核对记录。
+
 [实验 0C](../practice/labs/lab-0c-cloud-budget.md)为这次调用准备了一个离线场景。示例价格不代表任何真实供应商：
 每个输入 token 计 1 micro-USD，每个输出 token 计 2 micro-USD。程序估计输入 60 个 token，最多输出 10 个，
 所以每次发送前先占用：
@@ -46,6 +49,11 @@ HTTP 请求，就产生一次**发送尝试（attempt）**。
 
 用户最终只看到第二次返回的答案。账本仍然保留第一次 attempt，因为 HTTP 500 留下的生成和计费情况尚未确认。
 因此，本地先保守记录 146 micro-USD；这个数字需要外部对账，不能当作供应商发票。
+
+现在先写下预测，再运行[项目的离线主线](../practice/projects/cloud-api-contracts.md#run)：输出应有两个不同的
+reservation ID；第一次是 `uncertain` 而不是免费；第二次是 `settled` 66，合计 146。运行后还要回答：用户已经
+拿到第二次答案时，哪一笔仍需通过 Provider request ID、usage 或账单导出对账？该脚本使用固定 500→200 和
+`httpx.MockTransport`，只能验证本地状态机，不是对真实网络、模型或账单的观察。
 
 ### 两种“不确定”不要混在一起
 

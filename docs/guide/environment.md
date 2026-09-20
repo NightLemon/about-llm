@@ -26,6 +26,25 @@
 
 ## 安装策略
 
+### 先创建并激活虚拟环境 {#create-venv}
+
+在仓库根目录运行 `python --version`，确认使用 Python 3.10–3.12。首次使用时创建 `.venv`，然后在当前终端激活它；
+已有该环境时跳过创建，只做激活。Windows PowerShell 命令如下：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -c "import sys; print(sys.executable); print(sys.prefix != sys.base_prefix)"
+```
+
+最后一条命令应显示仓库 `.venv` 中的 Python 路径和 `True`。此后本页及项目中的 `python` 都指这个环境。
+重新打开终端后需要再次激活。macOS/Linux 使用相同的创建命令，再执行 `source .venv/bin/activate`。
+
+若 PowerShell 阻止运行激活脚本，可以直接把后续命令开头的 `python` 换成 `.\.venv\Scripts\python.exe`。
+这样也能确保安装依赖与执行程序使用同一解释器，无需更改系统的脚本执行策略。
+
+### 按实验需要安装依赖 {#install-profiles}
+
 核心包按需安装，避免把 JAX、CUDA、vLLM 和多个 Agent 框架塞进一个不可维护环境：
 
 | Profile | 用途 | Extras | Doctor profile |
@@ -53,6 +72,17 @@ python scripts/doctor.py --profile full-ci
 `doctor` 的 `fail` 会返回非零退出码并给出修复命令；`warn` 表示任务仍可运行，但环境没有完全隔离。
 `constraints/ci.txt` 是 CI 直接依赖的复核快照，不是传递依赖或 CUDA wheels 的跨平台 lock。
 
+CPU 不等于只安装 `cpu-starter` 就能运行所有 CPU 实验。它只包含仓库核心包与 NumPy；需要真实
+PyTorch 张量的实验另装 `torch`，需要读取目标模型 tokenizer 的实验另装 `transformers`：
+
+```powershell
+# Paged KV、MiniGPT 等 CPU PyTorch 实验
+python -m pip install -c constraints/ci.txt -e ".[torch]"
+
+# Qwen 等目标 tokenizer；首次读取未缓存 tokenizer 时还需要网络
+python -m pip install -c constraints/ci.txt -e ".[transformers]"
+```
+
 MkDocs 保持 1.x，以匹配当前 Material 9.x theme、plugins 与 overrides。JAX GPU 版按官方平台说明安装；CPU 版
 可使用 `jax` extras。vLLM 的平台约束变化较快，不固定进通用依赖组，具体项目单独记录已验证组合。
 
@@ -70,9 +100,15 @@ Provider adapter 统一消息、超时、重试、usage 和错误，但不会假
 实验报告必须保存 Python、包版本、OS、设备、dtype、模型 revision、tokenizer、随机种子、输入/输出长度和配置。CUDA 还记录 driver、runtime 与 GPU 名称。
 
 ~~~powershell
-python scripts/doctor.py --profile cpu-starter
+New-Item -ItemType Directory -Force outputs | Out-Null
+python scripts/doctor.py --profile cpu-starter | Tee-Object -FilePath outputs/environment-report.txt
 python -m pip freeze > outputs/environment-lock.txt
 ~~~
+
+`environment-report.txt` 保存 Python、OS、设备与检查结果，`environment-lock.txt` 保存包版本。
+两份文件都属于本机复现记录，不提交到 Git；模型版本、数据、随机种子和实验参数仍需在实验记录中另行保存。
+
+<a id="common-errors"></a>
 
 ## 常见环境错误
 
@@ -84,7 +120,9 @@ python -m pip freeze > outputs/environment-lock.txt
 
 ## 环境就绪后
 
-- CPU 环境：从[注意力、MiniGPT、SFT 与 RAG 实验](../practice/labs.md)开始。
+- 只装 core/NumPy 的 CPU 环境：先运行[教学 Byte BPE](beginner-map.md#30-minutes)或
+  [语言模型输入追踪](how-to-use.md)。需要 PyTorch 的实验先按上面的 `torch` 命令扩展环境。
+- 已安装 `torch` 的 CPU 环境：从[注意力、MiniGPT、SFT 与 RAG 实验](../practice/labs.md)开始。
 - NVIDIA GPU：进入[单卡微调](../training/peft-qlora-engineering.md)或[推理服务](../systems/vllm-serving.md)，先按目标 workload 做显存 dry-run。
 - 云 API：先阅读[云模型 API 契约](../models/cloud-api-contracts.md)，再设置请求、token 与费用预算。
 - 出现版本或平台差异：回到[内容准确性台账](../reference/accuracy.md)，区分文档核对与目标环境实测。

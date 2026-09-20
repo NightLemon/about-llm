@@ -25,7 +25,7 @@
 从仓库根目录安装项目和 PyTorch 依赖：
 
 ~~~powershell
-python -m pip install -e ".[torch]"
+python -m pip install -c constraints/ci.txt -e ".[torch]"
 ~~~
 
 先不要运行脚本。打开 `projects/inference-serving/paged_kv_tensor_toy.py`，只读配置部分：
@@ -144,6 +144,18 @@ copied partial block: 1 -> 2
 ~~~powershell
 python projects/inference-serving/paged_kv_tensor_toy.py
 ~~~
+
+不要从 JSON 末尾的 `true` 开始读。按下面三个瞬间把输出和刚才的预测对上：
+
+| 先看哪个字段 | 对应哪个瞬间 | 你应确认的状态 |
+|---|---|---|
+| `copy_on_write_append` | A fork 后 append | `physical_block_ids` 是 A 的新映射；`copied_partial_block` 为 `[1, 2]` |
+| `allocator_before_release` | COW 已完成、A 仍活动 | 两条序列有 4 个逻辑引用，物理上只分配 3 个 block |
+| `allocator_after_parent_release` | A 已结束、B 继续使用前缀 | A 独占的 block 已回收，共享 block 的引用仍留给 B |
+
+随后再看 `child_prefix_unchanged`、`parent_append_materialized` 和
+`attention_matches_dense_reference`。它们分别核对 B 没被 A 改写、A 的新 token 已落入自己的逻辑顺序，
+以及分页读取能与这个固定的稠密 GQA 参考对上。
 
 关键结果应为：
 

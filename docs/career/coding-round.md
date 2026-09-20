@@ -142,10 +142,23 @@ import numpy as np
 
 def sample_next_token(logits, *, temperature=1.0, top_k=None, top_p=None, uniform):
     values = np.asarray(logits, dtype=np.float64)
-    if temperature <= 0:
-        raise ValueError("temperature must be positive")
-    if not 0 <= uniform < 1:
-        raise ValueError("uniform must be in [0, 1)")
+    if values.ndim != 1 or values.size == 0 or not np.all(np.isfinite(values)):
+        raise ValueError("logits must be a non-empty finite vector")
+    if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) \
+            or not np.isfinite(temperature) or temperature <= 0:
+        raise ValueError("temperature must be finite and positive")
+    if top_k is not None and (
+        isinstance(top_k, bool) or not isinstance(top_k, int) or top_k <= 0 or top_k > values.size
+    ):
+        raise ValueError("top_k must be in [1, vocabulary_size]")
+    if top_p is not None and (
+        isinstance(top_p, bool) or not isinstance(top_p, (int, float))
+        or not np.isfinite(top_p) or not 0 < top_p <= 1
+    ):
+        raise ValueError("top_p must be in (0, 1]")
+    if isinstance(uniform, bool) or not isinstance(uniform, (int, float)) \
+            or not np.isfinite(uniform) or not 0 <= uniform < 1:
+        raise ValueError("uniform must be finite and in [0, 1)")
 
     scaled = values / temperature
     # 并列时按 token id 升序打破，保证可复现。
@@ -182,7 +195,8 @@ def _masked_softmax(scaled, keep):
 
 | 边界 | 不处理会怎样 | 怎样测 |
 |---|---|---|
-| `top_k` 大于词表 | 切片静默成功，但与预期语义不符 | 断言抛异常或明确定义为"全部保留" |
+| 空或非有限 logits | `max`、排序或 softmax 产生无意义结果 | 传空数组、`nan` 和 `inf`，断言在采样前抛异常 |
+| `top_k` 大于词表 | 切片静默成功，调用方误以为保留了精确的 k 个候选 | 断言抛异常；本题不把它悄悄改成“全部保留” |
 | 分数并列 | 依赖排序稳定性，跨版本结果漂移 | 两个相同 logit，断言固定返回较小的 token id |
 | `top_p` 卡在边界 | `side` 参数写反时少保留一个 token | 概率 `[0.6, 0.3, 0.1]`、`top_p=0.6`，断言只保留第一个 |
 | `uniform` 接近 1 | 浮点累加使末尾小于 1，`searchsorted` 越界 | 传 `uniform=0.999999`，断言返回合法 id |
@@ -282,6 +296,8 @@ python -m pytest tests/test_rag.py -q
 
 **题面**：给定多个检索器各自的排序结果，融合成一个排序。不同检索器的分数不可比
 （BM25 是无界正数，余弦相似度在 \([-1, 1]\)），因此只能使用排名。
+本题固定输入的 `rank` 为从 1 开始的正整数，`rank_constant >= 0`、`top_k > 0`；
+仓库的 `SearchResult` 在构造时检查这个排名契约。
 
 **必须先问清楚的三件事**：
 
@@ -296,6 +312,8 @@ from collections import defaultdict
 
 
 def reciprocal_rank_fusion(rankings, *, rank_constant=60, top_k=10):
+    if rank_constant < 0 or top_k <= 0:
+        raise ValueError("rank_constant must be non-negative and top_k positive")
     scores = defaultdict(float)
     for ranking in rankings:
         seen = set()
@@ -323,7 +341,7 @@ def reciprocal_rank_fusion(rankings, *, rank_constant=60, top_k=10):
 | 同列表重复文档 | 该文档被重复加分，等于自我投票 | 构造重复项，断言只计一次 |
 | 只有一个列表 | 应退化为原排序 | 断言输出顺序与输入一致 |
 | 融合分并列 | 排序不稳定 | 断言按 `document_id` 打破并列 |
-| `rank_constant=0` 且排名从 0 开始 | 除零 | 断言抛异常，或在契约里要求排名从 1 开始 |
+| 非正排名 | `rank_constant=0` 时除零；其他值也失去排名含义 | 构造 `rank=0`，断言在构造结果对象时拒绝 |
 | 空输入 | 崩溃 | 断言返回空列表 |
 
 **面试官的下一个追问**：
@@ -372,13 +390,32 @@ class LoRALinear(nn.Module):
         self.scaling = self.alpha / rank
         for parameter in self.base.parameters():
             parameter.requires_grad = False
-        self.lora_a = nn.Parameter(torch.empty(rank, base.in_features))
-        self.lora_b = nn.Parameter(torch.zeros(base.out_features, rank))
+        self.lora_a = nn.Parameter(torch.empty(
+            rank, base.in_features, device=base.weight.device, dtype=base.weight.dtype
+        ))
+        self.lora_b = nn.Parameter(torch.zeros(
+            base.out_features, rank, device=base.weight.device, dtype=base.weight.dtype
+        ))
         nn.init.kaiming_uniform_(self.lora_a, a=math.sqrt(5))
 
     def forward(self, x):
         update = F.linear(F.linear(x, self.lora_a), self.lora_b)
         return self.base(x) + update * self.scaling
+
+    @torch.no_grad()
+    def merged(self):
+        """Return a separate Linear; do not modify the frozen base layer."""
+        merged = nn.Linear(
+            self.base.in_features,
+            self.base.out_features,
+            bias=self.base.bias is not None,
+            device=self.base.weight.device,
+            dtype=self.base.weight.dtype,
+        )
+        merged.weight.copy_(self.base.weight + self.scaling * (self.lora_b @ self.lora_a))
+        if self.base.bias is not None:
+            merged.bias.copy_(self.base.bias)
+        return merged
 ```
 
 \(B\) 初始化为**零**，\(A\) 用随机初始化。于是包装瞬间 \(BA = 0\)，模型输出与原来逐位相同，
@@ -416,56 +453,51 @@ python -m pytest tests/test_lora.py -q
 ## 题目六：幂等的工具执行 { #q-idempotent-effect }
 
 **题面**：Agent 要调用外部 API 执行退款。同一笔退款可能因为重试、崩溃恢复或用户重复点击
-被触发多次，但真实副作用只能发生一次。设计并实现这个执行层。
+被触发多次。设计执行层，使本地记录可恢复，并让支持稳定幂等键的外部 API 将重复投递合并为一次业务效果。
 
 **必须先问清楚的三件事**：
 
-- 幂等键由谁生成？基于什么内容？（不能用随机 UUID，否则重试会产生新键。）
+- 幂等键由谁生成？可以由可信服务为逻辑动作生成一次 UUID 并持久化，也可以由稳定业务 ID 派生；重试必须复用它，不能每个 attempt 新建 UUID。
 - 外部 API 是否支持幂等键？如果不支持，能否查询"这笔退款是否已完成"？
 - 请求超时后，远端结果是**未知**而不是失败——业务上允许悬挂多久？
 
-**最小实现**（状态机部分）：
+**可运行的最小闭环**：这题不能只靠一段没有 storage、exception 和并发语义的伪代码练习。
+仓库的 `projects/safe-agent/refund_lifecycle.py` 用临时 SQLite 数据库运行完整的固定退款案例：
+先原子记录待处理 action；provider 在第一次投递后故意丢失响应；重启后的 runtime 用持久化 pending
+记录围栏住重投；最后用同一个稳定 key 查询并核对回执。直接运行：
 
-```python
-class EffectLedger:
-    """把 effect_id 到终态的映射持久化，保证同一 effect 只执行一次。"""
-
-    def __init__(self, storage):
-        self.storage = storage
-
-    def execute_once(self, effect_id, action):
-        record = self.storage.get(effect_id)
-        if record is not None:
-            if record.state == "succeeded":
-                return record.result          # 重放已知结果，不再调用外部
-            if record.state == "in_flight":
-                raise PendingEffect(effect_id)  # 结果未知，必须先对账
-            # failed 是"已确认未发生"，才可以安全重试
-
-        self.storage.put(effect_id, state="in_flight")
-        try:
-            result = action()
-        except TimeoutError:
-            # 关键：超时不等于失败，状态保持 in_flight 等待对账
-            raise PendingEffect(effect_id) from None
-        except PermanentError:
-            self.storage.put(effect_id, state="failed")
-            raise
-        self.storage.put(effect_id, state="succeeded", result=result)
-        return result
+```powershell
+.venv\Scripts\python.exe projects/safe-agent/refund_lifecycle.py
 ```
 
-核心是三态而不是两态：`succeeded`、`failed` 和 **`in_flight`（结果未知）**。
+该入口需要已安装项目的 `agents` optional dependency；本仓库的 `.venv` 已提供该环境。
+
+输出中的 `stages.execution` 应显示 `provider_request_attempts: 1`、`provider_effect_count: 1` 和
+`local_ledger_state: "pending"`；`stages.idempotency.handler_attempted_on_replay` 应为 `false`；
+对账后的 `stages.recovery` 仍保持一次 provider effect。这个脚本实际执行 SQLite claim/reconciliation、
+稳定 `CALL_ID` 作为 provider idempotency key，以及“远端成功后 timeout”的路径；它只使用模拟 provider，
+不证明真实网络或支付服务的 exactly-once。
+
+第一次接受一个逻辑动作时，要把键与这次执行的参数、主体和资源等信息绑定并保存。重试复用原来的键；
+若同一个键带来不同的执行内容，应拒绝冲突，不能直接重放旧结果。实现前可先读
+[先 claim，再调用支付服务](../practice/projects/safe-agent.md#claim)，把本地原子登记与外部调用分开画出来。
+
+你自己的实现也应至少表达三态：`succeeded`、`failed` 和 **`in_flight`（结果未知）**。
 把超时当成失败直接重试，是这类系统最常见的重复扣款来源。`in_flight` 必须由对账流程
 （查询远端状态或人工介入）推进，不能由重试自动清除。
+
+本地状态机只控制何时投递，无法跨越“远端已成功、本地还没写入 `succeeded`”的崩溃窗口。
+因此每次投递都要携带同一个稳定的 provider idempotency key；若 provider 不支持，就要以可查询的业务回执
+对账。事务发件箱保证本地业务状态与待投递记录原子提交，投递语义仍是 at-least-once。
+它处理的崩溃窗口与 pending 对账不同，具体时间线见 [Outbox 说明](../practice/projects/safe-agent.md#outbox)。
 
 **必须自己补的边界测试**：
 
 | 边界 | 不处理会怎样 | 怎样测 |
 |---|---|---|
-| 重复调用 | 副作用发生两次 | 同一 `effect_id` 调两次，断言外部只被调用一次 |
-| 超时后重试 | 把 unknown 当 failed，重复扣款 | 模拟超时，断言第二次抛 `PendingEffect` 而非重新执行 |
-| 写账本后崩溃 | 恢复时状态丢失 | 在 `put` 与 `action` 之间注入崩溃，断言恢复后进入对账 |
+| 崩溃后的重复投递 | 发送可能发生两次，业务效果被重复执行 | 模拟远端成功后本地崩溃；断言两次发送使用同一幂等键，provider 只保留一笔退款 |
+| 超时后重试 | 把 unknown 当 failed，重复扣款 | 模拟远端成功后 timeout，断言重启后不再投递，先查询并对账 |
+| 写账本后崩溃 | 恢复时状态丢失 | 在 claim 与 provider 回执之间注入崩溃，断言恢复后仍进入对账 |
 | 审批参数被改 | 用旧审批执行了新参数 | 改变参数后断言指纹不匹配，拒绝执行 |
 | 并发同键 | 两个 worker 同时执行 | 断言只有一个成功获取执行权 |
 
@@ -477,11 +509,12 @@ class EffectLedger:
 - *参数做成 SHA-256 指纹后是否就安全了？* 无密钥哈希只能发现漂移，
   不认证执行者、时间或来源。
 
-**仓库参考实现**：`src/about_llm/agents/outbox.py` 的 `SQLiteTransactionalOutbox`，
-包含租约（lease）、过期回收和 attempt 计数。测试见 `tests/test_agent_outbox.py`。
+**仓库参考实现**：`projects/safe-agent/refund_lifecycle.py` 展示可运行的 SQLite pending/reconciliation
+闭环；`src/about_llm/agents/outbox.py` 的 `SQLiteTransactionalOutbox` 展示多 worker 的租约、过期回收和
+attempt 计数。测试见 `tests/test_agent_outbox.py`。
 
 ```bash
-python -m pytest tests/test_agent_outbox.py -q
+.venv\Scripts\python.exe -m pytest tests/test_agent_outbox.py -q
 ```
 
 ## 练习顺序建议

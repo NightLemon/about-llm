@@ -21,6 +21,7 @@ import jaxlib
 import numpy as np
 import optax  # type: ignore[import-untyped]
 from jax import Array
+from numpy.typing import NDArray
 
 from about_llm.from_scratch.gpt_jax import (
     JAXGPTConfig,
@@ -57,7 +58,7 @@ class JAXTrainingState:
     optimizer_state: optax.OptState
     dropout_key: Array
     data_key: Array
-    permutation: np.ndarray
+    permutation: NDArray[np.int32]
     cursor: int
     epoch: int
     global_step: int
@@ -248,7 +249,7 @@ def _optimizer() -> optax.GradientTransformation:
     )
 
 
-def _dataset() -> tuple[np.ndarray, np.ndarray]:
+def _dataset() -> tuple[NDArray[np.int32], NDArray[np.int32]]:
     input_ids = np.asarray(
         [
             [0, 1, 2, 3],
@@ -273,7 +274,7 @@ def _dataset_fingerprint() -> str:
     return "sha256:" + digest.hexdigest()
 
 
-def _new_permutation(key: Array, count: int) -> tuple[Array, np.ndarray]:
+def _new_permutation(key: Array, count: int) -> tuple[Array, NDArray[np.int32]]:
     next_key, permutation_key = jax.random.split(key)
     permutation = np.asarray(
         jax.random.permutation(permutation_key, count),
@@ -386,7 +387,7 @@ def _make_train_step() -> Any:
 
 def _next_batch(
     state: JAXTrainingState,
-) -> tuple[JAXTrainingState, np.ndarray]:
+) -> tuple[JAXTrainingState, NDArray[np.int32]]:
     dataset_size = len(_dataset()[0])
     selected: list[int] = []
     permutation = state.permutation.copy()
@@ -455,7 +456,9 @@ def train_jax_steps(
     )
 
 
-def _portable_array(value: object) -> tuple[np.ndarray, str]:
+def _portable_array(
+    value: object,
+) -> tuple[NDArray[np.float32 | np.int32 | np.uint32], str]:
     array = np.asarray(value)
     dtype_map = {
         np.dtype("float32"): (np.dtype("<f4"), "float32"),
@@ -468,7 +471,11 @@ def _portable_array(value: object) -> tuple[np.ndarray, str]:
     portable = np.asarray(array, dtype=portable_dtype, order="C")
     if portable.dtype.kind == "f" and not np.all(np.isfinite(portable)):
         raise ValueError("checkpoint arrays must be finite")
-    return portable, label
+    if label == "float32":
+        return cast(NDArray[np.float32], portable), label
+    if label == "int32":
+        return cast(NDArray[np.int32], portable), label
+    return cast(NDArray[np.uint32], portable), label
 
 
 def _checkpoint_arrays(state: JAXTrainingState) -> list[tuple[str, object]]:
@@ -561,10 +568,10 @@ def write_jax_training_checkpoint(
 def _parse_descriptors(
     value: object,
     payload: bytes,
-) -> dict[str, np.ndarray]:
+) -> dict[str, NDArray[np.float32 | np.int32 | np.uint32]]:
     if not isinstance(value, list) or not value:
         raise ValueError("arrays must be a non-empty list")
-    arrays: dict[str, np.ndarray] = {}
+    arrays: dict[str, NDArray[np.float32 | np.int32 | np.uint32]] = {}
     expected_offset = 0
     dtype_map = {
         "float32": np.dtype("<f4"),
@@ -607,7 +614,14 @@ def _parse_descriptors(
             or hashlib.sha256(content).hexdigest() != expected_hash
         ):
             raise ValueError("array payload digest mismatch")
-        array = np.frombuffer(content, dtype=dtype).reshape(shape).copy()
+        untyped_array = np.frombuffer(content, dtype=dtype).reshape(shape).copy()
+        array: NDArray[np.float32 | np.int32 | np.uint32]
+        if dtype_label == "float32":
+            array = cast(NDArray[np.float32], untyped_array)
+        elif dtype_label == "int32":
+            array = cast(NDArray[np.int32], untyped_array)
+        else:
+            array = cast(NDArray[np.uint32], untyped_array)
         if array.dtype.kind == "f" and not np.all(np.isfinite(array)):
             raise ValueError("checkpoint arrays must be finite")
         arrays[name] = array
@@ -727,7 +741,7 @@ def parse_jax_training_checkpoint(artifact: bytes) -> JAXTrainingState:
         ),
         dropout_key=jax.random.wrap_key_data(jnp.asarray(dropout_key_data)),
         data_key=jax.random.wrap_key_data(jnp.asarray(data_key_data)),
-        permutation=permutation.copy(),
+        permutation=cast(NDArray[np.int32], permutation.copy()),
         cursor=_integer(manifest["cursor"], "cursor"),
         epoch=_integer(manifest["epoch"], "epoch"),
         global_step=_integer(manifest["global_step"], "global_step"),

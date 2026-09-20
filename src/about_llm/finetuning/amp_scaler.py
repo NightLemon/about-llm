@@ -14,6 +14,8 @@ from typing import Any
 
 import torch
 from torch import Tensor
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
 
 AMP_GRAD_SCALER_CONTROL_VERSION = "about-llm.amp-grad-scaler-control.v1"
 AMP_GRAD_SCALER_EVIDENCE_BOUNDARY = (
@@ -237,8 +239,8 @@ class _TrainingSnapshot:
     scaler: dict[str, Any]
 
 
-def _new_scaler() -> torch.amp.GradScaler:
-    scaler = torch.amp.GradScaler(
+def _new_scaler() -> GradScaler:
+    scaler = GradScaler(
         "cpu",
         init_scale=8.0,
         growth_factor=2.0,
@@ -254,7 +256,7 @@ def _new_adamw_training_state(
     snapshot: _TrainingSnapshot | None = None,
     *,
     restore_scaler: bool = True,
-) -> tuple[_ScalarLinear, torch.optim.AdamW, torch.amp.GradScaler]:
+) -> tuple[_ScalarLinear, torch.optim.AdamW, GradScaler]:
     model = _ScalarLinear()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=0.0)
     scaler = _new_scaler()
@@ -300,7 +302,7 @@ def _finite_value(value: Tensor) -> tuple[bool, float | None]:
 def _run_adamw_window(
     model: _ScalarLinear,
     optimizer: torch.optim.AdamW,
-    scaler: torch.amp.GradScaler,
+    scaler: GradScaler,
     *,
     label: str,
     loss_multipliers: tuple[float, ...],
@@ -313,7 +315,7 @@ def _run_adamw_window(
     scale_before = float(scaler.get_scale())
     output_dtype = ""
     for multiplier in loss_multipliers:
-        with torch.amp.autocast(device_type="cpu", dtype=torch.float16):
+        with autocast(device_type="cpu", dtype=torch.float16):
             output = model(torch.ones((1, 1), dtype=torch.float32))
             loss = output.float().sum() * multiplier
         output_dtype = str(output.dtype)
@@ -354,7 +356,7 @@ def _run_clip_path(*, unscale_before_clip: bool) -> ClipPathObservation:
     optimizer.zero_grad(set_to_none=True)
     output_dtype = ""
     for input_value in (1.0, 2.0):
-        with torch.amp.autocast(device_type="cpu", dtype=torch.float16):
+        with autocast(device_type="cpu", dtype=torch.float16):
             output = model(torch.tensor([[input_value]], dtype=torch.float32))
             loss = output.float().sum()
         output_dtype = str(output.dtype)
@@ -397,7 +399,7 @@ def _run_full_batch_clip_reference() -> FullBatchClipReference:
     model = _ScalarLinear()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     optimizer.zero_grad(set_to_none=True)
-    with torch.amp.autocast(device_type="cpu", dtype=torch.float16):
+    with autocast(device_type="cpu", dtype=torch.float16):
         output = model(torch.tensor([[1.0], [2.0]], dtype=torch.float32))
         loss = output.float().sum()
     loss.backward()
@@ -421,7 +423,7 @@ def _run_full_batch_clip_reference() -> FullBatchClipReference:
 def _snapshot(
     model: _ScalarLinear,
     optimizer: torch.optim.AdamW,
-    scaler: torch.amp.GradScaler,
+    scaler: GradScaler,
 ) -> _TrainingSnapshot:
     return _TrainingSnapshot(
         model=copy.deepcopy(model.state_dict()),
@@ -433,7 +435,7 @@ def _snapshot(
 def _checkpoint_observation(
     model: _ScalarLinear,
     optimizer: torch.optim.AdamW,
-    scaler: torch.amp.GradScaler,
+    scaler: GradScaler,
 ) -> ScalerCheckpointObservation:
     state = scaler.state_dict()
     expected = {

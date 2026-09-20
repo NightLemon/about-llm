@@ -228,30 +228,30 @@ content hash
 
 把“模型输出”和“用户可见答案”拆开：
 
-```mermaid
-stateDiagram-v2
-  [*] --> EvidenceCheck
-  EvidenceCheck --> Abstain: no authorized evidence
-  EvidenceCheck --> Generate: evidence available
-  Generate --> Publish: local contract passed
-  Generate --> Reject: citation/schema contract failed
-  Publish --> [*]
-  Abstain --> [*]
-  Reject --> [*]
+```text
+检查授权 context
+├─为空 → abstain，不调用生成器
+└─非空 → 调用生成器
+         → 检查引用 / 输出结构
+             ├─通过 → publish
+             └─失败 → reject
 ```
 
 最小发布策略有三个终态。遇到证据不足或结构异常时，它会停止发布：
 
 | 检查位置 | 动作 | 含义 |
 |---|---|---|
-| 生成前 | `abstain` | 没有足够的已授权证据，不调用生成器 |
+| 生成前 | `abstain` | 本地规则发现授权 context 为空，不调用生成器 |
 | 生成后 | `publish` | 输出通过当前局部门禁 |
 | 生成后 | `reject` | 已经生成输出，但它不能发布 |
 
 `publish` 必须写清通过了什么。若只检查 citation syntax，就不能命名为 semantic groundedness pass。
 
-仓库里恰好有三种终态的例子：请求 A 的逐字答案通过局部门禁；请求 B 因证据不足而 `abstain`；
-固定 Qwen 的有证据样例生成了正文，却漏掉引用，因此被 `reject`。它们对应三种不同的修复方向，不能都归为“模型答错”。
+仓库里可以分别观察这些结果：请求 A 的逐字答案通过局部门禁；固定 Qwen 的有证据样例生成了正文，却漏掉引用，
+因此被 `reject`。空 context 的 `generation_policy.py` 路径则在调用 generator 前直接 `abstain`。
+
+请求 B 也显示 `abstain`，但它是另一条路径：context 非空，逐字抽取器按词法 coverage 判定证据不足。
+这个阈值没有自动成为 `generation_policy.py` 的生成前规则；接入真实生成器时，要另行定义并校准证据充分性门禁。
 
 ### 原始输出不能原样返回客户端
 
@@ -331,6 +331,9 @@ stateDiagram-v2
 
 若规则无法决定，应展示冲突并请求用户澄清适用范围。
 旧政策可能对历史问题有效，不能简单删除所有旧版本。
+
+发布时要把“资料冲突，尚不能给出单一结论”作为一个可追踪的结果，而不是让模型挑选一段看起来更像答案的文字。
+结果应保留相互冲突的来源、版本与适用范围；只有用户补足范围，或独立规则能选出适用来源，才重新进入回答流程。
 
 ## 结构化输出
 
@@ -418,6 +421,9 @@ python -m about_llm.rag.cli evaluate-answers `
 
 第一条运行确定性的逐字区间基线；第二条聚合样例文件中已经给出的人工判断。
 两条命令都不会自动判断任意结论与来源之间是否存在语义支持关系。
+
+若 `evaluate-answers` 的总数、可回答数或无答案数与样例文件不一致，先停止比较百分比，检查 `query_id` 是否一一对应，
+以及 `answer`、`abstain`、`error` 是否都留在分母。把超时或解析失败从报表中删掉，会把“成功输出的质量”误写成“系统质量”。
 
 ## 面试追问
 

@@ -225,7 +225,7 @@ oracle@N 问 N 个候选中是否至少存在一个 target-success candidate；s
 
 仓库的 trainable CPU control 给出一个同路径例子：`factor=0.5` 时 capacity=2，counts `[4,3,3]→[2,2,2]`，4/10 assignments 被丢；capacity-enabled sparse/dense 输出和全参数梯度仍对齐。它还分别执行 drop 后重归一化、保留丢失 mixture mass 与全丢 token，后者的 routed expert 输出为零。
 
-第二个 fixture 显式排除一个 padding token，并把四个 active tokens 分到两个 2-token groups；每组 capacity=1，grouped sparse/dense 前后向仍精确对齐。改成单一 group 后 capacity=2、kept assignments 改变，输出最大差约 `0.329387`；这说明 capacity 必须写清 group 边界。逐组 balance/z diagnostics 按 active-token 数加权，padding 不进 output、aux 或 hidden gradient。
+第二个 fixture 显式排除一个 padding token，并把四个 active tokens 分到两个 2-token groups；每组 capacity=1，grouped sparse/dense 前后向在固定 CPU float64 实验的 `1e-15` 绝对误差阈值内一致；路由、容量与 padding 仍按精确不变量检查。改成单一 group 后 capacity=2、kept assignments 改变，输出最大差约 `0.329387`；这说明 capacity 必须写清 group 边界。逐组 balance/z diagnostics 按 active-token 数加权，padding 不进 output、aux 或 hidden gradient。
 
 第三个 fixture 把 overflow policy 也拆开：四个 top-1 assignments 都先选 expert 0、capacity=2。Drop 得到 `[2,0,0]` 并丢 2 个；本仓库的 deterministic full-ranking reroute 按原 gate score/token/rank 扫描备选且禁止 token 内重复，得到 `[2,0,2]`、无 drop/excess；dropless 保持 `[4,0,0]`、不 drop，但报告 expert 0 超额 2。回答时必须把“实际 dispatch”与“原始 selected top-k”分账，也要说明 rerouted gate 是重归一化，还是保留相对原 selected top-k mass。CPU int64 group IDs 不证明真实 distributed collective；authored reroute/dropless 也不证明任意框架或目标 MoE 实现。
 
@@ -677,3 +677,11 @@ HTTP class 不足以决定重试：`400/401/403/404` 通常需要修正请求或
 - 有并发上限、monotonic deadline、bounded retry、Retry-After 与 replay guard 的异步调用；
 - 幂等工具执行与参数 schema；
 - KV Cache 容量估算。
+
+## 证据演示的统一追问
+
+展示仓库 control 时，面试官可以沿一条 claim 追问五件事：固定输入和配置在哪里、哪个脚本实际运行、pass/fail 的 oracle 从何而来、哪条测试覆盖反例、结论不能外推到哪里。测试绿灯只说明给定输入符合该 oracle；如果 expected value 从同一实现运行后抄回，它只锁定当前行为。
+
+RAG 演示尤其要分开回答：citation syntax 检查 source ID/段落形式，exact span 检查 source/offset/quote 身份，授权检查请求路径中的可见性；这三项均不证明 claim 的语义蕴含、来源为真或仍然最新、答案完整。需要时展示 semantic judge 或人工标注的来源与校准，以及来源复核记录。answer、abstain、error 的 case 分母也要同时给出，不能从成功答案中挑分子。
+
+同样，authored fixture、fake tool、recorded replay、CPU control 和 Python API invocation 都应如实命名。它们适合演示确定性控制流和失败路径；没有目标 GPU、真实 provider、代表性数据和生产身份/账单观测时，不能把它们说成吞吐、真实调用、计费、线上成功率或生产安全证据。

@@ -69,10 +69,16 @@ generation config、库版本和执行硬件。
 | 单个 Qwen weight 的 packed INT4 误差 | `run_qwen_weight_quantization_control.py` |
 | Activation patching 能说明什么因果关系 | `activation_patching.py`、`run_qwen_activation_patching_control.py` |
 | MoE top-k、capacity、drop 与 sparse combine | `moe_routing.py`、`moe_training_control.py` |
-| Expert parallel 的 dispatch、return 与 backward | `moe_distributed_capacity_control.py`、`moe_all_to_all_*_control.py` |
+| Expert parallel 的全局 capacity、dispatch/return、backward 与 drop | `moe_distributed_capacity_control.py`、`moe_all_to_all_control.py`、`moe_all_to_all_training_control.py`、`moe_all_to_all_capacity_training_control.py` |
 
 MoE、activation patching 和真实权重量化是机制选修，不应阻塞第一次理解 Transformer。精确输入和运行结果见
 [Transformers 证据页](../../docs/evidence/transformers-controls.md)，不要把多个独立实验拼成某个发布模型的完整能力结论。
+
+MoE 的推荐顺序是先跑 `moe_routing.py`，再跑 `moe_training_control.py`；前者复算 selected/accepted/drop 与
+sparse combine，后者把 router/MLP 的 sparse--dense forward/backward、capacity policy 和 padding 拆开。随后四个
+双进程脚本依次只验证：global capacity competition、token-to-owner 前向、无容量的 reverse all-to-all training、
+以及 capacity/drop 下的 kept-only training。它们是 CPU/Gloo authored controls，不加载目标 MoE checkpoint，也不
+测 CUDA/NCCL、吞吐、显存或模型质量。
 
 ## 追踪一条 Qwen3 对话输入
 

@@ -111,6 +111,10 @@ python -m about_llm.rag.cli evaluate-extractive `
 
 固定五条 case 产生三次回答和两次拒答。结果全绿表示这组教学数据没有回归，不表示阈值或语料适用于真实业务。
 
+这两组数字的分母分别是五条固定 case，以及其中标注为可回答或无答案的子集。`error`、超时和解析失败也必须
+保留在五条 case 的总分母中；不要只对生成了答案的行计算“成功率”。如果报告数目不对，先检查每个 `query_id`
+是否恰好有一条输出，再检查输入的 tenant、principal 与样例文件是否被改动。
+
 ## 根据当前问题选择入口
 
 | 你想理解什么 | 入口 |
@@ -193,6 +197,9 @@ python projects/rag-foundations/replay_qwen_rag_publication_policy.py `
 一份手写成功样例更有学习价值，因为它说明 Prompt 指令不能替代控制流和输出验证。
 
 本机已有固定 snapshot 时，可以用 `run_qwen_rag_control.py --local-files-only` 重放真实 CPU 生成。
+
+若本机没有该 snapshot，`--local-files-only` 的失败说明离线前提没有满足，并不改变已录制的历史结果。此时运行上面的
+publication-policy replay 和对应测试，核对固定报告与门禁逻辑；不要为了让离线命令通过而下载模型、改写报告或重算其中的 hash。
 
 ## 主要输入与输出
 

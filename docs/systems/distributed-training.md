@@ -372,9 +372,13 @@ Rank 0 聚合完整模型时可能再次 OOM，抵消分片训练的内存收益
 Data cursor 要区分三个位置：sampler 已发出、主循环已消费，以及 optimizer 已提交。DataLoader prefetch 可能已经
 发出尚未消费的样本；梯度累积窗口崩溃时，还可能留下尚未提交的梯度。
 
-仓库的恢复实验展示两种策略：回到已提交 cursor 重放，或者保存待处理样本、梯度与崩溃时的 RNG sidecar 后继续。
+仓库的 CPU 恢复控制展示两种策略：主循环把已消费、sampler 已发出与 optimizer 已提交位置分开记录。第一条路径从
+已提交 cursor 重放；第二条路径把未提交样本、累积梯度与崩溃时 RNG 写入并绑定到基础 checkpoint 的 sidecar，
+再从已消费 cursor 继续。`optimizer_commit_resume_control.py` 中，只有 optimizer、scheduler、样本账本和
+commit-boundary RNG 都已前进，窗口才算 committed；这些状态由主训练循环持有，不能由 DataLoader 的预取位置代替。
 
-在当前 CPU 样例中，两种路径都能精确恢复。故意漏掉梯度或使用错误 RNG 后，参数会产生可观察漂移。
+在当前 CPU/float64 样例中，这两条路径都与不中断基线精确恢复。故意丢掉 sidecar 梯度，或使用错误 RNG 恢复后，
+参数会产生可观察漂移。这个证据覆盖确定性单机的 DataLoader worker、梯度累积和恢复状态。
 精确 checkpoint schema、fault snapshots 和数值见[单 GPU 微调项目](../practice/projects/single-gpu-finetuning.md)。
 
 这些本地实验没有把多 rank 数据、collective 和 optimizer 变成一个原子事务。分布式实现仍要定义全局 commit receipt、

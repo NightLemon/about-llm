@@ -23,6 +23,8 @@
 
 ## 核验边界
 
+- `recorded-report` 是指定日期、输入、版本和 runtime 下保存的历史观察；离线 verifier 只复核该报告及其绑定 artifact 是否仍符合既定 contract。它通过不表示当前环境重新执行过原实验，也不能把历史观察升级为当前运行、目标 GPU、模型质量或生产结论。
+- SHA-256 只能在期望 digest 或已审阅 manifest 本身可信时发现所选 bytes 的变化。无密钥 hash 不能认证发布者、执行者、产生时间或许可；文件哈希相同也不消除 verify 后 loader 按路径重开的 TOCTOU 窗口。
 - 离线单元测试证明给定输入下的本地实现行为，不证明云端 API 当前可用。
 - CPU smoke test 不证明 CUDA kernel、vLLM、bitsandbytes 或目标 GPU 的兼容性与峰值显存。
 - 一台机器上的 benchmark 只对记录的 workload 和版本有效，不是普适性能排名。

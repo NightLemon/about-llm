@@ -112,6 +112,11 @@ python projects/jax-minigpt/checkpoint_resume_control.py
 本项目同时保存模型参数、Optax 状态、随机键、数据排列、读取位置和全局步数。两个反例分别重置
 dropout key 和数据游标；文件依然可以读取，但下一步已经使用不同的随机 mask 或训练样本。
 
+这段恢复控制与第 1 节的固定 batch 不同：第 1 节没有 dropout，也不推进数据排列或 cursor，PRNG 只用于初始化。
+恢复控制中则由 host loop 持有当前完整状态，按 permutation/cursor 选择 batch；jitted step 消费旧 params、Optax
+state 与 dropout key，返回新值；host 再推进 global step。只有这些新值属于同一个已提交 step 时，才可以写
+checkpoint。单机 LoRA Notebook 的 adapter reload 只验证推理所需的 adapter/base identity，不包含这条中途续训状态链。
+
 `ALLMJAX1` 是仓库为了讲清状态恢复而实现的单文件格式，不是 Orbax 或 TensorStore 的替代品。它会检查字段、
 数组布局和哈希，但没有覆盖多设备分片、对象存储一致性或断电原子性。
 

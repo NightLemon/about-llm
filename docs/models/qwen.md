@@ -54,7 +54,7 @@ messages
 → tokenizer 把文本切成 token ID
 → nano-vLLM 把请求放入 waiting 队列
 → Scheduler 分配本轮计算和 KV block
-→ prefill 一次处理提示词
+→ prefill 处理本轮提示词
 → Qwen3 forward 计算下一个 token 的 logits
 → Sampler 选出 token
 → decode 每轮继续生成一个 token
@@ -65,7 +65,9 @@ messages
 这条链路里最容易混淆的是“模型”和“推理框架”。Qwen checkpoint 提供配置、tokenizer 与权重；
 nano-vLLM 负责请求状态、调度、缓存和执行。
 
-第一次 forward 会处理完整提示词，这一阶段叫 **prefill（预填充）**。
+对未复用前缀、并且调度器能在一个轮次纳入预算的短提示词，第一次 forward 会处理完整提示词，
+这一阶段叫 **prefill（预填充）**。长提示词可以拆成多个 prefill chunk；若完整前缀块已经命中缓存，运行时可以复用
+已有 KV，而不必重新计算那一段。这两种路径都在[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)中观察。
 
 之后每轮只输入最新 token，并从 KV Cache 读取历史注意力状态。这一阶段叫 **decode（解码）**。
 
@@ -97,9 +99,14 @@ nano-vLLM 负责请求状态、调度、缓存和执行。
 python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
 ~~~
 
-若模型在单独的 snapshot 目录中，使用 `--model-snapshot <path>`。如果固定版本还没有进入本地缓存，第一次运行时
-去掉 `--local-files-only` 即可。脚本会把这条中文 message、chat template 渲染出的完整提示词、29 个输入 ID 和
+若模型在单独的 snapshot 目录中，使用 `--model-snapshot <path>`。如果固定版本还没有进入本地缓存，且允许联网下载，
+第一次运行时去掉 `--local-files-only`。脚本会把这条中文 message、chat template 渲染出的完整提示词、29 个输入 ID 和
 每个 token 的可读片段放在一起。
+
+没有缓存且必须离线时，先运行 `python projects/transformers-basics/trace_language_model_sample.py`。
+它用仓库的小语料训练教学 Byte-BPE，展示文本、token、输入 ID、右移后的 labels 和 mask；
+可以先用它解释“文本怎样变成模型输入”，具体步骤见[实验 1](../practice/labs.md#lab-1)。
+它不使用 Qwen tokenizer 或 chat template；取得固定 tokenizer 后，再回到上面的命令观察真实模板与 29 个 ID。
 
 Transformers 会用 `Qwen2TokenizerFast` 加载这个固定版本。Qwen3 复用了兼容的 tokenizer 实现，模型权重仍然
 属于 Qwen3-0.6B。因此，不能只看 tokenizer 的 Python 类名判断模型家族。

@@ -1,7 +1,8 @@
 # Single-GPU Finetuning：在一张显卡上交付可复核的 Adapter
 
 **项目导航**：[项目索引](../project-index.md) · [SFT 数据管线](../../training/sft-data-pipeline.md) ·
-[PEFT/QLoRA](../../training/peft-qlora-engineering.md) · [实验 4A](../labs/lab-4a-sft-sample.md) ·
+[PEFT/QLoRA](../../training/peft-qlora-engineering.md) · [对齐进阶](../../training/alignment.md) ·
+[LLM 强化学习](../../training/reinforcement-learning.md) · [持续学习](../../training/continual-learning.md) · [实验 4A](../labs/lab-4a-sft-sample.md) ·
 [Evaluation Gate](evaluation-gate.md)
 { .doc-nav }
 
@@ -406,6 +407,66 @@ python projects/single-gpu-finetuning/smoke_trl_dpo.py
 固定 Qwen DPO 运行只用人工编写的 pair 检查 TRL、LoRA backward 与文件路径。它没有人类偏好或安全标签。
 
 正式训练前仍要检查数据和 tokenizer，测量显存，并在 held-out preference 数据上评测。
+
+## 从 SFT/LoRA 闭环进入可选后续路线 {#next-routes}
+
+第 0 到 7 步已经是可发布的 SFT/LoRA 闭环。只有新的基线失败确实需要偏好或在线反馈时，才从下面选择一条路线；
+不需要为完成 SFT 而补做 DPO、奖励模型或 PPO。
+
+| 你已经拥有的反馈 | 下一步 | 仍须独立回答的问题 |
+|---|---|---|
+| 固定、可靠的 chosen/rejected 对，不需要在线探索 | DPO | 偏好对是否覆盖目标问题，Adapter 是否通过 held-out preference 与安全 gate |
+| 可复用的评分器需求 | 先训练并审计 Reward Model | 评分器是否在长度/风格/风险切片上有效，不能用 train loss 代替 |
+| 当前回答必须在验证器或环境中执行后才能评分 | 先做 PPO/RLVR 机制练习 | reward 是否可审计、rollout 是否可复现、独立任务是否仍通过 |
+
+### DPO：先做不加载权重的目标数据预检
+
+以下命令沿用本页固定的 Qwen3 revision 和第 8 步产出的 readiness。它只核对 train-only preference records 与
+readiness；不会下载 tokenizer 或权重，也没有执行 DPO、CUDA 或 held-out 评测。
+
+```powershell
+python projects/single-gpu-finetuning/train_trl_dpo.py `
+  --model-id Qwen/Qwen3-0.6B `
+  --revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --train-jsonl projects/single-gpu-finetuning/preference.train.example.jsonl `
+  --readiness-json artifacts/preference-prepare/preference-training-readiness.json `
+  --output-dir artifacts/qwen3-dpo-preflight `
+  --data-preflight-only
+```
+
+通过后，先阅读[对齐进阶](../../training/alignment.md#dpo)，在目标 tokenizer 上运行
+`--tokenization-preflight-only`，再决定是否以 batch 1 的 LoRA/QLoRA 小步实验开始。仓库没有执行这里的目标 GPU
+示例；正式运行应记录 CLI 实际输出的 run contract、显存与失败终态，并用第 7 步同一 held-out gate 比较 base、
+Prompt/RAG 与候选 Adapter。DPO loss 下降不构成偏好质量或安全结论。
+
+### Reward Model 与 PPO：先证明机制，再决定是否扩展
+
+`train_reward_model.py` 与 `train_trl_dpo.py` 使用相同的 train-only/readiness 输入约束；前者的
+`--data-preflight-only` 和 `--tokenization-preflight-only` 可先检查奖励模型数据与目标 tokenizer。它训练过一次也只
+说明该训练集上的 pairwise optimization 执行过，必须另用 held-out pair、长度/风格反例、风险切片和冻结版本审计评分器。
+
+本仓库暂不提供目标 checkpoint 的 PPO 发布命令。先用下面三个 CPU 控制实验理解 rollout 契约：
+
+```powershell
+python projects/single-gpu-finetuning/smoke_torch_ppo.py
+python projects/single-gpu-finetuning/smoke_text_ppo.py
+python projects/single-gpu-finetuning/smoke_learned_rm_ppo.py
+```
+
+它们依次覆盖 old log-prob/GAE、文本 EOS/截断/mask，以及 learned RM 的 reward-hacking 反例。它们不证明目标模型、
+CUDA、评分器质量或生产 PPO 稳定性。[LLM 强化学习](../../training/reinforcement-learning.md)说明当 temperature、
+top-p 或 allowlist 改变行为分布时，为什么不能把原始 logits 的概率直接用于 clipped objective。
+
+## Task B 更新卡片 {#task-b-update}
+
+当一个已发布 Adapter 需要学习 Task B 时，把它当成新的发布候选。冻结 Task A held-out、安全/工具 anchors 与旧工件
+身份；anchors 不进入 Task B 训练。为 Task B 重新发布 train-only readiness，固定父 base、tokenizer/template 与训练配置，
+然后小步训练并在新进程重载旧、新 Adapter。
+
+在同一 Task A anchors 和 Task B held-out 上比较 base、旧 Adapter 与新 Adapter，报告新任务收益、逐项 retention、
+资源增量和 missing/timeout 分母。未过 gate 时回滚兼容的 Adapter、Prompt、索引和工具 schema。
+`--resume-from-checkpoint` 只恢复同一次被中断的运行（同一配置与工件身份），不能替代这种新旧版本评测。持续学习的 replay 控制实验只解释机制，
+不提供目标 LLM 的 replay 结论，见[持续学习](../../training/continual-learning.md#single-gpu-task-b)。
 
 ## 遇到故障时按哪条证据查
 

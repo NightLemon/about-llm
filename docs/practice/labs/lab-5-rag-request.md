@@ -86,10 +86,7 @@ principals = [engineering]
 JSONL 里三行的先后与最终 rank 无关，只有 score 决定排序。这也是为什么每行都要带 `query_sha256` 和 `content_sha256`——
 换了 query 或改了 chunk 内容，这份 score 就应当失效而不是被悄悄复用。
 
-假设 top-k 为 2、预算充足，你预计 context 中有几个短 source ID？
-两个 chunk 来自同一个 stable source，为什么仍要给它们不同的 `S1/S2`？
-
-答案是：短 ID 指向本次 Prompt 中的具体 chunk；stable source 用于跨 chunk 聚合和版本管理。
+假设 top-k 为 2、预算充足，先在纸上写出你预计的两个短 source ID。再写一行映射：`S? -> document_id -> stable source_id`。两个 chunk 来自同一个 stable source，为什么仍要给它们不同的 `S1/S2`？先保留你的答案，运行后再核对。
 
 ## 第三步：运行完整 walkthrough
 
@@ -121,6 +118,8 @@ final action:      answer
 
 输出里的两个 `rag-security` 不是重复行。它们是同一 source 下的不同 chunk：
 第一段给出 ACL 顺序，第二段限制引用的证明能力。
+
+这时回看第二步的映射：`S1`、`S2` 分别指向两个不同的 `document_id`，两者的 stable source 都是 `rag-security`。短 ID 解决“本次 Prompt 中引用哪一段”；stable source 解决“跨 chunk 聚合、版本管理和检索评测按哪份来源统计”。
 
 ### 解释最终答案
 
@@ -192,8 +191,10 @@ coverage                   = 2 / 9
 final action               = abstain
 ```
 
-想自己数一遍 `meaningful query tokens = 9` 的话，先记住分词规则：中文按**单字**切分，不是按词。
-所以「灾备」是两个 token，不是一个。这也是本实验只用 coverage 做粗粒度拒答信号、不用它衡量语义相关性的原因之一。
+想自己复算 `2 / 9`，先写出分母：`引、用、kubernetes、灾、难、恢、复、步、骤`。
+它们是去掉内置 stop tokens 后、去重的 lexical tokens；中文按**单字**切分，所以「灾、难、恢、复」各占一格。
+三个 packed chunk 只覆盖其中的「引、用」，所以分子为 2。这解释了词法规则为什么在本例拒答，
+但单字重合仍不能判断一段证据在语义上是否支持 Kubernetes 灾备步骤。
 
 这个 case 刻意区分三件事：
 
@@ -203,8 +204,7 @@ final action               = abstain
 | 是否主题相关 | 部分相关 | 不能 |
 | 是否覆盖所需事实 | 否 | 应拒答 |
 
-`0.55` 只是这个固定样例使用的 lexical threshold，不是生产默认值。
-真实阈值需要在独立 calibration split 上比较 coverage 与 accepted-answer risk。
+`0.55` 只是这个固定样例使用的 lexical threshold，不是生产默认值。这里的 `abstain` 由逐字抽取器在生成前作出；它与 `generation_policy.py` 的空 context 短路不同。后者仅在没有已授权 context 时保证不调用 generator。真实阈值需要在独立 calibration split 上比较 coverage 与 accepted-answer risk，并验证所选门禁确实发生在模型调用前。
 
 ## 第六步：破坏一个 rerank 绑定
 

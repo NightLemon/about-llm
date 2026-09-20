@@ -101,8 +101,8 @@ python -m about_llm.synthetic_data_cli `
 固定审计账本是：
 
 - `candidate_count=4`；
-- `eligible_count=2`，所以 eligibility rate 为 0.5；
-- `eligible_unique_content_count=1`；
+- `eligible_count=2`，所以 eligibility rate 为 `2 / 4 = 0.5`；
+- `eligible_unique_content_count=1`：通过 gate 的两条记录只有一份不同的 exact content。不同内容数与全部候选数之比为 `1 / 4 = 0.25`，与通过记录数之比为 `1 / 2 = 0.5`；
 - round 1：3 candidates / 2 eligible；
 - round 2：1 candidate / 0 eligible；
 - `self_verified_record_ids=["syn-002"]`；
@@ -229,7 +229,7 @@ python -m about_llm.synthetic_data_cli `
 `nfc_whitespace` 先执行 Unicode NFC 规范化，再按 Unicode 空白字符切分，最后用一个 ASCII 空格重新连接。
 这会折叠空白，因此不适合 Python、YAML、Markdown 表格或其他把排版也当作答案一部分的任务。
 
-报告保留三种分母：
+报告分别统计记录数量和不同内容数量：
 
 - candidate count：多少条进入 audit；
 - eligible count：多少条通过 required verifier gate；
@@ -352,7 +352,7 @@ python -m pytest `
 
 写作时这两个文件共 **40 个测试**（数量会随仓库演进变化，以实际输出为准），主要分成三组：
 
-- 审计计算：三种分母、版本字符串重合、来源关系图、成环与轮次倒退；
+- 审计计算：候选记录数、通过记录数、通过记录中的不同内容数，以及版本字符串重合、来源关系图、成环与轮次倒退；
 - 数据规则：两种内容指纹、采样公式和无歧义 JSON 解析；
 - 失败路径：输入变化、篡改后重新算哈希、默认拒绝覆盖与显式覆盖。
 
@@ -423,7 +423,7 @@ python -m pytest `
 简历不能只写“搭建合成数据流水线”。至少应展示：
 
 - 一份绑定输入和审计规则、可以完整复算的报告；
-- 候选、通过、通过且不重复这三种分母；
+- 候选记录数、通过记录数，以及通过记录中有多少份不同内容；
 - 未知父记录、成环、轮次倒退、验证缺失和验证失败的独立账本；
 - 目标采样量与实际 token 消费量的分账设计；
 - 输入变化、篡改后重算哈希和输出文件冲突三个反例；

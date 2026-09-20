@@ -1,7 +1,7 @@
 # 合成数据审计：四条候选为什么只剩一条新内容
 
 这个项目检查 synthetic data 在进入训练前发生了什么。固定样例有 4 条候选，其中 2 条通过必要的 verifier，
-但这两条正文完全相同。因此最重要的结果不是一个笼统的“通过率”，而是三个不同分母：
+但这两条正文完全相同。报告因此分别统计候选记录数、通过记录数，以及通过记录中的不同内容数：
 
 ```text
 4 candidates → 2 eligible → 1 eligible unique content
@@ -12,7 +12,13 @@
 
 ## 第一次运行
 
-从仓库根目录复核固定报告：
+从仓库根目录执行。首次使用时，先按[环境准备](../../docs/guide/environment.md)创建并激活虚拟环境，再安装本项目：
+
+```powershell
+python -m pip install -c constraints/ci.txt -e .
+```
+
+然后复核固定报告：
 
 ```powershell
 python -m about_llm.synthetic_data_cli `
@@ -35,8 +41,9 @@ python -m about_llm.synthetic_data_cli `
 }
 ```
 
-`verified=true` 表示程序用命令行提供的 records、mixture 和 policy 重新执行了全部计算，并与录制报告逐字段一致。
-它不是只拿报告中的 hash 再验同一份报告。
+先看 `verification_scope="full_local_recomputation"` 与 `verified=true`。这表示程序用命令行提供的 records、mixture
+和 policy 重新执行全部计算，并与录制报告逐字段一致。它不是只拿报告中的 hash 再验同一份报告；这个验证模式只输出
+摘要、不写文件，重复运行会重算同一组本地输入。
 
 ## 先预测四条记录
 
@@ -61,6 +68,9 @@ audit.failed_verifier_record_ids      = ["syn-004"]
 `self_verified_record_ids` 只表示 generator revision 与某个 verifier revision 字符串相同。它提醒你进一步调查独立性，
 并不能证明两个调用真的来自同一个进程或同一份权重。
 
+`human_reviewed=true` 是输入中的声明，计数只能说明这份 artifact 带有标记；复核者、规则和实际裁决仍要由人审系统的
+记录证明。
+
 ## 生成自己的报告
 
 ```powershell
@@ -73,8 +83,9 @@ python -m about_llm.synthetic_data_cli `
   --output artifacts/synthetic-data/audit.json
 ```
 
-`--output` 默认不会覆盖已有文件。目标存在时，先比较旧报告；确实要替换才显式传入 `--overwrite`。
-安装仓库后也可以运行 `about-llm-synthetic-audit --help` 查看全部参数。
+这条命令会在 `artifacts/synthetic-data/audit.json` 新建一份报告。`--output` 默认不会覆盖已有文件；目标存在时，先比较旧
+报告，确实已审阅并需要替换才显式传入 `--overwrite`。安装仓库后也可以运行
+`about-llm-synthetic-audit --help` 查看全部参数。
 
 ## 一份报告包含什么
 
@@ -94,7 +105,7 @@ python -m about_llm.synthetic_data_cli `
 ## 为什么 2 eligible 只剩 1 unique
 
 Eligibility 只看命令行指定的 required verifiers 是否存在并通过。`syn-001` 和 `syn-002` 都满足这个规则，
-所以分母仍然是 2。
+所以通过记录数仍然是 2。
 
 默认的 `byte_exact` profile 会直接对正文的 UTF-8 字节求 SHA-256。两条记录正文相同，因此只算一份独立内容。
 审计器会报告重复组，同时保留两条原始记录。最终保留哪一条，还要结合来源、许可、时间、人工复核和数据切分策略。
@@ -133,7 +144,8 @@ cycle 会分别写入报告。
 | Synthetic round 1 | 500,000 | 100,000 | 5.0 |
 
 按照这份采样计划，每个合成数据 token 平均会被消费 5 次。这不是训练过程的实际读取次数。动态过滤、worker 偏差、
-读取失败、checkpoint 恢复和提前停止都可能改变结果，真实训练需要另建 token 消费账本。
+读取失败、checkpoint 恢复和提前停止都可能改变结果，真实训练需要另建 token 消费账本；账本如何连接来源、split、
+shard 与 checkpoint，见[训练数据工程与治理](../../docs/training/data.md)。
 
 ## 为什么完整复算比 self-hash 更强
 
@@ -169,6 +181,12 @@ cycle 会分别写入报告。
 
 ## 运行专项测试
 
+这一步供修改项目的维护者使用。需要先在同一虚拟环境中安装测试依赖：
+
+```powershell
+python -m pip install -c constraints/ci.txt -e ".[dev]"
+```
+
 ```powershell
 python -m pytest `
   tests/test_synthetic_data.py `
@@ -178,7 +196,7 @@ python scripts/check_docs.py
 python scripts/check_content_accuracy.py
 ```
 
-当前 40 个测试覆盖三个分母、版本重叠、lineage graph、两种内容指纹规则、mixture 公式和 JSON 解析，
+当前 40 个测试覆盖记录与不同内容的计数、版本重叠、lineage graph、两种内容指纹规则、mixture 公式和 JSON 解析，
 也会故意制造输入漂移、协同重哈希和输出文件冲突。
 
 ## 这个项目还没有做什么

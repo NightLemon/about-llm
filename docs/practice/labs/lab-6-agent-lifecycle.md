@@ -43,7 +43,7 @@ src/about_llm/agents/sqlite_ledger.py
 tests/test_agent_refund_lifecycle.py
 ```
 
-脚本每次创建临时 SQLite 数据库，不会调用网络、写入真实订单或留下待清理的退款。
+脚本每次创建临时 SQLite 数据库，不会调用网络、写入真实订单或留下待清理的退款。Planner、订单和退款服务都是固定的进程内模拟器；输出中的 accepted receipt 与 effect count 只描述这组 fixture。
 
 ## 第一步：先预测七个阶段
 
@@ -58,7 +58,7 @@ order-1001 paid = 30000 cents
 requested refund = 30000 cents
 ```
 
-退款服务的固定行为是：先创建 refund receipt，再让第一次响应超时。
+退款服务的固定行为是：先创建 refund receipt，再让第一次响应超时。运行时在超时当下看不到该 receipt，必须在后续查询中取得它。
 
 填写预测：
 
@@ -94,7 +94,7 @@ verifier.status
 recovery.replay_after_reconciliation.status
 ```
 
-预期主线为：
+这组固定输入的预期主线为：
 
 ```text
 proposal -> schema accepted -> ACL allow -> needs_approval
@@ -262,7 +262,7 @@ recovery.revoked_replay_negative_control.status = policy_denied
 
 前者说明 `accepted` 字样不能覆盖金额不匹配；后者说明 reconciliation 后的 cache replay 仍会重新授权。
 
-恢复后的 replay 为 `cached`，provider effect count 仍为 1。现在才有依据组织最终用户答复。
+恢复后的 replay 为 `cached`，这组 fixture 的 provider effect count 仍为 1。现在才有依据组织“退款申请已受理”的最终用户答复；它不说明款项已经到账。
 
 回答：如果 provider 只返回 `{"status": "accepted"}`，为什么 verifier 仍不应通过？
 
@@ -280,7 +280,7 @@ python -m pytest tests/test_agent_refund_lifecycle.py -q
 - pending replay 不重复调用 provider；
 - 独立查询通过后才 reconciliation；
 - 恢复后结果为 cached，effect count 仍为 1；
-- 报告明确否认真实模型、真实 provider 与 exactly-once 证据。
+- 报告明确限定为固定模拟器，不把本地计数外推为真实模型、真实 provider 或 exactly-once 证据。
 
 它们没有把所有 JSON 组合和实现细节都写成测试，这样教材仍可以重构，而关键教学结论有独立断言。
 

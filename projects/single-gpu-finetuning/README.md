@@ -81,11 +81,18 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 | 变长序列的梯度累积是否按 token 加权 | `gradient_accumulation_toy.py` |
 | DDP、`no_sync` 或 AMP 为何产生不同梯度 | `ddp_*_control.py`、`amp_grad_scaler_control.py` |
 | 恢复训练后为何漏样本或参数漂移 | `checkpoint_resume_control.py`、`dataloader_prefetch_resume_control.py`、`optimizer_commit_resume_control.py` |
-| PPO、reward model 与 reward hacking 如何形成最小闭环 | `smoke_*ppo.py`、`reward_model_toy.py`、`train_reward_model.py` |
+| Reward Model 数据与目标 tokenizer 是否就绪 | `train_reward_model.py --data-preflight-only`、`--tokenization-preflight-only` |
+| PPO 的 old log-prob、GAE 与裁剪目标怎样衔接 | `smoke_torch_ppo.py` |
+| 文本 rollout 的 EOS、截断与 padding 怎样进入 PPO | `smoke_text_ppo.py`、`smoke_transformer_ppo.py` |
+| learned Reward Model 如何被 PPO 利用而造成 reward hacking | `smoke_learned_rm_ppo.py`、`reward_model_toy.py` |
 
 机制实验的推荐顺序和现象解释集中在[深挖机制实验](../../docs/practice/projects/single-gpu-finetuning.md#controls)。
 精确数值、固定样例和适用范围见[项目实验台账](../../docs/evidence/project-controls.md)、
 [Qwen 证据台账](../../docs/evidence/qwen-controls.md)和[对齐证据台账](../../docs/evidence/alignment-controls.md)。
+
+前三个 PPO/RM 入口都是 CPU/tiny 控制实验；它们不证明目标 checkpoint、CUDA、Reward Model 质量或生产稳定性。
+完成 SFT/LoRA 后何时选择 DPO、Reward Model 或 PPO，以及目标 DPO 的离线预检，见
+[项目教学页的可选后续路线](../../docs/practice/projects/single-gpu-finetuning.md#next-routes)。
 
 ## 主要输入与输出
 

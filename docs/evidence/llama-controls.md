@@ -13,7 +13,7 @@
 
 - **适合读者**：开放权重部署、量化、微调、模型评测和供应链工程师。
 - **先修**：decoder-only Transformer、KV Cache、tokenizer、LoRA/QLoRA 与基本 GPU 内存模型。
-- **首次阅读**：L0 标签与 L1–L5 证据阶梯 → checkpoint inventory → RMSNorm/RoPE/SwiGLU/GQA → 模板 → 内存 → 微调/部署 → 许可与发布。
+- **首次阅读**：台账证据轴的 L0 标签与 L1–L5 阶梯 → checkpoint inventory → RMSNorm/RoPE/SwiGLU/GQA → 模板 → 内存 → 微调/部署 → 许可与发布。
 - **完成信号**：能从固定 revision 的真实文件推导结构和预算，并清楚标注 vendor claim、config deduction、weight execution 与 task evidence 的差别。
 - **卡住时**：回到[Transformer](../core/transformer.md)、[推理优化](../systems/inference-optimization.md)和[单卡微调](../training/peft-qlora-engineering.md)。
 
@@ -35,14 +35,16 @@ Llama 是开放权重生态的重要基线，但“Llama”不是一个固定架
 
 所有具体结论应以所选 checkpoint 的 immutable revision、`config.json`、tokenizer files、generation config、model card、weight inventory 和 license 为准。
 
-## L0 前置标签 + L1–L5 五级证据阶梯
+## 台账证据轴：L0 前置标签与 L1–L5 阶梯
 
 模型工程最常见的错误，是把不同强度的证据拼成一个“已验证”结论：
 
 这里的 L0 只是待核验的品牌/短名，不算实质证据；真正的证据强度从 L1 到 L5 共五级。因此下图共有六层，但不是“六级实证”。
 
+这套编号只标记本页从发布声明到目标评测的**证据输入与执行范围**。它不使用[仓库地图](../guide/repo-map.md)的 L0–L4 项目成熟度定义，不能据此把项目升级为可复现实验、工程样例或生产设计。
+
 ```mermaid
-flowchart LR
+flowchart TD
     A["L0 品牌/短名"] --> B["L1 固定 vendor model card"]
     B --> C["L2 固定 config/tokenizer bytes"]
     C --> D["L3 固定 weight bytes + load audit"]
@@ -59,7 +61,7 @@ flowchart LR
 | L4 runtime execution | 指定环境/输入上的真实运行 | 长上下文、任务分布、生产性能 |
 | L5 evaluation | 声明 workload 上的质量/性能 | 未覆盖域、未来版本、其他硬件 |
 
-本仓库对 Llama 当前只建立了 **L1 immutable vendor-model-card projection**。Authored GQA config 和 NumPy RMSNorm/RoPE/GQA 是机制证据，不是任何 Llama checkpoint；真实 weight/load/forward control 当前属于另一个固定 Qwen checkpoint，不能借给 Llama。
+截至本页可复核的台账记录（2026-08-13），本仓库对 Llama 只建立了 **L1 immutable vendor-model-card projection**。Authored GQA config 和 NumPy RMSNorm/RoPE/GQA 是机制证据，不是任何 Llama checkpoint；真实 weight/load/forward control 当前属于另一个固定 Qwen checkpoint，不能借给 Llama。
 
 ## 仓库中的固定 Llama 3.2 发布证据
 

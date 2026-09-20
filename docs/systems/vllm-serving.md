@@ -90,6 +90,7 @@ Windows 开发者通常在 WSL2 中运行这条路径，也可以连接远程 Li
 ~~~bash
 vllm serve MODEL_ID \
   --revision COMMIT_HASH \
+  --tokenizer-revision COMMIT_HASH \
   --served-model-name my-model \
   --dtype auto \
   --max-model-len 4096 \
@@ -99,7 +100,9 @@ vllm serve MODEL_ID \
 ~~~
 
 参数名称、默认值和支持矩阵会随版本变化。执行前以当前安装版本的 `vllm serve --help=all` 和
-对应 stable 文档为准，不要把这里的数值当作生产推荐值。
+对应 stable 文档为准 [SOURCE:vllm-cli-stable]，不要把这里的数值当作生产推荐值。
+若设置 `--kv-cache-memory-bytes`，它会直接指定 KV Cache 预算，不能再根据 `--gpu-memory-utilization`
+推断该预算。
 
 日志中至少保存：
 
@@ -132,7 +135,8 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
 2. `finish_reason` 是否能由 EOS、长度或其他终止条件解释。
 3. Prompt 与 completion 的用量是否存在，并与目标 tokenizer 的 token 结果一致。
 4. 服务端轨迹是否能用 request ID 关联到这次执行。
-5. 错误 model、非法字段、过长请求和空输入是否得到明确失败，而不是静默改写。
+5. 错误 model、超出已配置长度或不符合已声明 schema 的字段是否得到明确失败，而不是静默改写；合法空文本和
+   未识别字段的策略也要按当前部署版本实际记录，不能先假定它们必然失败。
 
 建议把结果写在一张请求卡上，不要只保存回答文本：
 
@@ -145,6 +149,14 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
 | 客户端输出 | 原始响应、输出 token、用量与 `finish_reason` |
 
 如果这五行无法用同一个 request ID 串起来，就还不能判断“返回文本的服务”与“加载目标权重的服务”是否是同一条路径。
+
+Chat Completions 只有在目标 text-generation 模型带有可用 chat template 时才构成这条聊天路径；模型仓库的
+`generation_config.json` 也可能影响默认生成参数。把 template、generation config 与请求中的覆盖参数一并存入
+请求卡，并在升级时重放请求 A，才能知道实际使用的停止和采样语义。
+
+客户端可以自行生成 request ID；若要把它作为自定义 `X-Request-Id` header 传入 vLLM，需要在当前版本显式启用
+相应 header 功能，然后确认响应和服务端 trace 的实际行为。没有这一步，不能把任意 HTTP 请求自动关联到既有
+server trace。
 
 ### 再验证流式响应
 
@@ -191,8 +203,9 @@ SSE 事件或文本数据块不是模型 token。一个事件可能只传角色�
 
 ### `max-model-len`
 
-它限制单条序列允许的上下文长度，也影响运行时为 KV Cache 规划的空间。
-设成模型理论最大值可能显著降低可并发序列数。
+它限制单条序列允许的 prompt 加 output 总长度，也影响运行时的 KV Cache 规划。
+设成模型理论最大值可能显著降低可并发序列数，但不表示每一条短请求都会立刻写满这段 KV；实际占用仍随已处理长度、
+并发、缓存预算和运行时分配规则变化。
 
 根据业务长度分布和必要上限选择。超长请求应在 admission 前拒绝，或路由到专用池，
 不要让一条异常长请求挤掉所有正常流量。
@@ -238,19 +251,21 @@ SSE 事件或文本数据块不是模型 token。一个事件可能只传角色�
 
 这张表只给出排查起点，不是自动诊断。最终判断仍要把客户端 attempt 与同一 request ID 的服务端轨迹对齐。
 
-### 用项目负载发生器
+### 用项目负载发生器 {#load-generator}
 
 安装 API 依赖后运行：
 
 ~~~powershell
-python -m pip install -e ".[api]"
+python -m pip install -c constraints/ci.txt -e ".[api]"
+New-Item -ItemType Directory -Force artifacts/inference | Out-Null
 
 python projects/inference-serving/benchmark_openai.py `
   --model my-model --requests 20 --concurrency 1
 
 python projects/inference-serving/benchmark_openai.py `
   --model my-model --requests 100 --concurrency 8 `
-  --arrival-process constant --request-rate 4
+  --arrival-process constant --request-rate 4 `
+  | Set-Content -Encoding utf8 artifacts/inference/constant-c8.json
 ~~~
 
 先用一小批同时到达的请求做冒烟检查，再用固定间隔或带随机种子的 Poisson 到达观察排队。
@@ -258,10 +273,14 @@ python projects/inference-serving/benchmark_openai.py `
 脚本会预先生成有限的发送时间表。每个请求的计划时刻不依赖上一条请求何时完成；`--concurrency` 只限制
 同时进行的 HTTP 调用。如果并发名额不足，请求会留在客户端等待，这段等待仍会进入报告。
 
+该脚本的 `success_rate` 分母是它计划并记录的全部 HTTP attempt。若服务契约只统计符合约定的请求
+（`eligible offered`），还需按预先规定的规则，从网关或业务记录给这些 attempt 标注资格；不能只凭状态码把
+429、超时等失败移出分母。脚本的 client queue 来自本机单调时钟，服务端排队则要用同一 request ID 的服务端轨迹单独测量。
+
 过高的名义到达率可能让客户端堆积任务，并产生模型调用费用。先从小规模开始，同时监控负载发生器落后时间、
 CPU、预算和紧急停止路径。
 
-## 把四个客户端时刻写在请求卡上
+## 把四个客户端时刻写在请求卡上 {#client-timestamps}
 
 一次 HTTP 调用称为一个 attempt（尝试）。重试会产生新的 attempt，不能覆盖第一次失败记录。每次尝试至少保存：
 
@@ -272,17 +291,23 @@ CPU、预算和紧急停止路径。
 | `first_token_at` | 收到首个非空 content delta |
 | `completed_at` | 成功或失败终态 |
 
+`benchmark_openai.py` 把这些时刻写成 JSON 并打印到标准输出；上面的 `Set-Content` 只保存该本机报告，
+不会验证 vLLM 已 ready、模型已加载到目标 GPU，或服务端已经释放 sequence/KV。启动日志与同一 request ID 的
+服务端 trace 才能分别回答这些问题。
+
 `offered_at → started_at` 是客户端排队。`started_at → first_token_at` 是从实际发送到首段内容的 TTFT。
 如果只从 `started_at` 开始计时，事件循环落后和客户端并发名额前的等待就会消失，报告会低估用户经历的压力。
 
-TPOT 表示首 token 之后，平均每个输出 token 等多久。记 (t_{first}) 为 `first_token_at`，
-(t_{done}) 为 `completed_at`。若成功请求输出 (O>1) 个 token，本仓库使用：
+TPOT 表示首 token 之后，平均每个输出 token 等多久。记 \(t_{first}\) 为 `first_token_at`，
+\(t_{done}\) 为 `completed_at`。若成功请求输出 \(O>1\) 个 token，本仓库使用：
 
 \[
 \mathrm{TPOT}=\frac{t_{done}-t_{first}}{O-1}.
 \]
 
 只有一个输出 token 时不存在“后续 token 间隔”，因此 TPOT 应保持未定义，而不是填成 0。
+这里的 `completed_at` 是客户端看到成功终态的时刻，可能含末尾 SSE 传输、usage/finish 事件和客户端处理；
+因此这是按上述定义计算的客户端 TPOT 估计，不能当作逐 token 到达间隔的实测均值或 GPU 纯 decode kernel 时间。
 
 报告中分开：
 

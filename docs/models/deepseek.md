@@ -31,6 +31,8 @@ attention、专家层、tokenizer 或服务协议。
 - 检查结果能确认这份配置出现了 MLA、MoE、FP8、YaRN 和 MTP 相关字段；
 - 仓库没有下载对应权重，也没有运行它声明的自定义模型代码、前向计算或 GPU kernel。
 
+固定配置的来源与版本见 [SOURCE:deepseek-v3-config]；这些字段不代表其他 DeepSeek 型号或云端服务的配置。
+
 因此，下面的前向路径来自公开架构与固定配置的联合解读。它帮助你理解模型应当怎样工作，
 但不是本仓库已经录制的 DeepSeek-V3 运行轨迹。精确证据见[DeepSeek 证据台账](../evidence/deepseek-controls.md)。
 

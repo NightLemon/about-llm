@@ -69,8 +69,9 @@ M_{KV}=2LBTH_{kv}d_hs,
 
 **面试官最后追问**：怎样验证？
 
-**你**：固定 checkpoint、请求长度分布、并发和硬件，先确认真实 cache layout，再同时测峰值显存、TPOT、吞吐和
-任务质量。若只测短 Prompt 或只看显存，无法回答长上下文 decode 和质量取舍。
+**你**：先说清要验证哪一个主张：容量就测真实 cache layout 和峰值显存；性能就固定 checkpoint、长度分布、并发和
+硬件后测 TPOT 与吞吐；质量就用 held-out task。每项都配一个会推翻它的 workload，例如长上下文 decode。
+若只测短 Prompt 或只看显存，无法回答长上下文 decode 和质量取舍。
 
 这就是一条完整的回答链：先用一句话指出主因，再按追问加入算术、反例和实验。不要一上来横向罗列
 MHA、MQA、GQA 的全部定义。
@@ -141,6 +142,10 @@ MHA、MQA、GQA 的全部定义。
 **30 秒回答**：temperature 改变整个 logit 分布的尖锐程度；top-k 限制候选排名；top-p 保留累计概率达到阈值的最小前缀。顺序和重新归一化时点属于生成契约的一部分。
 
 **边界**：`temperature=0` 通常是 greedy 特例。即使参数相同，seed、RNG、并列规则、kernel 和版本漂移也可能让输出无法逐 token 重放。
+
+**怎样把定义说成可验证的选择**：先声明本实现的顺序，例如“temperature → top-k → 在保留集合上归一化 → top-p → 再归一化”。
+接着用一个 crossing-token 例子说明后果：若 top-k 后不重新归一化，top-p 的累计概率和最终抽样分布都会变成另一份契约。
+这解释的是该实现，不宣称所有框架都采用同一顺序；可用[编码题 2](coding-round.md#q-sampling)的固定 `uniform` 复现。
 
 ### 6. “支持 1M context”是否等于有效利用 1M token？
 

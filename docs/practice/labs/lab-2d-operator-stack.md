@@ -25,7 +25,7 @@
 安装带 PyTorch 的本地环境：
 
 ```powershell
-python -m pip install -e ".[torch]"
+python -m pip install -c constraints/ci.txt -e ".[torch]"
 ```
 
 确认版本：
@@ -78,8 +78,9 @@ torch.export: aten.mul.Tensor → aten.mean.dim → aten.add.Tensor → aten.rsq
               → aten.mul.Tensor → aten.mul.Tensor
 ```
 
-这里可以回答第一步的第三个预测：一个 RMSNorm Module 展开成 **6 个**节点，两张图在本例中一一对应。
-但节点数不等于 kernel 数——报告里的 `scope.kernel_count_inferred_from_fx_or_export` 就是 `false`。
+这里可以回答第一步的第三个预测：在这份 `ReferenceRMSNorm`、`[2,3,4]` 输入与当前安装版本中，Module 展开成
+**6 个**节点，两张图恰好一一对应。重新改写函数、输入或 PyTorch 版本后，节点可能改变；把这六个节点当作
+本次图的观察，不当作稳定接口或 kernel 数。报告里的 `scope.kernel_count_inferred_from_fx_or_export` 是 `false`。
 
 FX 更接近捕获到的 Python 运算；export graph 把它表达成带 overload 的 ATen operator。两张图都还不是
 目标设备的 kernel 列表。
@@ -101,6 +102,10 @@ python projects/transformers-basics/trace_rmsnorm_operator_stack.py --profile
 
 Profiler 展示的是当前 PyTorch build 的运行事件。编译器可能融合图节点，库实现可能在事件内部启动 kernel；
 GPU 时间线还需要按目标设备进一步观察。
+
+现在写下三行实验记录：`execution_device` 是什么；框架 RMSNorm 事件里有哪些 `aten::` 名称；其中哪一项只是
+框架事件，不能据此命名 GPU kernel。默认 CPU 运行已经足够完成这一步。若你要检查 CUDA 路径，下一步只改
+`--device cuda`，并保留同一份 JSON 字段作为前后对照。
 
 ## 第四步：在 3070 Laptop 上确认 CUDA 路径
 
@@ -140,6 +145,11 @@ python projects/transformers-basics/trace_rmsnorm_operator_stack.py `
 这些命令用于检查路径和契约，不用于比较速度：每种配置只运行一次，没有独立 warm-up、重复采样或计时同步协议。
 某个 dtype 或 shape 失败时保留错误；它正是当前版本支持面的证据。
 
+每次运行后先核对 JSON 的 `environment.execution_device` 和 `accelerator_name`，再比较 `tensor_contract`、
+`rmsnorm_contract` 与 `scope`。这让你先回答“实际在哪执行、数学是否仍对齐、覆盖了哪些条件”，而不是从
+`aten::` 名称猜 kernel 或速度。遇到耗时问题，转到[硬件性能模型的同步计时](../../systems/hardware-edge.md#gpu-timing)：
+预热、设备同步、重复采样和 Nsight 是下一层证据。
+
 ## 第五步：填写一张支持卡
 
 不要只写“3070 支持 RMSNorm”。填写下面这张表：
@@ -155,6 +165,10 @@ python projects/transformers-basics/trace_rmsnorm_operator_stack.py `
 | Device | CPU 或 CUDA | 环境 identity 和 profiler | 其他 GPU/NPU backend |
 | Compile | 本实验没有运行 | 明确记录为未验证 | `torch.compile`、graph break、recompile |
 | Performance | 本实验没有 benchmark | 明确记录为未验证 | warm-up、同步、分位数和 Nsight |
+
+在支持卡旁再保留一条字节口径：`logical_bytes` 是张量 payload；allocated/reserved/RSS 是一次 workload 的
+实际占用；Roofline 的 \(Q\) 是指定内存层级的数据搬运。三者不能互换，完整对照见
+[硬件性能模型](../../systems/hardware-edge.md#byte-scopes)。
 
 “未验证”不是缺点，而是防止一条局部证据被外推成平台承诺。
 

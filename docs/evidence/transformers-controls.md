@@ -10,8 +10,8 @@
 { .doc-nav }
 
 这不是一页“运行几个脚本”的索引，而是一条从 tokenizer、attention 和生成协议走到真实 checkpoint、因果干预与
-MoE distributed 实验的可执行学习路径。所有数字都来自仓库当前固定输入或 recorded artifact；
-先判断证据层级，再解释结果。
+MoE distributed 实验的可执行学习路径。每个数字要么来自当前命令的固定输入，要么来自标出日期和 runtime 的历史 `recorded-report`；
+后者不会因当前离线 verifier 通过而变成一次新运行。先判断证据层级，再解释结果。
 
 ## 学习目标与先修
 
@@ -31,12 +31,9 @@ MoE distributed 实验的可执行学习路径。所有数字都来自仓库当�
 
 本项目故意同时保留四种强度不同的证据：
 
-~~~mermaid
-flowchart LR
-    A["机制参考<br/>NumPy / 手算"] --> B["框架实验<br/>随机 tiny PyTorch"]
-    B --> C["发布证据<br/>immutable config / model card"]
-    C --> D["目标 checkpoint<br/>固定 Qwen 真实权重"]
-~~~
+学习依赖路径：
+
+机制参考：NumPy / 手算 → 框架实验：随机 tiny PyTorch → 发布证据：immutable config / model card → 目标 checkpoint：固定 Qwen 真实权重。
 
 四层证据不能合并：
 
@@ -49,6 +46,8 @@ flowchart LR
 
 报告里出现 `passed`、loss 下降或 hash 相同，只能在所在行的范围内解释。不同实验的结果不能拼接成
 CUDA、完整 expert parallel、模型质量或生产安全已经成立。
+
+对录制报告，先查看它的 `checked_at`、`runtime`、`source`、固定输入和 `scope`；再运行页面给出的 `--verify` 命令，只能确认这份历史 artifact 仍符合 verifier 的既定绑定。SHA-256 能在已审阅的期望 digest 存在时发现所选 bytes 的改变，不能认证 checkpoint 发布者或报告执行者，也不消除 verify 后按路径加载文件的 TOCTOU 窗口。
 
 ## 1. 从零训练 byte-level BPE
 
@@ -498,17 +497,13 @@ V3 从同一 top-1/capacity=2 初态比较 `drop`、deterministic full-ranking `
 
 ### 8.3 六条 control 的边界矩阵
 
-~~~mermaid
-flowchart TD
-    R["NumPy routing oracle"] --> T["单进程 trainable router/experts"]
-    T --> C["两进程 global capacity collective"]
-    T --> A["两进程 token-to-owner all-to-all"]
-    A --> B["all-to-all backward + SGD"]
-    C --> D["capacity-aware all-to-all backward + SGD"]
-    A --> D
-~~~
+学习依赖路径：
 
-图中的箭头表示学习依赖，不表示代码或证据可以自动组合。四条 distributed scripts 使用各自独立、范围不同的固定输入。
+- NumPy routing oracle → 单进程 trainable router/experts → 两进程 global capacity collective → capacity-aware all-to-all backward + SGD；
+- 单进程 trainable router/experts → 两进程 token-to-owner all-to-all → all-to-all backward + SGD；
+- 两进程 token-to-owner all-to-all → capacity-aware all-to-all backward + SGD。
+
+这些箭头表示学习依赖，不表示代码或证据可以自动组合。四条 distributed scripts 使用各自独立、范围不同的固定输入。
 
 | Control | 真正执行 | 明确没有 |
 |---|---|---|

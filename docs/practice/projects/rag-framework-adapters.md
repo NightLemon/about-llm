@@ -36,13 +36,13 @@
 ## 先看懂这一条请求
 
 ```mermaid
-flowchart LR
+flowchart TD
     I["可信身份<br/>tenant-a + engineering"] --> C["统一的 RAG 核心"]
     C --> A["先做 ACL 权限过滤"]
     A --> B["BM25 排序 + top-k"]
     B --> R["SearchResult[]"]
-    R --> LC["LangChain adapter<br/>BaseRetriever.invoke()"]
-    R --> LI["LlamaIndex adapter<br/>BaseRetriever.retrieve()"]
+    R --> LC["LangChain adapter<br/>invoke()"]
+    R --> LI["LlamaIndex adapter<br/>retrieve()"]
     LC --> V["转回统一格式并逐字段比较"]
     LI --> V
     V --> P["相同 Prompt 与抽取式答案"]
@@ -53,6 +53,10 @@ flowchart LR
 
 LangChain `Document` 和 LlamaIndex `TextNode` 只是框架各自的表示。它们可以帮助我们接入 Retriever、Prompt
 和后续编排，但不应该重新决定租户、权限、排名或文档身份。
+
+适配层从 canonical 检索已经给出 `SearchResult[]` 后才开始。它无法补回摄取时丢失的来源/版本/ACL，不能提升
+BM25 或 Embedding 的召回，也不能证明框架默认会执行本项目的授权规则；这些事实必须仍由上游摄取、检索与授权层
+分别验证。
 
 ## 二十分钟最小路径 { #run }
 

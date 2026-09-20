@@ -15,6 +15,10 @@
 
 RAG 不只是在向量库里调用 `search()`。Dense retriever 的相似度来自训练目标、候选集合、正负标签、pooling 和索引近似的共同作用。本章沿着一条可验证主线回答：**query 与 document 为什么会在向量空间里靠近，失败又应归因到哪一层？**
 
+先接住前两页的输出：摄取定义可追溯的 chunk 与版本，在线检索按调用者 ACL 决定谁能看见它们；本页只讨论如何用
+训练 split 中的 qrels 为这些 chunk 建立正例集合和 candidate mask。请求 A 的某次 top-1 只是系统输出，不能自动变成
+训练正例；把它当标签会把当前检索器的遗漏和偏差写回下一轮训练。
+
 学完后应能：
 
 - 区分 bi-encoder、cross-encoder 与 late interaction 的信息交互和成本；
@@ -37,6 +41,9 @@ RAG 不只是在向量库里调用 `search()`。Dense retriever 的相似度来�
 
 本页的 NumPy 实验用二维向量表示这四种关系。它没有把真实文本送入 encoder，但能让你直接观察：候选集合和标签
 怎样改变 loss 与梯度。读每个方法时，都问一句：它会怎样给这四个候选打分？
+
+这里“已标正例”和“漏掉正例标签”都来自假定的 qrels 判断。实际数据应以稳定的 document/chunk identity、corpus
+snapshot 和 train split 保存这些判断；线上 ACL 仍在请求时执行，不能由训练时的候选 mask 替代。
 
 ## 1. 先把检索拆成四层
 

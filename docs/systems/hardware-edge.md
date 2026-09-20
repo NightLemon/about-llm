@@ -24,6 +24,26 @@
 “成功生成一次”只通过了第二道门的一小部分。硬件分析还要分别检查计算、显存带宽、互联、kernel、调度和温控，
 再用真实工作负载验证。
 
+## 先统一“字节”指什么 { #byte-scopes }
+
+一个 `[2,3,4]` 的 FP32 张量有 24 个逻辑元素，逐个存储共需 96 字节。转置 view 仍与原张量共用 storage；
+在这个非连续输入上调用 `contiguous()`，才会另建一份包含这些数值的连续存储。两份张量的 `logical_bytes` 都是 96，
+但它们是否共享存储、执行时读写多少次，回答的是另外两个问题。
+
+| 数字 | 怎样取得 | 它回答什么 |
+|---|---|---|
+| 逻辑张量 payload | `numel × element_size`，例如 trace 的 `logical_bytes` | 把每个逻辑元素按当前 dtype 分别存储时需要的字节数 |
+| checkpoint/权重文件字节 | 枚举文件大小或记录实际 tensor storage | 静态工件占多少存储空间 |
+| allocated/reserved/RSS | 框架分配器或操作系统在一次 workload 中报告 | 本次进程或设备占用了多少内存、预留了多少空间 |
+| 指定内存层级的搬运量 \(Q\) | 为 kernel 建模，或在目标设备用 profiler/Nsight 计数器测量 | 数据读写对后文 Roofline 性能下界的约束 |
+
+逻辑 payload 不计共享存储或广播节省；文件字节不计加载时的临时空间。分配器占用也不能代替 \(Q\)：
+同一段内存可能被反复读取，也可能命中 cache。比较容量与性能时，要为每个字节数保留它的对象和取得方式。
+
+例如，RMSNorm trace 可以先证明一个 transpose view 与原张量共用 storage，并显示 `contiguous()` 生成了新布局。
+它没有测量那次复制占用了多少 allocator 空间、经过多少 cache/HBM，也没有在 CPU 结果上预测 GPU 速度。先用它定位
+布局路径；再用目标 workload 的内存统计、同步计时和 kernel profiler 回答容量与性能。
+
 ## 1. 单位与口径
 
 常见量：
@@ -327,7 +347,7 @@ WebGPU 会受到浏览器实现、GPU adapter、buffer 上限、shader 编译、
 
 平均 latency 会掩盖尾延迟。只用固定 max output 可能让早停策略不公平；记录实际 finish reason。
 
-### 12.3 同步计时
+### 12.3 同步计时 { #gpu-timing }
 
 GPU kernel 通常异步执行。计时边界要调用框架/设备同步，或者使用正确的 GPU event；否则测到的可能只是提交任务所需
 时间。编译预热与稳态运行要分开，能耗采样窗口也必须覆盖完整执行过程。

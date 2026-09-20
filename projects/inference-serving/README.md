@@ -75,7 +75,8 @@ python projects/inference-serving/nano_vllm_study.py explain \
 `collect` 会先确认源码和模型版本，再运行四组对照：eager 与 CUDA Graph、精确前缀与单 token 漂移、两种
 prefill 预算，以及并发 1/2/4/8。
 
-报告按步骤记录序列状态、调度的 token 数和 KV block 使用量，最后汇总 TTFT、TPOT、吞吐和峰值显存。
+报告按步骤记录序列状态、调度的 token 数和 KV block 使用量，最后汇总引擎内 TTFT、TPOT、吞吐和峰值显存。
+这些时间从请求加入 nano-vLLM engine 开始；它们不含 HTTP、网关、网络、tokenization 或客户端并发槽前的等待。
 
 `verify` 不需要 GPU。它会重新检查版本、时间顺序、指标计算、prefix hit、调度预算和 KV 账本。仓库目前没有把
 其他机器的数据写成 RTX 3070 Laptop 结果；你在目标机器生成的报告通过验证后，才是这台机器的实测证据。
@@ -113,7 +114,8 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct \
 先核对单请求的 token、usage 和 finish reason，再逐级增加并发。负载发生器默认请求本机 OpenAI-compatible endpoint：
 
 ```powershell
-python -m pip install -e ".[api]"
+python -m pip install -c constraints/ci.txt -e ".[api]"
+New-Item -ItemType Directory -Force artifacts/inference | Out-Null
 
 python projects/inference-serving/benchmark_openai.py `
   --model Qwen/Qwen2.5-0.5B-Instruct `
@@ -122,11 +124,19 @@ python projects/inference-serving/benchmark_openai.py `
 python projects/inference-serving/benchmark_openai.py `
   --model Qwen/Qwen2.5-0.5B-Instruct `
   --requests 100 --concurrency 8 `
-  --arrival-process poisson --request-rate 4 --arrival-seed 7
+  --arrival-process poisson --request-rate 4 --arrival-seed 7 `
+  | Set-Content -Encoding utf8 artifacts/inference/poisson-c8.json
 ```
 
 压测报告必须同时保留成功和失败 attempt。TTFT、TPOT、端到端延迟、请求吞吐和输出 token 吞吐使用不同分母，
 不能用一个平均延迟代替整条容量曲线。完整方法见[项目阶段 3–5](../../docs/practice/projects/inference-serving.md#阶段-3建立-workload-contract)。
+
+发生器为每个已计划的 HTTP attempt 以本机单调时钟保存 `offered_at`、实际 dispatch、首个非空 SSE content 和终态。
+因此它的 success rate 是 `success / attempted`，并能显示 client queue。它不判定业务 eligibility，也测不到 server queue。
+服务若以 `eligible offered` 做 SLO 分母，应按预先规定的规则，从网关或业务记录取得资格标签并与 attempt 关联；
+429、超时等失败仍可能属于符合约定的请求，不能直接移出分母。
+JSON 保存成功同样不证明服务已 ready、目标模型真的执行，或 timeout/cancelled 已释放 GPU/KV；这些要用启动记录与
+同一 request ID 的服务端 trace 分别核对。
 
 ## 离线检查指标口径
 

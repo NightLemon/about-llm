@@ -49,14 +49,14 @@ claim 审计使用。第一次学习请先读[云 API 契约基础](../models/cl
 “调用一个大模型 API”至少跨过三层：
 
 ```mermaid
-flowchart LR
+flowchart TD
     A["业务层 canonical request"] --> B["Provider adapter"]
-    B --> C["Provider wire request / typed events"]
+    B --> C["Provider wire request<br/>/ typed events"]
     C --> D["HTTP + TLS + proxy + DNS"]
     D --> E["Provider service"]
     E --> F["Provider response / event stream"]
     F --> G["Typed state machine"]
-    G --> H["Canonical result + provider extensions"]
+    G --> H["Canonical result<br/>+ provider extensions"]
     H --> I["Policy / verifier / publication gate"]
 ```
 
@@ -393,20 +393,11 @@ T^{(i)}_{\text{out,max}}p_{\text{out}}
 
 每个 reservation 只能进入一个 terminal state：
 
-```mermaid
-stateDiagram-v2
-    [*] --> reserved
-    reserved --> cancelled: proven never sent
-    reserved --> settled: strict usage available
-    reserved --> uncertain: sent / outcome or usage unknown
-    settled --> [*]
-    cancelled --> [*]
-    uncertain --> [*]
-```
+每次预留先进入 `reserved`，再根据本次调用的证据完成一次终态转换：
 
-- **cancelled**：有结构化证据证明从未发送；
-- **settled**：严格解析到可信的 input/output usage；
-- **uncertain**：可能已发送，但 usage/outcome 不足。
+- `reserved → cancelled`：有结构化证据证明从未发送；
+- `reserved → settled`：严格解析到可信的 input/output usage；
+- `reserved → uncertain`：可能已发送，但 usage/outcome 不足。
 
 若 actual usage 超过 reservation，调用已发生；账本必须先记录真实值，再触发 post-call breach，不能为了保持 cap 而丢弃超额 usage。
 

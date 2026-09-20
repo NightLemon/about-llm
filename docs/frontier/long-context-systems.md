@@ -240,6 +240,9 @@ case-c: evidence at 90%
 
 逐步增加 input tokens，记录 protocol acceptance、runtime completion、quality、TTFT、peak memory 和 cost。
 
+对每一级输入长度同时保存 offered、协议拒绝、准入后完成、截断、OOM 与 timeout 的请求数；quality 的分母从 offered
+开始，并把没有可评分答案的终态单列。只有这样，某个长度“完成的请求答得较准”才不会被误读成该长度整体可用。
+
 ### Step 5：RAG 对照
 
 同一 corpus 用授权 retrieval 只提供 top-k evidence，比较质量、引用、延迟和成本。

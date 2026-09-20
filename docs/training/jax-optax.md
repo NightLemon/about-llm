@@ -66,6 +66,11 @@ flowchart LR
 \(s_t\) 是优化器状态，其中可以包含 Adam 的一阶矩、二阶矩和步数。显式状态便于编译、复制、分片和保存，
 代价是调用者必须接住每一项新状态。若下一步误用旧的 \(s_t\)，优化器的时间线就会倒退。
 
+可以先把 Notebook 04 的单进程 LoRA 训练当作对照：那里 Python 变量持有模型和 AdamW，训练循环持有固定样本，
+`torch.manual_seed` 决定两次构造基座时的随机流。交给 JAX 编译的训练函数将需要的参数、Optax state 和随机 key
+作为显式输入，调用方接住它返回的新值后才开始下一步。Notebook 保存的是可推理的 adapter，不是中途续训
+checkpoint；若要续训，它同样需要保存 optimizer、step、随机状态与数据进度。
+
 ### PyTree
 
 PyTree 是 JAX 对嵌套结构的称呼。字典、列表、元组或 dataclass 负责组织层次，叶子通常是 JAX 数组。
@@ -103,6 +108,10 @@ params = init_params(init_key, config)
 
 多设备训练还要把训练步数、进程编号和设备编号折叠进随机流，并把当前随机状态写入 checkpoint。
 只保存最初的整数 seed，不足以恢复已经前进数千步的随机时间线。
+
+这里的“折叠”由训练程序明确规定：例如每个 rank 先从同一 run seed 派生自己的流，再按全局 step 与本地设备编号
+派生本步所需 key。哪一份 key 由哪一个 rank 持有、哪些 mask 要在一组设备间相同，都属于训练契约；不能用单机
+Notebook 的一个 seed 替分布式训练猜出这些规则。
 
 本页开头的 632 参数模型没有 dropout，所以它的训练步无需接收随机 key。跨框架连续对账和恢复实验加入了随机 mask，
 此时 key 必须成为训练状态的一部分，不能让编译后的函数读取 Python 全局随机数。

@@ -9,14 +9,21 @@ shard、训练任务和 checkpoint 里？
 
 ## 先运行一次
 
-在仓库根目录执行：
+在仓库根目录执行。首次使用时，先按[环境准备](../../docs/guide/environment.md)创建并激活虚拟环境，再安装本项目：
+
+~~~powershell
+python -m pip install -c constraints/ci.txt -e .
+~~~
+
+然后复核仓库保存的固定报告：
 
 ~~~powershell
 python projects/training-data-lineage/thread_lineage.py verify
 ~~~
 
-看到 `"verified": true` 表示：程序重新读取关系图，从头计算报告，并确认结果与仓库保存的报告逐字段一致。它没有访问
-论坛、删除文件或修改模型。
+成功 JSON 中先看 `verification_scope="full_local_recomputation"` 和 `verified=true`。这表示程序重新读取关系图，
+从头计算报告，并确认结果与仓库保存的报告逐字段一致。`verify` 只输出这份复核摘要，不写新文件；重复运行仍复算同一组
+本地输入。它没有访问论坛、删除文件或修改模型。
 
 如果想看完整追踪过程：
 
@@ -84,4 +91,6 @@ python projects/training-data-lineage/thread_lineage.py trace `
 删除或验证 unlearning。接入真实流水线时，还要把来源系统的认证记录、构建任务、对象存储版本、真实 token ledger 和
 删除执行回执接到同一条关系链上。
 
-完整原理见[训练数据工程与治理](../../docs/training/data.md)。
+完整原理见[训练数据工程与治理](../../docs/training/data.md)：先把来源快照、过滤/去重、split、tokenizer 和 shard
+span 串到训练 run，再把实际消费账本和 checkpoint 处置接上。本项目只给出固定关系图；真实来源、许可和删除执行仍需
+来源系统的认证记录与人工流程证明。

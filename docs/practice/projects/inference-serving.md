@@ -63,8 +63,14 @@ offered -> dispatch -> admission -> prefill -> first token
 
 完成标准：能把输出 token、KV 长度、block table 和四个时间戳放到同一张表中。
 
-接着运行[实验 1B](../labs.md#lab-1b)。默认中文 message 经过 Qwen3 chat template 后会得到 29 个 ID。
-这一步只执行 tokenizer。
+### 第一次实际运行：先完成可观察的 KV 闭环
+
+第一次走本项目时，先直接进入[阶段 1 的 Paged KV 引导实验](#first-kv-run)。它只在 CPU
+上运行固定张量；你先写下 block table/refcount 预测，再看到 fork、COW 和 release 后的三次状态。完成这个
+闭环后，回到本节的 768-token 账本和实验 7B，就能区分“逻辑 prompt”“已有 KV”“本次 prefill”和真实 GPU trace。
+
+若你还想先核对真实中文文本怎样变成模型输入，再运行[实验 1B](../labs.md#lab-1b)。默认中文 message
+经过 Qwen3 chat template 后会得到 29 个 ID；这一步只执行 tokenizer，不是理解 Paged KV 的前置条件。
 
 实验 7B 会改用 768 个固定生成的 ID，让前缀命中和 256-token block 账本容易复算。前一组输入解释文本编码，
 后一组输入解释 runtime 调度。
@@ -77,13 +83,13 @@ python projects/inference-serving/generation_work_ledger.py
 
 先对照三行结果：
 
-- 没有前缀复用：`768 prefill + 7 decode = 775` 个计算位置；
+- 没有前缀复用：预填充 768 个位置，再解码 7 个位置，合计 `768 + 7 = 775`；
 - 精确复用前两个 256-token block：`256 + 7 = 263` 个；
 - 索引 256（从 0 开始）发生漂移，只能复用第一个 block：`512 + 7 = 519` 个。
 
 这一步没有运行 Qwen3 或 nano-vLLM，它的作用是让你先把 GPU trace 中应该出现的数量算清楚。
 
-## 阶段 1：运行 Paged KV 引导实验
+## 阶段 1：运行 Paged KV 引导实验 { #first-kv-run }
 
 先完成[实验 7A](../labs/lab-7a-paged-kv.md)，不要直接跳到测试命令。
 
@@ -233,7 +239,7 @@ python -m about_llm.inference_analysis_cli `
 先完成单请求 token/usage/finish 对账，再运行负载发生器：
 
 ~~~powershell
-python -m pip install -e ".[api]"
+python -m pip install -c constraints/ci.txt -e ".[api]"
 
 python projects/inference-serving/benchmark_openai.py `
   --model my-model --requests 20 --concurrency 1

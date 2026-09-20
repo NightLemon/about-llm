@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 from about_llm.integrations.rag_frameworks import (
     to_langchain_documents,
@@ -17,6 +18,10 @@ from about_llm.rag import BM25Index, Document
 
 def main() -> None:
     """建立最小索引，检索一次并打印两个框架中的文档 ID。"""
+
+    # 报告可能经管道进入 UTF-8 JSON 读取器，不依赖 Windows 终端的默认编码。
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
 
     # 两篇文档足以让查询命中 RAG，同时保留一个主题不同的对照。
     index = BM25Index(

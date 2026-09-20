@@ -138,12 +138,15 @@ BM25 只在可见集合中计算本次查询的统计和分数。在当前固定
 | 2 | `rag-evaluation` | 答案还需检查引用、忠实度和拒答 | 2.5060 |
 | 3 | `rag-security` | 已授权证据与引用不等于语义蕴含 | 0.6798 |
 
-第一名已经含有直接答案，说明 Recall 成功。第二、三名仍有价值：
+对这个 case 而言，必需的 `rag-security` 来源进入 top-3，说明候选覆盖成功。第二、三名仍有价值：
 它们可以补充回答边界，但也会争夺有限上下文。
 
 ### 此时能得出什么
 
 可以说：在固定 corpus、调用者身份、tokenizer 和 BM25 实现下，answer-bearing chunk 进入了 top-3。
+若要计算 Recall@3，先标出每题应找回的全部证据，并约定按来源还是按 chunk 计数。
+每题的分子是 top-3 找回的证据数，分母是应找回总数；数据集结果还要说明怎样跨题汇总。
+这里展示一次请求的命中，尚未计算数据集指标。
 
 不能说：
 
@@ -194,6 +197,10 @@ Context packer 不只是 `results[:k]`。它依次检查：
 S1 -> rag-security / ACL 顺序段
 S2 -> rag-security / 引用边界段
 ```
+
+walkthrough 使用 UTF-8 byte 成本，第一段加入后为 162 bytes，两段合计为 312 bytes。
+这本账记录的是序列化上下文的字节数，还不能说明模型窗口剩多少 token。
+使用目标模型时，packer 必须连同 system prompt、模板、query、分隔符和输出预留重新渲染，再按 tokenizer 计数。
 
 渲染后的上下文近似为：
 
@@ -251,14 +258,14 @@ source_text[start_char:end_char] == emitted_span
 
 模型或抽取器的输出不能默认直接返回。最小发布策略有三条路径：
 
-```mermaid
-flowchart TD
-  C{"有已授权 context?"}
-  C -- "否" --> A["pre_generation / abstain"]
-  C -- "是" --> G["调用 generator 一次"]
-  G --> V{"引用语法通过?"}
-  V -- "是" --> P["post_generation / publish"]
-  V -- "否" --> R["post_generation / reject"]
+```text
+授权 context 为空
+  → pre_generation / abstain
+授权 context 非空
+  → 调用 generator 一次
+  → 检查引用语法
+      ├─通过 → post_generation / publish
+      └─失败 → post_generation / reject
 ```
 
 请求 A 的答案含 `[S1]`，且 `S1` 位于本次授权 context，因此可以通过本地 citation syntax gate。
@@ -295,7 +302,9 @@ S3: 召回阶段使用 Recall@k、MRR 和 nDCG。
 \frac{2}{9}\approx0.2222,
 \]
 
-低于本例设置的 `0.55` 阈值，所以终态是 `abstain`。
+低于本例设置的 `0.55` 阈值，所以逐字抽取 baseline 的终态是 `abstain`。
+分母是去掉内置 stop tokens 后的九个去重词法 token：「引、用、kubernetes、灾、难、恢、复、步、骤」。
+packed spans 只覆盖「引、用」，所以分子为 2。这是一条可复算的词法规则，并不判断 Kubernetes 灾备语义。
 
 这条负例说明：
 
@@ -304,7 +313,7 @@ S3: 召回阶段使用 Recall@k、MRR 和 nDCG。
 3. Citation availability 不是 evidence sufficiency。
 4. 阈值只是需要校准的决策规则，不是普适常数。
 
-真实系统应在独立 calibration split 上画 coverage–risk 曲线，选择业务可接受的回答率与错误风险。
+`generation_policy.py` 的另一条规则更窄：只有 context 为空时才在调用 generator 前短路。它没有把 `2/9` 当作通用生成前门禁。真实系统应在独立 calibration split 上画 coverage–risk 曲线，选择业务可接受的回答率与错误风险，并验证所选门禁实际包在生成调用之外。
 
 ## 两个请求的状态对照
 
@@ -315,9 +324,9 @@ S3: 召回阶段使用 Recall@k、MRR 和 nDCG。
 | 召回 | 含直接答案 | 只有主题相关片段 |
 | 重排 | 答案段和边界段进入 top-2 | 不能凭相似度制造缺失事实 |
 | Packing | `S1/S2` 都可放入 | 有 context，但没有所需步骤 |
-| Answer decision | exact span，coverage 1.0 | coverage 0.2222，abstain |
+| Answer decision | extractive exact span，coverage 6/6 | extractive coverage 2/9，abstain |
 | Citation | `[S1]` 合法 | 没有要发布的事实 claim |
-| 最终动作 | answer / syntax-publishable | abstain |
+| 最终动作 | extractive answer / citation syntax passed | extractive abstain；未调用 LLM |
 
 ## 一次失败该归到哪里
 

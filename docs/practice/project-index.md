@@ -19,7 +19,7 @@
 | 比较 RAG 框架 | [RAG Framework Adapters](projects/rag-framework-adapters.md) | 同一检索结果通过两个框架往返 | 检查 metadata、rank 与权限是否漂移 |
 | 构建安全工具 Agent | [Safe Agent](projects/safe-agent.md) | 跑通一次退款的九阶段生命周期 | 再接真实 Planner、框架、协议与外部服务 |
 | 完成单卡微调闭环 | [Single-GPU Finetuning](projects/single-gpu-finetuning.md) | 审计一批最终 labels | 比较 Prompt、RAG、LoRA 与 held-out 结果 |
-| 理解云 API 契约 | [Cloud API Contracts](projects/cloud-api-contracts.md) | 解析一次 typed response | 加入流式、重试、预算和不确定结果 |
+| 理解云 API 契约 | [Cloud API Contracts](projects/cloud-api-contracts.md) | 预测并运行离线 500→200：两次 reservation、一次 `uncertain`、本地估值 146 micro-USD | 对比文本协议，再加入流式、重试、预算和不确定结果 |
 | 部署和测量推理服务 | [Inference Serving](projects/inference-serving.md) | 跑通采样与最小 HTTP 服务 | 测量排队、TTFT、TPOT、显存和取消 |
 | 建立发布评测门禁 | [Evaluation Gate](projects/evaluation-gate.md) | 对固定 cases 重算指标 | 加入配对比较、切片与发布判断 |
 | 审计合成数据 | [Synthetic Data Audit](projects/synthetic-data-audit.md) | 验证一份 lineage artifact | 加入去重、verifier 和训练暴露账本 |

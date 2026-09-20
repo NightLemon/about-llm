@@ -1,5 +1,7 @@
 # 公式速查
 
+这是查符号和复算局部步骤的索引，不替代各章的推导。表项之间会复用字母，必须以该行说明为准；例如 KV 公式中的 \(D\) 是每个 attention head 的维度，而粗略训练 FLOPs 中的 \(D\) 是训练 token 数。矩阵 shape 采用 \([rows,columns]\)；向量是行还是列会改变乘法书写，见[线性代数](../foundations/math-linear-algebra.md)。字节、元素数、FLOPs 和 tokens/s 是不同单位：存储或算力计数不能单独推出峰值显存、时延、吞吐或质量。
+
 ## 概率与损失
 
 | 名称 | 公式 | 说明 |
@@ -26,11 +28,11 @@
 
 | 名称 | 公式 | 说明 |
 |---|---|---|
-| 注意力 | \(\text{softmax}(QK^T/\sqrt{d_k}+M)V\) | M 含因果/填充约束 |
-| LayerNorm | \(\gamma(x-\mu)/\sqrt{\sigma^2+\epsilon}+\beta\) | 按特征归一化 |
-| RMSNorm | \(\gamma x/\sqrt{\text{mean}(x^2)+\epsilon}\) | 不减均值 |
+| 注意力 | \(\text{softmax}(QK^T/\sqrt{d_k}+M)V\) | \(Q,K,V\) 的最后一轴为 \(d_k\)；softmax 沿 key 轴归一化，\(M\) 含因果/填充约束 |
+| LayerNorm | \(\gamma(x-\mu)/\sqrt{\sigma^2+\epsilon}+\beta\) | \(\mu,\sigma^2\) 在当前 token 的 feature 轴求 mean/variance |
+| RMSNorm | \(\gamma x/\sqrt{\text{mean}(x^2)+\epsilon}\) | mean 在 feature 轴；不减均值 |
 | SwiGLU | \((\text{SiLU}(xW_g)\odot xW_u)W_d\) | 门控 MLP |
-| LoRA | \(W'=W+(\alpha/r)BA\) | 低秩可训练增量 |
+| LoRA | \(W'=W+(\alpha/r)BA\) | 此处 \(W:[d_{out},d_{in}]\)、\(A:[r,d_{in}]\)、\(B:[d_{out},r]\)；行向量写法见[线性代数](../foundations/math-linear-algebra.md) |
 | Bradley–Terry RM margin/loss | \(m_i=(f_{w,i}-f_{l,i})^\top w,\ \ell_i=\operatorname{softplus}(-m_i)\) | \(P(y_w\succ y_l)=\sigma(m_i)\)；同 prompt 的共同 reward offset 不可识别 |
 | 线性 RM 梯度 | \(\nabla J=-\frac1n\sum_i\sigma(-m_i)(f_{w,i}-f_{l,i})+\lambda w\) | \(J=\operatorname{mean}(\ell_i)+\lambda\lVert w\rVert^2/2\) |
 | Reward centering（TRL 0.29 可选） | \(\lambda\operatorname{mean}[(r_w+r_l)^2]\) | 惩罚 pair midpoint；不要误写成 reward difference 或单边 score penalty |
@@ -51,22 +53,22 @@
 |---|---|---|
 | 梯度下降 | θₜ₊₁ = θₜ - η∇L(θₜ) | η 为学习率 |
 | 全局 batch | \(B_{micro}\times accumulation\times DP\) | 不乘 TP/PP |
-| 粗略训练 FLOPs | \(C\approx6ND\) | dense decoder 的预算近似 |
+| 粗略训练 FLOPs | \(C\approx6ND\) | \(N\) 为参数量、\(D\) 为训练 token 数；是 dense decoder 的总算力预算近似，不是 FLOP/s |
 | Scaling law | \(L\approx L_\infty+aN^{-\alpha}+bD^{-\beta}\) | 参数依实验而变 |
 | Compute-optimal 增长率 | \(N^*\propto C^{\beta/(\alpha+\beta)},\ D^*\propto C^{\alpha/(\alpha+\beta)}\) | 只适用于同一可分离幂律拟合与 \(C=kND\) 口径 |
-| KV 元素/序列 | \(2LTH_{kv}D\) | 再乘 batch 与元素字节 |
+| KV 元素/序列 | \(2LTH_{kv}D\) | K 与 V 各一份；再乘 batch 与每元素字节才是 payload bytes |
 | 单序列 KV block 数 | \(\lceil T/S\rceil\) | block size 为 \(S\)；tail 空 slot 为 \((S-T\bmod S)\bmod S\) |
-| 物理 block 碎片 | \(N_{allocated}S-N_{physical\ token\ values}\) | 共享 prefix 的 logical tokens 会重复计数，不能代入物理项 |
-| Prefix cache exact hit | \(I_e=I_q\ \land\ \tau_e=\tau_q[:|\tau_e|]\)，取最大 \(|\tau_e|\) | \(I\) 是完整安全/执行 identity，\(\tau\) 是 token ids；hash 只作候选索引，不能替代等值比较或授权 |
+| 物理 block 碎片（slot） | \(N_{allocated}S-N_{physical\ token\ values}\) | 单位是 token slots；共享 prefix 的 logical tokens 会重复计数，不能代入物理项 |
+| Prefix cache exact hit | \(I_e=I_q\ \land\ \tau_e=\tau_q[:\lvert\tau_e\rvert]\)，取最大 \(\lvert\tau_e\rvert\) | \(I\) 是完整安全/执行 identity，\(\tau\) 是 token ids；hash 只作候选索引，不能替代等值比较或授权 |
 | Causal generation forward positions | \(W=\sum_i(P_i+O_i-1)\) | 无 prefix reuse/speculation/beam，且每请求输出 \(O_i\ge1\)；prefill 最后位置产生首 token 分布，不等于 API 计费或 padding/kernel work |
 | MoE reference per-expert capacity | \(C=\lceil\phi Nk/E\rceil\) | \(N\) 为当前 group 有效 token、padding 不计，\(k\) 为 top-k；真实实现的 group/min/drop/reroute 语义可能不同 |
 | MoE reference balance diagnostic | \(L_{bal}^{ref}=E\sum_ef_ep_e\) | \(f_e=n_e/(Nk)\) 为 pre-capacity assignment fraction，\(p_e\) 为平均 router probability；不是所有实现的 training loss |
 | Router z-loss reference | \(L_z=N^{-1}\sum_i(\log\sum_e e^{r_{i,e}})^2\) | 约束 log-partition 尺度的一种常见形状；系数、group 与 reduction 依实现 |
-| 对称分组量化 | \(s_g=\max_{i\in g}|w_i|/(2^{b-1}-1),\ q_i=\operatorname{clip}(\operatorname{round}(w_i/s_g),-q_{max},q_{max})\) | code-range/rounding/zero-group 约定必须显式 |
+| 对称分组量化 | \(s_g=\max_{i\in g}\lvert w_i\rvert/(2^{b-1}-1),\ q_i=\operatorname{clip}(\operatorname{round}(w_i/s_g),-q_{max},q_{max})\) | code-range/rounding/zero-group 约定必须显式 |
 | 理想分组量化字节 | \(\lceil bRC/8\rceil+4R\lceil C/G\rceil\) | FP32 scale；不含 alignment、容器、zero point、未量化层和 workspace |
 | 本仓库 packed code 映射 | \(u_i=q_i+q_{max}\in[0,2^b-2]\) | row-major、LSB-first；全 1 code 非法，末 byte 高 padding bit 为 0；不是通用 runtime 格式 |
 | 本仓库单矩阵 v1 artifact | \(M_{file}=32+\lceil bRC/8\rceil+4R\lceil C/G\rceil+32\) bytes | fixed header + code + little-endian FP32 scales + unkeyed SHA-256；不含文件系统开销，不是整模型格式 |
-| Per-token INT8 KV payload | \(M=2BH_{kv}T(D+4),\ \rho_{FP32/INT8}=4D/(D+4)\) | K/V head dim 同为 D，各自一个 FP32 scale/token/head；不含 block/alignment/workspace |
+| INT8 KV payload（\(B\) 条、各 \(T\) token） | \(M=2BH_{kv}T(D+4)\) bytes；\(\rho_{FP32/INT8}=4D/(D+4)\) | K/V head dim 同为 \(D\)，各自每 token/head 有一个 FP32 scale；\(\rho\) 是无量纲的 payload 大小比，不含 block、alignment、workspace 或其他 runtime allocation |
 | Speculative 接受率 | \(\alpha(x)=\min(1,p(x)/q(x))\) | \(x\sim q\)，故被采到时 \(q(x)>0\) |
 | Speculative 拒绝分布 | \(r(i)=(p(i)-q(i))_+/\sum_j(p(j)-q(j))_+\) | 拒绝概率 \(=TV(p,q)\)，一步总输出边际恢复为 \(p\) |
 
@@ -80,4 +82,4 @@
 | Recall | \(TP/(TP+FN)\) | 真实为正中找回多少 |
 | F1 | \(2PR/(P+R)\) | P/R 调和平均 |
 
-公式前先确认符号、shape、对数底、归一化单位与 mask。不同论文同一字母可能含义完全不同。
+公式前先确认符号、shape、对数底、归一化单位与 mask。不同论文同一字母可能含义完全不同；需要沿概念找推导时使用[概念依赖地图](concept-map.md)，需要从公式回到一个可运行例子时使用[实验与项目索引](../practice/labs.md)。

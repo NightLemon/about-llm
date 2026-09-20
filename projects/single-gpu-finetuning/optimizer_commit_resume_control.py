@@ -948,28 +948,18 @@ def _load_checkpoint(
 
     state.model.load_state_dict(model_payload, strict=True)
     state.optimizer.load_state_dict(optimizer_payload)
-    scheduler_payload = _require_exact_keys(
-        root["scheduler"],
-        {
-            "step_size",
-            "gamma",
-            "base_lrs",
-            "last_epoch",
-            "_step_count",
-            "_is_initial",
-            "_get_lr_called_within_step",
-            "_last_lr",
-        },
-        "scheduler",
-    )
     expected_scheduler = state.scheduler.state_dict()
-    for field in (
-        "step_size",
-        "gamma",
-        "base_lrs",
-        "_is_initial",
-        "_get_lr_called_within_step",
-    ):
+    scheduler_payload = _require_exact_keys(
+        root["scheduler"], set(expected_scheduler), "scheduler"
+    )
+    # StepLR's serialized static fields vary across supported PyTorch releases
+    # (for example, 2.6 has ``verbose`` while newer releases have
+    # ``_is_initial``).  The locally constructed scheduler is this run's
+    # schema authority.  Every field except explicit progress is still checked
+    # exactly, so a version-specific field cannot become an unchecked escape
+    # hatch and unknown payload keys remain rejected.
+    scheduler_progress_fields = {"last_epoch", "_step_count", "_last_lr"}
+    for field in set(expected_scheduler) - scheduler_progress_fields:
         if scheduler_payload[field] != expected_scheduler[field]:
             raise ValueError(f"scheduler {field} contract drifted")
     scheduler_epoch = _require_integer(

@@ -32,7 +32,7 @@ python projects/transformers-basics/verify_release_evidence.py
 ```
 
 在输出中找到 `llama-3.2-text-model-card`。这条记录固定了 Meta Llama 3.2 文本模型卡的提交、文件哈希和本地投影，
-并把参数规模、128k 上下文、GQA 等内容明确标为厂商声明。
+并把参数规模、128k 上下文、GQA 等内容明确标为厂商声明。[SOURCE:llama-3-2-model-card]
 
 | 当前证据 | 仓库是否已有 |
 |---|---|
@@ -83,15 +83,18 @@ repository at immutable revision
 
 只固定 model revision，却让 tokenizer 或 template 漂移，仍然不能复现实验。Hash 能识别 bytes 是否变化，但无密钥 hash 不是发布者签名。
 
-## 用证据阶梯约束结论
+## 按 checkpoint 证据链约束结论
 
-| 层级 | 证据 | 可以回答 |
+沿着同一个 checkpoint，先核对发布说明和文件身份，再观察加载、执行与目标评测。下表列出每一步能回答的问题；
+需要判断整个实现或系统的成熟度时，再使用[仓库地图的 L0–L4 定义](../guide/repo-map.md)。
+
+| 证据环节 | 证据 | 可以回答 |
 |---|---|---|
-| L1 | 固定 model card | 厂商对该发布声明了什么 |
-| L2 | 固定 config/tokenizer bytes | 静态结构、token 协议候选 |
-| L3 | weight inventory 与成功加载 | 指定权重是否完整进入 loader |
-| L4 | 目标 runtime forward/generate | cache、logits 和执行路径 |
-| L5 | 目标任务与硬件评测 | 质量、性能、容量和 SLO |
+| 发布说明 | 固定 model card | 厂商对该发布声明了什么 |
+| 文件身份 | 固定 config/tokenizer bytes | 静态结构、token 协议候选 |
+| 加载 | weight inventory 与成功加载 | 指定权重是否完整进入 loader |
+| 执行 | 目标 runtime forward/generate | cache、logits 和执行路径 |
+| 目标评测 | 目标任务与硬件评测 | 质量、性能、容量和 SLO |
 
 不同层的材料回答不同问题。例如，model card 可以声明上下文长度，本仓库的固定样例可以检查 GQA 公式，
 另一个模型的 weight smoke 可以检查加载路径。只有在同一个 Llama checkpoint 上完成对应运行，才能讨论它的
@@ -246,6 +249,35 @@ M_{KV,\mathrm{ideal}}
 也没有计入模型权重与激活值。
 
 因此它适合做预检和解释变量趋势，不能当作 GPU 峰值。若 checkpoint 使用自定义 attention，也要先确认公式前提成立。
+
+### 先用一个小结构把两本账算完
+
+为方便手算，先定义一个两层 Llama-style 教学结构；它不对应任何已发布的 Llama checkpoint。
+设隐藏宽度 \(d=8\)、MLP 中间宽度 \(m=12\)、词表 \(V=16\)，每层有 2 个查询头、1 个 KV 头，头维度为 4。
+所有投影都没有 bias，每个 RMSNorm 只有一个长度为 8 的缩放向量，输入 embedding 与输出头共享权重。
+
+先逐项数一层的参数。矩阵怎样命名或转置不影响这里的元素数量：
+
+| 一层中的权重 | 参数数目 |
+|---|---:|
+| Q 投影与 attention 输出投影 | \(8\times8+8\times8=128\) |
+| K、V 投影 | \(8\times4+8\times4=64\) |
+| SwiGLU 的三组矩阵 | \(3\times8\times12=288\) |
+| 两个 RMSNorm 缩放向量 | \(2\times8=16\) |
+| 合计 | \(128+64+288+16=496\) |
+
+两层共有 \(2\times496=992\) 个参数。再加一次共享 embedding 的 \(16\times8=128\) 和末尾 RMSNorm 的 8，
+得到 **1,128 个参数**。若权重均以 FP16 存放，每个元素 2 字节，权重 payload 是 **2,256 字节**。
+改成不共享输出头时，需要多存一份 \(16\times8\) 矩阵，因此增加 256 字节，变成 **2,512 字节**。
+
+再看同一结构的 KV：一个请求已缓存 3 个 token，K/V 也用 FP16，则
+\(2\times2\times1\times3\times1\times4\times2=96\) 字节。
+继续缓存第 4 个 token 后，理想 payload 变为 128 字节，增加的 32 字节来自两层新写入的一组 K 和 V。
+如果运行时每块容纳 2 个 token，3 个 token 就要分配两块，物理槽位已按 4 个 token 占用 **128 字节**。
+
+这解释了为什么“有效 token 的 KV 账”与“已分配的块账”不同。现在自己把请求数从 1 改成 2：
+假设两条请求不共享前缀，每条仍缓存 3 个 token，理想 KV 应为 192 字节；模型权重则仍可由同一个实例共享。
+切回真实 Llama 时，要从选定 revision 的 config 和实际权重形状重做这张表，再测量运行峰值。
 
 ### 运行峰值账
 

@@ -85,7 +85,7 @@ Gemini 的 `model` role。模型路径则是 `/v1beta/models/gemini-example:gene
 
 ## 再把样例放回完整对象图
 
-`generateContent` 以 request/response 而非 Interaction resource 为中心：
+`generateContent` 以 request/response 而非 Interaction resource 为中心；请求和响应字段见 [SOURCE:gemini-generate-content]：
 
 ```text
 GenerateContentRequest
@@ -123,7 +123,7 @@ GenerateContentResponse
 | Request | system text、user/model text、`maxOutputTokens`、temperature | 多模态、工具、安全与结构化输出尚未建模 |
 | Response | 恰好一个 candidate；其中每个 part 都是非空 text | 零/多 candidate、非 text part、混合 text/function part 会报错 |
 | Stream | 每个 chunk 最多一个 candidate，只接收 text part | 缺失或重复终态、非文本 part、candidate index 非零会报错 |
-| Interactions | 未实现 | 使用独立 adapter 和状态机 |
+| Interactions | 没有请求 adapter；另有固定 SSE 回放 | 使用独立 adapter；回放只覆盖受限的事件生命周期 |
 
 这种限制是有意的。例如响应同时包含说明文字和 `functionCall` 时，只返回文字会让调用方看不到待执行动作；
 多个 candidate 只保留第一个，也会丢失选择语义。完整字段清单与测试边界见
@@ -138,7 +138,7 @@ GenerateContentResponse
 | 主要对象 | candidate、content part | Interaction、step |
 | 增量 | text 或其他 part | typed step delta |
 | 结束依据 | 候选路径读取 `finishReason`，传输仍以 EOF 结束 | Interaction/step 的状态与 terminal event |
-| 当前仓库 | 单 candidate 的 text-only 状态机 | 未实现 |
+| 当前仓库 | 单 candidate 的 text-only 状态机 | 固定 SSE 回放；不是请求 adapter 或完整协议支持 |
 
 仓库的固定流式用例在一个 payload 中收到 `text=hello`、`finishReason=STOP` 和 token usage。
 状态机依次产出 `text → finish → usage`；随后只有传输 EOF 才产出 `transport_end`。
@@ -269,17 +269,23 @@ micro average 会掩盖小模态和难例；报告 macro、slice、failure taxon
 
 `cachedContent`、implicit cache、file API 和 `previous_interaction_id` 解决的是不同问题：
 
-- cache：减少重复处理/计费的 provider 机制；
+- cache：复用已处理的上下文，实际费用取决于命中情况和目标平台的计价规则；
 - file：媒体上传与引用生命周期；
 - server state：历史续接；
 - RAG：授权过滤、检索、版本、证据定位与发布引用。
 
 它们不能互相替代。尤其 file id 或长窗口不自动提供 tenant ACL、最新版本选择、删除传播、引用正确性或 no-answer gate。
 
+配置缓存时，先确认目标 API 和型号支持哪种机制，再比较命中量与完整费用。复用上下文是机制，是否节省总成本是
+需要用同一 workload 核对的结果。
+
 ## Structured output：语法约束之后还有语义验证
 
-`generateContent` 把结构化输出设置放在 generation config 一侧，Interactions 使用自己的 response format。
-两者都只能约束各自支持的 schema 子集。成功解析首先说明形状符合约束，还没有验证内容是否真实、获授权或可执行。
+`generateContent` 把结构化输出设置放在 `generationConfig` 一侧，Interactions 使用自己的 `response_format`。
+[SOURCE:gemini-generate-content] [SOURCE:gemini-interactions-reference]
+
+两边的 schema 支持范围需按目标型号、API 和版本分别核对。成功解析首先说明形状符合约束，内容是否真实、
+是否获授权以及能否执行，仍由应用验证。
 
 还必须验证：
 

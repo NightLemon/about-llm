@@ -62,6 +62,26 @@ python projects/transformers-basics/trace_rmsnorm_operator_stack.py `
 GPU 运行能够证明这次输入确实走过当前 CUDA backend；它仍不是性能基准，也不能证明所有 dtype、shape、layout
 和反向路径都已支持。完整实验记录方法见[实验 2D](../practice/labs/lab-2d-operator-stack.md)。
 
+### 用同一份 trace 对齐五层证据
+
+第一次运行时，不必把输出当成一长串框架名词。按下面顺序为每一行输出回答三个问题：我看到了什么？它支持
+哪个判断？若要继续向下，还缺什么？
+
+| 观察项 | 它把 RMSNorm 放在哪一层 | 当前能解释什么 | 继续下钻所需证据 |
+|---|---|---|---|
+| `formula`、最大绝对误差与有限梯度 | 数学语义 | 固定输入、epsilon 和权重下，手写分解与框架结果对齐；本次 backward 没有 NaN/Inf | 数值 gradient check、更多输入范围和训练路径 |
+| shape、stride、共享 storage 与 `contiguous` | 张量布局 | 转置 view 没有搬运这份数据；连续化在这个输入上另建 storage | allocator、复制事件和不同 layout 的实际成本 |
+| FX 与 `torch.export` 的节点 | Python 图与 ATen 图 | 当前脚本把同一分解表达成两层框架图 | dispatcher、decomposition、compile log 或 lowering 输出 |
+| profiler 的 ATen 事件与 `execution_device` | 当前 backend 的运行记录 | 这次调用实际由当前 PyTorch build 在记录的 CPU/CUDA device 上执行 | kernel timeline、设备指令和同步后的性能测量 |
+| 后续 GPU 实验的 kernel 时间线、带宽/指令计数与重复计时 | kernel 与硬件 | 指定 workload 的 kernel 选择和成本；当前 CPU trace 不提供这些结果 | 其他 shape、dtype、设备与端到端请求的复现 |
+
+例如，默认 CPU trace 的六个 FX/ATen 节点是这份 `ReferenceRMSNorm`、这组 `[2,3,4]` 输入和当前安装版本下的
+可复核观察。它帮助你认出分解后的语义，却既不是 `rms_norm` 的稳定实现承诺，也不能相加为“六个 GPU kernel”。
+
+同样，trace 的 `logical_bytes` 只是逻辑元素数乘单个元素字节数。它适合复算张量 payload；它不包含 allocator
+预留、进程内存、cache、workspace 或任何 HBM 流量。需要做容量和性能判断时，按[硬件性能模型的字节口径](hardware-edge.md#byte-scopes)
+分别记录。
+
 ## 第一层：数学定义只回答“算什么”
 
 设 hidden state 为 \(x\in\mathbb{R}^{B\times T\times D}\)，权重为 \(w\in\mathbb{R}^{D}\)。RMSNorm 沿最后

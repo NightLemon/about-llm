@@ -11,7 +11,7 @@
 这个项目把一次决定拆成五层：
 
 ```mermaid
-flowchart LR
+flowchart TD
   C["cases + recorded answers"] --> S["score each system"]
   S --> M["run manifests"]
   M --> G["paired comparison + gate"]
@@ -19,7 +19,9 @@ flowchart LR
   V --> R["HTML view + release ledger"]
 ```
 
-每一层回答不同问题：模型是否执行过、分数能否重算、统计比较是否一致、文件是否来自可信发布链，不能互相代替。
+每一层回答不同问题：是否保存了输出和声明的系统身份、分数能否重算、统计比较是否一致、文件是否来自可信发布链，
+不能互相代替。主线中的 manifest 绑定的是调用者填写的 `system_id`，并不认证模型是否真的执行过；这需要独立的
+运行记录或目标环境证据。
 
 ## 十分钟热身：为什么 24/30 仍然不能发布 { #headline-trap }
 
@@ -63,6 +65,7 @@ python projects/evaluation-gate/trace_headline_accuracy_trap.py
 - 主指标与方向：越高越好还是越低越好；
 - Minimum meaningful effect 与 non-inferiority 边界；
 - Protected slices、安全/故障上限与缺失分母；
+- 超时、拒答、解析失败和裁判失败怎样进入总体及每个保护切片的分子、分母；
 - 最大样本量、bootstrap seed，以及是否允许中途查看。
 
 这些定义若在看到结果后变化，p-value、区间和发布结论就不再对应原来的问题。
@@ -155,6 +158,10 @@ python -m about_llm.evaluation.cli compare `
 
 这次比较只配置了质量和延迟门槛。结果中的 `safety_metric: null` 表示安全尚未进入本次测量。
 正式发布若要求安全门槛，需要提供相应的逐例分数，并用 `--safety-metric` 指定指标。
+
+`compare` 用总体质量与保护切片的 95% bootstrap 区间下界检查门槛。它记录的
+`probability_of_improvement` 是此次重采样中差值大于零的比例，不是 candidate 更好的概率，也不会让门禁通过。
+若协议要求某个保护切片最低覆盖，而该切片 case 不足，则应先补样或使评测无效；不能用总体区间代替该切片的证据。
 
 质量区间会显示为 `[1.0, 1.0]`，因为两条样例的配对差值都恰好是 +1，怎样有放回抽取仍是同一个均值。
 这个区间描述的是“从当前两条样例重采样”会怎样，样例对真实流量的代表性仍然未知。因此，本例只演示计算链；

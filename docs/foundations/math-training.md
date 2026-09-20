@@ -304,14 +304,21 @@ AdamW 的简化更新是：
 
 ## 10. Gradient clipping：限制一步有多大
 
-Global norm clipping：
+全局范数裁剪（global norm clipping）先把待裁剪的梯度看成一个向量 \(g\)，再与阈值 \(c>0\) 比较：
 
 \[
-g'=g\min\left(1,\frac{c}{\lVert g\rVert_2+\epsilon}\right).
+g'=\begin{cases}
+g, & \lVert g\rVert_2\le c,\\
+\dfrac{c}{\lVert g\rVert_2}g, & \lVert g\rVert_2>c.
+\end{cases}
 \]
 
 若整体 norm 不超过阈值 \(c\)，gradient 不变；超过时，所有分量按同一比例缩小，整体方向保持不变。
-Per-value clipping 则逐元素截断，可能明显改变方向。
+例如 \(g=(3,4)\) 的范数是 5，阈值为 2 时，两个分量都乘 \(2/5\)，得到 \((1.2,1.6)\)。
+逐元素裁剪（per-value clipping）到区间 \([-2,2]\) 则得到 \((2,2)\)，方向已经改变。
+
+上式是理想定义，零梯度直接走第一分支。具体库可能在分母加一个小常数来保护数值，
+使阈值附近也出现微小缩小；比较程序结果时，要核对这一实现细节，而不是要求逐位符合数学式。
 
 应记录裁剪前的梯度范数和触发比例。若几乎每一步都大幅裁剪，需要继续检查学习率、数据、loss scale 和数值问题。
 裁剪只能限制有限梯度的大小，NaN 与错误标签仍要单独修复。

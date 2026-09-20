@@ -459,7 +459,7 @@ Expert weights 分布在设备上时，token 按 routing 做 all-to-all dispatch
 
 ## 19. 当前仓库证据边界
 
-仓库已有生成采样、paired evaluation、KV 公式、Roofline、Agent 工具安全与 scaling 计算器。MoE 侧除 NumPy top-k/capacity/drop/combine oracle 外，已有 CPU Float64 trainable router/MLP 的 sparse—dense forward/backward、overflow policy 对账，以及四条相互隔离或递进的同机 Gloo controls：replicated global capacity competition、owner-only token dispatch/return、无 capacity 的 authored reverse-split training，以及 capacity-aware kept-only reverse-split training。仍没有目标 DeepSeek/Qwen MoE checkpoint、shared/fine-grained experts、reroute/dropless distributed training、DDP/FSDP/ZeRO、CUDA/NCCL、多节点、GPU grouped GEMM 或性能/质量实跑；因此这些 CPU fixtures 不是目标模型或生产 EP 复现。推理侧也没有训练 PRM/online reasoning policy，长上下文侧没有目标 checkpoint 的全长度矩阵，本章相应内容仍是实验协议与机制教材。
+截至本次台账审校（2026-09-13），仓库已有生成采样、paired evaluation、KV 公式、Roofline、Agent 工具安全与 scaling 计算器。MoE 侧除 NumPy top-k/capacity/drop/combine oracle 外，已有 CPU Float64 trainable router/MLP 的 sparse—dense forward/backward、overflow policy 对账，以及四条相互隔离或递进的同机 Gloo controls：replicated global capacity competition、owner-only token dispatch/return、无 capacity 的 authored reverse-split training，以及 capacity-aware kept-only reverse-split training。仍没有目标 DeepSeek/Qwen MoE checkpoint、shared/fine-grained experts、reroute/dropless distributed training、DDP/FSDP/ZeRO、CUDA/NCCL、多节点、GPU grouped GEMM 或性能/质量实跑；因此这些 CPU fixtures 不是目标模型或生产 EP 复现。推理侧也没有训练 PRM/online reasoning policy，长上下文侧没有目标 checkpoint 的全长度矩阵，本章相应内容仍是实验协议与机制教材。
 
 ## 20. 常见错误结论
 

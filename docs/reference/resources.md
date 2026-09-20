@@ -68,7 +68,7 @@
 - Srivastava et al., [BIG-bench](https://arxiv.org/abs/2206.04615), 2022。
 - Zheng et al., [Judging LLM-as-a-Judge](https://arxiv.org/abs/2306.05685), 2023。
 - Bommasani et al., [On the Opportunities and Risks of Foundation Models](https://arxiv.org/abs/2108.07258), 2021。
-- Panfilov et al., [Stealing Reasoning Traces from Proprietary LLM APIs](https://arxiv.org/abs/2608.09867), 2026：opaque reasoning block 的跨上下文重放、轨迹发布风险与 context-bound envelope；论文注明披露后原攻击截至 2026 年 8 月已不可复现。
+- Panfilov et al., [Stealing Reasoning Traces from Proprietary LLM APIs](https://arxiv.org/abs/2608.09867), 2026 [SOURCE:arxiv-opaque-reasoning-case]：opaque reasoning block 的跨上下文重放、轨迹发布风险与 context-bound envelope；论文的 2026 年 8 月缓解声明限定于图 1、第 2.4 节与附录 C 的指定攻击，不代表当前端点安全。
 - OWASP, [Top 10 for LLM Applications](https://genai.owasp.org/)：应用威胁清单；使用时核对当前版本。
 - NIST, [AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)：风险治理框架。
 - Mitchell et al., [Model Cards for Model Reporting](https://arxiv.org/abs/1810.03993), 2018。
@@ -84,4 +84,4 @@
 
 ## 阅读原则
 
-论文链接只代表值得学习，不代表仓库为其全部结论背书。阅读时核对版本、数据、规模、对照、推理预算与复现；对当下模型/法规/产品信息再查官方最新来源。
+论文链接只代表值得学习，不代表仓库为其全部结论背书。阅读时核对版本、数据、规模、对照、推理预算与复现；对当下模型、法规或产品信息再查官方最新来源。需要把资料接回教材时，从[学习路径](../guide/learning-paths.md)选主线，从[概念依赖地图](concept-map.md)定位前置概念。

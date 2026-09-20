@@ -13,7 +13,7 @@
 
 </div>
 
-**专题导航**：[推理系统](reasoning-systems.md) · [长上下文](long-context-systems.md) · [MoE 系统](moe-systems.md) · [证据台账](../evidence/frontier-controls.md)
+**专题导航**：[推理系统](reasoning-systems.md) · [长上下文](long-context-systems.md) · [MoE 系统](moe-systems.md) · [端侧小模型与本地智能](on-device-small-models.md) · [证据台账](../evidence/frontier-controls.md)
 { .doc-nav }
 
 假设一个合同审查系统答错了“提前解约需要提前多少天通知”。团队提出三个改法：
@@ -82,6 +82,8 @@ selection:
 再理解跨设备专家并行，以及总参数与每次激活参数的区别。
 
 如果问题是实时事实、权限或副作用，可能更需要 RAG、tools 和 system policy，而不是三条路线中的任何一种。
+如果约束来自设备内存、能耗、离线可用性或数据不能外发，先读[端侧小模型与本地智能](on-device-small-models.md)：它把
+本地模型、数据 policy、router、verifier 与受控升级放进同一条请求路径。
 
 ## 它们在一次请求的哪里发生 { #combined-request }
 
@@ -131,6 +133,7 @@ tool calls
 wall-clock deadline
 GPU memory / parallelism
 cost
+offered / admitted / completed / failed requests
 ~~~
 
 ### 2. 固定 baseline
@@ -145,7 +148,8 @@ cost
 
 ### 4. 保留完整分母
 
-请求超时、显存不足、输入截断、输出无效、token 被丢弃、工具报错和 verifier 选择失败都要进入分母。
+请求超时、显存不足、输入截断、输出无效、token 被丢弃、工具报错和 verifier 选择失败都要进入分母。若系统有 admission
+control，也分别报告 offered、admitted、completed 与各失败终态，不能只在已完成请求中比较质量或成本。
 
 ### 5. 解释边界
 
@@ -195,6 +199,12 @@ MoE 仍需存储/分片总权重，并承担 routing、expert imbalance、all-to
 1. [长上下文](long-context-systems.md)
 2. [MoE 系统](moe-systems.md)
 3. 推理系统中的 offered budget 与多候选成本
+
+### 端侧/隐私工程师
+
+1. [端侧小模型与本地智能](on-device-small-models.md)
+2. [长上下文](long-context-systems.md)，核对本地 KV 与 prefill 预算
+3. [推理系统](reasoning-systems.md)，核对升级前后的候选与 verifier 预算
 
 ### 训练/算法工程师
 

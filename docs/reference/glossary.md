@@ -1,12 +1,36 @@
 # LLM 术语知识图谱
 
-这不是只给缩写配一句中文的词典。每个词条同时回答五件事：它是什么、属于哪一层、先学什么、最容易与什么混淆、去哪里阅读和运行验证。
+遇到一个陌生词时，先找到它在当前问题中的含义，再决定是否需要补课。下面的词条给出简短定义、先修概念、
+容易混淆的概念，以及进一步讲解和实践的入口。
 
-第一次系统学习请先看[概念依赖与易混淆地图](concept-map.md)。英文术语按字母检索；同一词在具体框架中若有不同定义，以链接的正文、固定版本和实验契约为准。
+## 先找到你正在问的问题 { #find-a-term }
 
-| 术语 | 核心定义 | 分类 | 先修 | 易混淆 | 权威正文 | 可运行验证 |
+已经知道术语名称时，用浏览器的查找功能（通常是 `Ctrl+F` 或 `⌘F`）搜索英文名称或中文释义。
+词条按英文名称排列；还不知道名称时，可以从下表的中文问题进入。
+
+| 你正在问什么 | 先查这些词 | 再去哪里理解关系 |
+|---|---|---|
+| 概率和训练误差怎样连接？ | [Probability](#term-probability)、[Softmax](#term-softmax)、[Cross-entropy](#term-cross-entropy) | [概率与信息论](../foundations/math-probability.md) |
+| 参数为什么会更新？ | [Gradient](#term-gradient)、[Backpropagation](#term-backpropagation)、[Optimizer](#term-optimizer) | [训练数学](../foundations/math-training.md) |
+| 模型可以看到哪些位置？ | [Attention](#term-attention)、[Causal mask](#term-causal-mask)、[Loss mask](#term-loss-mask) | [Transformer 中的四类 mask](../core/transformer.md) |
+| 微调究竟改变了什么？ | [SFT](#term-sft)、[LoRA](#term-lora)、[Checkpoint](#term-checkpoint) | [微调总览](../training/finetuning.md) |
+| 请求为什么变慢？ | [TTFT/TPOT](#term-ttft-tpot)、[Latency](#term-latency)、[SLO](#term-slo) | [一次推理请求](../systems/inference-request-lifecycle.md) |
+| 检索到了文档，为什么仍答不对？ | [RAG](#term-rag)、[ANN](#term-ann)、[Reranker](#term-reranker)、[Faithfulness](#term-faithfulness) | [RAG 诊断链](concept-map.md) |
+| 模型提出工具调用后，谁决定执行？ | [Tool calling](#term-tool-calling)、[Agent](#term-agent)、[Action](#term-action)、[Workflow](#term-workflow) | [一次退款任务](../applications/agent-task-lifecycle.md) |
+| 指标提高能说明什么？ | [Baseline](#term-baseline)、[Evaluation](#term-evaluation)、[Calibration](#term-calibration) | [评测总览](../quality/evaluation.md) |
+| 外部文档怎样影响权限与安全？ | [Prompt injection](#term-prompt-injection)、[Tool calling](#term-tool-calling)、[Safety](#term-safety) | [系统安全](../quality/safety.md) |
+
+查到词条后，先读“核心定义”。定义里仍有不懂的概念，就沿“先修”回补；再用“易混淆”检查自己是否把两件事当成了
+同一件事。需要完整学习顺序时，打开[概念依赖与易混淆地图](concept-map.md)。
+
+最后一列区分实际实验与验证思路。有些主题已有运行命令，有些只有实验设计；进入目标页后，先确认输入、预期观察和
+当前证据范围。同一词在不同框架中可能有不同定义，应以对应正文和固定版本为准。
+
+## 按英文名称查词 { #terms }
+
+| 术语 | 核心定义 | 分类 | 先修 | 易混淆 | 详细讲解 | 实践或验证思路 |
 |---|---|---|---|---|---|---|
-| <a id="term-a2a"></a>A2A | Agent2Agent Protocol，描述独立 Agent 的发现、消息、任务状态与 artifact 交换。 | Agent | [Agent](#term-agent) | [MCP](#term-mcp) | [Agent 互操作](../applications/agent-interoperability.md) | [A2A loopback control](../applications/agent-interoperability.md) |
+| <a id="term-a2a"></a>A2A | Agent2Agent Protocol，描述独立 Agent 的发现、消息、任务状态与 artifact 交换。 | Agent | [Agent](#term-agent) | [MCP](#term-mcp) | [Agent 互操作](../applications/agent-interoperability.md) | [A2A 本地往返实验](../practice/projects/safe-agent.md#mcp-a2a) |
 | <a id="term-ablation"></a>Ablation | 保持其余条件不变，移除或替换一个组件以估计它对结果的影响。 | 证据 | [Baseline](#term-baseline) | [Control](#term-control) | [架构比较](../core/architectures-interpretability.md) | [Attention 实验](../practice/labs.md#lab-2) |
 | <a id="term-abstain"></a>Abstain | 证据不足或风险过高时明确不作答或转交，而不是生成一个低可信答案。 | 评测 | [Calibration](#term-calibration) | [Hallucination](#term-hallucination) | [RAG 证据不足](../applications/rag-generation.md) | [RAG Foundations](../practice/projects/rag-foundations.md) |
 | <a id="term-accuracy"></a>Accuracy | 正确预测数量占评测样本数量的比例；必须说明样本和分母定义。 | 评测 | [Metric](#term-metric) | [Calibration](#term-calibration) | [评测总览](../quality/evaluation.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
@@ -18,7 +42,7 @@
 | <a id="term-advantage"></a>Advantage | (A(s,a)=Q(s,a)-V(s))，衡量动作相对当前 state 平均行为好多少。 | 强化学习 | [Value function](#term-value-function), [Return](#term-return) | [Reward](#term-reward) | [LLM 强化学习](../training/reinforcement-learning.md) | [PPO objective toy](../practice/projects/single-gpu-finetuning.md) |
 | <a id="term-agent"></a>Agent | 模型在状态、动作、观察循环中调用工具并朝停止条件推进的受控系统。 | Agent | [Tool calling](#term-tool-calling) | [Workflow](#term-workflow) | [Agent 总览](../applications/agents.md) | [Safe Agent](../practice/projects/safe-agent.md) |
 | <a id="term-alignment"></a>Alignment | 让系统行为更符合目标用户意图、价值、安全和权限边界的一组方法。 | 对齐 | [SFT](#term-sft) | [Safety](#term-safety) | [对齐与偏好优化](../training/alignment.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
-| <a id="term-ann"></a>ANN | Approximate Nearest Neighbor，用少量近邻召回损失换取向量检索吞吐。 | RAG | [Embedding](#term-embedding) | [Vector database](#term-vector-database) | [RAG 检索](../applications/rag-retrieval.md) | [RAG 检索实验](../applications/rag-retrieval.md) |
+| <a id="term-ann"></a>ANN | Approximate Nearest Neighbor，以近似近邻搜索降低检索成本的方法；召回与速度取决于索引、参数和负载。 | RAG | [Embedding](#term-embedding) | [Vector database](#term-vector-database) | [RAG 检索](../applications/rag-retrieval.md) | [ANN 验证设计（需目标索引）](../applications/rag-retrieval.md#ann) |
 | <a id="term-artifact"></a>Artifact | 可保存、校验和重放的一次输入、配置、输出或报告工件。 | 证据 | 根概念 | [Checkpoint](#term-checkpoint) | [准确性与核验](accuracy.md) | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
 | <a id="term-aten"></a>ATen | PyTorch 用于定义算子 schema、overload 与 backend dispatch 的核心算子层。 | 计算栈 | [Operator](#term-operator) | [Kernel](#term-kernel) | [算子与计算栈](../systems/operator-stack.md) | [RMSNorm 算子实验](../practice/labs/lab-2d-operator-stack.md) |
 | <a id="term-attention"></a>Attention | 根据 query-key 匹配对 value 加权聚合的信息混合机制。 | 架构 | [Softmax](#term-softmax) | [Cross-attention](#term-cross-attention) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
@@ -224,7 +248,7 @@
 | <a id="term-self-attention"></a>Self-attention | query、key 和 value 都来自同一序列表示的 attention。 | 架构 | [Attention](#term-attention) | [Cross-attention](#term-cross-attention) | [Transformer](../core/transformer.md) | [Attention 实验](../practice/labs.md#lab-2) |
 | <a id="term-self-consistency"></a>Self-consistency | 对同一输入采样多个候选，再对规范化后的答案投票。 | 推理 | [Sampling](#term-sampling) | [Best-of-N](#term-best-of-n) | [推理系统](../frontier/reasoning-systems.md) | [Inference Serving](../practice/projects/inference-serving.md) |
 | <a id="term-sequential-testing"></a>Sequential testing | 按预设或自适应 look schedule 重复检验并用相应规则控制错误率的实验设计。 | 统计 | [P-value](#term-p-value), [Statistical power](#term-statistical-power) | [Confidence interval](#term-confidence-interval) | [评测测量学](../quality/evaluation-measurement.md) | [Sequential peeking control](../practice/projects/evaluation-gate.md) |
-| <a id="term-sft"></a>SFT | Supervised Fine-Tuning，使用理想输入输出对训练模型条件概率。 | 训练 | [Fine-tuning](#term-fine-tuning), [Cross-entropy](#term-cross-entropy) | [Preference data](#term-preference-data) | [微调总览](../training/finetuning.md) | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| <a id="term-sft"></a>SFT | Supervised Fine-Tuning，使用理想输入输出对训练模型条件概率。 | 训练 | [Fine-tuning](#term-fine-tuning), [Cross-entropy](#term-cross-entropy) | [Preference data](#term-preference-data) | [微调总览](../training/finetuning.md) | [追踪一个 SFT 样本](../practice/labs/lab-4a-sft-sample.md) |
 | <a id="term-shape"></a>Shape | 张量每条轴上的长度构成的元组，例如 <code>[B,T,D]</code>；它描述容器尺寸，不描述数值含义。 | 计算栈 | [Tensor](#term-tensor) | [Stride](#term-stride) | [数学基础](../foundations/math.md) | [RMSNorm 算子实验](../practice/labs/lab-2d-operator-stack.md) |
 | <a id="term-sla"></a>SLA | Service Level Agreement，对外约定的服务责任，通常包含违约条件。 | 系统 | [SLO](#term-slo) | [Metric](#term-metric) | [服务与可观测性](../systems/serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |
 | <a id="term-slo"></a>SLO | Service Level Objective，对延迟、可用性、错误率或质量给出时间窗口目标。 | 系统 | [Metric](#term-metric) | [SLA](#term-sla) | [服务与可观测性](../systems/serving.md) | [Inference Serving](../practice/projects/inference-serving.md) |

@@ -115,6 +115,10 @@ flowchart TB
 对象式训练器常把参数和 optimizer state 藏在实例内部。这里的 train step 显式接收旧 `params` 与
 `optimizer_state`，再返回两棵新树。Python 变量重新绑定，不表示 device array 被原地修改。
 
+后面的跨进程恢复控制由 host training loop 持有完整状态：它先按 permutation/cursor 取 batch，再把旧参数、Optax state 和
+dropout key 交给 jitted step；step 返回新参数、新 Optax state 和供未来使用的 key；host 随后推进 global step，
+才得到可保存的下一步状态。因此 checkpoint 应来自这次更新已经提交后的同一份状态，不能把旧 cursor 和新参数拼在一起。
+
 同样，checkpoint 也不只是“保存模型权重”。凡是会改变下一批数据、随机 mask 或参数更新的状态，
 都必须随 \(S_t\) 一起恢复。
 
@@ -125,6 +129,10 @@ JAX 的类型化随机键（typed key）可以把底层数组写进检查点，�
 
 如果训练还调用 PyTorch、NumPy、数据加载进程或加速器随机算子，就要分别保存那些组件的状态。
 一份 JAX 随机键不能替它们恢复。
+
+Notebook 04 是理解这条边界的单机对照：它在一个 Python 进程中训练 LoRA，并独立重载 adapter 供推理比对。
+它不保存 AdamW、训练步数、随机流或数据读取位置，所以 adapter 重载不能证明中途训练恢复；这些状态正是本项目
+在跨进程控制中显式交接的对象。
 
 ## 从零实现的模型
 

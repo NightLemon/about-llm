@@ -18,12 +18,12 @@
 ## 你会构建什么
 
 ```mermaid
-flowchart LR
+flowchart TD
   C["Versioned corpus"] --> I["Markdown split"]
   I --> R["Authorized BM25"]
   R --> K["Rerank"]
   K --> P["Context packing"]
-  P --> A["Extractive / model answer"]
+  P --> A["Extractive answer 或 model output"]
   A --> G["Citation + publication gate"]
   G --> E["Trace + evaluation"]
 ```
@@ -82,17 +82,16 @@ BM25 stable sources   rag-security 6.11, rag-evaluation 2.51, rag-security 0.68
 rerank top-2          rag-security, rag-security
 source map            S1/S2 -> 两个不同 security chunks
 coverage              1.0
-final                  answer
+final                  extractive answer
 ```
 
 请求 B 问 Kubernetes 灾备步骤。它仍有三个主题相关结果，但 `covered_query_tokens` 只有 2 个、
 `meaningful_query_tokens` 有 9 个，`answer.coverage ≈ 0.222`，所以 final action 是 `abstain`。
 
-它的 `citation.syntax_status` 是 `not_applicable`，表示拒答不进入引用门禁。引用门禁只处理回答动作：
+它的 `citation.syntax_status` 是 `not_applicable`，表示拒答不进入引用门禁。此路径的 `abstain` 来自逐字抽取器：九个 meaningful lexical query token 中只有「引、用」被 packed span 覆盖，故为 `2/9`，低于 0.55。引用门禁只处理回答动作：
 答案必须至少带一个已知 source ID 并通过语法检查；缺少引用时，最终动作会变成 `reject`。
 
-这条路径没有执行 Embedding、learned reranker 或 LLM。
-它先证明固定小语料上的控制流和 exact-span provenance。
+这条路径没有执行 Embedding、learned reranker 或 LLM。它观察到固定小语料上的授权、排序、packing、逐字 span 与 citation syntax 控制流；它不能判定来源真实性、claim 的语义蕴含或模型回答质量。这里的 `final: answer` 是 extractive action，不是一次模型生成成功。
 
 ## 先读懂四个输入文件
 
@@ -241,7 +240,7 @@ python -m about_llm.rag.cli evaluate-answers `
 这条门禁先按 ID 精确连接样例与输出，再检查回答使用的是已授权上下文、每条 claim 带有合法引用，
 以及人工判断来自哪份记录。
 
-`supported` 结论由样例文件提供。评测器会验证它的绑定关系，但不会自动做语义蕴含判断。
+`supported` 结论由样例文件中的 `hand-authored-fixture-label` 提供。评测器会验证该标签与 query、context 和 citation 的绑定关系，却不会自动做语义蕴含判断；因此通过 recorded gate 的分母是这五条固定样例，不能报告为独立人工 benchmark 的正确率。
 
 ## 路径三：把 Prompt identity 也纳入 packing
 
@@ -421,8 +420,7 @@ python -m about_llm.rag.cli audit `
   --source-id S2
 ~~~
 
-Trace 把查询与安全上下文、chunk 内容与版本、渲染后的上下文、Prompt 和原始输出身份绑定起来。
-本节使用仓库手写的协议样例。无签名哈希可以发现内容变化，模型执行者仍需独立认证；语义蕴含也要由另一层评测完成。
+Trace 把查询与安全上下文、chunk 内容与版本、渲染后的上下文、Prompt 和原始输出身份绑定起来。它能在复核时回答“这份输出对应哪次输入和哪批 chunk”，不能从 hash 推出模型真的执行过，也不能推出 raw output 的 claim 被 evidence 支持。本节使用仓库手写的协议样例；无签名哈希可以发现内容变化，模型执行者仍需独立认证，语义蕴含也要由另一层评测完成。
 
 ## 代码阅读顺序
 

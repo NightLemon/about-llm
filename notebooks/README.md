@@ -6,12 +6,18 @@ Notebook 用于观察现象，不承载唯一实现。核心逻辑位于 src/abo
 
 执行约定：
 
+- 首次使用时，先按[环境准备](../docs/guide/environment.md#create-venv)创建并激活虚拟环境；下列安装、内核注册和执行命令都在该环境中运行。
 - 从仓库根目录启动 Jupyter。
 - 安装 Notebook profile：`python -m pip install -c constraints/ci.txt -e ".[dev,torch,jax]"`。
+- 在同一个虚拟环境中注册本仓库使用的内核：`python -m ipykernel install --sys-prefix --name about-llm --display-name "Python (about-llm)"`。
 - 先运行 `python scripts/doctor.py --profile notebooks`。
 - 每本必须能 Restart & Run All。
 - 默认不访问网络、不下载模型、不使用付费 API。
 - 输出只展示小型结果，不提交大型二进制或模型权重。
+
+四本文件的内核名称都是 `about-llm`。注册命令会把这个名称绑定到当前虚拟环境的 Python；
+`--sys-prefix` 将内核配置保存在该环境中。在 Jupyter 界面选择 `Python (about-llm)`，
+命令行执行脚本也使用同一环境的 Python。遇到 `No such kernel named about-llm` 时，先补做注册步骤。
 
 ## 逐本要求与成功特征
 

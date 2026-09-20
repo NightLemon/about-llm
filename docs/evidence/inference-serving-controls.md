@@ -120,7 +120,8 @@ Synthetic timing 仍然不是 GPU 性能。
 
 GPU collector 才会真实执行固定 Qwen3 权重、nano-vLLM Scheduler/BlockManager/ModelRunner、FlashAttention、
 Triton KV store、Sampler 和符合条件的 decode CUDA Graph。报告中的 TTFT/TPOT/E2E 是 engine 内部时钟，
-不含 HTTP、tokenization、网络和 client queue。当前仓库尚未录入 3070 report，因此不能引用具体性能数字。
+不含 HTTP、tokenization、网络和 client queue。截至本次台账审校（2026-09-13），仓库未录入 3070 report，
+因此不能引用具体性能数字。
 
 ## Workload 与 SLO 证据
 

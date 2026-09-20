@@ -25,5 +25,6 @@ checkpoints/
 .idea/
 .vscode/
 learning-plans/
+learning-log/
 .DS_Store
 Thumbs.db

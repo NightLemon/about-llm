@@ -42,6 +42,14 @@
 测试名称只表达局部证据。`citation_valid` 不能读成“答案真实”，
 `grounded_answer_pass` 也必须检查它在该实现中究竟聚合了什么 supplied verdict。
 
+## 从 claim 回到可复核证据
+
+审查一条 RAG 结论时，按这条链路定位材料：先找 `projects/rag-foundations/` 中的固定 corpus、case、answer 或 recorded report；再运行对应脚本，或用测试重算；最后查看测试中的 oracle 和反例。固定输入只定义这次观察的范围，脚本只说明哪条路径被执行，oracle 才说明 pass/fail 如何判定。三者齐全也不能替代目标 corpus、身份系统或线上观测。
+
+例如 `test_rag_citations.py` 的 oracle 会拒绝未知 source ID 与未引用段落，却让“`The moon is cheese. [S1]`”通过 syntax；`test_rag_extractive.py` 则检查 end-exclusive offset、source map 和内容切片，并明确 qrels 不参与生成。因此 citation syntax 和 exact-span identity 可以追溯，却都不能推出 claim 被语义支持、来源为真或仍然最新。后者分别需要独立的人工/校准 judge 与来源治理复核；SHA-256 或 fingerprint 只绑定所选 bytes。
+
+回答指标也要带分母。`test_rag_answer_eval.py` 要求 case 与 output 精确 join，并把 `answer`、`abstain`、`error` 都留在 case 分母中；coverage、action accuracy、citation coverage 与 supplied-claim verdict rate 回答的不是同一个问题。报告时保留各终态计数和未判定 claim，不能只从 accepted answer 计算一个漂亮比例。
+
 ## 授权边界的精确表述
 
 本仓库的 `BM25Index` 在构造时保存全部传入文档并预计算 term frequency。

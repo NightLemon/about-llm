@@ -14,6 +14,7 @@ import numpy as np
 import optax  # type: ignore[import-untyped]
 import torch
 from jax import Array
+from numpy.typing import NDArray
 from torch import Tensor
 
 from about_llm.from_scratch.gpt_jax import (
@@ -91,7 +92,9 @@ def _fill_deterministic_parameters(model: MiniGPT) -> None:
 
 
 def _jax_array(tensor: Tensor, *, transpose: bool = False) -> Array:
-    values = tensor.detach().cpu().numpy()
+    # ``jnp.asarray`` may retain a CPU NumPy buffer.  Torch optimizers mutate
+    # their parameter storage in place, so the mapping must own a snapshot.
+    values = tensor.detach().cpu().numpy().copy()
     if transpose:
         values = values.T
     return jnp.asarray(values)
@@ -304,8 +307,8 @@ def _max_abs_difference(left: object, right: object) -> float:
     return float(np.max(np.abs(left_array - right_array)))
 
 
-def _torch_arrays(model: MiniGPT, *, gradients: bool) -> dict[str, np.ndarray]:
-    arrays: dict[str, np.ndarray] = {}
+def _torch_arrays(model: MiniGPT, *, gradients: bool) -> dict[str, NDArray[np.float32]]:
+    arrays: dict[str, NDArray[np.float32]] = {}
     for name, parameter in model.named_parameters():
         tensor = parameter.grad if gradients else parameter
         if tensor is None:
@@ -315,7 +318,7 @@ def _torch_arrays(model: MiniGPT, *, gradients: bool) -> dict[str, np.ndarray]:
 
 
 def _tree_differences(
-    torch_arrays: dict[str, np.ndarray],
+    torch_arrays: dict[str, NDArray[np.float32]],
     jax_params: PyTree,
 ) -> dict[str, float]:
     jax_arrays = _arrays_by_torch_name(jax_params)

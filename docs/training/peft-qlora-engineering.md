@@ -99,8 +99,8 @@ QLoRA 把冻结底座以 4-bit 形式存储。执行矩阵乘法时，量化权�
 - **分页优化器（paged optimizer）**：在内存压力下转移优化器状态；
 - **`prepare_model_for_kbit_training`**：PEFT 库用于准备低比特训练的辅助函数，会处理部分 norm、输入梯度和 checkpointing 设置。
 
-原始 QLoRA 方法包含 NF4、双重量化和分页优化器，但具体训练脚本未必全部启用。本仓库入口启用了 NF4 与双重量化，
-优化器则由训练配置决定。
+原始 QLoRA 方法包含 NF4、双重量化和分页优化器（Dettmers 等，[QLoRA](https://arxiv.org/abs/2305.14314)，2023），
+但具体训练脚本未必全部启用。本仓库的训练入口启用了 NF4 与双重量化，优化器则由训练配置决定。
 
 配置名称也无法证明运行时已经走到高效 kernel。Bitsandbytes、CUDA、驱动、GPU 计算能力和模型张量形状都要在
 目标设备上验证。
@@ -219,7 +219,8 @@ valid supervised token count
 ```
 
 对因果语言模型（causal LM）而言，系统指令、用户消息、padding 和不希望监督的控制 token，其 label 通常设为
-`-100`。只有目标回答位置保留对应 token ID，这样交叉熵只统计 assistant 的回答。
+`-100`。保留的是模板标出的 assistant generation span，而非按字符切出的“回答正文”：本仓库 Qwen3 模板将
+assistant 开头标记排除，却保留内容、工具调用和轮次结束标记。这样交叉熵才统计这次明确约定的 assistant 输出。
 
 不能根据原始字符串的字符位置猜 mask，因为模板会插入 special token，还可能改变空格、换行和工具调用的序列化方式。
 
@@ -345,4 +346,5 @@ python projects/single-gpu-finetuning/run_qwen_target_lora_control.py `
 - **质量**：售后任务、通用能力、安全切片和失败样本；
 - **可发布性**：保存前后输出误差、依赖身份和恢复实验。
 
-至此，“一次 QLoRA 训练成功”才有完整含义：它既能在目标 GPU 上运行，也学到了预期行为，还能被可靠地保存、重载和比较。
+只有分别补齐目标 GPU 的一步运行、预先定义的 held-out 行为比较和新进程重载证据后，才能把这次 QLoRA 交付描述为
+可运行、行为经评测、且可重载。

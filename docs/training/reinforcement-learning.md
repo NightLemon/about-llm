@@ -215,12 +215,17 @@ PPO 等 on-policy（同策略）方法使用当前策略或一个受控旧版本
 |---|---|
 | 每个有效 token 当时的 log probability | 计算新旧策略概率比 |
 | Prompt、模板和 token IDs | 重建模型实际看到的序列 |
-| 采样配置与 mask | 确认哪些动作来自模型并进入目标 |
+| 采样配置与 mask | 记录 temperature、top-p/top-k、allowlist、EOS、最大长度与哪些动作进入目标 |
 
 off-policy 方法可以复用其他行为策略产生的数据，但需要重要性权重、value learning 或相应校正假设。
 如果采集时没有保存行为策略和概率，事后重新 tokenize 一段文本无法恢复它当时被采样的概率。
 
 SFT 样本和固定偏好对属于离线数据；PPO rollout 则来自不断更新的在线策略。两者的数据身份和可用公式不同。
+
+本章的 \(\pi_{old}\) 指 rollout 的实际行为分布。若由旧模型 logits 经 temperature、top-p 或 allowlist 产生的
+分布为 \(q\)，就不能只保存配置后仍把原始 logits 的 log probability 当作 \(q\) 的概率；应先定义优化目标、
+概率比和支持集。截断支持集时尤其不能把被排除 token 的原始概率冒充为行为概率。不同采样/训练分布的修正属于进阶
+主题，本页不在未说明假设时套用 clipped objective。
 
 ## 7. PPO 为什么同时保留三个策略
 
@@ -228,7 +233,7 @@ SFT 样本和固定偏好对属于离线数据；PPO rollout 则来自不断更�
 
 | 角色 | 在代码题中的作用 | 是否随这一小轮梯度更新 |
 |---|---|---:|
-| old policy \(\pi_{old}\) | 记录候选 C 是由什么分布采样出来的 | 否，下一轮采集时刷新 |
+| old policy \(\pi_{old}\) | 记录候选 C 的行为分布；基本推导中它就是采样分布 | 否，下一轮采集时刷新 |
 | current policy \(\pi_\theta\) | 正在提高或降低各 token 概率 | 是 |
 | reference policy \(\pi_{ref}\) | 衡量当前行为偏离初始模型多远 | 通常冻结 |
 

@@ -23,10 +23,12 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 import torch
 from torch import Tensor
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
 
 TRAINING_RESUME_CONTROL_VERSION = "about-llm.training-resume-process-control.v1"
 TRAINING_RESUME_CHECKPOINT_VERSION = "about-llm.training-resume-checkpoint.v1"
@@ -95,7 +97,7 @@ class _TinyStochasticRegressor(torch.nn.Module):
         # An explicit mask makes the consumed global Torch RNG visible in the
         # report.  This has the same inverted-dropout expectation as p=0.5.
         mask = (torch.rand_like(features) >= 0.5).to(features.dtype) * 2.0
-        with torch.amp.autocast(device_type="cpu", dtype=torch.float16):
+        with autocast(device_type="cpu", dtype=torch.float16):
             anchor = self.anchor(
                 torch.ones((features.shape[0], 1), dtype=torch.float32)
             )
@@ -196,10 +198,20 @@ class _RuntimeState:
     model: _TinyStochasticRegressor
     optimizer: torch.optim.AdamW
     scheduler: torch.optim.lr_scheduler.StepLR
-    scaler: torch.amp.GradScaler
+    scaler: GradScaler
     data_stream: _StatefulShuffleStream
     next_attempt_index: int = 0
     successful_updates: int = 0
+
+
+class _SchedulerStateDict(Protocol):
+    """The serializable scheduler surface used by this checkpoint fixture."""
+
+    def state_dict(self) -> dict[str, Any]: ...
+
+
+def _scheduler_state_dict(scheduler: _SchedulerStateDict) -> dict[str, Any]:
+    return scheduler.state_dict()
 
 
 def _dataset() -> Tensor:
@@ -237,7 +249,7 @@ def _new_runtime_state() -> _RuntimeState:
         step_size=2,
         gamma=0.5,
     )
-    scaler = torch.amp.GradScaler(
+    scaler = GradScaler(
         "cpu",
         init_scale=8.0,
         growth_factor=2.0,
@@ -423,7 +435,7 @@ def _checkpoint_payload(state: _RuntimeState, dataset: Tensor) -> dict[str, Any]
         },
         "model": state.model.state_dict(),
         "optimizer": state.optimizer.state_dict(),
-        "scheduler": state.scheduler.state_dict(),
+        "scheduler": _scheduler_state_dict(state.scheduler),
         "grad_scaler": state.scaler.state_dict(),
         "torch_cpu_rng_state": torch.get_rng_state().clone(),
         "python_rng_state": _encode_python_rng_state(),
@@ -525,7 +537,7 @@ def _terminal_summary(state: _RuntimeState) -> dict[str, Any]:
     components = {
         "model": _fingerprint(state.model.state_dict()),
         "optimizer": _fingerprint(state.optimizer.state_dict()),
-        "scheduler": _fingerprint(state.scheduler.state_dict()),
+        "scheduler": _fingerprint(_scheduler_state_dict(state.scheduler)),
         "grad_scaler": _fingerprint(state.scaler.state_dict()),
         "torch_cpu_rng": _tensor_sha256(torch.get_rng_state()),
         "python_rng": _fingerprint(_encode_python_rng_state()),

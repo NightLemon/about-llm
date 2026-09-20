@@ -116,6 +116,7 @@ python projects/cloud-api-contracts/budgeted_http_demo.py `
 | `call-http-500` | HTTP 500，没有可信 usage | `uncertain` | 80 micro-USD |
 
 最终 `committed_estimated_microusd` 应为 146。HTTP 500 说明响应失败，不说明供应商一定没有处理请求。
+这里的 80 是本地保守计入的预留：它既不证明供应商已经收费，也不证明供应商没有收费。
 
 再运行失败路径测试（下面的 `-k` 写了三个名字，但其中一个是参数化用例，实际应为 `4 passed`）：
 
@@ -166,6 +167,18 @@ python -m pytest tests/test_budgeted_cloud.py `
 预留预算 → 跨过发送边界 → 写入本次 attempt 的终态 → 判断能否重试 → 等待 → 为下一次 attempt 重新预留
 ```
 
+## 完成实验后：接到真实应用
+
+为每次 attempt 保存产品平台、API 与版本、端点、型号、区域、账号计费范围、价格快照、请求指纹和收到的供应商
+request ID。价格快照应带核对日期，并对应本次调用的实际配置；本实验的 `$1/$2` 只用于手算。Gemini 的接入示例见
+[生产接入](../../models/gemini-production.md#outcome-before-retry)。
+
+费用判断和重试判断要分开。第四部分已经展示：第一次费用仍是 `uncertain`，只要协议允许、业务能安全重放，且
+剩余预算与截止时间允许，就可以为下一次 attempt 另作预留。第一次的账继续等待 usage 或账单对账，不会因重试成功消失。
+
+如果业务动作能否安全重复还不清楚，应先查询远端状态或交给人工复核。这个决定约束是否再次发送；费用则继续依据
+已有用量、明确未发送的证据或未知状态，分别结算、取消预留或保留 `uncertain`。
+
 ## 常见失败
 
 - 用本地 request hash 代替供应商 request ID 或账单记录做最终对账。
@@ -185,5 +198,5 @@ python -m pytest tests/test_budgeted_cloud.py `
 
 这些实验只验证本地 JSON 请求、SQLite 账本和固定的 HTTP 响应。运行过程不访问真实供应商，也不产生费用。
 
-流式输出中断后的重放不在本实验范围内。示例价格与用量只用于检查账本算术；真实 token 分类、缓存、取消语义和发票，
-仍需根据目标 API 与账户数据核对。
+500→200、80/66/146 和 `uncertain` 都是可复算的本地结果。流式输出中断后的重放不在本实验范围内；真实 token
+分类、缓存、取消语义和发票，仍需按具体产品平台、接口、账号配置与核对日期确认。

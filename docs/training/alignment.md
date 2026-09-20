@@ -222,7 +222,7 @@ R(x,y)-\beta
 
 工程上要同时记录奖励、KL、回答长度、熵和真实任务指标。只看总目标，可能掩盖奖励上升其实来自更长输出或分布漂移。
 
-## DPO：直接学习相对参考策略的偏好
+## DPO：直接学习相对参考策略的偏好 {#dpo}
 
 DPO 不需要单独训练一个在线调用的奖励模型。它把偏好模型与 KL 正则化策略之间的关系，
 改写成一个成对分类目标。
@@ -320,6 +320,11 @@ PPO 适合需要在线采样、环境反馈或可验证奖励的场景。它比 
 =\frac{\pi_\theta(a_t\mid s_t)}
 {\pi_{\mathrm{old}}(a_t\mid s_t)}.
 \]
+
+这个基本推导假定回答由式中的旧策略分布采样。实际 rollout 若用 temperature、top-p、token allowlist 等规则改变了
+采样分布，应把实际行为分布记为 \(q\)，先说明要优化的 policy、\(q\) 的支持集和概率比怎样定义；不能把原始 logits
+下的 log probability 当成截断后 \(q\) 的 log probability。具体不匹配修正超出本页范围，先回到
+[LLM 强化学习](reinforcement-learning.md#rollout-identity)核对数据契约。
 
 裁剪后的策略目标可写成：
 
@@ -445,6 +450,8 @@ prompt、路由和流量组成也可能发生变化。
 6. **RM/PPO 扩展**：只有 DPO 无法解决在线探索需求时再增加。
 
 实现、命令、Qwen DPO 验证程序和失败样例见[对齐证据台账](../evidence/alignment-controls.md)。
+已经完成 SFT/LoRA 闭环的读者，可按[单卡项目的可选后续路线](../practice/projects/single-gpu-finetuning.md#next-routes)
+选择 DPO、奖励模型或 PPO 机制实验；这些路线不属于每个 SFT 项目的必做步骤。
 
 ## 常见错误
 

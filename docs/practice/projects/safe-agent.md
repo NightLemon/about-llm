@@ -253,6 +253,10 @@ python -m pytest tests/test_agent_decision_theory.py -q
 这个小程序只有有限个隐藏状态，因此可以手算：观察后怎样更新概率、哪项动作的期望收益更高，以及一次额外观察是否值得。
 允许动作集合会先排除禁止动作，再比较剩余动作。程序还检查坏状态是否可达，以及任务是“可能结束”还是“保证结束”。
 
+其中先验、likelihood、效用和观察成本都是固定 fixture；`0.51` 或 `0.85` 不是模型 score，更不是生产事故的
+校准概率。Runtime 先用 policy、权限和 approval 决定工具是否在允许集合内，随后才可用这类模型比较诊断、澄清或
+执行的相对偏好。副作用发生后，下一步依据的是新的 receipt、业务查询或 `pending`，而不是沿用旧后验宣布完成。
+
 它帮助理解决策公式，不调用模型和工具，也不从数据学习概率。完整推导见
 [Agent 决策理论](../../applications/agent-decision-theory.md)。
 
@@ -273,7 +277,7 @@ python -m pytest tests/test_agent_decision_theory.py -q
 [Agent 互操作](../../applications/agent-interoperability.md)，精确请求与负例记录见
 [项目控制台账](../../evidence/project-controls.md)。
 
-## 评测时把任务成功与安全违规分开
+## 评测时把任务成功与安全违规分开 { #evaluation }
 
 ```powershell
 python -m about_llm.agents.cli evaluate `
@@ -288,6 +292,10 @@ effect、重复 effect 或长期 pending，都不应被其他成功任务平均�
 
 `handler_attempted` 只说明程序进入了 handler。`effect_applied` 必须来自模拟状态、Provider audit 或业务 Verifier，
 不能从 assistant 写出的 “completed” 推断。
+
+因此，`evaluate` 的通过结果说明这三条仓库准备的轨迹满足该评测器的规则；它不是对真实支付服务、模型概率、
+生产权限或发布人的认证。若将报告放进发布门禁，还要把输入轨迹、policy/Verifier 版本和候选发布清单一起绑定，
+并由有权主体做放量决定。详见[LLMOps 发布与回滚](../../applications/llmops-release.md#offline-gate)。
 
 ## 修改 Runtime 后先跑哪些测试
 

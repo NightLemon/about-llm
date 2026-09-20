@@ -34,21 +34,34 @@
 python projects/transformers-basics/trace_language_model_sample.py
 ```
 
-如果已经缓存固定 Qwen3 版本，再运行：
+教学输入追踪只需要 core/NumPy。若要比较教学 ID 与真实 Qwen3 tokenizer ID，先安装 `transformers` extra：
+
+```powershell
+python -m pip install -c constraints/ci.txt -e ".[transformers]"
+```
+
+固定 revision 已在本地缓存时，再运行：
 
 ```powershell
 python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
 ```
 
-比较教学 ID 与目标模型 ID。两条命令回答完不同问题后，再进入注意力或推理 runtime。
+第一次还没有缓存时，去掉 `--local-files-only`；这会访问网络并下载该 tokenizer 所需文件。比较教学 ID 与目标模型 ID。
+两条命令回答完不同问题后，再进入注意力或推理 runtime。
 
-接着改一个输入或一处实现，并运行离它最近的测试：
+接着改一个输入或一处实现。若要运行离它最近的测试，先安装开发依赖：
+
+```powershell
+python -m pip install -c constraints/ci.txt -e ".[dev]"
+```
+
+然后运行：
 
 ```powershell
 python -m pytest tests/test_tokenizer.py -q
 ```
 
-完整测试套件用于仓库维护，日常学习不必每次都跑。测试通过表示已写断言仍然成立；至于结果为什么成立、
+完整测试套件用于仓库维护，日常学习不必为了这一步安装全部依赖。测试通过表示已写断言仍然成立；至于结果为什么成立、
 断言有没有覆盖你关心的问题，还要靠实验记录回答。
 
 ## 怎样记录实验

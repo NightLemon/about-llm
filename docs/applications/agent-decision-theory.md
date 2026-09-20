@@ -47,6 +47,10 @@ POMDP、belief state、expected utility 和 value of information 都是在精确
 运行前先预测三件事：先验更偏向故障 A 时，哪个允许动作会胜出；准确率 0.85 的诊断是否值得花 1.0 成本；
 以及终态可达时，流程是否仍可能无限循环。
 
+这里的 `0.6`、`0.85`、`1.0` 与效用表都是仓库写定的教学 fixture。脚本据此精确复算概率和选择，
+并不从事故数据估计准确率，也不校准模型的 score。把模型说出的 `0.85` 直接填进表格之前，团队仍要定义事件、
+收集独立历史样本并检查校准误差。
+
 ~~~powershell
 python projects/safe-agent/decision_theory_toy.py
 python -m pytest tests/test_agent_decision_theory.py -q
@@ -152,6 +156,9 @@ P(A\mid o_A)=\frac{0.6\times0.85}{0.57}
 
 新的 belief 是 `[0.8947, 0.1053]`。这不是诊断工具直接吐出的 confidence，而是由先验、两个 likelihood
 和二状态假设共同算出的后验。
+
+同样，弱诊断里的 `0.51` 是这个 fixture 对“报告与真实状态相符”的 likelihood，不是 Agent 对自己答案的
+可信度。它在当前效用表中没有改变动作；换一组先验、损失或允许动作集合，是否值得调用仍要重新计算。
 
 如果分母为零，说明当前模型认为这个 observation 不可能出现。程序会报错；真实系统应进入数据损坏、
 来源异常或模型失配分支，不能偷偷把不一致信号塞回 Prompt。

@@ -46,7 +46,7 @@
 
 结果出来后再选择分支：
 
-1. **服务队列先增长**：降低准入上限，或调整每轮 sequence/token 预算；
+1. **服务端 queue age 先增长**：降低准入上限，或调整每轮 sequence/token 预算；
 2. **长 prefill 挡住 decode**：比较分块 prefill 的不同 token 预算；
 3. **KV block 先耗尽**：降低并发或长度上限，再检查分页、抢占和释放是否正确；
 4. **队列正常但 TPOT 仍高**：再查看 decode batch、权重与 KV 带宽、内核启动和量化路径；
@@ -324,10 +324,16 @@ CUDA Graph 适合重复且形状较稳定的执行路径，因此常用于 decod
 | Eager / CUDA Graph | 符合条件的 decode 路径能否减少内核启动开销 | TPOT、执行路径、显存预留；prefill 仍走 eager |
 | 精确共享前缀 / 一处 token 漂移 | 前缀身份怎样决定缓存命中 | cached tokens、物理 block、TTFT |
 | 每轮 token 预算 256 / 1024 | 分块 prefill 怎样与 decode 分享调度轮次 | scheduled tokens、phase、TTFT 与 TPOT |
-| 并发 1 / 2 / 4 / 8 | 批处理收益何时被排队和 KV 容量抵消 | 吞吐、队列、KV block 高水位、失败终态 |
+| 并发 1 / 2 / 4 / 8 | 引擎内 batching 收益何时被等待中的 sequence 和 KV 容量抵消 | 引擎 TTFT/TPOT、KV block 高水位、case 终态 |
 
-这四组数据不要合成一个“哪个配置最快”的总排名。先回答源码机制是否按预期触发，
-再判断它对当前工作负载的延迟、吞吐和显存产生了什么影响。
+这四组数据不要合成一个“哪个配置最快”的总排名。它们先回答源码机制是否按预期触发，
+再判断固定 synthetic token 输入在引擎内的延迟、吞吐和显存怎样变化。7B 的 `WAITING` sequence 与
+engine TTFT 不包含 HTTP 接收前的客户端等待，也没有给出在线服务的 queue age。
+
+要选择实际单卡部署的配置，还要把候选配置带到 OpenAI-compatible endpoint：固定 prompt/output 长度联合分布、
+到达过程、超时和客户端并发，保存每个 attempt 的 `offered_at`、dispatch、首个内容和终态。只有这样才能把
+引擎内的机制差异接回用户可见 TTFT、服务端队列与完整失败分母；这一步的具体时钟和报告口径见
+[vLLM 服务](vllm-serving.md#client-timestamps)。
 
 RTX 3070 Laptop 的功耗模式、显存、驱动、CUDA 和 Torch 版本都要写入报告。
 桌面显卡或别人的 4070 结果只能作为问题线索，不能替代本机测量。实验生成的 JSON 先通过离线验证器，

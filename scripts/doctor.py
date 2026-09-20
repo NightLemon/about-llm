@@ -9,7 +9,7 @@ import json
 import os
 import platform
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -141,12 +141,62 @@ def environment_report() -> dict[str, Any]:
     }
 
 
-def notebook_kernel_available() -> bool:
+NOTEBOOK_KERNEL_NAME = "about-llm"
+NOTEBOOK_KERNEL_INSTALL_COMMAND = (
+    'python -m ipykernel install --sys-prefix --name about-llm '
+    '--display-name "Python (about-llm)"'
+)
+
+
+def notebook_kernel_check(
+    *,
+    kernel_specs: Mapping[str, str] | None = None,
+    kernel_spec_loader: Callable[[str], Any] | None = None,
+    executable: str | None = None,
+) -> tuple[bool, str]:
+    """Check that the documented kernel starts this virtual environment.
+
+    Compare normalized paths without resolving symlinks.  Resolving them would
+    incorrectly accept two virtual environments whose Python launchers share
+    the same underlying interpreter.
+    """
+    if kernel_specs is None or kernel_spec_loader is None:
+        try:
+            from jupyter_client.kernelspec import find_kernel_specs, get_kernel_spec
+        except ImportError:
+            return False, "Jupyter kernelspec support is unavailable"
+        kernel_specs = find_kernel_specs()
+        kernel_spec_loader = get_kernel_spec
+
+    if NOTEBOOK_KERNEL_NAME not in kernel_specs:
+        return False, f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel is unavailable"
+
     try:
-        from jupyter_client.kernelspec import find_kernel_specs
-    except ImportError:
-        return False
-    return "python3" in find_kernel_specs()
+        kernel_spec = kernel_spec_loader(NOTEBOOK_KERNEL_NAME)
+        argv = kernel_spec.argv
+    except Exception:
+        return False, f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel could not be read"
+    if not isinstance(argv, list) or not argv or not isinstance(argv[0], str):
+        return False, f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel has no interpreter command"
+
+    registered_executable = argv[0]
+    expected_executable = executable or sys.executable
+    if not os.path.isabs(registered_executable):
+        return False, (
+            f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel does not use an absolute interpreter path"
+        )
+    if os.path.normcase(os.path.abspath(registered_executable)) != os.path.normcase(
+        os.path.abspath(expected_executable)
+    ):
+        return False, (
+            f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel uses a different interpreter: "
+            f"{registered_executable}"
+        )
+    return True, f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel uses the current interpreter"
+
+
+def notebook_kernel_available() -> bool:
+    return notebook_kernel_check()[0]
 
 
 def evaluate_profile(
@@ -239,16 +289,21 @@ def evaluate_profile(
     )
 
     if profile in {"notebooks", "full-ci"}:
-        effective_kernel_available = (
-            notebook_kernel_available() if kernel_available is None else kernel_available
-        )
+        kernel_detail = ""
+        if kernel_available is None:
+            effective_kernel_available, kernel_detail = notebook_kernel_check()
+        else:
+            effective_kernel_available = kernel_available
+            kernel_detail = (
+                f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel is available"
+                if effective_kernel_available
+                else f"{NOTEBOOK_KERNEL_NAME} Jupyter kernel is unavailable"
+            )
         add_check(
-            "python3_kernel",
+            "about_llm_kernel",
             "pass" if effective_kernel_available else "fail",
-            "python3 Jupyter kernel is available"
-            if effective_kernel_available
-            else "python3 Jupyter kernel is unavailable",
-            "python -m ipykernel install --user --name python3"
+            kernel_detail,
+            NOTEBOOK_KERNEL_INSTALL_COMMAND
             if not effective_kernel_available
             else "",
         )

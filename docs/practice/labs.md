@@ -54,7 +54,7 @@ flowchart TD
 | 1 | [0A：从 logits 到采样](labs/lab-0a-sampling.md) | 最后一个 token 是怎样从概率分布中选出的 |
 | 2 | [实验 1A：教学 Byte BPE](#lab-1) | bytes、token IDs、labels 和 loss 怎样接起来 |
 | 3 | [实验 1B：真实 Qwen3 tokenizer](#lab-1b) | 同一句中文怎样经过 Qwen3 chat template 变成 29 个输入 ID |
-| 4 | [实验 2](#lab-2) 与 [2B](#lab-2b) | attention、GQA、KV Cache 和停止协议怎样连接 |
+| 4 | [0B：生成、停止与流式协议](labs/lab-0b-generation-protocol.md) 与 [实验 2](#lab-2)、[2B](#lab-2b) | 停止终态、attention、GQA、KV Cache 和生成配置怎样连接 |
 | 5 | [7A：Paged KV 与 COW](labs/lab-7a-paged-kv.md) | 不加载 GPU 模型，先看 block 分配、共享和写时复制 |
 | 6 | [7B：Qwen3 穿过 nano-vLLM](labs/lab-7b-nano-vllm-qwen3.md) | 固定长度输入怎样经过调度、prefill、decode 与 sampling |
 | 7 | [实验 7：服务基准](#lab-7) | 在 3070 上测真实请求的显存、延迟、并发和失败终态 |
@@ -64,7 +64,8 @@ flowchart TD
 
 ## 实验 0：观察语言模型，而不是只和它聊天 { #lab-0 }
 
-第一次只完成 0A。后续三个实验分别进入协议、云成本和工件安全，不是入门前置。
+第一次只完成 0A。后续三个实验分别进入协议、云成本和工件安全，不是入门前置；但在开始流式、
+`generate()` 或服务实验前，先完成 0B 的状态图和一个失败终态。
 
 | 层级 | 实验 | 你要回答的问题 |
 |---|---|---|
@@ -73,7 +74,9 @@ flowchart TD
 | 工程选修 | [0C：云 API 预算、重试与对账](labs/lab-0c-cloud-budget.md) | 一次逻辑请求为什么可能产生多次调用和费用？ |
 | 安全选修 | [0D：Opaque Reasoning 工件安全](labs/lab-0d-reasoning-artifact-security.md) | 哪些内部字段可以保存、重放或返回给用户？ |
 
-交付物：一张手算表、一张状态图，以及至少一个“输出看似合理但协议已经失败”的例子。
+交付物：0A 的一张手算表，0B 的一张状态图，以及至少一个“输出看似合理但协议已经失败”的例子。
+0A 的 oracle 是固定 logits 和 inverse-CDF 手算；0B 的 oracle 是有限概率表和状态机。二者通过只能说明
+本仓库教学契约在固定输入上成立，不能推出真实模型、远端服务或账单语义。
 
 ## 实验 1：从教学 tokenizer 走到真实 Qwen3 输入 { #lab-1 }
 

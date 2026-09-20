@@ -23,8 +23,16 @@ tokens = prompt_tokens
 while budget remains:
     logits = model(tokens)[last_position]
     scores = apply_processors(logits)
-    probabilities = softmax(apply_sampling_controls(scores))
-    next_token = select(probabilities)
+    if mode is greedy:
+        next_token = argmax(scores)
+    else:
+        require temperature > 0
+        scaled_scores = scores / temperature
+        top_k_support = keep_top_k(scaled_scores)
+        probabilities_for_top_p = softmax(scaled_scores on top_k_support)
+        support = keep_top_p_crossing(probabilities_for_top_p)
+        probabilities = softmax(scaled_scores on support)
+        next_token = sample(probabilities)
     tokens.append(next_token)
     if terminal_condition(tokens, next_token):
         break
@@ -35,16 +43,22 @@ while budget remains:
 
 ## 从 logits 到一个 token
 
-模型给出的 logits 还不是最终抽样表。Runtime 通常按下面的顺序整理它：
+模型给出的 logits 还不是最终抽样表。贪心生成从处理后的分数中取最大值；下面继续跟随机采样分支，要求 temperature 大于 0。
+为便于手算，这里采用本仓库的参考顺序；真实 runtime 必须以其版本契约为准：
 
 1. 应用禁止项、重复惩罚或合法 token mask。
 2. 用 temperature 改变分布尖锐程度。
-3. 用 top-k、top-p 等规则限制候选 support。
-4. 对保留分数重新归一化。
-5. greedy 取最大值，或按概率采样。
+3. 先按分数保留 top-k 候选；未设置 top-k 时保留全部候选。
+4. 先在 top-k support 内归一化，累计概率并保留让 top-p 首次 crossing 的 token。
+5. 对最终 support 重新归一化，再按概率采样。
 
 顺序会改变结果。比如先做 top-k 再做 top-p，与先做 top-p 再做 top-k，留下的 token 集合可能不同。
 所以 `temperature=0.7, top_p=0.9` 还不足以复现实验；runtime 的处理顺序、平分规则、最小保留数和数值精度也要固定。
+
+例如 logits 对应原始概率 `[0.4, 0.3, 0.2, 0.1]`。先取 top-k=3，分母从 1 变为
+`0.4+0.3+0.2=0.9`，所以临时概率是 `[4/9,3/9,2/9,0]`。top-p=0.7 的累计值依次为
+`4/9,7/9,...`，第二个 token 是 crossing token，必须保留。最终分母变为 `0.4+0.3=0.7`，
+抽样分布才是 `[4/7,3/7,0,0]`。两次归一化回答不同问题：第一次决定 nucleus，第二次才是实际抽样。
 
 ## 停下来也要说明原因
 

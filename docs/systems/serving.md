@@ -111,6 +111,11 @@ attempted
 每轮至少报告 attempted、eligible、success、timeout、`429`、`5xx` 与 cancelled 的原始数量。
 低流量服务的 p99 很容易被单个样本支配，此时样本量和较长窗口比一个漂亮的小数更有解释力。
 
+项目中的客户端负载发生器只能看到它已计划发送的 HTTP attempt，因此它的 `success_rate` 是
+`success / attempted`，而不是这里的 `success / eligible offered`。要把该报告用于服务 SLO，需要由网关
+另存 attempted 中哪些在 HTTP 前被判为 invalid、unauthorized 或合同外，并按预先写定的 eligibility rule
+重新汇总。不能因为 429、timeout 或协议失败让它们从客户端 attempt 分母消失。
+
 目标成功率为 \(S\) 时，窗口内的失败预算是 \(1-S\)。Error budget 用来约束变更速度和可靠性，
 不是可以故意制造失败的配额；窗口、维护期和低样本处理方式应在上线前固定。
 
@@ -280,6 +285,10 @@ Request ID 适合写入 trace 或日志，不适合作为长期指标标签，�
 响应体也不应进入普通指标。
 
 同一进程内的耗时使用单调时钟测量。不同机器的单调时钟没有共同起点，所以跨机器时间戳不能直接相减。
+
+例如，客户端可以记录计划 `offered_at`、获得本地并发名额、首个 SSE 内容与终态；引擎则记录 sequence
+加入、prefill/decode step 与 KV 释放。前者可以测到客户端排队，后者可以解释调度；服务端 queue age 需要
+服务端自己记录。三套记录用 request ID 对齐，不能拿不同机器的绝对时间相减来伪造一个 queue 时长。
 
 每个组件分别记录自己的 span duration，再用 trace ID 表达调用先后关系。客户端端到端耗时减去已知 span 后若仍有
 空白，应将其标成网络、队列或未知时间，保留尚未解释的事实。

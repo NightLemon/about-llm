@@ -13,7 +13,7 @@
 
 - **适合读者**：中文、多语言、工具调用、模型训练和推理服务工程师。
 - **先修**：Transformer、tokenizer、MoE、RAG 与 LoRA 基础。
-- **首次阅读**：证据阶梯 → checkpoint inventory → 固定 config/weights → tokenizer/template → runtime → 训练/服务。
+- **首次阅读**：台账证据轴 → checkpoint inventory → 固定 config/weights → tokenizer/template → runtime → 训练/服务。
 - **完成信号**：能对账 checkpoint、chat template、真实运行报告和目标任务，同时拒绝跨实验拼接结论。
 - **卡住时**：回到[Tokenization](../core/tokenization.md)和[模型选型](../models/landscape.md)。
 
@@ -29,12 +29,12 @@ Qwen 家族覆盖多语言、代码、数学、视觉、音频、dense 与 MoE �
 
 本章的主要可执行对象不是“整个 Qwen 家族”，而是固定的 `Qwen/Qwen2.5-0.5B-Instruct` revision `7ae557604adf67be50417f59c2c2f167def9a775`。其他代际、尺寸、Base/Instruct、MoE、多模态或云端产品只提供检查框架，不能继承这个 checkpoint 的实验结果。
 
-## L0 标签与 L1–L5 证据阶梯
+## 台账证据轴：L0 标签与 L1–L5 阶梯
 
 把“我用过 Qwen”改写成可审计结论，至少要分清以下层级：
 
 ```mermaid
-flowchart LR
+flowchart TD
     A["L0 品牌/短名"] --> B["L1 固定发布声明"]
     B --> C["L2 config/tokenizer 静态证据"]
     C --> D["L3 weight bytes 与加载账本"]
@@ -42,7 +42,7 @@ flowchart LR
     E --> F["L5 目标任务/硬件/负载评测"]
 ```
 
-L0 不是实质证据；L1–L5 才是五级证据强度：
+L0 不是实质证据；L1–L5 才是五级证据强度。这套编号只描述本页结论的证据输入与实际执行范围，不是[仓库地图](../guide/repo-map.md)的 L0–L4 项目成熟度标签；它不能单独升级项目交付状态。
 
 | 层级 | 当前仓库的 Qwen 证据 | 能证明 | 不能证明 |
 |---|---|---|---|
@@ -50,7 +50,7 @@ L0 不是实质证据；L1–L5 才是五级证据强度：
 | L2 | 659-byte `config.json`、strict semantic snapshot | 固定字段和保守静态推导 | weight 匹配、真实执行 |
 | L3 | 7 个选定文件、999,586,347 bytes、逐文件 hash | loader 候选 bytes 的 identity | forward 正确、总体质量 |
 | L4 | CPU FP32 forward/cache/generate、hook、HTTP、RAG、SFT/LoRA/DPO controls | 指定环境、输入和路径确实执行 | 代表性质量、GPU、生产可靠性 |
-| L5 | **尚未取得** | 需要目标任务/硬件/负载的统计证据 | 不能从单样本或 recorded report 外推 |
+| L5 | **截至本页可复核记录（2026-08-15）尚未取得** | 需要目标任务/硬件/负载的统计证据 | 不能从单样本或 recorded report 外推 |
 
 ### 证据不可拼接原则
 
@@ -700,7 +700,7 @@ M_{peak}\approx M_{weights}+M_{KV}+M_{activations}
 7. 保存每个失败点，不只保存最好结果；
 8. 用同一 quality/safety cases 对比 FP/BF16、量化、adapter 与 runtime。
 
-仓库当前没有目标 GPU 记录，所以不能填写任何“显存占用、tokens/s、TTFT、TPOT、最大并发或加速百分比”的事实数字。
+截至本次台账审校（2026-09-13），仓库未录入目标 GPU 运行报告，所以不能填写任何“显存占用、tokens/s、TTFT、TPOT、最大并发或加速百分比”的事实数字。
 
 ## 评测：中文能力、工具、RAG 与系统指标分层
 

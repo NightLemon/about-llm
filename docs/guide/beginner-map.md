@@ -4,7 +4,7 @@
 它只帮你决定三件事：今天先做什么，做完接哪一章，以及什么时候适合进入项目。
 完整目录和实现状态留在[知识地图](knowledge-map.md)里，需要时再查。
 
-**新手导航**：[30 分钟最小成功](#30-minutes) · [六周入门路径](learning-paths.md#beginner) · [环境配置](environment.md) · [术语表](../reference/glossary.md)
+**新手导航**：[30 分钟最小成功](#30-minutes) · [基础路线](learning-paths.md#beginner) · [环境配置](environment.md) · [术语表](../reference/glossary.md)
 { .doc-nav }
 
 ## 先做五项自检
@@ -54,7 +54,15 @@ python -m pip install -c constraints/ci.txt -e .
 python projects/transformers-basics/train_byte_bpe.py
 ~~~
 
-脚本结束后，花几分钟读输出。你应该能回答：
+脚本会先列出学到的合并规则（`merges`），再列出每段文本的编码结果（`samples`）。本实现从 UTF-8 字节出发，
+每轮合并出现次数最多的一对相邻 token；次数并列时，按两个 token ID 的字典序选择。后面的轮次可以继续合并
+前面已经组成的 token。具体过程见 [BPE 怎样学习合并规则](../core/tokenization.md)。
+
+先看 `samples` 中的 `utf8_bytes`、`token_count` 和 `round_trip`。最后一个字段为 `true`，表示整段 token ID
+解码后能还原原文。单个 token 却可能只含一个汉字的部分字节，因此 `utf8_preview` 有时会显示替换符号
+（Unicode 编号为 `U+FFFD`）；它只是局部预览，原始片段保存在 `bytes_hex` 中。
+
+读完输出后，试着回答：
 
 1. 当前中文和英文样例各用了多少 UTF-8 bytes，又各有多少 token？
 2. `round_trip: true` 具体表示哪一步可以还原，和“这个 tokenizer 适合真实模型”有什么区别？
@@ -62,7 +70,7 @@ python projects/transformers-basics/train_byte_bpe.py
 4. 换一个 `--sample`。先猜 token 数会上升还是下降，再运行核对。
 
 若出现模块导入失败，通常是因为命令不在仓库根目录执行，或者还没有安装 `-e .`。PowerShell 拒绝激活脚本时，
-按[环境常见错误](environment.md#_5)处理，先让虚拟环境本身工作正常。
+按[环境常见错误](environment.md#common-errors)处理，先让虚拟环境本身工作正常。
 
 ## 接下来怎样走
 

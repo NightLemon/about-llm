@@ -84,6 +84,11 @@ y(x)=\sum_{e\in S(x)}\tilde p_e(x)f_e(x).
 Top-k 给出的下标是离散选择。被选中的 softmax 概率仍参与加权，因此主任务损失能沿合并权重回到路由器。
 若代码误将该权重 `detach`，专家仍可能获得梯度，路由器会失去这条主任务梯度。
 
+这里的“能回到”只描述当前前向图中**已执行路径**的连续 gate。top-k、按分数排序和 capacity accept/drop
+都是离散决定；本页的 score-priority fixture 不为“某条被丢路径本来会被接收”提供主任务梯度。辅助
+load-balancing 或 router z-loss 可以另给 router 连续梯度，但它们回答的是负载或 logit 尺度，不替代该路径
+的任务损失。读训练代码时，先问每个 mask 是否留在 autograd 图中，再问具体实现怎样处理这个离散边界。
+
 ## 第二步：capacity 决定哪些任务真的执行
 
 如果所有 token 都涌向同一个 expert，单个设备会出现大缓冲、长尾计算甚至内存不足。Capacity（容量）策略
@@ -248,7 +253,7 @@ NumPy 样例没有执行的真实进程间通信。精确命令与结果见[证�
 1. Source 把 t3 发给 e1 与 e2，并保存路由、gate 和 source metadata。
 2. 两个 owner 计算 expert 输出，source 将它们按 gate 合并。
 3. Loss 对合并结果求导，梯度拆回 e1 与 e2 的输出和 gate。
-4. 反向全互连把专家输出的梯度送回所属进程，把隐藏状态与合并权重的梯度送回来源进程。
+4. 反向全互连把专家输出的梯度送回所属进程，把隐藏状态与已执行 assignment 的合并权重梯度送回来源进程。
 5. e1、e2 在各自 owner 上累积参数梯度；复制在多个 source rank 上的 router gradient 再做 SUM 归约。
 
 不同进程接受的词元数往往不同。若每个进程先算自己的平均损失，再对这些平均数做简单平均，词元少的进程
@@ -361,6 +366,19 @@ python projects/transformers-basics/moe_routing.py
 python projects/transformers-basics/moe_training_control.py
 python -m pytest tests/test_moe_routing.py tests/test_moe_training.py -q
 ```
+
+要把通信层也实际跑起来，四个脚本各自使用一个独立的 two-process CPU/Gloo fixture：
+
+```powershell
+python projects/transformers-basics/moe_distributed_capacity_control.py
+python projects/transformers-basics/moe_all_to_all_control.py
+python projects/transformers-basics/moe_all_to_all_training_control.py
+python projects/transformers-basics/moe_all_to_all_capacity_training_control.py
+```
+
+它们依次隔离全局容量竞争、owner-only 前向 dispatch/return、无容量的 reverse all-to-all 与 router SUM
+归约、以及含 drop 的 kept-only dispatch/backward。四份 JSON 是不同输入与不同控制，不应合并为一次目标模型
+运行或性能评测。
 
 Gloo/all-to-all 实验的完整命令、固定输入和结果在[证据台账](../evidence/frontier-controls.md)。这些 CPU 样例
 适合检查当前实现的数据流、公式和梯度是否对齐。

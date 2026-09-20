@@ -11,6 +11,10 @@
 
 **本页完成后**：你应该能区分搜索剪枝、合法 token mask、接受状态、长度截断、流式 stop 和服务端取消，不把它们合并成一个 `finished=true`。
 
+本页的 **oracle（判定依据）** 是仓库人为写定的有限概率表、字符串状态机和预期状态转移。也就是说，
+脚本输出与手算一致，证明当前教学实现遵守这些契约；它不读取模型 logits，也不证明某个 tokenizer、
+框架或 provider 使用相同规则。
+
 ## 第一部分：Beam search
 
 ~~~powershell
@@ -49,6 +53,9 @@ alpha=0 时短的那条赢；alpha=2 时排名翻转，长的那条赢。
 
 **最低通过**：修改 EOS 是否计入长度、early stopping 或 candidate cap，并明确把修改后的行为记录为新算法契约。
 
+交付时保存 `beam_width`、`max_new_tokens`、`length_definition`、每步候选和剪枝原因。只保存最终 `A EOS`
+或 `B EOS`，无法判断是搜索宽度、长度归一化还是提前停止改变了结果。
+
 ## 第二部分：约束解码
 
 ~~~powershell
@@ -72,6 +79,9 @@ token_texts = ('{"x"', ':', '1}', '1]', '2}', <EOS>, 'garbage')
 运行后重点看 `critical_step` 这个字段，它单独输出了第三步的允许集合与归一化结果。
 
 **最低通过**：分别构造“语法已接受但 length 截断”“EOS 在非接受状态概率最高”“所有合法 token 概率为零”，证明三者不能合并为成功状态。
+
+交付时保存每一步的 `allowed_token_ids`、允许概率质量、接受状态和终态 reason。`critical_step` 中的
+`1]` 被拒绝是这页的负例：局部最高概率没有资格越过约束状态机。
 
 ## 第三部分：流式 stop
 
@@ -98,6 +108,9 @@ matcher 按**字符**而不是字节匹配，所以分块方式不改变结果�
 `"BC"` 声明在前。这是一条需要写进文档的契约，不是"更长优先"这类最优性结论。
 
 **最低通过**：画出 byte fragment、可见文本、partial prefix 和 terminal event 的状态变化，并指出客户端隐藏文本不等于服务端停止生成或计费。
+
+交付时保存每个 `chunk_hex`、`emitted_text`、`held_characters`、`matched_stop` 和 `terminal`。这些字段只描述
+本地 matcher；要判断连接断开后服务端是否停算或计费，必须另有该服务和账号条件下的请求/usage 证据。
 
 ## 常见失败
 

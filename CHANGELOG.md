@@ -13,6 +13,28 @@
 - 2026-09-17 新增 MiMo RL 公开训练看板教材与归档证据页：以两题手算区分 `avg@n`、`pass@k`，解释奖励、采样成功率、actor 诊断、训练—推理一致性、策略版本落后与逐检查点评测。
   文档写明公开数值投影与本地原始材料分离、向独立分支追加、不修剪历史、分项采集时间及部分失败记录；远端暂不开定时采集，仅保留手动入口。同步强化学习、对齐、项目与导航入口，不把哈希或采集当作来源认证、人工核验或模型复现。
 
+- 2026-09-14 完成前沿、论文、证据与参考内容审校：端侧路由补齐本地和云端结果验证、预算退出与未知副作用对账；论文按指定历史版本说明作者报告和限制。证据页区分来源人工日期、AI 复核与历史运行，修正测试 marker 分类和四本 Notebook 的范围；公式页补齐 INT8 KV payload 的分母与 scale 开销。概念地图改为可换行的依赖路径，证据阶梯与流程改善窄屏查阅。
+
+- 产品与 Agent 内容区分模型提议、落盘补丁、发布候选和外部补救，补齐 POMDP 观测直觉与设计层交接示例；状态、账本、查询和恢复沿同一退款展开。评测与治理补全失败分母、关键切片、统计门禁与发布责任，并按论文原文收窄历史 reasoning 安全结论。复杂图保留可读字号，长流程与材料关系改善窄屏呈现。
+
+- RAG 内容审校：用同一个请求对齐来源、片段、上下文与发布；补出 2/9 词法覆盖和逐题 Recall 的分母，区分空上下文、词法证据不足及生成后拒绝。摄取更新分开元数据同步与向量重编码，Notebook 增加可复算的 0.5 宏平均反例；索引恢复与框架对照补齐验收范围，长流程图改善窄屏阅读。
+
+- 模型与云接口审校：Llama 补齐参数、权重和 KV 的手算账，Qwen 增加无缓存时的离线学习入口；GPT 历史目录旁补充当前选型入口。Gemini 说明已有 Interactions 离线回放的实际范围，收窄存储政策的平台条件，并改善窄屏对象图。预算实验明确费用不确定与重试安全是两个判断；保留历史来源记录与录制结果。
+
+- 改善推理、算子和云 API 的阅读路径：把 Paged KV 预测接到三次状态观察，用 96 字节例子区分逻辑 payload、存储与流量；明确引擎和客户端时钟、压测失败分母，以及重试后仍需对账的费用。vLLM 与云接口说明补齐可见来源状态，不刷新历史人工核对记录。
+
+- Notebook 环境检查改为核对实际使用的 `about-llm` 内核及其启动解释器，缺失或旧环境内核给出与教程一致的注册命令。补全 NumPy 数组类型与 PyTorch AMP/调度器的类型接口，保持原有数值算法和运行对象。
+
+- 修复跨框架对账中的参数别名：Torch 转 JAX 时复制 CPU 数组，防止 Torch 的原地更新改变 JAX 初始状态；保留既有 SGD/AdamW 比较容差。梯度累积恢复控制按当前 StepLR 的字段严格校验 checkpoint，兼容受约束的 PyTorch 2.6 路径，同时继续拒绝未知字段与配置漂移。
+
+- 2026-09-13 内容审校：补齐数学形状约定、采样顺序和等长生成区间的 KV 对照；编码轮补全独立 LoRA 合并与幂等退款练习。训练数据分别统计记录与不同内容，SFT 明确模板监督区间和标签坐标；单卡项目增加可选的偏好优化与持续更新路线。MiniGPT Notebook 展示逐位置输入/目标对齐，环境页补全虚拟环境创建、激活和解释器检查。
+
+- 修复教学 LoRA 在非默认精度或设备上构造时的参数不匹配：Adapter A/B 继承冻结底座的 dtype 与 device。用独立手算的非零 FP64 更新验证合并结果，另检查 meta 设备构造；没有据此声称执行过 GPU。
+
+- 修复 Windows 学习入口与验证差异：为录制工件固定原始换行，多数使用 LF，Qwen 录制 Adapter 配置保留清单绑定的 CRLF；RAG 框架演示显式输出 UTF-8。MoE 测试保留路由、容量和零值的精确检查，浮点前后向比较改为已有固定实验的 `1e-15` 绝对误差阈值，不再要求不同规约路径逐位相同。
+
+- 2026-09-13 内容质量试点：用同一组回答重写对齐入门，补齐四种训练方法的输入、更新对象和自测；修正新手路线的“六周”标签并解释 BPE 字节预览。Claude 工单示例分开协议完整、业务验证与预算，补上可见的来源状态；A2A 1.0 的联合类型迁移说明限定到 Part 与流事件。行为面试明确区分虚构示例和真实经历，术语表增加按中文问题查找的入口。Attention Notebook 新增手算例子，修复零概率熵与遮挡后矩阵求方差的陷阱，补全内核注册说明；历史来源日期和已录制实验结果保持原有范围。
+
 - 重构 Agent 学习主线：新增“一次 Agent 退款任务如何安全结束”端到端教材和独立实验 6，用同一笔 300 元退款串起 observation、proposal、Draft 2020-12 closed schema、server-resolved tenant/owner ACL、execution-bound approval、provider 已受理但响应丢失、SQLite pending replay fence、独立 provider query verifier 与 externally-confirmed recovery。新增 `refund_lifecycle.py` 可执行 walkthrough 和 2 个 contract/security/smoke 回归，锁定模型自报 tenant 与跨 tenant 资源在 handler 前失败、pending 重放不重复调用 provider、恢复后为 cached 且 provider request/effect count 均为 1。Agent 总览、学习路径、实验/项目索引、Safe Agent 页面/README、证据台账和导航同步；明确 Planner、订单库和 provider 都是进程内 fixture，accepted 不等于到账，单次 effect count 不证明真实支付、签名审批、并发节点、网络分区、exactly-once 或生产安全。
 
 - 使用教学 Notebook、官方资料校验、安全审查与浏览器验收四条工作流做内容优化：前三本离线 Notebook 补齐读者、先修、阅读路线、完成信号、练习与证据边界；新增“追踪一个 SFT 样本”实验，从 template/shifted assistant-only labels 串到 LoRA 初始函数不变、冻结基座、adapter-only 独立重载与 held-out comparison，并以合法 next-token all-token 反例防止把当前 token 误当 target。RAG FastAPI demo 新增显式 Host allowlist、64 KiB 实际 ASGI body 上限、统一安全响应头和 dependency-based 认证，负例覆盖恶意 Host 与超限 body；生产 edge rate/body limit、TLS、真实 IAM 和未知漏洞仍不由本地测试证明。OpenAI GPT、Function Calling 与 Hosted Evals 内容按 2026-08-19 官方页面复核，明确应用执行 tool call 不替代 ACL/审批/幂等，hosted run 也不替代测量有效性和本地发布门禁。MkDocs 在桌面、390px 移动端、深浅色、抽屉、404 恢复和长表格状态完成交互与视觉检查。

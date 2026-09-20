@@ -238,6 +238,11 @@ RAG 引用、PII 标注和网页高亮尤其依赖这条映射。索引阶段与
 
 ## Token 数会影响哪些训练和推理量
 
+现在可以把同一组 IDs 放回两条路径。训练代码用输入与下一个目标的错位配对构造 labels，
+再用 loss mask 决定哪些目标计分。生成代码则把已有 IDs 当作待续写的前缀，选出一个新 ID 后追加并继续。
+对话模型的前缀还要按目标 chat template 渲染；普通文本续写则按其模型的输入协议准备。
+Tokenizer 提供词表和特殊 token 的含义，实际的 shift、可见性、loss 和停止检查由训练或推理路径执行。
+
 同一原始 workload 换 tokenizer 后，以下内容都会变化：
 
 - SFT 的输入 IDs、assistant mask、labels 和有效训练 token 数；

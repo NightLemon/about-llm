@@ -3,6 +3,9 @@
 这个项目把 baseline 和 candidate 的已保存输出放到同一组 cases 上评分，再用配对统计、保护切片和明确阈值决定
 发布、拒绝发布，还是判定评测本身无效。
 
+它能重算保存的输出与分数，不能仅靠 manifest 认证某个真实模型曾执行。把 `system_id`、输出来源和目标环境运行记录
+一起保存，才能让发布会议追溯这条主张。
+
 第一次学习请从[项目教学页](../../docs/practice/projects/evaluation-gate.md)开始。那里完整走过 score → compare →
 verify → render → tamper；本页只保留运行入口、脚本索引和排错信息。
 
@@ -28,6 +31,7 @@ python projects/evaluation-gate/trace_headline_accuracy_trap.py
 - Case 的来源、抽样单位和 protected slices；
 - 主指标、方向和最小有意义差异；
 - 可接受的延迟、安全与关键切片退化上限；
+- 超时、拒答、解析失败和 judge failure 怎样进入总体及每个保护切片的分子、分母；
 - 最大样本量、bootstrap seed，以及是否允许中途查看。
 
 这些定义在看完结果后再改，最终区间和发布结论就不再回答原来的问题。
@@ -87,6 +91,9 @@ python -m about_llm.evaluation.cli compare `
 | 2 | 输入、schema 或证据有问题，无法作出发布判断 |
 
 CI 必须区分“有效地拒绝发布”和“评测坏了”。
+
+此命令的质量与保护切片 gate 都比较 95% bootstrap 区间下界和预定阈值。输出中的
+`probability_of_improvement` 只是重采样差值大于零的比例，不是 candidate 更好的概率，也不会单独触发通过。
 
 ## 验证证据，而不是只信最终 JSON
 

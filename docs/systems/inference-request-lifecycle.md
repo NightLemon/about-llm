@@ -13,6 +13,11 @@
 
 </div>
 
+**实践导航**：[推理基础](inference.md) ·
+[Paged KV 实验](../practice/labs/lab-7a-paged-kv.md) ·
+[Inference Serving 项目](../practice/projects/inference-serving.md)
+{ .doc-nav }
+
 很多推理术语单独看并不难。真正容易迷路的地方，是不知道它们在一次请求的什么时刻出现。
 
 本章先单独跟踪请求 A，再让稍后到达的 B、C 加入调度。我们会反复问四个问题：
@@ -149,6 +154,8 @@ B: [0, 1]    block 1 保持不变
 这就是 copy-on-write（COW）。如果没有空闲块，append 应在改变旧尾块之前整体失败。
 
 可以在 [Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md) 中亲自观察这次状态变化。
+先预测 A/B 的两张 block table，再将实验输出中的 `copy_on_write_append`、释放前账本和释放后账本
+逐项对上；`attention_matches_dense_reference` 是最后才看的公式对照，不是这条状态变化的替代品。
 
 ## 请求 B、C 到来后，batch 不再是固定名单 { #request-b }
 

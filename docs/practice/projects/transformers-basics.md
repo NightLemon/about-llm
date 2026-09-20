@@ -255,6 +255,16 @@ Transformer 主章已经给出 RMSNorm 数学定义，这一步继续追踪它�
 `--device cuda`。这些事件不能直接当作稳定的 GPU kernel 清单。完整的抽象层、支持审计和实验记录方法见
 [算子计算栈](../../systems/operator-stack.md)与[实验 2D](../labs/lab-2d-operator-stack.md)。
 
+把这一步当成一次短而完整的定位练习。先预测 transpose 后的 stride；运行 CPU trace 后，从 JSON 或终端输出
+依次写下：手写公式与 framework 的误差、FX/ATen 节点、`execution_device`，以及 profiler 观察到的
+`aten::` 事件。然后用一句话解释每项属于数学、框架图还是当前 backend 的运行记录。
+
+若机器有 CUDA，只改 `--device cuda --profile --json`，保存输出并确认 `execution_device` 与
+`accelerator_name`。这能证明固定输入实际走到了当前 CUDA backend；它不测速度，也不能从 CPU 事件或图节点
+推断 GPU kernel 数。`logical_bytes` 只表示逻辑张量 payload；显存 allocated/reserved、workspace 和 HBM
+traffic 要在目标 workload 中另行记录。下一步的字节口径和同步 benchmark 方法见
+[硬件性能模型](../../systems/hardware-edge.md#byte-scopes)。
+
 ## Phase 4：让同一个样本真正经过 MiniGPT
 
 ~~~powershell

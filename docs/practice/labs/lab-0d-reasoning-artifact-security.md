@@ -131,6 +131,11 @@ AEAD 指“带关联数据的认证加密”，英文全称是 `authenticated en
 
 AES-GCM 直接提供前两类密码学属性。第三类来自应用选择了哪些字段进入 AAD，以及解密后怎样比较可信上下文。
 
+消费顺序同样是协议的一部分。服务端先从登录、会话和控制面取得 `ReasoningReplayContext`，再验证 envelope、
+比较 claims、检查一次性消费记录；只有全部通过，才把解密后的 bytes 交给后续模型或工具链。不能因为
+`AES-GCM` 验证成功就先把明文拼回 Prompt，再补做授权。反过来，release gate 通过也只说明一个**已重建的**
+公开对象通过结构检查，并不授权把原 envelope 转发给另一个会话。
+
 ## 第三步：nonce 与消费记录解决不同问题 {#two-ledgers}
 
 AES-GCM 要求同一密钥下不要重复使用 nonce。签发时，本实验用 `InMemoryNonceLedger` 记录

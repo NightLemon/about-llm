@@ -28,12 +28,16 @@
 
 “DeepSeek”同时指研究路线、开放 checkpoint 和云产品。具体 checkpoint 是否包含 MLA、MoE、Multi-Token Prediction 或某种后训练机制，必须看其技术报告、config、代码与 model card，不能因品牌相同就默认。
 
-本章唯一固定的模型级 artifact 是 `deepseek-ai/DeepSeek-V3` revision `e815299b0bcbac849fa540c768ef21845365c9eb` 的 1,660-byte `config.json`。仓库没有下载 DeepSeek 权重/tokenizer、没有执行声明的 remote code、forward、MLA cache、MoE routing、FP8 kernel、R1 推理或云 API；通用 NumPy/PyTorch/Gloo fixtures 也不能借给 DeepSeek checkpoint。
+本章唯一固定的模型级 artifact 是 `deepseek-ai/DeepSeek-V3` revision `e815299b0bcbac849fa540c768ef21845365c9eb` 的 1,660-byte `config.json`。[SOURCE:deepseek-v3-config]
+仓库没有下载 DeepSeek 权重/tokenizer、没有执行声明的 remote code、forward、MLA cache、MoE routing、FP8 kernel、R1 推理或云 API；通用 NumPy/PyTorch/Gloo fixtures 也不能借给 DeepSeek checkpoint。
 
 ## L0 标签与 L1–L5 证据阶梯
 
+这里的 L0–L5 是本页的供应商证据轴，区分发布材料、文件、加载、执行与目标评测。
+[仓库地图](../guide/repo-map.md)的 L0–L4 描述项目成熟度，两者不能按编号直接换算；引用等级时应同时写出具体证据。
+
 ```mermaid
-flowchart LR
+flowchart TD
     A["L0 DeepSeek 品牌/短名"] --> B["L1 固定发布声明/报告"]
     B --> C["L2 config/tokenizer/code 静态证据"]
     C --> D["L3 weight bytes + load audit"]
@@ -116,6 +120,9 @@ python projects/transformers-basics/verify_release_evidence.py
 ```
 
 默认输出完全离线，`upstream_verified=false`。共享 manifest fingerprint 为 `sha256:74166133716bfebddb444587e9f9a012b4beada923f5209482308ff61194953b`，默认 projection fingerprint 为 `sha256:40b3fe7b2a9c054ea6aa17e9e747d1831b8ae41ee3d55130c916f818acbe4638`。它们绑定整个 Llama/Qwen/DeepSeek release-evidence manifest/projection，不是 DeepSeek 单记录签名。
+
+来源登记中 immutable config 的原始 `status=verified` 表示已人工核对固定 revision；本地 verifier 的
+`upstream_verified=false` 则表示本次离线运行没有访问上游。两者不能互相替换：页面来源徽章还要按构建时的有效状态显示，历史 revision、bytes、hash 与 `checked_at` 不因当前环境而回写。
 
 ### Core 与供应链字段
 

@@ -24,18 +24,36 @@
 
 ### 第一步：先看真实文本怎样变成模型输入
 
-阅读 [Qwen 请求主线](../models/qwen.md#local-request-stack)，然后运行固定 Qwen3 tokenizer：
+阅读 [Qwen 请求主线](../models/qwen.md#local-request-stack)。这一步需要 `transformers` extra；先安装：
+
+~~~powershell
+python -m pip install -c constraints/ci.txt -e ".[transformers]"
+~~~
+
+固定 Qwen3 tokenizer 已在本地缓存时，运行：
 
 ~~~powershell
 python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
 ~~~
 
-固定版本已在本地缓存时，这条命令会展示 chat template、29 个输入 ID 和每个 token 的可读片段。
-第一次尚未缓存时可以去掉 `--local-files-only`。完成这一步后，你应该能指出哪些 ID 来自用户正文，哪些来自模板。
+这条命令会展示 chat template、29 个输入 ID 和每个 token 的可读片段。第一次尚未缓存时可以去掉
+`--local-files-only`，允许它联网下载固定 revision 的 tokenizer 文件；这不是离线步骤。完成后，你应该能指出哪些 ID
+来自用户正文，哪些来自模板。
+
+如果当前只安装了 core/NumPy，或必须完全离线，先运行
+`python projects/transformers-basics/trace_language_model_sample.py`，观察教学 Byte BPE 怎样形成输入、labels 和 mask。
+它不使用目标 Qwen tokenizer；安装 `transformers` 并取得 tokenizer 后再回到本步。
 
 ### 第二步：用小张量看懂 block 分配
 
-阅读 [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md)，运行：
+阅读 [Paged KV 实验](../practice/labs/lab-7a-paged-kv.md)。它在 CPU 上运行，但会存放真实 PyTorch K/V 张量，
+所以先安装 `torch` extra：
+
+~~~powershell
+python -m pip install -c constraints/ci.txt -e ".[torch]"
+~~~
+
+然后运行：
 
 ~~~powershell
 python projects/inference-serving/paged_kv_tensor_toy.py

@@ -1,9 +1,12 @@
-# These fixtures are hashed as exact bytes by the recorded audit report.
-/projects/inference-serving/attempts.example.jsonl text eol=lf
-/projects/inference-serving/attempts.manifest.example.json text eol=lf
-/projects/synthetic-data-audit/*.json text eol=lf
-/projects/synthetic-data-audit/*.jsonl text eol=lf
-/projects/transformers-basics/release-evidence/*.json text eol=lf
+# Recorded teaching artifacts are verified as exact bytes. Preserve their
+# recorded line endings on every platform, including the explicit CRLF exception.
+/projects/**/*.json text eol=lf
+/projects/**/*.jsonl text eol=lf
+/projects/**/*.sse text eol=lf
+/projects/**/*.jinja text eol=lf
+/projects/single-gpu-finetuning/target-adapters/**/README.md text eol=lf
+# This recorded PEFT config was exported with CRLF; its existing manifest binds it.
+/projects/single-gpu-finetuning/target-adapters/qwen2.5-0.5b-instruct-step1/adapter_config.json text eol=crlf
 
 # MiMo RL public snapshots and producer hashes bind exact bytes.
 /docs/evidence/mimo-rl/snapshots/**/*.json text eol=lf

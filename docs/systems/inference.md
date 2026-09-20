@@ -25,6 +25,11 @@
 本章先回答“模型在算什么”。请求怎样进入调度器、KV block 怎样变化、流式响应怎样结束，
 将在[端到端请求生命周期](inference-request-lifecycle.md)中串起来。
 
+如果这是你第一次把这些词放进同一条请求，先读下面的 `x1` 到 `y3`，接着看
+[请求生命周期](inference-request-lifecycle.md)中同一请求的状态和 KV 长度，最后运行
+[Paged KV 实验](../practice/labs/lab-7a-paged-kv.md)。实验会把抽象的 block table、引用计数和
+copy-on-write 变成可观察的三次状态；它不需要模型下载或 GPU。
+
 ## 从一次最小生成开始
 
 假设 prompt 被 tokenizer 编码成四个 token：
@@ -181,8 +186,9 @@ block table: [5, 1, 8]
 物理 block 不必连续。固定 block 也不会消灭所有碎片：每条序列最后一个 block 仍可能没有填满。
 共享未满尾块后继续 append，还需要 copy-on-write。
 
-具体状态变化见[端到端请求生命周期](inference-request-lifecycle.md#kv-block-table)和
-[Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)。
+具体状态变化先见[端到端请求生命周期](inference-request-lifecycle.md#kv-block-table)：它把 prefill、
+decode、用户输出和 KV 长度放在同一张表中。然后运行[Paged KV 引导实验](../practice/labs/lab-7a-paged-kv.md)，
+亲自核对 fork、COW 和 release 前后的物理 block、引用计数与 K/V 值。
 
 ## 一个请求变成多个请求
 

@@ -33,10 +33,13 @@ Claude 是闭源模型产品。Constitutional AI、RLHF/RLAIF 等公开论文可
 
 ## 闭源 API 的 L0 标签与 L1–L5 证据阶梯
 
+这里的 L0–L5 是本页的供应商证据轴，区分品牌、公开资料、协议与目标环境结果。
+[仓库地图](../guide/repo-map.md)的 L0–L4 描述项目成熟度，两者不能按编号直接换算；引用等级时应同时写出具体证据。
+
 开放权重页面通常按 config→weights→runtime 分层；闭源 API 无法取得权重，因此证据阶梯必须改成 wire/product 版本：
 
 ```mermaid
-flowchart LR
+flowchart TD
     A["L0 Claude 品牌/短名"] --> B["L1 公开论文/厂商说明"]
     B --> C["L2 带日期的官方 API 契约"]
     C --> D["L3 离线 adapter/replay controls"]

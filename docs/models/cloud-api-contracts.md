@@ -48,8 +48,16 @@ python -m about_llm.integrations.cloud_api_cli verify `
 `systemInstruction` 和 `parts`。固定答案本身不同，因为这些是仓库准备的协议样例；本实验只比较结构怎样映射，
 不比较模型质量。
 
+Messages 与 generateContent 的字段定义分别由供应商维护，接入前按目标接口版本核对。
+[SOURCE:anthropic-messages] [SOURCE:gemini-generate-content]
+
 第一次阅读到这里，可以先回答两个问题：如果只返回文本，哪些结束和计费信息会丢失？
 新增一个供应商时，哪些字段属于业务共同概念，哪些路径只能留在它自己的适配器里？
+
+下一步不要立刻接入账号。先把这个固定 response 中保留下来的 `finish_reason` 和 usage 带到
+[可靠性进阶](cloud-api-reliability.md#worked-retry)：同一个请求在第一次收到 500、第二次收到 200 时，
+这些字段决定了哪些结论可以写进账本。离线项目会让你在运行前预测两次发送各自的终态，再核对输出；
+它不验证真实 Provider 的重试或计费规则。
 
 ## 一次调用跨过三层
 
@@ -99,7 +107,7 @@ candidates[].content.parts
 模型身份、消息角色、工具、结构化输出、流式结束信号、用量、错误和计费方式，都要按目标接口逐项测试。
 
 同一家供应商也可能提供多套接口。以 OpenAI 为例，Chat Completions 与 Responses 使用不同的请求和响应对象。
-Responses 的流式输出由带类型的语义事件组成，并不只是连续追加文本。
+Responses 的流式输出由带类型的语义事件组成，并不只是连续追加文本。[SOURCE:openai-responses-streaming]
 
 因此，一条“支持工具调用”的能力记录必须同时写明供应商、具体接口、模型、API 版本和核对日期。
 单独保存 `supports_tools=true` 无法说明它适用于哪个组合。
@@ -245,7 +253,7 @@ arbitrary byte chunks
 
 以 OpenAI Responses API 为例，HTTP 流式响应使用 SSE，并通过事件类型说明当前发生了什么。
 `response.created` 表示响应已创建，文本增量事件携带新增内容，`response.completed` 表示协议正常完成，
-`error` 则报告错误。具体事件集合仍要以目标 API 版本的官方文档为准。
+`error` 则报告错误。具体事件集合仍要以目标 API 版本的官方文档为准。[SOURCE:openai-streaming-events]
 
 ## 一条可学习的接入路线
 

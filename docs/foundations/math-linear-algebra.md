@@ -263,18 +263,21 @@ W=U\Sigma V^T.
 可以把它想成三步：先转到一组特殊方向，按奇异值放大或缩小，再转到输出方向。若只有少数奇异值很大，
 矩阵的主要作用集中在少数方向。保留前 \(r\) 个奇异值，可以得到经典范数意义下的最佳 rank-\(r\) 近似。
 
-LoRA 不是直接把原矩阵做 SVD 截断。它保留 \(W_0\)，学习一个低秩增量：
+LoRA 不是直接把原矩阵做 SVD 截断。沿用本页“行向量 \(X\) 从左边乘权重”的记号，
+\(W_0\in\mathbb R^{d_{\text{in}}\times d_{\text{out}}}\)。它保留 \(W_0\)，学习一个低秩增量：
 
 \[
-W'=W_0+\frac{\alpha}{r}BA,
+W'=W_0+\frac{\alpha}{r}AB,
 \quad
-A\in\mathbb R^{r\times d_{\text{in}}},
+A\in\mathbb R^{d_{\text{in}}\times r},
 \quad
-B\in\mathbb R^{d_{\text{out}}\times r}.
+B\in\mathbb R^{r\times d_{\text{out}}}.
 \]
 
-可训练参数从 \(d_{\text{in}}d_{\text{out}}\) 变为
-\(r(d_{\text{in}}+d_{\text{out}})\)。低秩是一种容量约束与归纳偏置，不保证所有任务都适合同一个 rank。
+所以 \(AB\) 与 \(W_0\) 的 shape 都是 \([d_{\text{in}},d_{\text{out}}]\)。可训练参数从
+\(d_{\text{in}}d_{\text{out}}\) 变为 \(r(d_{\text{in}}+d_{\text{out}})\)。有些资料把 activation 写成列向量，
+于是同一个关系会写成 \(BA\)；比较公式时先看矩阵是从左边还是右边相乘。低秩是一种容量约束与归纳偏置，
+不保证所有任务都适合同一个 rank。
 
 ## 10. 选读：Conditioning 为什么影响优化难度
 

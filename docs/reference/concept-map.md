@@ -1,24 +1,15 @@
 # 概念依赖与易混淆地图
 
-这张地图把[术语知识图谱](glossary.md)从字母顺序还原成学习顺序。箭头表示“先理解左边，右边会更容易”，不是历史先后，也不表示左边足以推出右边。
+这张地图把[术语知识图谱](glossary.md)从字母顺序还原成学习顺序。箭头表示“先理解左边，右边会更容易”，不是历史先后，也不表示左边足以推出右边。想直接选一条完整路线可回到[学习路径](../guide/learning-paths.md)；想从具体问题进入正文可回到[如何使用本书](../guide/how-to-use.md)。
 
-每个术语都有正文与可运行验证入口。实验的作用是隔离机制和暴露边界，不是用一个 toy 证明生产质量。
+词条会指向正文以及实验或验证思路；进入目标页后再确认它是否提供运行命令、固定输入和证据范围。实验的作用是隔离机制和暴露边界，不是用一个 toy 证明生产质量。
 
 ## 一条最短主干
 
-```mermaid
-flowchart LR
-  A["Vector 与 Probability"] --> B["Token 与 Tokenizer"]
-  B --> C["Causal LM"]
-  A --> D["Softmax 与 Cross-entropy"]
-  C --> E["Attention 与 Transformer"]
-  D --> E
-  E --> F["Pretraining 与 SFT"]
-  E --> G["Prefill、Decode 与 KV Cache"]
-  F --> H["Evaluation"]
-  G --> H
-  H --> I["RAG 或 Agent"]
-```
+学习依赖路径：
+
+- Vector 与 Probability → Token 与 Tokenizer → Causal LM → Attention 与 Transformer → Pretraining 与 SFT → Evaluation → RAG 或 Agent；
+- Vector 与 Probability → Softmax 与 Cross-entropy → Attention 与 Transformer → Prefill、Decode 与 KV Cache → Evaluation → RAG 或 Agent。
 
 对应入口：
 
@@ -30,74 +21,42 @@ flowchart LR
 
 ## 训练与对齐链
 
-```mermaid
-flowchart LR
-  D["Dataset split"] --> P["Pretraining"]
-  P --> F["Fine-tuning"]
-  F --> S["SFT"]
-  S --> PD["Preference data"]
-  PD --> RM["Reward model"]
-  RM --> R["RLHF / RLAIF"]
-  PD --> DPO["DPO"]
-  PG["Policy gradient"] --> PPO["PPO"]
-  RM --> PPO
-  S --> PEFT["PEFT"]
-  PEFT --> L["LoRA"]
-  L --> Q["QLoRA"]
-```
+学习依赖路径：
+
+- Dataset split → Pretraining → Fine-tuning → SFT → Preference data → Reward model → RLHF / RLAIF；
+- SFT → Preference data → DPO；
+- Policy gradient → PPO；Reward model → PPO；
+- SFT → PEFT → LoRA → QLoRA。
 
 这条链最重要的分叉是：SFT 学条件分布中的理想回答；偏好优化使用比较或奖励信号；LoRA/QLoRA 描述参数更新方式，不描述训练目标。
 
 强化学习分支从决策问题而不是算法缩写开始：
 
-```mermaid
-flowchart LR
-  B["Contextual bandit"] --> M["MDP"]
-  P["Policy"] --> PG["Policy gradient"]
-  M --> R["Return"]
-  R --> A["Advantage"]
-  PG --> RF["REINFORCE"]
-  A --> GAE["GAE"]
-  GAE --> PPO["PPO"]
-  PG --> GRPO["GRPO-style group advantage"]
-  V["Verifier"] --> RLVR["RLVR"]
-  GRPO --> RLVR
-```
+学习依赖路径：
 
-对应的公式、边界和 exact categorical control 见[LLM 强化学习](../training/reinforcement-learning.md)。
+- Contextual bandit → MDP → Return → Advantage → GAE → PPO；
+- Policy → Policy gradient → REINFORCE；
+- Policy gradient → GRPO-style group advantage → RLVR；
+- Verifier → RLVR。
+
+对应的公式、边界和“精确枚举离散动作”的 control 见[LLM 强化学习](../training/reinforcement-learning.md)。
 
 ## 推理与服务链
 
-```mermaid
-flowchart LR
-  T["Transformer"] --> A["Autoregressive"]
-  A --> P["Prefill"]
-  A --> D["Decode"]
-  P --> K["KV Cache"]
-  D --> K
-  K --> PA["PagedAttention"]
-  P --> CP["Chunked prefill"]
-  D --> CB["Continuous batching"]
-  CB --> L["Latency / Throughput"]
-  CP --> L
-  L --> AC["Admission control"]
-  AC --> SLO["SLO"]
-```
+学习依赖路径：
+
+- Transformer → Autoregressive → Prefill → KV Cache → PagedAttention；
+- Autoregressive → Decode → KV Cache；
+- Prefill → Chunked prefill → Latency / Throughput → Admission control → SLO；
+- Decode → Continuous batching → Latency / Throughput。
 
 先把 prefill 与 decode 当成两种负载，再讨论 batching、cache 和调度。只报告平均 tokens/s 无法回答首 token、尾延迟或过载时发生了什么。
 
 ## 算子与计算栈链
 
-```mermaid
-flowchart LR
-  T["Tensor / stride / dtype"] --> O["Operator semantics"]
-  O --> G["Computation graph"]
-  G --> A["ATen / Dispatch"]
-  A --> L["Decomposition / Lowering"]
-  L --> K["Kernel"]
-  K --> H["Instruction / Hardware"]
-  H --> R["Roofline / Profiling"]
-```
+学习依赖路径：
+
+- Tensor / stride / dtype → Operator semantics → Computation graph → ATen / Dispatch → Decomposition / Lowering → Kernel → Instruction / Hardware → Roofline / Profiling。
 
 这条链用于回答“模型为什么能跑、为什么会回退、为什么没有达到预期速度”。模型算子描述数学角色，ATen 描述
 框架接口，kernel 才是设备上一次启动执行的程序。沿一次 RMSNorm 的完整讲解和可运行图捕获见
@@ -107,39 +66,23 @@ flowchart LR
 
 检索表示不是黑盒 API；它有自己的训练依赖：
 
-```mermaid
-flowchart LR
-  E["Embedding"] --> B["Bi-encoder"]
-  P["Pooling"] --> B
-  C["Contrastive learning"] --> I["InfoNCE"]
-  N["In-batch / hard negatives"] --> I
-  F["False-negative mask"] --> I
-  I --> B
-  B --> D["Dense retrieval"]
-  D --> A["ANN"]
-  B --> L["Late interaction"]
-  L --> CB["ColBERT"]
-  LS["Learned sparse retrieval"] --> SP["SPLADE"]
-```
+学习依赖路径：
+
+- Embedding → Bi-encoder → Dense retrieval → ANN；
+- Pooling → Bi-encoder；
+- Contrastive learning → InfoNCE → Bi-encoder；
+- In-batch / hard negatives → InfoNCE；False-negative mask → InfoNCE；
+- Bi-encoder → Late interaction → ColBERT；
+- Learned sparse retrieval → SPLADE。
 
 InfoNCE 的候选分母就是训练问题的一部分。Hard negative 提供更细判别信号，false negative 却会把真实相关文档推远；模型 exact ranking 与 ANN approximation 必须分开评测。完整推导与可运行反事实见[检索表示学习](../applications/retrieval-learning.md)。
 
-```mermaid
-flowchart LR
-  DOC["Document"] --> CH["Chunk"]
-  CH --> BM["BM25"]
-  CH --> DR["Dense retrieval"]
-  DR --> ANN["ANN"]
-  BM --> RRF["RRF"]
-  ANN --> RRF
-  RRF --> RR["Reranker"]
-  QR["Qrels"] --> M["Recall@k / nDCG"]
-  RR --> M
-  RR --> RAG["RAG"]
-  RAG --> G["Groundedness"]
-  G --> F["Faithfulness"]
-  F --> A["Abstain"]
-```
+学习依赖路径：
+
+- Document → Chunk → BM25 → RRF → Reranker → Recall@k / nDCG；
+- Chunk → Dense retrieval → ANN → RRF；
+- Qrels → Recall@k / nDCG；
+- Reranker → RAG → Groundedness → Faithfulness → Abstain。
 
 检索问题必须沿链定位：语料是否存在、权限后是否可见、大候选是否召回、reranker 是否保留、上下文是否选入、生成是否使用。最终答案错误不能直接归因于 embedding。
 
@@ -147,66 +90,33 @@ flowchart LR
 
 先把“不确定地选择下一步”还原为决策对象：
 
-```mermaid
-flowchart LR
-  S["Hidden state"] --> O["Observation"]
-  T["Transition model"] --> B["Belief update"]
-  O --> B
-  M["MDP"] --> P["POMDP"]
-  B --> P
-  U["Utility"] --> EU["Expected utility"]
-  B --> EU
-  EU --> VI["Value of information"]
-  P --> PU["Planning under uncertainty"]
-  VI --> PU
-  SP["Safety property"] --> C["Allowed action set"]
-  C --> EU
-  L["Liveness"] --> ST["Stop / escalate"]
-```
+学习依赖路径：
+
+- Hidden state → Observation → Belief update → POMDP → Planning under uncertainty；
+- Transition model → Belief update；MDP → POMDP；
+- Belief update → Expected utility → Value of information → Planning under uncertainty；
+- Utility → Expected utility；Safety property → Allowed action set → Expected utility；
+- Liveness → Stop / escalate。
 
 Observation 不是真实 state，context 也不是可审计 belief。Utility 只能在 policy/approval 已允许的 action set 内比较；terminal reachable 只表示可能结束，reachable cycle 仍会破坏 guaranteed termination。公式与有限图 exact control 见[Agent 决策理论](../applications/agent-decision-theory.md)。
 
-```mermaid
-flowchart LR
-  SO["Structured output"] --> TC["Tool calling"]
-  TC --> WF["Workflow"]
-  TC --> AG["Agent"]
-  AG --> RE["ReAct"]
-  AG --> PL["Planning"]
-  AG --> HITL["Human-in-the-loop"]
-  AG --> MCP["MCP"]
-  AG --> A2A["A2A"]
-  TC --> ID["Idempotency"]
-  ID --> RT["Retry"]
-```
+学习依赖路径：
+
+- Structured output → Tool calling → Workflow；
+- Tool calling → Agent → ReAct；Agent → Planning；Agent → Human-in-the-loop；Agent → MCP；Agent → A2A；
+- Tool calling → Idempotency → Retry。
 
 工具调用只产生候选动作。身份、授权、幂等、副作用和完成判定属于 runtime，而不是语言模型概率自动提供的性质。
 
 ## 评测与证据链
 
-```mermaid
-flowchart LR
-  CT["Construct"] --> OP["Operationalization"]
-  OP --> REL["Reliability"]
-  OP --> VAL["Construct / content / criterion validity"]
-  REL --> EST["Estimand"]
-  VAL --> EST
-  EST --> POW["Statistical power / MDE"]
-  B["Baseline"] --> C["Control"]
-  C --> A["Artifact"]
-  A --> E["Evidence boundary"]
-  DS["Dataset split"] --> EV["Evaluation"]
-  POW --> EV
-  EV --> M["Metric"]
-  M --> CAL["Calibration"]
-  CAL --> BS["Brier score"]
-  CAL --> ECE["ECE"]
-  CAL --> RC["Risk-coverage"]
-  EV --> PB["Paired bootstrap"]
-  PB --> CI["Confidence interval"]
-  EV --> PV["P-value"]
-  PV --> H["Holm correction"]
-```
+学习依赖路径：
+
+- Construct → Operationalization → Reliability → Estimand → Statistical power / MDE → Evaluation → Metric → Calibration → Brier score；Calibration → ECE；Calibration → Risk-coverage；
+- Operationalization → Construct / content / criterion validity → Estimand；
+- Baseline → Control → Artifact → Evidence boundary；
+- Dataset split → Evaluation；
+- Evaluation → Paired bootstrap → Confidence interval；Evaluation → P-value → Holm correction。
 
 先确定 construct 怎样被操作化，再分别检查 reliability 与 validity；二者共同约束 estimand 和 power 设计。统计量只有在系统身份、采样单位、分母和决策规则固定后才有意义。Artifact 保存观察；evidence boundary 约束能从观察推出什么。完整反例与 exact control 见[评测测量学](../quality/evaluation-measurement.md)。
 
@@ -253,4 +163,4 @@ flowchart LR
 4. **验证**：运行词条绑定的实验，先写预测，再解释观察；
 5. **边界**：明确实验没有证明的外推结论。
 
-达到前两项是识别，达到前三项是理解，五项全部完成才算能用于工程判断。
+达到前两项是识别，达到前三项是理解，五项全部完成才算能用于工程判断。需要查定义时回到[术语知识图谱](glossary.md)，需要把某一分支接回课程时回到[学习路径](../guide/learning-paths.md)。

@@ -23,6 +23,10 @@ python projects/cloud-api-contracts/budgeted_retry_demo.py `
   --database artifacts/cloud-api/first-budgeted-retry.sqlite
 ```
 
+运行前先在纸上或笔记中写下三项预测：第一次 500 后是否会释放 80、第二次发送会不会复用第一次的 reservation ID、
+最终本地估值是多少。然后只从输出核对这三项。这个脚本把 `.invalid` 目标交给 `httpx.MockTransport`，500、200、
+request ID 和 usage 都是仓库固定样例；它不会连接 Provider，也不能证明真实模型、网络或发票。
+
 脚本模拟一次逻辑调用。输入估算为 60 tokens，请求最多生成 10 tokens，每次发送前最多预留 80 micro-USD。
 
 ```mermaid
@@ -49,6 +53,10 @@ flowchart TD
 
 因此最终账本累计为 `80 + 66 = 146` micro-USD。第一次返回的是可重试状态码，同时缺少完整 usage。Provider 的最终
 计费尚未确定，账本便保守保留 80 的最大估值。
+
+完成信号不是看到 `fixture answer`，而是能用输出解释：用户得到第二次答案并没有抹去 attempt 1；attempt 1 的
+80 仍要用 `fixture-attempt-1` 这类 request ID、目标 Provider usage 或账单导出对账。把固定 HTTP 500 改成真实
+接口错误以前，先明确该接口的版本、可重试状态、幂等语义和计费规则。
 
 这揭示了三个不同问题：
 

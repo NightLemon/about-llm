@@ -426,6 +426,12 @@ python -m pytest tests/test_activation_patching.py -q
 读取位置和完整 causal prefix，确认 metric 会按构造改变；再替换未来位置，确认它不能影响过去的读取位置。
 这个负对照同时检查 causal mask 和 hook 位置是否接对。
 
+先把 hook 的选择写成一个 shape 合同。这个脚本的残差输出是 `[batch, sequence, hidden] = [1,4,16]`；
+`changed_source_position` 从 clean run 取 `activation[0, 0, :]`，并替换 corrupt run 的同一向量，
+metric 则读 `logits[0, 1, 27] - logits[0, 1, 19]`。`future_position_negative_control` 替换位置 2，
+却仍读取位置 1，所以它应保持为负对照。这里的位置从 0 开始计数。先写清 batch、位置、hidden 维和
+logit 读数，才能区分“替换了来源”与“误把读取位置或未来位置接进 hook”。
+
 这一步只检查张量、hook 和因果方向。模型没有训练过；比较哪两个输出 token，也是在看过两次运行的差异后
 才为这个样例选择的。完整 prefix 恢复 clean 输出更是特意构造的正例，所以这里不能声称发现了自然语言 circuit。
 
@@ -436,10 +442,18 @@ python -m pytest tests/test_activation_patching.py -q
 套用 chat template 后，两条输入都是 26 tokens，只有位置 19 从单 token ` France` 变成 ` Germany`；
 程序在位置 25 始终计算 `logit(Paris) - logit(Berlin)`。
 
+这也是从 0 开始计数：残差 site 的形状为 `[1,26,896]`，source slice 是 `[0,19,:]`，metric 读取
+`logits[0,25,:]`。future negative control 会先追加一个第 26 位 token，再替换这个未来 slice，同时仍读
+位置 25；它检查因果方向，不是在原来 26 token 的张量上访问不存在的位置。
+
 ~~~powershell
 python projects/transformers-basics/run_qwen_activation_patching_control.py `
   --local-files-only
 ~~~
+
+这是选修的本地 snapshot 实验。`--local-files-only` 会在缺少该 immutable revision 或运行所需依赖时停止，
+不会下载或改用其他 checkpoint；此时先完成上面的 MiniGPT hook 实验即可。它验证的是 hook、shape 和因果
+负对照，仍不是这个 Qwen 实验的替代证据。
 
 实验在执行前按“第一层、中间层、最后一层”的规则选定 layers 0、11、23，没有从全部层里挑最好结果。
 Clean metric 是 `9.210311`，corrupt metric 是 `-7.700302`，两者相差 `16.910613`。录制结果如下：

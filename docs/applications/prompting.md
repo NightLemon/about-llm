@@ -153,6 +153,9 @@ text[start_char:end_char] == quote
 
 字符区间采用 Python 常见的左闭右开表示：`start_char` 指向第一个字符，`end_char` 指向引文之后的位置。
 
+到这里被接受的是一份**抽取候选**：它可以把下一步的付款草稿填得更完整，却没有获得访问订单、创建付款或修改任何
+外部状态的权利。把候选交给工具前，服务端还要用当前身份和真实资源重新判断它是否允许执行。
+
 ## Prompt-only JSON 只是第一条基线
 
 “只输出 JSON”仍可能得到 Markdown 代码块、额外解释、错误类型或被截断的对象。它适合做第一条基线。
@@ -276,8 +279,9 @@ tokenizer 成本和截断也要分语言测量。翻译后的 Prompt 是一个�
   -> 服务端解析真实资源
   -> ACL / policy
   -> 用户审批具体动作
+  -> call-id claim；已有 pending 则先对账
   -> handler execution
-  -> business verifier
+  -> receipt / business verifier
 ```
 
 密钥不能写进工具说明，URL、文件路径和 SQL 也不应交给模型自由拼接。文档内容只能作为参考，
@@ -285,6 +289,10 @@ tokenizer 成本和截断也要分语言测量。翻译后的 Prompt 是一个�
 
 自然语言中的 `confirmed=true` 不能充当审批。高风险动作要先生成可读预览，再由外部审批服务把规范化参数、
 执行身份和这次批准绑定在一起。
+
+同一个 `call_id` 已经进入 `pending` 时，审批也不把它变成“可以再发一次”的请求。可能是 handler 已经把动作送到
+外部系统、只是响应丢失；调用方先按稳定业务编号查询 receipt，再决定把本地状态补为完成、标为未受理，或转人工。
+只有业务 verifier 把 receipt 与对象、参数和预期动作对上，界面才可以把 proposal 改写成“已完成”。
 
 详细状态机见[一次 Agent 退款任务](agent-task-lifecycle.md)。那里会真实走过权限、超时、pending、验证和恢复。
 
@@ -311,7 +319,7 @@ Prompt 可以标明每段内容的来源，提醒模型把文档中的命令视�
 合同流程可以拆成：
 
 ```mermaid
-flowchart LR
+flowchart TD
   A["Classify document"] --> B["Retrieve authorized pages"]
   B --> C["Extract fields and spans"]
   C --> D["Apply deterministic validation"]

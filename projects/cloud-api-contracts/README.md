@@ -17,8 +17,10 @@ python projects/cloud-api-contracts/budgeted_retry_demo.py `
   --database artifacts/cloud-api/first-budgeted-retry.sqlite
 ```
 
-输出会显示第一次 attempt 保守记为 `uncertain`，第二次按实际 usage 结算。完整解释见
-[教学页](../../docs/practice/projects/cloud-api-contracts.md#run)。随后可运行几个较小的组件实验：
+运行前先预测：500 后的 80 是否会被释放、第二个 attempt 是否使用新的 reservation ID、最终本地估值是否为 146。
+输出会显示第一次 attempt 保守记为 `uncertain`，第二次按实际 usage 结算 66。用户拿到 `fixture answer` 后，第一次
+80 仍待对账。该命令把 `.invalid` 目标交给 `httpx.MockTransport`；500、200、usage 和 request ID 都是固定样例，
+没有真实 Provider 请求或费用。完整解释见[教学页](../../docs/practice/projects/cloud-api-contracts.md#run)。随后可运行几个较小的组件实验：
 
 ```powershell
 python projects/cloud-api-contracts/prompt_contract_walkthrough.py

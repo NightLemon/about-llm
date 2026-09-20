@@ -87,15 +87,15 @@ Gemini 的公开能力不等于内部实现全部公开。除非目标版本的�
 ## 第二步：为同一任务选择 API {#choose-api}
 
 当前官方文档推荐新项目使用 Interactions API；原有 `generateContent` 仍受支持，但被标为 legacy。
-这是一项会随时间变化的产品状态，部署前仍要重新核对目标版本。
+这是一项会随时间变化的产品状态，部署前仍要重新核对目标版本。[SOURCE:gemini-text-generation]
 
 两套接口都可以参与图片任务，但对象模型不同。
 
 **Interactions API** 把一次执行表示为可查询的 Interaction resource，并用有序 steps 展示过程。
 
 历史既可以由 `previous_interaction_id` 在服务端续接，也可以改为客户端维护。长任务还有独立的后台执行与
-状态查询语义。流式输出按交互对象、步骤和有类型的增量事件组织。本仓库目前只讲解这套设计，没有实现对应
-解析器。
+状态查询语义。流式输出按交互对象、步骤和有类型的增量事件组织。本仓库有一个固定 SSE 的离线回放器，
+它只检查受限的生命周期与投影，不创建 Interaction 请求，也不构成完整的 Interactions adapter。
 
 **`generateContent`** 把一次执行表示为生成请求及其 candidates。多轮对话通常由客户端重新发送
 `contents`，也不使用 Interactions 的后台状态机。它的流式输出围绕 candidate、part、finish reason 和
@@ -106,7 +106,7 @@ usage 展开。本仓库已经为纯文本子集实现离线适配器和状态�
 
 选择 Interactions 后，`previous_interaction_id` 只延续已保存的对话输入输出。工具、系统指令和生成配置等
 本轮参数仍要重新发送。设置 `store=false` 会改变可用的历史续接与后台能力，因此它是一项状态和治理选择，
-不是一个毫无副作用的隐私开关。
+不是一个毫无副作用的隐私开关。[SOURCE:gemini-interactions-overview]
 
 迁移时也不能只替换 URL。应用需要重新处理状态所有权、事件类型、工具调用与结果、后台查询、取消、重试、
 用量和删除流程。两套协议可以归一到同一个业务任务，却不能共用一份猜测当前协议的解析器。

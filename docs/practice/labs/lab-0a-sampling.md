@@ -40,7 +40,7 @@ python projects/inference-serving/sampling_toy.py
 
 - 本次[固定样例](../../reference/glossary.md#term-fixture)固定 `temperature=1`，所以 `temperature_scaled_logits` 与 `input_logits` 完全相同——
   这本身就是一个检查点。想观察缩放效果，请自行改成 0.5 或 2.0 再对比 `probabilities`。
-- top-k 先限制候选数量（留下 `{0,1,2}`），top-p 再按累计概率保留 crossing token：0.4 < 0.7 ≤ 0.7，
+- top-k 先限制候选数量（留下 `{0,1,2}`），归一化后前三项是 `4/9、3/9、2/9`。top-p 再按累计概率保留 crossing token：`4/9 < 0.7 ≤ 7/9`，
   所以只剩 `{0,1}`，归一化后是 `4/7` 与 `3/7`。
 - `uniform=0.6` 落在 `[4/7, 1)` 区间，采到 token 1，`sampled_probability ≈ 0.4286`。
 - repetition penalty 对正负 logit 方向不同：`2.0` 除以 2 变成 `1.0`，`-2.0` 乘以 2 变成 `-4.0`。
@@ -52,9 +52,38 @@ python projects/inference-serving/sampling_toy.py
 1. 手算 top-k 后的归一化概率。
 2. 指出 top-p crossing token，并复算最终概率和为 1。
 3. 用固定 uniform 找到被采样 token 的 CDF 区间。
-4. 故意交换 top-k/top-p 顺序或制造同分 token，解释输出为什么改变。
+4. 手算下面“交换顺序”的例子，再运行代码确认两个 support；说明为什么它已经是另一套算法。
 5. 解释为什么 `-2.0` 被惩罚成 `-4.0` 而不是 `-1.0`，以及为什么 `processor_order` 把
    `repetition_penalty` 排在 `temperature` 之前。
+
+把原概率改用 `top_k=2, top_p=0.5`，就能在纸上得到顺序差异。当前契约先 top-k：保留 `{0,1}` 后重新
+归一化为 `{0:4/7, 1:3/7}`，第一个 token 已超过 0.5，所以 top-p 最终只留 `{0}`。若先在完整分布上执行
+top-p，累计 `0.4` 后仍未达到 0.5，第二个 token 使累计质量到 `0.7`，因而先留 `{0,1}`；之后 top-k=2
+仍留 `{0,1}`。两种顺序的最终 support 不同。
+
+~~~powershell
+@'
+from fractions import Fraction
+
+probability = {0: Fraction(4, 10), 1: Fraction(3, 10), 2: Fraction(2, 10), 3: Fraction(1, 10)}
+
+def top_p(distribution, threshold):
+    kept, cumulative = [], Fraction(0)
+    for token_id in sorted(distribution, key=lambda item: (-distribution[item], item)):
+        kept.append(token_id)
+        cumulative += distribution[token_id]
+        if cumulative >= threshold:
+            return kept
+
+top_k_first = {token_id: probability[token_id] / Fraction(7, 10) for token_id in (0, 1)}
+print('top-k then top-p:', top_p(top_k_first, Fraction(1, 2)))
+print('top-p then top-k:', top_p(probability, Fraction(1, 2))[:2])
+'@ | python -
+~~~
+
+输出应是 `[0]` 与 `[0, 1]`。这段独立的短程序只复现手算的有限概率操作，没有调用仓库 runtime；它帮助你
+验证“交换顺序会改变 support”。需要检查仓库实现时，先按[环境说明](../../guide/environment.md)安装 `dev` 依赖，
+再运行 `python -m pytest tests/test_sampling.py -q`，核对仓库采用的 repetition → temperature → top-k → top-p → inverse-CDF 契约。
 
 ## 推荐扩展：观察真实模型
 
@@ -63,7 +92,7 @@ python projects/inference-serving/sampling_toy.py
 3. 记录答案差异、正确率、输出长度和 token 数。
 4. 将一个关键条件从 Prompt 开头移到中间，比较结果。
 
-真实模型实验可以使用本地模型或云 API，但必须记录模型 revision、采样参数、输入、原始输出和费用；没有这些信息时，结果不可复查。
+真实模型实验可以使用本地模型或云 API，但必须记录模型 revision、采样参数、输入、原始输出和费用；没有这些信息时，结果不可复查。每种设置至少保留一个输出变差或失败的 case，避免只从较好的样本挑结论。
 
 ## 常见失败
 

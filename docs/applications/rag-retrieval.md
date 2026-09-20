@@ -21,6 +21,11 @@
 
 检索不是寻找“最像问题的一段话”，而是在有限候选预算内覆盖回答所需证据。
 
+摄取页已经为每个片段留下内容、来源版本、结构位置和 ACL；本页从这些可追溯片段开始，先按调用者筛出可用候选，
+再比较它们的排序。摄取后的 ACL 或其他检索 metadata 改变时，应同步过滤和缓存；实际编码输入、切分器或编码契约
+改变时，才可能令向量索引失效。训练排序表示的正负标签来自独立 qrels，详见[检索表示学习](retrieval-learning.md)，
+不是请求 A 这一次的输出。
+
 在[请求 A](rag-request-lifecycle.md)中，用户问：“RAG 为什么要先做 ACL 权限过滤？”系统只在当前用户有权查看的
 资料中计算 BM25，得到三段候选：
 
@@ -66,7 +71,7 @@
 生产检索通常不是单个模型，而是一条漏斗：
 
 ```mermaid
-flowchart LR
+flowchart TD
   Q["Query + caller context"] --> A["授权与 metadata filter"]
   A --> S["Sparse candidates"]
   A --> D["Dense candidates"]
@@ -174,6 +179,12 @@ Dense retrieval 能找出同义改写，例如“访问控制应在哪一步执�
 
 漏掉模型要求的 query prefix，影响可能大于更换 ANN 参数。
 更换 Embedding、pooling 或归一化通常意味着重建文档索引。
+
+更具体地说，ACL、来源版本或其他检索 metadata 的更新应同步索引过滤字段、授权策略和相关 cache；除非这些字段
+实际拼入编码输入，它们不要求重算向量。片段文本、切分器，或实际编码输入中的标题路径改变时，才会改变待编码内容。
+编码器 revision、prefix、tokenizer、pooling 或 normalization 的更新则会改变“同一输入如何变成向量”。这两类编码变化
+应让受影响片段进入新的、带版本的编码/索引构建，再以固定 corpus、qrels 与调用者权限比较后切换。这里描述的是
+接入条件，不是本页 BM25 请求已经运行过向量重建。
 
 ### 表示是怎样学出来的
 

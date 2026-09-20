@@ -1,6 +1,6 @@
 # 实验 7B：Qwen3-0.6B 如何穿过 nano-vLLM
 
-这个实验使用你正在学习的 `Qwen3-0.6B + nano-vLLM + RTX 3070 Laptop`。我们跟随一次 768-token 请求，
+这个实验使用 `Qwen3-0.6B + nano-vLLM`，并以 RTX 3070 Laptop 作为目标单卡环境示例。我们跟随一次 768-token 请求，
 把源码里的类名还原成一条可以观察的推理链路。
 
 请求刚加入队列时处于等待（waiting）状态；被调度后进入运行（running），生成完 8 个 token 后变成完成（finished）。
@@ -53,7 +53,7 @@ python projects/inference-serving/generation_work_ledger.py
 | 输入 / 输出 | 768 synthetic token IDs / 8 sampled tokens |
 | 对照 | eager/CUDA Graph、exact/drift、batch budget 256/1024、并发 1/2/4/8 |
 
-这里的 768 个 ID 由实验程序固定生成。它与页面开头的中文请求是两组不同输入。
+这里的 768 个 ID 由实验程序固定生成。它与实验 1B 的中文 message 是两组不同输入。
 
 长实验开始前，先运行[实验 1B](../labs.md#lab-1b)，亲眼看一次真实 message 怎样变成 Qwen3 的 29 个输入 ID。
 回到本页后，只研究输入长度、前缀变化、调度和 KV block。前一个实验解释文本编码，本实验解释 runtime 执行。
@@ -330,6 +330,18 @@ python projects/inference-serving/nano_vllm_study.py explain \
 - **每个输出 token 时间（TPOT）**：首 token 之后七个生成间隔的平均值。
 
 这三个指标都不包含 HTTP、网关、tokenization、网络和客户端排队。因此，它们不能直接和在线服务指标并列比较。
+其中 engine 的 `finished_ns` 是 sequence 完成的引擎时刻，不含客户端收到尾部 SSE/finish event 的时间，
+也不是 GPU kernel 的逐项计时；要定位 kernel 仍需 profiler 或 runtime trace。
+
+成功 case 的 `finished` 只说明这条引擎 sequence 走到了完成边界。此时以
+`used_blocks=0` 与 `ref_count_total=0` 判断活动 KV 引用已释放；`cached_hash_entries>0` 仍可以只是空闲 block
+保留的前缀 metadata。若 case 在 `engine_init` 或其他收集阶段失败，报告只保留 failure stage/type，不能凭一条
+成功 trace 推断它也曾创建 sequence、占用 KV 或完成释放。HTTP timeout、客户端断连和真实 vLLM 取消需要在在线
+服务中用各自的 request ID、服务端取消轨迹和释放记录检查。
+
+下一步若要判断这组引擎选择是否适合部署，请把一个候选配置交给实际 endpoint，并另存客户端
+`offered_at`、dispatch、首个 SSE content、终态以及服务端 queue/KV trace。客户端时钟和 engine 时钟没有共同
+起点；它们应按 request ID 对齐，而不是相减。入口见[单卡 vLLM 服务](../../systems/vllm-serving.md#load-generator)。
 
 ## 实验记录模板
 

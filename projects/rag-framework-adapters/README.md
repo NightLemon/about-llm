@@ -116,6 +116,10 @@ LlamaIndex 在为 embedding 或生成模型构造文本时，可能把 metadata 
 固定四文档样例中的满分指标衡量的是 adapter 一致性。若要评估 LangChain 或 LlamaIndex 的 native index/query
 engine，需要使用独立检索配置和 held-out 数据集重新实验。
 
+这里的 `engineering_recall_at_4` 与 `engineering_ndcg_at_4` 各自只有一个 engineering query；前者的分母是该 query
+标注的两份必需文档，后者以同一 query 的理想 graded DCG 归一化。它们为 1 只说明这一个固定对照没有漂移，
+不能报告为框架在一组 query 上的平均检索质量。扩展实验时按 query 保存 qrels，并明确宏平均的 query 分母和被排除的失败终态。
+
 ## 主要文件
 
 | 文件 | 用途 |
@@ -138,6 +142,7 @@ engine，需要使用独立检索配置和 held-out 数据集重新实验。
 | Anonymous 看见私有文档 | 身份来源与 ACL 是否在评分前执行 |
 | 升级依赖后报告变化 | 实际框架版本、对象字段与 PromptTemplate 渲染行为 |
 | 指标仍满分但安全测试失败 | 无权文档可能进入过 scorer；最终 ID 一样不能证明过程安全 |
+| 首次离线运行缺少框架包 | 先确认安装命令运行在仓库虚拟环境；安装后重跑完整 parity control，不用 demo 输出代替 Retriever/Prompt 检查 |
 
 排错时先找到最早发生漂移的层：canonical retrieval、对象转换、round trip、Prompt，还是答案 artifact。
 只比较最终答案会把前面的字段和权限问题隐藏起来。

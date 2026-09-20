@@ -64,14 +64,14 @@ Proposal 通过 schema 只说明字段结构合法。权限、物理约束、用
 
 ```mermaid
 flowchart TD
-    S["Sensors"] --> E["Perception / state estimation"]
-    E --> T["Task and semantic planning"]
-    T --> M["Motion planner or learned policy"]
-    M --> C["Low-level controller"]
-    C --> A["Actuators"]
+    S["传感器"] --> E["感知 / 状态估计"]
+    E --> T["任务与语义规划"]
+    T --> M["运动规划 / 学习策略"]
+    M --> C["低层控制器"]
+    C --> A["执行器"]
     A --> S
-    G["Independent safety controller"] --> C
-    H["Human / emergency stop"] --> G
+    G["独立安全控制器"] --> C
+    H["人工 / 急停"] --> G
 ```
 
 LLM 或 VLM 适合解释语义目标、识别任务步骤，或者提出“抓取杯子”这类高层动作。运动规划器负责生成可执行轨迹，
@@ -188,6 +188,12 @@ World model（世界模型）预测后续观察、状态、奖励、终止条件
 
 - 机器人：碰撞、险些碰撞、力/速度越界、人工干预、恢复和 deadline miss；
 - GUI Agent：任务成功、无效动作、循环、恢复、未授权副作用、提示注入、跨站逃逸和人工接管。
+
+报告比例前先固定对象。机器人 episode 或 GUI task 的成功率，分母是有独立 verifier 结论的完整 case；
+审批/权限绕过率的分母是实际尝试的受控副作用动作；重复付款或重复抓取的分母则是至少观察到一次业务/物理
+effect 的逻辑动作。`effect unknown`、未对账的 pending 或 verifier 故障不能静默算成功，也不能从分母删掉：
+应单列数量和原因，并让发布判断停止或转人工。比如 20 次浏览器任务都显示“已提交”，其中 2 次没有查到后端
+receipt，不能报告 20/20 完成；最多只能报告 18 个已验证终态和 2 个未判定终态。
 
 平均成功率不能掩盖严重失败。发布判断需要同时看最坏副作用和受保护场景切片。
 

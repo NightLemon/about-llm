@@ -27,6 +27,9 @@
 
 完成标准：能从文本输入一路解释到模型输出，并为一个小任务建立可重复的评价方法。
 
+还没运行过仓库代码时，可以先做[30 分钟最小成功](beginner-map.md#30-minutes)：在 CPU 上训练一个小分词器，
+观察文本、字节和 token 怎样对应，再带着这些输出回到上表。
+
 ## 应用工程路线 { #application }
 
 应用路线最终要做出一个可诊断的助手。开始前应熟悉 token 与生成循环，并能使用 Python、HTTP 和数据库。
@@ -58,7 +61,8 @@
 3. 阅读[微调总览](../training/finetuning.md)，先确认问题是否需要改权重，还是 Prompt 或 RAG 已经足够。
 4. 在 [SFT 数据流水线](../training/sft-data-pipeline.md)中打印最终 token、mask、截断和 held-out identity。
 5. 进入 [LoRA/QLoRA](../training/peft-qlora-engineering.md)，建立显存预算、基线和 adapter 发布流程。
-6. 需要偏好优化时，再学习[偏好对齐](../training/alignment-basics.md)中的 DPO/RLHF 与 reward hacking。
+6. 需要偏好优化时，再用[偏好对齐入门](../training/alignment-basics.md)中的同一组回答，比较 DPO 与
+   “奖励模型加 PPO”两条路线，并解释为什么奖励分数提高后，回答仍可能变差。
 7. 最后用 [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md)把一个样本从模板追到独立重载。
 
 完成标准：报告数据版本、训练预算、曲线、基线、held-out 结果、失败样例和资源消耗；“loss 下降”不能单独作为完成信号。

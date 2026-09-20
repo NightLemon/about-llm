@@ -48,7 +48,7 @@ Collection 门禁要求每个测试至少声明一种证据性质；否则新增
 - Weekly/manual：重复两层离线门禁，用于发现依赖和环境漂移。
 - 真实网络、付费 API、目标 GPU 与生产 benchmark：仍属于外部验证，不能由默认 CI 冒充。
 
-当前只有 3 个小型 Notebook，完整执行约 25 秒，仍直接保护读者学习入口，因此暂不降级。
+当前 4 本 Notebook 覆盖 Attention、MiniGPT、RAG 和 SFT 样本生命周期。完整执行直接保护这些学习入口，因此仍保留在 PR 检查中。
 
 ## 测试增长规则
 
@@ -93,17 +93,25 @@ Collection 门禁要求每个测试至少声明一种证据性质；否则新增
 其余离线公式、契约、安全和入口证据留在 PR 层。这个数字只记录 2026-08-18 的治理结果，不是覆盖率目标；
 后续仍根据教学结论的重要性和预期结果是否可信来决定增删。
 
+### 当前复核时怎样解释历史记录
+
+上面的日期、收集数和分类结果是历史 artifact，必须保留原样。每次维护当前套件时，先以项目配置的 `--strict-markers` 收集，再记录本次日期、命令和结果；不要用新的收集数改写旧记录。
+
+`formula`、`contract`、`security`、`smoke` 是证据性质，说明测试回答什么。`integration`、`slow`、`network`、`gpu` 是运行属性，说明组件边界、成本或资源要求。`extended` 则决定 CI 调度，且必须同时带 `integration` 或 `slow`；它本身不提高证据等级。
+
+每项 claim 都要能指出 oracle：手算值、标准定义、独立参考实现、固定人工标注，或明确标为 supplied fixture。报告分数时写出 case 总数及 answer、abstain、error/timeout、未判定等终态；不能只筛选通过或已回答的 case 作为分母。fixture、mock 和 spy 可以可靠地检验本地契约与调用边界，却不能证明真实模型、GPU、provider、数据分布或生产结果。
+
 ## 本地命令
 
 ~~~powershell
 # Pull-request 测试层
-python -m pytest -m "not extended and not gpu and not network"
+.venv\Scripts\python.exe -m pytest -m "not extended and not gpu and not network"
 
 # Main/定时专项层
-python -m pytest -m "extended and not gpu and not network"
+.venv\Scripts\python.exe -m pytest -m "extended and not gpu and not network"
 
 # 防止 marker 选择漏测的最终对账
-python -m pytest
+.venv\Scripts\python.exe -m pytest
 ~~~
 
 首次分类不要删除测试。先观察耗时、失败价值和重复范围，再决定合并、降级或保留。

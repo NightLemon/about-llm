@@ -87,23 +87,22 @@ interaction.created(status=in_progress)
 固定记录还会按字节分片送进 SSE 解析器。一次网络读取所得的字节片段、一个服务器事件、一个步骤增量和一个
 模型词元属于四层数据，它们的边界彼此独立。
 
-## Interactions object graph
+## Interaction 里有哪些对象 { #interactions-object-graph }
 
 Interactions API 用一个 Interaction resource 表示一次对话 turn 或长任务，用有序 steps 记录模型输出、
 思考摘要和工具活动：
 
-```mermaid
-flowchart TD
-    R["interactions.create"] --> I["Interaction"]
-    I --> S["status"]
-    I --> P["previous_interaction_id"]
-    I --> U["usage"]
-    I --> T["steps[]"]
-    T --> A["user_input"]
-    T --> B["thought"]
-    T --> C["function/tool call"]
-    T --> D["function/tool result"]
-    T --> E["model_output"]
+```text
+Interaction
+├── status
+├── previous_interaction_id
+├── usage
+└── steps[]：按发生顺序保存
+    ├── user_input：用户输入
+    ├── thought：思考摘要
+    ├── 函数或工具调用
+    ├── 函数或工具结果
+    └── model_output：模型输出
 ```
 
 `interactions.create` 的响应只返回模型生成的 steps。之后通过 `interactions.get` 读取已保存的 resource 时，

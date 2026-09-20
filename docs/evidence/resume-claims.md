@@ -225,3 +225,9 @@ MoE 机制项目可写“从零实现 padding-aware top-k、per-expert capacity�
 ## 面试前自查
 
 对简历每个数字都能回答：数据从哪来？样本量？基线？公式？聚合单位？硬件？模型版本？配置与 artifact 在哪？置信区间？失败分布？证据属于离线、目标硬件还是线上？若重做会改什么？若不能，删掉或补证据。
+
+## 交付前：把一句简历 claim 连回证据
+
+提交一条项目数字前，让读者能沿同一条链找到原始输入、固定配置、运行脚本、原始输出、metric oracle、相关测试和限制。测试文件名或绿色 CI 不是 oracle：说明 expected value 来自手算、标准定义、独立参考实现、人工标注，还是 supplied fixture，并保留失败、abstain、error 在各自声明的分母中。
+
+仓库 prepared corpus、fake tool、recorded report 与 CPU control 都可以证明固定路径或控制流，但不能冒充生产样本、真实 provider、目标 GPU 或线上 SLO。若没有实际执行目标环境，就在简历和演示中写明运行范围；把“在固定输入上通过某个 gate”与“在生产中提升质量/吞吐”分成两条需要不同证据的句子。对 RAG，还要分别写 citation syntax、授权、exact-span identity、语义支持、来源真实性/时效和答案完整性，不能用一个 citation pass 代替其余命题。

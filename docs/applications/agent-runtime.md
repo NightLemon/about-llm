@@ -21,15 +21,15 @@
 > “商品坏了，帮我退 300 元。”
 
 模型正确提出了 `request_refund`，Schema、订单归属、权限与用户审批也都通过。退款服务随后受理了请求，
-但响应在回程中丢失。本地只看到 timeout，远端却已经产生一笔退款。
+但响应在回程中丢失。本地只看到 timeout，无法知道远端是否已经记录退款申请。
 
 这正是 Runtime 必须处理的情况。难点不在于让模型选对工具，而在于回答三个工程问题：
 
 1. 模型提出的动作，怎样变成一个被授权且不会漂移的具体执行？
 2. 本地不知道远端结果时，怎样避免第二笔退款？
-3. 进程重启以后，系统从哪里继续，最后又凭什么告诉用户“退款成功”？
+3. 进程重启以后，系统从哪里继续，最后又凭什么报告“退款申请已受理”？
 
-## 先运行：看失败怎样变成已确认 { #run }
+## 先运行：看本地未知怎样得到已受理证据 { #run }
 
 从仓库根目录运行：
 
@@ -39,7 +39,7 @@ python projects/safe-agent/refund_lifecycle.py
 
 这是一个离线模拟，不会调用真实模型或支付服务。第一次阅读不必逐字段看完整 JSON，先找到下面五个阶段：
 
-| 阶段 | 本地看到什么 | 远端退款次数 |
+| 阶段 | 本地看到什么 | 固定模拟器的 effect count |
 |---|---|---:|
 | 跨租户反例 | 权限拒绝，Handler 没有执行 | 0 |
 | 合法退款执行 | Handler 收到超时，本地账本保持 `pending` | 1 |
@@ -48,15 +48,21 @@ python projects/safe-agent/refund_lifecycle.py
 | 对账后重放 | 命中已确认结果，返回退款单号 | 1 |
 
 输出中的 `execution.status` 是 `failed`，表示这次本地 Handler 调用没有拿到成功响应；
-它不表示退款没有发生。与此同时，`local_ledger_state` 是 `pending`，而模拟支付服务的 `provider_effect_count` 已经是 1。
+它不表示退款没有发生。与此同时，`local_ledger_state` 是 `pending`；固定模拟支付服务报告的
+`provider_effect_count` 为 1。这个字段是 fixture 的内部观测，不是本地控制面在 timeout 当时已经取得的证据。
 
 随后，验证器按同一个幂等键查询支付服务。回执匹配后，账本才进入完成状态，最终回答是：
 
 > 退款已由支付服务确认受理，退款单号 refund-provider-7001。
 
-接下来的章节都在解释：为什么这五个阶段能够保证 Handler 只尝试一次，并让未知结果最终得到确认。
+接下来的章节都在解释：为什么这五个阶段会在当前 fixture 中拦住一次 pending 重放，并让未知结果通过查询得到确认。
 
 ## 先看事故发生在哪个窗口
+
+下面按参与者分列展示消息顺序；窄屏可在图内横向滚动。
+
+<div style="overflow-x: auto;" markdown="1">
+<div style="min-width: 750px;" markdown="1">
 
 ```mermaid
 sequenceDiagram
@@ -74,6 +80,9 @@ sequenceDiagram
   P-->>R: 已受理 + receipt
   R->>L: reconcile → completed
 ```
+
+</div>
+</div>
 
 `pending` 不是“失败”的别名。它表示执行权已经被领取，但系统还没有足够证据把业务结果写成成功或失败。
 这个中间状态是恢复协议的起点。
@@ -223,7 +232,7 @@ ledger = pending
 超时后保持 `pending`，可以阻止重启进程再次进入 Handler。验证器使用可信的幂等键查询退款服务，
 再逐项核对订单、金额、原因和支付服务状态。
 
-只有回执全部匹配，账本才写成 `completed`。此后的重复调用会读取已确认结果；远端退款次数仍然是 1。
+只有回执全部匹配，账本才写成 `completed`。此后的重复调用会读取已确认结果；本地账本不能据此断言真实远端在所有故障窗口都只产生一次 effect。
 
 `abandoned` 和 `compensated` 都不是删除历史。补偿本身是一次新业务动作，可能失败、收费，也可能无法撤回已经
 传播的信息。
@@ -317,7 +326,7 @@ python projects/safe-agent/outbox_demo.py `
   --database artifacts/agent/outbox-demo-001.db
 ```
 
-预期会看到两次远端请求继续使用同一个幂等键。模拟服务只产生一个业务效果，最终投递状态为 `delivered`。
+预期会看到两次对模拟 provider 的请求继续使用同一个幂等键。该 fixture 记录一个模拟业务 effect，最终投递状态为 `delivered`；真实服务是否按键去重仍取决于其契约和对账证据。
 完整测试矩阵、SQLite 固定故障样例以及每个字段适用于哪些结论，见
 [Safe Agent 项目页](../practice/projects/safe-agent.md)和[项目控制台账](../evidence/project-controls.md)。
 

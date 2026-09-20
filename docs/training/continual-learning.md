@@ -407,6 +407,19 @@ Task B 更新不是一份孤立的 `model.safetensors`。每个模型工件至�
 回滚权重时也要恢复兼容的 tokenizer、adapter、Prompt、索引和工具契约。
 只回滚模型权重，可能制造新的接口错误。
 
+### 12.1 把 Task B 接到单卡 Adapter 闭环 {#single-gpu-task-b}
+
+已有 Task A 的单卡 Adapter 后，Task B 应视为一次新的更新，不是把旧输出目录接着跑。先冻结 Task A 的 held-out、
+安全/工具 anchor 与旧工件身份；这些 anchor 只用于比较，不能混入 Task B 的训练数据。随后为 Task B 重新发布
+train-only readiness，固定 tokenizer/template 和父 base revision，完成小步训练并在新进程分别重载旧、新 Adapter。
+
+发布判断至少同时比较 base、旧 Adapter 与新 Adapter 在同一 Task A anchors 和 Task B held-out 上的表现，报告新任务
+收益、逐项 retention、资源增量和失败分母。未过 gate 时，回滚兼容的 Adapter、Prompt、索引和工具契约。
+
+`--resume-from-checkpoint` 只用于同一次被中断的运行（同一配置与工件身份）恢复 optimizer、数据游标和随机状态；它不能替代这次新更新前后的
+评测。[Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md#task-b-update)给出这张发布卡片，
+`continual_replay_toy.py` 则仍只用于观察合成任务中的 replay 机制。
+
 ## 13. 部署中的持续更新
 
 部署一次更新可以依次经过：
