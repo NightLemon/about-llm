@@ -181,23 +181,26 @@ Syntax 和 schema 只约束结构。字段可能事实错误、单位错误、�
 更新时：
 
 1. 核对具体平台、API/version 和目标页面；
-2. 更新机器可读来源与核对日期；
-3. 判断变化影响的是文档声明、代码契约还是已录制实验；
-4. 重新运行受影响的 capability probe 或评测；
+2. 判断变化影响的是文档声明、代码契约还是已录制实验；
+3. 对目标环境重新运行受影响的 capability probe 或评测；来源网络探测只由定时任务运行；
+4. 由登记的人工或 LLM 复核者逐项判断变更是否支持原 claim，必要时更新正文、原始审核状态、`checked_at` 与 fingerprint；LLM 复核必须留下模型身份和逐项记录；
 5. 保留旧 artifact，不能用新依赖的 live 通过改写历史证据。
 
 本仓库的逐来源日期、论文快照和官方链接保存在[内容准确性证据台账](../evidence/accuracy-ledger.md)。
 
-机器可读注册表为每个来源分配稳定 ID，并记录 `status`、`volatility`、`next_review_at`、`used_by` 与可选 revision/fingerprint。高时效结论用 `SOURCE:<stable-id>` 标记的实际形式连接到该记录。页面状态含义如下：
+机器可读注册表为每个来源分配稳定 ID，并记录语义审核 `status`、`checked_at`、`volatility`、`next_review_at`、`used_by` 与可选 revision/fingerprint。LLM 复核还要保存含 `method`、`reviewer` 和 `record` 的审核对象。高时效结论用 `[SOURCE:<stable-id>]` 连接到该记录。原始状态只能是 `verified`、`pending-review` 或 `rejected`；它不是页面直接展示的全部状态。
 
-| 状态 | 能推出什么 | 维护动作 |
+页面 badge 计算有效状态。先保留不是 `verified` 的原始状态；否则以当前日期比较 `next_review_at`，过期时显示 `stale`；如果站点读到了定时任务写入的探测报告，该报告中的 `unknown` 或 `pending-review` 会覆盖。含义与维护动作如下：
+
+| 有效状态 | 能推出什么 | 维护动作 |
 |---|---|---|
-| `verified` | 人工曾在登记范围和日期内核对来源 | 到期前按易变性复核 |
-| `stale` | 已超过登记的下次复核日期 | 重新核对来源与正文 |
-| `unknown` | 本次网络探测无法访问来源 | 排除临时故障后人工复核 |
-| `pending-review` | 探测到内容 fingerprint 与已审版本不同 | 判断变化是否影响 claim |
+| `verified` | 登记的复核者曾在范围和日期内逐项核对来源，且没有参与渲染的降级观测 | 查看徽章与复核记录区分人工和 LLM；到期前按易变性复核 |
+| `stale` | 原始状态为 `verified`，但已超过登记的下次复核日期 | 重新核对来源与正文 |
+| `unknown` | 本次定时网络探测无法访问来源 | 排除临时故障后逐项语义复核 |
+| `pending-review` | 人工已标记待审，或定时探测发现已登记 fingerprint 变化 | 判断变化是否影响 claim |
+| `rejected` | 登记的复核者已拒绝将该来源作为当前证据 | 替换来源或移除相关 claim |
 
-后三种状态会让站点显式降级，但不会阻止构建。可访问性和内容变化都不能自动判断原结论是否仍成立。
+`stale` 是日期计算结果，`unknown` 是探测观测，不能写回注册表冒充语义审核。探测只在定时任务运行 `scripts/probe_sources.py` 并写报告；PR 的离线检查不运行网络探测。所有降级状态都会让站点显式提示，但不会阻止构建。可访问性和 bytes 变化不能自动判断原结论是否仍成立；LLM 只有按 [ADR 0004](../decisions/0004-llm-source-review.md) 完成逐来源、逐 claim 记录后，才能刷新审核。
 
 ## 怎样阅读本仓库的证据
 
@@ -221,7 +224,7 @@ HTTP MockTransport 都通过，仍不等于真实远端认证、兼容性或生�
 1. 确定陈述类型和最小 claim。
 2. 找到同一层级的来源或可执行证据。
 3. 添加成功路径、边界和故意失败用例。
-4. 更新正文、测试、来源登记和证据台账。
+4. 更新正文、测试、来源登记和证据台账；只有登记的人工或 LLM 复核者完成语义核对后才刷新来源审核状态和日期。
 5. 运行：
 
 ~~~powershell

@@ -43,6 +43,7 @@ SOURCE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 SOURCE_MARKER_RE = re.compile(r"\[SOURCE:([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\]")
 SOURCE_FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SOURCE_STATUSES = {"verified", "pending-review", "rejected"}
+SOURCE_REVIEW_METHODS = {"human", "llm"}
 SOURCE_VOLATILITIES = {"high", "medium", "low", "immutable"}
 SOURCE_FINGERPRINT_KINDS = {"visible-text-v1", "raw-prefix-v1"}
 
@@ -61,7 +62,7 @@ OFFICIAL_URLS = {
     "https://ai.google.dev/api/generate-content",
     "https://ai.google.dev/gemini-api/docs/text-generation",
     "https://modelcontextprotocol.io/docs/getting-started/intro",
-    "https://modelcontextprotocol.io/specification/",
+    "https://modelcontextprotocol.io/specification",
     "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports",
     "https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle",
     "https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation",
@@ -190,6 +191,7 @@ def check_ledger(
         fingerprint_kind = source.get("fingerprint_kind")
         fingerprint_bytes = source.get("fingerprint_bytes")
         revision = source.get("revision")
+        review = source.get("review")
         if not isinstance(source_id, str) or SOURCE_ID_RE.fullmatch(source_id) is None:
             errors.append(f"{prefix}: id must be a stable lowercase kebab-case identifier")
         elif source_id in seen_ids:
@@ -230,6 +232,46 @@ def check_ledger(
             errors.append(f"{prefix}: fingerprint metadata requires fingerprint")
         if revision is not None and (not isinstance(revision, str) or not revision.strip()):
             errors.append(f"{prefix}: revision must be a non-empty string when present")
+        if review is not None:
+            if not isinstance(review, dict):
+                errors.append(f"{prefix}: review must be an object when present")
+            else:
+                unexpected_review_fields = set(review) - {"method", "reviewer", "record"}
+                if unexpected_review_fields:
+                    errors.append(
+                        f"{prefix}: review has unknown fields: {sorted(unexpected_review_fields)}"
+                    )
+                if review.get("method") not in SOURCE_REVIEW_METHODS:
+                    errors.append(
+                        f"{prefix}: review.method must be one of {sorted(SOURCE_REVIEW_METHODS)}"
+                    )
+                reviewer = review.get("reviewer")
+                if not isinstance(reviewer, str) or not reviewer.strip():
+                    errors.append(f"{prefix}: review.reviewer must be a non-empty string")
+                record = review.get("record")
+                if not isinstance(record, str) or "#" not in record:
+                    errors.append(f"{prefix}: review.record must be a Markdown path with an anchor")
+                else:
+                    record_path, anchor = record.split("#", 1)
+                    if not record_path.endswith(".md") or not anchor:
+                        errors.append(
+                            f"{prefix}: review.record must be a Markdown path with an anchor"
+                        )
+                    else:
+                        review_page = (effective_docs_root / record_path).resolve()
+                        try:
+                            review_page.relative_to(effective_docs_root.resolve())
+                        except ValueError:
+                            errors.append(f"{prefix}: review.record escapes docs root: {record}")
+                        else:
+                            if not review_page.is_file():
+                                errors.append(
+                                    f"{prefix}: review.record page does not exist: {record_path}"
+                                )
+                            elif f"{{#{anchor}}}" not in review_page.read_text(encoding="utf-8"):
+                                errors.append(
+                                    f"{prefix}: review.record anchor does not exist: {record}"
+                                )
         try:
             checked_at = date.fromisoformat(checked_at_raw)
         except (TypeError, ValueError):

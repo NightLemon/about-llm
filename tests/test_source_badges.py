@@ -32,6 +32,22 @@ def test_badge_renders_without_page_warning_for_current_source() -> None:
     assert "本页来源状态已降级" not in rendered
 
 
+def test_badge_identifies_llm_review_without_degrading_the_page() -> None:
+    rendered = render_source_markers(
+        "# Page\n\nClaim [SOURCE:example-official]",
+        sources={
+            "example-official": _source(
+                review={"method": "llm", "reviewer": "test-model", "record": "record.md#id"}
+            )
+        },
+        as_of=date(2026, 8, 28),
+    )
+
+    assert "source-status-verified source-review-llm" in rendered
+    assert "LLM 已复核" in rendered
+    assert "本页来源状态已降级" not in rendered
+
+
 def test_badge_and_page_warning_render_for_all_degraded_states() -> None:
     for status in ("stale", "unknown", "pending-review"):
         source = _source(next_review_at="2026-08-01" if status == "stale" else "2026-09-01")

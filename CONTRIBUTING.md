@@ -65,7 +65,7 @@
 
 优先引用论文原文、官方文档、标准和可信的一手工程资料。论文用“作者，标题，会议/期刊或 arXiv，年份，链接”的格式。对存在争议的结论至少展示两方证据。
 
-会变化的 API、模型目录、价格、配额或政策必须先登记到 `docs/reference/official-sources.json`。正文用 `[SOURCE:stable-id]` 绑定登记项；构建时它会显示来源状态。`verified` 只表示人工在 `checked_at` 核对过登记范围，`stale`、`unknown` 和 `pending-review` 分别表示超过复核日期、网络探测失败和 fingerprint 变化。状态降级不得替代语义复核。
+会变化的 API、模型目录、价格、配额或政策必须先登记到 `docs/reference/official-sources.json`。正文用 `[SOURCE:stable-id]` 绑定登记项；构建时它会显示来源状态。`verified` 只表示登记的复核者在 `checked_at` 对照一手来源核对过登记范围；若使用 LLM，必须记录 `review.method=llm`、模型身份和逐 claim 复核记录，页面会显示“LLM 已复核”。`stale`、`unknown` 和 `pending-review` 分别表示超过复核日期、网络探测失败和待语义判断。状态降级或网络可访问性不得替代语义复核。
 
 ## 贡献许可
 

@@ -27,7 +27,7 @@
 
 Claude 是闭源模型产品。Constitutional AI、RLHF/RLAIF 等公开论文可以解释一条研究路线，却不能证明当前某个 Claude 版本采用论文中的完整训练配方。未公开的参数量、层数、训练数据、稀疏/稠密结构、路由和后训练细节应**保持未知**；不要从输出风格、旧论文或产品名称反推内部架构。
 
-本章接口事实按 Anthropic Messages 官方参考于 **2026-08-12** 核对。具体 model id、上下文、价格、区域、限额和 beta header 都是时间敏感产品事实，应在部署时固定检查日期和版本，不在稳定教材中维护“永久最新”表。
+本章接口事实按 Anthropic Messages 官方参考于 **2026-09-20** 由 LLM 复核。具体 model id、上下文、价格、区域、限额和 beta header 都是时间敏感产品事实，应在部署时固定检查日期和版本，不在稳定教材中维护“永久最新”表。
 
 本仓库没有访问 Anthropic 账号或真实付费 endpoint，也没有执行 Anthropic SDK、DNS/TLS、HTTP/2、真实 SSE、prompt caching、tool/thinking blocks 或计费。可执行证据只覆盖 authored request/response fixtures、text-only stream state machine、provider-neutral retry/HTTP/budget controls；这些不能外推当前 Claude 质量、产品能力或生产可靠性。
 
@@ -48,14 +48,17 @@ flowchart LR
 |---|---|---|---|
 | L0 | `Claude` 名称 | 候选产品家族 | model id、能力、版本 |
 | L1 | Constitutional AI / HH-RLHF 等论文 | 论文设置与研究路线 | 当前产品完整训练配方 |
-| L2 | Messages reference，checked_at 2026-08-12 | 当日审阅到的 request/content/usage/stop contract | 文档未来不变、账号/区域行为 |
+| L2 | Messages reference，checked_at 2026-09-20 | 当日由 LLM 审阅到的 request/content/usage/stop contract | 文档未来不变、账号/区域行为 |
 | L3 | authored JSON/SSE/MockTransport/SQLite controls | 本地 adapter/state/policy 行为 | Anthropic SDK/网络/provider/billing |
 | L4 | **没有** | 需要受控真实请求/stream trace | 当前模型质量、配额、错误和费用 |
 | L5 | **没有** | 需要代表性任务、负载和线上分母 | 生产 SLO、安全和因果收益 |
 
 ### L2 也不是 immutable byte evidence
 
-来源台账记录官方 URL、scope 与核对日期，但没有保存上游文档原始 bytes/hash。官方网页可能原地更新，因此准确表述是“2026-08-12 按该页面审阅”，不是“该 URL 永久证明相同协议”。生产 adapter 需要：
+来源台账记录官方 URL、scope、核对日期与复核方法。官方网页可能原地更新，因此准确表述是“2026-09-20 由 LLM 按该页面审阅”，不是“该 URL 永久证明相同协议”。生产 adapter 需要：
+
+登记项里的原始 `status=verified` 只表示那次登记的语义核对已记录；本项徽章明确标为 LLM 复核。页面来源徽章使用构建时的有效状态：它会随
+`next_review_at` 与 probe 结果变为 stale、unknown 或 pending-review；这种降级不回写本段的历史核对日期，也不替代对 claim 的语义复核。
 
 - 固定 `anthropic-version`/beta headers；
 - 保存 SDK/schema version 与 checked_at；
@@ -718,7 +721,7 @@ AES fixture 与 allowlist gate 不模拟 Anthropic thinking/signature 协议；�
 - 把 Constitutional AI 论文写成当前产品的完整内部实现；
 - 把 RLAIF 描述成不需要人类定义原则和监督；
 - 从输出风格猜参数量、MoE/稠密结构或训练数据；
-- 把 2026-08-12 官方网页核对写成 immutable 协议快照；
+- 把 2026-09-20 的官方网页 LLM 复核写成 immutable 协议快照；
 - 把顶层 `system` 当作普通 role message；
 - 只取第一个 text block，丢掉工具、引用或未知 block；
 - 把仓库 text-only parser 写成完整 Messages adapter；
@@ -779,7 +782,7 @@ AES fixture 与 allowlist gate 不模拟 Anthropic thinking/signature 协议；�
 
 ## 一手资料
 
-- Anthropic，[Messages API reference](https://platform.claude.com/docs/en/api/messages)，顶层 system、无状态消息历史、content blocks、usage 与 stop reason；核对日期 2026-08-12。[SOURCE:anthropic-messages]
+- Anthropic，[Messages API reference](https://platform.claude.com/docs/en/api/messages)，顶层 system、无状态消息历史、content blocks、usage 与 stop reason；LLM 复核 2026-09-20。[SOURCE:anthropic-messages]
 - Anthropic，[Tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview)，工具 block 与客户端执行循环。
 - Bai 等，[Constitutional AI: Harmlessness from AI Feedback](https://arxiv.org/abs/2212.08073)，原则、批评/修订与 RLAIF 研究路线。
 - Bai 等，[Training a Helpful and Harmless Assistant with Reinforcement Learning from Human Feedback](https://arxiv.org/abs/2204.05862)，HH-RLHF 研究设置。

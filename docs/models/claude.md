@@ -146,8 +146,10 @@ Message response
 }
 ~~~
 
-这个示例用占位 model ID，运行前仍要按目标 API 版本核对字段。它要表达的稳定关系是：`system` 位于顶层，
-`messages` 保存对话历史，`content` 和工具结果都应保留类型。
+这个示例用占位 model ID，运行前仍要按目标 API 版本核对字段。Messages 的字段形状可查
+[Anthropic Messages API](https://platform.claude.com/docs/en/api/messages) [SOURCE:anthropic-messages]：`system` 位于顶层，
+`messages` 保存对话历史，`content` 和工具结果都应保留类型。该来源登记的 LLM 复核状态与日期只覆盖其登记范围；
+接入时仍要按目标 model ID、API 版本和账号环境重新核对。
 
 Claude 可能在第一轮返回文字和工具提议。下面只截取 `content` 与停止原因，省略响应 ID、model 和 usage：
 

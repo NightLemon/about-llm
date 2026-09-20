@@ -46,7 +46,8 @@
 一个问题，不能互相替代。
 
 当前闭源产品的内部结构、真实服务执行、模型质量、账单和生产可靠性，需要另外收集与问题匹配的证据。
-当前产品信息属于**时间敏感**事实，本页最近核对日期为 **2026-08-19**。
+当前产品信息属于**时间敏感**事实，动态来源最近由 LLM 复核于 **2026-09-20**；下方型号表仍保留
+**2026-08-19** 的历史快照。
 
 ## 自回归公式只描述了系统的一层
 
@@ -102,6 +103,9 @@ RLHF 不是一个跨时代固定的配方。当前产品是否使用某个 rewar
 | GPT-5.6 Luna | 成本敏感的高吞吐工作负载 |
 
 目录还包含特定任务模型，并把当前使用入口指向 Responses API 与官方 SDK。本教材不维护完整型号榜。
+
+这张表保留 2026-08-19 的目录快照，用来说明不同候选的定位。今天开展选型时，从[当前官方目录](https://developers.openai.com/api/docs/models)
+重新取得候选，再按本页的方法比较；下方的固定天气回放用于学习协议，并不依赖这三个具体型号。[SOURCE:openai-model-catalog]
 
 这只是带日期的产品目录，不是内部架构披露，也不能永久替代选型实验。型号、alias、价格、上下文窗口、最大输出、
 模态和工具支持都可能变化。
@@ -168,7 +172,7 @@ def parse_response(payload: dict) -> str:
 
 ### Structured Outputs 解决的是哪一层
 
-JSON mode 的目标是生成有效 JSON。Structured Outputs 进一步在受支持的 JSON Schema 子集内约束结构。
+JSON mode 的目标是生成有效 JSON。Structured Outputs 进一步在受支持的 JSON Schema 子集内约束结构。[SOURCE:openai-structured-outputs]
 
 这两项能力只处理语法和结构。字段值是否真实、引用是否存在、金额是否合理，以及工具调用是否有权限，都要由应用检查。
 调用方还要单独处理 refusal 与 `incomplete`；安全拒绝或输出上限终止时，业务对象并不完整。
@@ -196,9 +200,9 @@ Responses 中的 function call arguments 仍是模型生成的文本。解析成
 若 arguments 不是有效 JSON object，adapter 会保留原字符串，并把 `arguments_is_strict_object` 设为 `false`。
 后续策略可以明确报错，或者把它送入独立的修复流程；修复后的对象不能冒充原参数已经通过校验。
 
-截至 2026-08-19，官方 Function Calling guide 把这条链路写成多步交互：应用提供 tool definition，
+截至 2026-09-20 的 LLM 复核，官方 Function Calling guide 仍把这条链路写成多步交互：应用提供 tool definition，
 模型返回 tool call，**应用侧**执行代码，再用对应 `call_id` 回传 `function_call_output`，模型才继续生成最终响应
-或下一次调用。
+或下一次调用。[SOURCE:openai-function-calling]
 
 “应用侧执行”只描述 API 编排位置，不会替应用完成 Schema、ACL、审批、幂等或副作用验证。
 
@@ -456,11 +460,11 @@ temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格
 
 ## 一手资料
 
-- OpenAI，[模型目录](https://developers.openai.com/api/docs/models)，当前产品目录与 Responses 入口；核对日期 2026-08-19。[SOURCE:openai-model-catalog]
-- OpenAI，[创建 Response](https://developers.openai.com/api/reference/resources/responses/methods/create)，请求与响应对象；核对日期 2026-08-19。[SOURCE:openai-responses-create]
-- OpenAI，[流式返回指南](https://developers.openai.com/api/docs/guides/streaming-responses)，Responses 流式处理方法；核对日期 2026-08-19。[SOURCE:openai-responses-streaming]
-- OpenAI，[流式事件参考](https://developers.openai.com/api/reference/resources/responses/streaming-events)，事件类型与字段；核对日期 2026-08-19。[SOURCE:openai-streaming-events]
-- OpenAI，[结构化输出指南](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON Schema 子集、JSON 模式、拒答与非完整终态；核对日期 2026-08-19。[SOURCE:openai-structured-outputs]
-- OpenAI，[函数调用指南](https://developers.openai.com/api/docs/guides/function-calling)，候选调用、应用执行与结果回传；核对日期 2026-08-19。[SOURCE:openai-function-calling]
+- OpenAI，[模型目录](https://developers.openai.com/api/docs/models)，当前产品目录与 Responses 入口；LLM 复核 2026-09-20，正文型号表仍是 2026-08-19 历史快照。[SOURCE:openai-model-catalog]
+- OpenAI，[创建 Response](https://developers.openai.com/api/reference/resources/responses/methods/create)，请求与响应对象；LLM 复核 2026-09-20。[SOURCE:openai-responses-create]
+- OpenAI，[流式返回指南](https://developers.openai.com/api/docs/guides/streaming-responses)，Responses 流式处理方法；LLM 复核 2026-09-20。[SOURCE:openai-responses-streaming]
+- OpenAI，[流式事件参考](https://developers.openai.com/api/reference/resources/responses/streaming-events)，事件类型与字段；LLM 复核 2026-09-20。[SOURCE:openai-streaming-events]
+- OpenAI，[结构化输出指南](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON Schema 子集、JSON 模式、拒答与非完整终态；LLM 复核 2026-09-20。[SOURCE:openai-structured-outputs]
+- OpenAI，[函数调用指南](https://developers.openai.com/api/docs/guides/function-calling)，候选调用、应用执行与结果回传；LLM 复核 2026-09-20。[SOURCE:openai-function-calling]
 - Brown 等，[GPT-3 论文](https://arxiv.org/abs/2005.14165)，上下文学习（in-context learning）。
 - Ouyang 等，[InstructGPT 论文](https://arxiv.org/abs/2203.02155)，监督示范、偏好排序与强化学习。

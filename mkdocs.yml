@@ -244,6 +244,7 @@ nav:
           - Gemini 接入证据: evidence/gemini-controls.md
           - 面试深挖与 control: evidence/interview-controls.md
           - 内容准确性证据: evidence/accuracy-ledger.md
+          - 2026-09-20 LLM 来源复核: evidence/source-reviews/2026-09-20.md
           - Qwen 模型证据: evidence/qwen-controls.md
           - DeepSeek 模型证据: evidence/deepseek-controls.md
           - Claude 模型证据: evidence/claude-controls.md
@@ -266,6 +267,7 @@ nav:
           - 证据边界: decisions/0001-evidence-boundaries.md
           - 学习契约: decisions/0002-learning-contract.md
           - 来源失效策略: decisions/0003-source-freshness.md
+          - LLM 来源复核: decisions/0004-llm-source-review.md
 
 exclude_docs: |
   _templates/

@@ -1,6 +1,6 @@
 # 资料与论文
 
-优先阅读一手资料。这里按概念价值而非“最新榜单”组织；访问日期和版本对快速变化的实现文档尤其重要。
+优先阅读一手资料。这里按概念价值而非“最新榜单”组织；访问日期和版本对快速变化的实现文档尤其重要。带 `[SOURCE:...]` 的链接已绑定仓库来源登记；badge 显示登记状态及其按日期计算的有效状态，不能代替你对目标版本和账号条件的核对。
 
 需要跟进近期研究时，使用独立的[近期论文解读](../papers/index.md)和固定日期快照。那里记录“为什么现在读”、原文证据、限制与不可外推项；本页继续维护长期有效的基础书目。
 
@@ -47,13 +47,13 @@
 
 本节只列需要按版本和访问日期持续复核的官方入口，不把当前产品状态写成永久事实。
 
-- Model Context Protocol，[Introduction](https://modelcontextprotocol.io/docs/getting-started/intro)、[2025-11-25 transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) 与 [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)：tools/resources/prompts、stdio/HTTP、capability、结构化结果与安全边界。
-- A2A Protocol，[Specification](https://a2a-protocol.org/latest/specification/)、[v1.0.0 JSON Schema](https://a2a-protocol.org/v1.0.0/spec/a2a.json) 与官方 [Python SDK](https://github.com/a2aproject/a2a-python)：Agent Card、message/task/artifact、JSON-RPC/HTTP+JSON/gRPC binding、长任务与跨 Agent 协作；核对版本与 SDK compatibility，不把单一 loopback control 写成完整 conformance。
-- Google Gemini，[Interactions API](https://ai.google.dev/gemini-api/docs/interactions) 与 [GenerateContent API](https://ai.google.dev/api/generate-content)：分别核对状态、steps、工具、流式事件与迁移边界。
-- Anthropic，[Messages API](https://platform.claude.com/docs/en/api/messages)：核对顶层 `system`、content blocks、usage 与 stop reason。
-- OpenAI，[API documentation](https://developers.openai.com/api/docs/)：按所用 endpoint、model snapshot 与功能版本核对请求、工具、stream 和 usage。
+- Model Context Protocol，[Introduction](https://modelcontextprotocol.io/docs/getting-started/intro) [SOURCE:mcp-introduction]、[Specification](https://modelcontextprotocol.io/specification) [SOURCE:mcp-specification]、[2025-11-25 transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) [SOURCE:mcp-transports-2025-11-25]、[lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) [SOURCE:mcp-lifecycle-2025-11-25] 与 [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) [SOURCE:mcp-tools-2025-11-25]：tools/resources/prompts、stdio/HTTP、capability、结构化结果与安全边界。
+- A2A Protocol，[Specification](https://a2a-protocol.org/latest/specification/) [SOURCE:a2a-latest-specification]、[v1.0.0 JSON Schema](https://a2a-protocol.org/v1.0.0/spec/a2a.json) [SOURCE:a2a-schema-1-0-0] 与官方 [Python SDK](https://github.com/a2aproject/a2a-python) [SOURCE:a2a-python-sdk]：Agent Card、message/task/artifact、JSON-RPC/HTTP+JSON/gRPC binding、长任务与跨 Agent 协作；核对版本与 SDK compatibility，不把单一 loopback control 写成完整 conformance。
+- Google Gemini，[Interactions 概览](https://ai.google.dev/gemini-api/docs/interactions-overview) [SOURCE:gemini-interactions-overview]与 [GenerateContent API](https://ai.google.dev/api/generate-content) [SOURCE:gemini-generate-content]：分别核对状态、steps、工具、流式事件与迁移边界。
+- Anthropic，[Messages API](https://platform.claude.com/docs/en/api/messages) [SOURCE:anthropic-messages]：核对顶层 `system`、content blocks、usage 与 stop reason。
+- OpenAI，[API documentation 总入口](https://developers.openai.com/api/docs/)；已登记的 [Responses 请求与响应](https://developers.openai.com/api/reference/resources/responses/methods/create) [SOURCE:openai-responses-create]及[流事件参考](https://developers.openai.com/api/reference/resources/responses/streaming-events) [SOURCE:openai-streaming-events]：按所用 endpoint、model snapshot 与功能版本核对请求、工具、stream 和 usage。
 
-协议/产品文档变化快。项目接入时把 URL、访问日期、API/协议版本和 SDK 版本写入 manifest，并用目标账号与网络环境另做 smoke test。
+协议/产品文档变化快。项目接入时把 URL、实际访问日期、API/协议版本和 SDK 版本写入 manifest，并用目标账号与网络环境另做 smoke test。仓库中的 `checked_at`、复核方法和状态由来源登记维护；阅读本页或直接访问 URL 不会更新它们。
 
 ## 推理与服务
 

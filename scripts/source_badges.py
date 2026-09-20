@@ -20,7 +20,7 @@ STATUS_LABELS = {
     "verified": "已核验",
     "stale": "已过复核期",
     "unknown": "暂时无法访问",
-    "pending-review": "内容变化 / 待人工复核",
+    "pending-review": "内容变化 / 待语义复核",
     "rejected": "已拒绝",
 }
 
@@ -66,9 +66,16 @@ def render_source_markers(
         )
         if status != "verified":
             degraded[source_id] = status
-        label = STATUS_LABELS.get(status, status)
+        review = source.get("review")
+        review_method = review.get("method") if isinstance(review, dict) else None
+        label = (
+            "LLM 已复核"
+            if status == "verified" and review_method == "llm"
+            else STATUS_LABELS.get(status, status)
+        )
+        review_class = " source-review-llm" if review_method == "llm" else ""
         return (
-            f'<a class="source-badge source-status-{html.escape(status)}" '
+            f'<a class="source-badge source-status-{html.escape(status)}{review_class}" '
             f'data-source-id="{html.escape(source_id)}" '
             f'href="{html.escape(str(source["url"]), quote=True)}" '
             f'title="{html.escape(str(source["scope"]), quote=True)}">'
@@ -84,7 +91,7 @@ def render_source_markers(
     warning = (
         '\n!!! warning "本页来源状态已降级"\n'
         f"    {detail}。自动探测只能发现过期、不可访问或内容变化, "
-        "不能判断正文结论是否仍成立; 请等待人工复核。\n"
+        "不能判断正文结论是否仍成立; 请等待逐项语义复核。\n"
     )
     first_line, separator, remainder = rendered.partition("\n")
     return f"{first_line}\n{warning}{remainder}" if separator else f"{rendered}{warning}"

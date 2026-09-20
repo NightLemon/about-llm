@@ -40,6 +40,10 @@ claim 审计使用。第一次学习请先读[云 API 契约基础](../models/cl
 
 离线契约不能证明真实账号、网络、模型、usage 或账单。文中出现的教学 allowlist、价格与 token 数只属于明确 fixture，不能外推成跨 provider 事实。
 
+来源登记保存的是语义核对时的原始 `status`、`checked_at`、范围与复核方法；页面上的来源徽章应按构建时的有效状态显示，
+它还会受 `next_review_at` 和探测结果影响。历史核对记录不能因为来源后来 stale、unknown 或 pending-review 而被改写，
+也不能反过来把登记中的 `verified` 当作当前接口仍有效的保证。
+
 ## 先画清三层协议
 
 “调用一个大模型 API”至少跨过三层：
@@ -83,7 +87,7 @@ flowchart LR
 
 ### OpenAI：Chat Completions 与 Responses 分开建模
 
-截至 2026-08-14，OpenAI 官方 model catalog 把当前模型入口指向 Responses API 与 SDK。这是时间敏感产品事实，不是账号可用性、价格或内部架构保证。
+截至 2026-09-20 的 LLM 复核，OpenAI 官方 model catalog 仍把当前模型入口指向 Responses API 与 SDK。这是时间敏感产品事实，不是账号可用性、价格或内部架构保证。[SOURCE:openai-model-catalog]
 
 Chat Completions 常以 `messages → choices` 为主要对象图；Responses 则是 `response → output item → content part`，function call 等能力可以表现为独立 typed item。迁移不能只替换 URL：
 
@@ -118,11 +122,11 @@ DeepSeek/Qwen 的某些云服务或自托管服务可能提供 OpenAI-compatible
 
 Anthropic Messages 将 system 与对话分开，content 是 block 数组。普通 text、tool use/result、thinking/其他 block 不能用同一字符串解析假设。只需要可见文本时也应显式选择 text block，并保存非文本 block 的类型、位置与受控审计信息。
 
-本页只把官方 Messages 页面在 2026-08-12 核对到的 request、content、input/output usage 与 stop fields 当作产品事实；不从字段名推断模型内部结构或安全属性。
+本页只把官方 Messages 页面在 2026-09-20 经 LLM 核对的 request、content、input/output usage 与 stop fields 当作产品事实；不从字段名推断模型内部结构或安全属性。[SOURCE:anthropic-messages]
 
 ### Gemini：Interactions 与 `generateContent` 是两套接口
 
-截至 2026-08-15，Gemini 官方文档说明 Interactions API 已 GA 并推荐新项目使用；`generateContent` 仍受支持但已标为 legacy。本仓库 adapter 为教学与兼容性实现 `generateContent`，使用 `contents/parts`、`user/model` role、`systemInstruction` 与 `usageMetadata`。
+截至 2026-09-20 的 LLM 复核，Gemini 官方文档仍说明 Interactions API 已 GA 并推荐新项目使用；`generateContent` 仍受支持但已标为 legacy。本仓库 adapter 为教学与兼容性实现 `generateContent`，使用 `contents/parts`、`user/model` role、`systemInstruction` 与 `usageMetadata`。[SOURCE:gemini-interactions-overview] [SOURCE:gemini-generate-content]
 
 Interactions 的可选状态、steps、后台执行与存储选择，不能映射成 `generateContent` 的别名。Gemini API 与 Vertex AI 的身份、区域、治理和 endpoint 也应分别配置。
 
@@ -601,12 +605,12 @@ Provider call id 不是业务幂等充分条件。查询业务 effect ledger，�
 
 ## 一手资料与运行入口
 
-- OpenAI，[Model catalog](https://developers.openai.com/api/docs/models)，当前模型与 Responses 入口；核对日期 2026-08-14。
-- OpenAI，[Create a response](https://developers.openai.com/api/reference/resources/responses/methods/create)，Responses 对象；核对日期 2026-08-14。
-- OpenAI，[Streaming API responses](https://developers.openai.com/api/docs/guides/streaming-responses)，typed streaming 指南；核对日期 2026-08-14。
-- OpenAI，[Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)，Responses event reference；核对日期 2026-08-14。
-- OpenAI，[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON/Schema/refusal/incomplete 边界；核对日期 2026-08-12。
-- Anthropic，[Messages API](https://platform.claude.com/docs/en/api/messages)，Messages request/content/usage/stop；核对日期 2026-08-12。
-- Google，[Gemini Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview)，Interactions lifecycle；核对日期 2026-08-15。
-- Google，[GenerateContent reference](https://ai.google.dev/api/generate-content)，`generateContent` 字段；核对日期 2026-08-15。
+- OpenAI，[Model catalog](https://developers.openai.com/api/docs/models)，当前模型与 Responses 入口；LLM 复核 2026-09-20。[SOURCE:openai-model-catalog]
+- OpenAI，[Create a response](https://developers.openai.com/api/reference/resources/responses/methods/create)，Responses 对象；LLM 复核 2026-09-20。[SOURCE:openai-responses-create]
+- OpenAI，[Streaming API responses](https://developers.openai.com/api/docs/guides/streaming-responses)，typed streaming 指南；LLM 复核 2026-09-20。[SOURCE:openai-responses-streaming]
+- OpenAI，[Streaming events](https://developers.openai.com/api/reference/resources/responses/streaming-events)，Responses event reference；LLM 复核 2026-09-20。[SOURCE:openai-streaming-events]
+- OpenAI，[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)，JSON/Schema/refusal/incomplete 边界；LLM 复核 2026-09-20。[SOURCE:openai-structured-outputs]
+- Anthropic，[Messages API](https://platform.claude.com/docs/en/api/messages)，Messages request/content/usage/stop；LLM 复核 2026-09-20。[SOURCE:anthropic-messages]
+- Google，[Gemini Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview)，Interactions lifecycle；LLM 复核 2026-09-20。[SOURCE:gemini-interactions-overview]
+- Google，[GenerateContent reference](https://ai.google.dev/api/generate-content)，`generateContent` 字段；LLM 复核 2026-09-20。[SOURCE:gemini-generate-content]
 - 可运行项目：[Cloud API Contracts](../practice/projects/cloud-api-contracts.md)。

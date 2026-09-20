@@ -55,7 +55,7 @@
 
 1. **Chat template 排版**：把角色和内容变成 Qwen3 认识的特殊 token 序列。
 2. **Tokenizer 切分**：把字符串变成 `input_ids`。
-3. **Assistant mask 标记答案**：用户问题仍作为上下文，但只有理想回复属于监督区间。
+3. **Assistant mask 标记回复区间**：用户问题仍作为上下文；模板要明确标出 assistant 从开始回答到本轮结束的哪一段 token 属于监督。
 4. **Labels 生成**：监督区间复制相应 token ID，其余位置写成 `-100`，PyTorch 的交叉熵会忽略这些位置。
 5. **SFT loss 反向传播**：模型学习在“包裹少件”上下文之后提高理想回复 token 的概率。
 6. **LoRA 更新**：Qwen3 底座保持冻结，只更新注意力投影层旁边的低秩矩阵。
@@ -83,10 +83,15 @@
 |---|---|---:|---|---|
 | 角色与问题 | `user … 怎么处理？` | 0 | `-100` | 可被答案读取，不计算 loss |
 | 回答起始 | `assistant` 角色标记 | 0 | `-100` | 标出角色边界 |
-| 理想回复 | `请先核对…` | 1 | 对应 token ID | 计算 next-token loss |
+| Assistant 回复区间 | `请先核对…` 和模板规定的结束标记 | 1 | 对应 token ID | 计算 next-token loss |
 | Padding | 补齐批次长度 | 0 | `-100` | 不应影响更新 |
 
-仅仅在 JSON 中写了 `assistant` 字段还不够。经过对话模板、分词、截断和组批以后，理想回复必须仍然落在集合 \(S\) 中。
+仅仅在 JSON 中写了 `assistant` 字段还不够。经过对话模板、分词、截断和组批以后，模板标出的 assistant 回复区间必须仍然落在集合 \(S\) 中。
+
+这里要学习的输出包含回答内容，以及让这一轮正确结束的 token。仓库的
+[Qwen3 训练模板](https://github.com/NightLemon/about-llm/blob/0b296c5ee9d4b0e5e0b6b037721e64ee3959b2c1/projects/single-gpu-finetuning/qwen3-0.6b-c1899de-generation-aware-sft.jinja)
+把 `<|im_start|>assistant\n` 放在监督区间外，却把回答文字、工具调用和 `<|im_end|>` 放在区间内。
+其他模板可能作出不同选择，所以 EOS 或轮次结束标记是否计入 loss，需要查看最终模板与组批后的 labels。
 
 训练前应解码并查看几条最终输入、mask 和 labels。如果答案被截掉或 mask 全为零，训练跑得再久也学不到预期行为。
 
@@ -102,7 +107,8 @@
 
 ### 对话模板与 labels
 
-训练和部署必须保持相同的角色含义、特殊 token 和 chat template。对每种样本至少回答这些问题：
+训练和部署必须保持相同的角色含义、特殊 token 和 chat template；渲染后再分词时还要避免重复添加特殊 token。
+对每种样本至少回答这些问题：[SOURCE:transformers-chat-template]
 
 - system、user、assistant、tool 的顺序是否合法？
 - Assistant mask 是否准确覆盖理想回复，多轮对话中覆盖了哪些轮次？
@@ -113,6 +119,8 @@
 
 仓库为固定的 Qwen3-0.6B 版本提供了一份带 `{% generation %}` 区间的训练模板。该模型原模板负责正确排版对话，
 但没有直接提供 TRL 生成 Assistant mask 所需的区间标记；仓库模板只补上监督边界，不改变角色序列化规则。
+这是固定的 TRL 0.29.1 路径。2026-09-20 的 current 文档已说明 Qwen3 等已知家族可由 TRL 自动补模板，
+但本实验继续显式锁定模板和监督边界；升级 Trainer 或模板时要重新核对实际 mask 与最终 labels。[SOURCE:trl-sft-trainer]
 具体检查方法见 [SFT 数据流水线](sft-data-pipeline.md)。
 
 ### Packing 与有效 token

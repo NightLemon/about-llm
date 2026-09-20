@@ -22,6 +22,9 @@
 
 这里的 L2 也不是 immutable byte evidence。官方页面会重定向、更新字段、改变导航；`Last updated` 只描述网页，不证明你的请求经过相同服务版本。
 
+来源登记中的原始 `status=verified` 只记录语义核对完成；页面来源徽章同时标出本轮 LLM 复核方法，并按构建时的有效状态解释，它会受
+`next_review_at` 和 probe 结果影响。不要把历史 `checked_at` 改写成当前 provider 行为，也不要用原始登记状态跳过语义复核。
+
 本仓库当前为 Gemini 的两个小范围取得 L3 离线证据：`generateContent` 的 text-only 映射，以及
 Interactions 的一条 `function_call → requires_action` SSE 生命周期。
 
@@ -277,10 +280,13 @@ streaming HTTP、工具执行、background/resume、多模态 steps 或 Google �
 
 ## 一手资料
 
-- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，GA、状态、steps、后台执行与存储边界；核对日期 2026-08-26。
-- Google，[Interactions API reference](https://ai.google.dev/api/interactions-api)，resource、status、methods、steps 与 API version；核对日期 2026-08-26。
-- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step/terminal lifecycle；核对日期 2026-08-26。
-- Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、`systemInstruction`、candidates、prompt feedback 与 usage；核对日期 2026-08-15。
-- Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前入口、`output_text` 有损边界与 stateless step preservation；核对日期 2026-08-15。
+本页原有的三个 Interactions 参考条目记录了 2026-08-26。这里保留历史页面记录；2026-09-20 的 LLM 复核已按
+[逐项记录](source-reviews/2026-09-20.md)回填来源注册表，不能解释成真实账号或目标环境验证。
+
+- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，GA、状态、steps、后台执行与存储边界；LLM 复核 2026-09-20。[SOURCE:gemini-interactions-overview]
+- Google，[Interactions API reference](https://ai.google.dev/api/interactions-api)，resource、status、methods、steps 与 API version；LLM 复核 2026-09-20。[SOURCE:gemini-interactions-reference]
+- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step/terminal lifecycle；LLM 复核 2026-09-20。[SOURCE:gemini-interactions-streaming]
+- Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、`systemInstruction`、candidates、prompt feedback 与 usage；LLM 复核 2026-09-20。[SOURCE:gemini-generate-content]
+- Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前入口、`output_text` 有损边界与 stateless step preservation；LLM 复核 2026-09-20。[SOURCE:gemini-text-generation]
 - Google Cloud，[Agent Platform model overview](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models)，云平台模型、访问与治理导航；核对日期 2026-08-15。
 - 目标 model page、SDK reference、data retention 与区域文档；生产部署时的最高优先级证据。

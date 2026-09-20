@@ -441,9 +441,12 @@ python projects/cloud-api-contracts/usage_budget_toy.py
 
 ## 一手资料
 
-- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，接口定位、状态、后台执行与存储边界；核对日期 2026-08-26。
-- Google，[Interactions API 参考文档](https://ai.google.dev/api/interactions-api)，资源、状态、方法与步骤；核对日期 2026-08-26。[SOURCE:gemini-interactions-reference]
-- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step 生命周期；核对日期 2026-08-26。
-- Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、candidates、反馈与用量；核对日期 2026-08-15。[SOURCE:gemini-generate-content]
-- Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前文本入口和有损文本视图；核对日期 2026-08-15。[SOURCE:gemini-text-generation]
+Interactions 条目保留本页原有的 2026-08-26 参考记录。2026-09-20 的 LLM 逐项复核已经更新来源注册表，
+复核方法和 claim 处置见[记录](../evidence/source-reviews/2026-09-20.md)；它不等同真实账号或目标环境验证。
+
+- Google，[Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，接口定位、状态、后台执行与存储边界；历史参考日期 2026-08-26。
+- Google，[Interactions API 参考文档](https://ai.google.dev/api/interactions-api)，资源、状态、方法与步骤；历史参考日期 2026-08-26。[SOURCE:gemini-interactions-reference]
+- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE interaction/step 生命周期；历史参考日期 2026-08-26。
+- Google，[GenerateContent API reference](https://ai.google.dev/api/generate-content)，`contents`、candidates、反馈与用量；LLM 复核 2026-09-20。[SOURCE:gemini-generate-content]
+- Google，[Text generation](https://ai.google.dev/gemini-api/docs/text-generation)，当前文本入口和有损文本视图；LLM 复核 2026-09-20。[SOURCE:gemini-text-generation]
 - 目标型号、SDK、数据保留、区域与价格页面；真实部署时需要重新核对。

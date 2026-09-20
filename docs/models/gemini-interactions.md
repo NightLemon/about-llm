@@ -62,7 +62,7 @@ python projects/cloud-api-contracts/gemini_interactions_replay.py
 
 下一步应先校验函数名和参数 schema，再检查调用权限。工具执行成功后，客户端用
 `previous_interaction_id` 和 `function_result` 创建下一次 Interaction，让模型生成最终回答。本实验故意停在
-执行之前，因此不能把固定参数理解为真实天气结果。
+执行之前，因此不能把固定参数理解为真实天气结果。[SOURCE:gemini-interactions-reference]
 
 ## 两段参数是怎样变成一个调用的
 
@@ -206,8 +206,9 @@ Opaque signature 应绑定原会话并避免出现在普通日志或前端。来
 
 ### 当前存储规则
 
-截至 2026-08-26，官方概览写明 Interactions 默认使用 `store=true`。付费层保留 55 天，免费层保留 1 天。
-付费项目还可在 AI Studio 选择 7、14、28 或 55 天。
+依据 2026-09-20 的 LLM 复核，Gemini API 的 Interactions 默认使用 `store=true`。对 Gemini API 项目，
+Paid Tier 默认保留 55 天，Free Tier 保留 1 天；Paid Tier 项目还可在 AI Studio 选择 7、14、28 或 55 天。
+这些期限属于该平台的项目设置，其他托管平台和 Google 产品需分别核对。[SOURCE:gemini-interactions-overview]
 
 选择 `store=false` 会关闭两项依赖服务端记录的能力：后台执行，以及后续请求通过
 `previous_interaction_id` 续接这次 Interaction。
@@ -275,7 +276,10 @@ Agent 续接时还可能需要重新提供 environment。
 
 ## 一手资料
 
-- Google，[Interactions API overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，资源、服务端历史、存储与当前支持范围；核对日期 2026-08-26。[SOURCE:gemini-interactions-overview]
-- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE event、step、函数参数增量和未知事件策略；核对日期 2026-08-26。[SOURCE:gemini-interactions-streaming]
-- Google，[Background execution](https://ai.google.dev/gemini-api/docs/background-execution)，后台状态、轮询、恢复、取消与删除；核对日期 2026-08-26。
-- Google，[Function calling](https://ai.google.dev/gemini-api/docs/function-calling)，函数声明、`function_call` 与 `function_result` 多轮流程；核对日期 2026-08-26。
+下面保留本页原有的 2026-08-26 参考记录。2026-09-20 的 LLM 逐项复核已经更新 Interactions 来源登记，
+复核方法和 claim 处置见[记录](../evidence/source-reviews/2026-09-20.md)；它不等同真实账号或目标环境验证。
+
+- Google，[Interactions API overview](https://ai.google.dev/gemini-api/docs/interactions-overview)，资源、服务端历史、存储与当前支持范围；历史参考日期 2026-08-26。[SOURCE:gemini-interactions-overview]
+- Google，[Streaming interactions](https://ai.google.dev/gemini-api/docs/streaming)，SSE event、step、函数参数增量和未知事件策略；历史参考日期 2026-08-26。[SOURCE:gemini-interactions-streaming]
+- Google，[Background execution](https://ai.google.dev/gemini-api/docs/background-execution)，后台状态、轮询、恢复、取消与删除；历史参考日期 2026-08-26。
+- Google，[Function calling](https://ai.google.dev/gemini-api/docs/function-calling)，函数声明、`function_call` 与 `function_result` 多轮流程；历史参考日期 2026-08-26。

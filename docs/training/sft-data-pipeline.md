@@ -188,7 +188,7 @@ python -m about_llm.finetuning_cli near-audit `
 ## Chat template 决定模型看见什么
 
 对话模板会插入 BOS/EOS、角色 token、轮次分隔符、工具标记和生成提示。同一份结构化消息换到另一个 checkpoint 后，
-可能得到完全不同的 token IDs。
+可能得到完全不同的 token IDs；渲染为文本后再分词时，也要避免重复添加特殊 token。[SOURCE:transformers-chat-template]
 
 训练、评测和部署应使用同一 tokenizer/template revision。检查顺序是：
 
@@ -211,8 +211,9 @@ Causal LM 的 masked token loss 可以写成：
 \sum_t m_t\log p_\theta(x_t\mid x_{<t}).
 \]
 
-\(m_t=1\) 的位置参与监督。Assistant-only SFT 通常不监督 system、user 和 tool 输入，只监督 assistant 生成的
-工具调用序列和最终回答。
+\(m_t=1\) 的位置参与监督。Assistant-only SFT 通常不监督 system、user 和 tool 输入，只监督模板标出的
+assistant 生成区间。这个区间通常包含工具调用序列、最终回答和本轮结束标记；是否包含 assistant 开头标记要看模板，
+不能只按消息的 role 或字符位置猜测。
 
 本例中恰好有两个学习目标：第一次 assistant 轮次的工具提案，以及最后一轮的自然语言答复。
 
@@ -232,9 +233,11 @@ Mask 边界只要错一位，就可能把角色标记当成目标，或者漏掉
 
 ### TRL 配置名不是最终 labels 的证据
 
-截至仓库核对日 2026-08-13，TRL 0.29.1 使用 `assistant_only_loss=True` 时，对话预处理必须能从模板得到
+截至 2026-09-20 的 LLM 复核，仓库固定的 TRL 0.29.1 使用 `assistant_only_loss=True` 时，对话预处理必须能从模板得到
 generation mask。另一种路径是提前生成 `input_ids/assistant_masks`，关闭会重复处理对话的开关，保留 mask 列，
 再让实际训练使用的 collator 把非监督位置改成 `-100`。
+当前 main 文档说明 Qwen3 等已知家族可由 TRL 自动补模板；这条能力不回填固定 0.29.1 实验。升级 TRL 时仍需重新核对
+实际模板、mask 与 labels，不能把自动补丁当成所有模型家族的保证。[SOURCE:trl-sft-trainer]
 
 最终要检查的是 collator 输出：
 

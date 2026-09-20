@@ -164,10 +164,18 @@ effect ID 查询对端。只有完成 reconciliation（对账）后，本地任�
 
 ### A2A 1.0 的版本边界
 
-截至本仓库核对日 2026-08-13，A2A 最新协议发布版是 1.0.0。当前 JSON 结构直接用成员名区分 union 分支，不再沿用
-0.3 样例中的 `kind` discriminator。
+“最新协议发布版是 1.0.0”已于 2026-09-20 由 LLM 对照 current 规范复核；它仍是会随时间变化的结论。对于本页固定的
+1.0 示例，先看 Part 和流事件这两类 union 的表示变化。0.3 的 Part 会用 `kind` 说明分支，例如
+`{"kind":"text","text":"查询取件时段"}`；1.0 的同类 Part 用成员名说明分支，例如
+`{"text":"查询取件时段"}`。流事件也从 `kind: "status-update"` 一类对象改为 `statusUpdate` 或
+`artifactUpdate` 成员。
 
-Agent Card 通过 `supportedInterfaces` 分别声明 URL、binding 与协议版本。
+这不意味着每个 A2A JSON 对象都以成员名区分分支。读取或升级 adapter 时，先确认正在处理的是 Part、流事件还是
+其他结构，再针对该结构固定版本和 schema。本仓库的严格解析检查会拒绝旧的 `kind` 字段；
+需要兼容 0.3 时，应在相应版本的适配路径中明确转换。
+
+另一件独立的事是选择连接方式：Agent Card 通过 `supportedInterfaces` 分别声明 URL、binding 与协议版本。客户端据此
+选择一个实际可用的 interface；它不会因为 Part 的表示法变了而自动推断 binding。
 
 JSON-RPC binding 在 HTTP(S) 上使用 JSON-RPC 2.0，并约定 `application/json`、PascalCase 方法名和
 `A2A-Version` header。
@@ -342,4 +350,6 @@ python projects/safe-agent/a2a_loopback_control.py --verify-official-schema
   [Python SDK](https://github.com/a2aproject/a2a-python)。
 - A2A 当前规范与 SDK 状态：[SOURCE:a2a-latest-specification] [SOURCE:a2a-python-sdk]
 
-协议细节核对日期为 2026-08-13；本仓库示例使用 A2A protocol 1.0.0 与 Python SDK 1.1.2。
+2026-09-20 的 LLM 复核看到 MCP current 入口为 2026-07-28、A2A latest 仍为 1.0.0，A2A Python SDK
+当前 release 为 1.1.4。本仓库协议实验不随入口漂移：MCP 细节固定在 2025-11-25，A2A 示例固定使用 protocol 1.0.0
+与 Python SDK 1.1.2；当前入口可用不等于这些固定实验已在新版本重跑。

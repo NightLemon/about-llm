@@ -51,6 +51,62 @@ def test_source_registry_accepts_current_complete_review(tmp_path: Path) -> None
     assert effective_source_status(source, as_of=date(2026, 8, 11)) == "verified"
 
 
+def test_source_registry_accepts_traceable_llm_review(tmp_path: Path) -> None:
+    review_page = tmp_path / "reviews" / "2026-09-20.md"
+    review_page.parent.mkdir()
+    review_page.write_text("## Example {#example-official}\n", encoding="utf-8")
+    source = _source(
+        checked_at="2026-09-20",
+        next_review_at="2026-10-20",
+        review={
+            "method": "llm",
+            "reviewer": "test-model",
+            "record": "reviews/2026-09-20.md#example-official",
+        },
+    )
+    ledger = tmp_path / "accuracy.md"
+    registry = tmp_path / "sources.json"
+    (tmp_path / "page.md").write_text("[SOURCE:example-official]\n", encoding="utf-8")
+    ledger.write_text(f"# Accuracy\n\n{source['url']}\n", encoding="utf-8")
+    _write_registry(registry, [source])
+
+    assert (
+        check_ledger(
+            accuracy_page=ledger,
+            source_registry=registry,
+            as_of=date(2026, 9, 20),
+            expected_urls={str(source["url"])},
+            docs_root=tmp_path,
+        )
+        == []
+    )
+
+
+def test_source_registry_rejects_untraceable_llm_review(tmp_path: Path) -> None:
+    source = _source(
+        review={
+            "method": "llm",
+            "reviewer": "test-model",
+            "record": "reviews/missing.md#example-official",
+        }
+    )
+    ledger = tmp_path / "accuracy.md"
+    registry = tmp_path / "sources.json"
+    (tmp_path / "page.md").write_text("[SOURCE:example-official]\n", encoding="utf-8")
+    ledger.write_text(f"# Accuracy\n\n{source['url']}\n", encoding="utf-8")
+    _write_registry(registry, [source])
+
+    errors = check_ledger(
+        accuracy_page=ledger,
+        source_registry=registry,
+        as_of=date(2026, 8, 11),
+        expected_urls={str(source["url"])},
+        docs_root=tmp_path,
+    )
+
+    assert any("review.record page does not exist" in error for error in errors)
+
+
 def test_source_registry_reports_stale_without_failing_structure(tmp_path: Path) -> None:
     source = _source(next_review_at="2026-08-10")
     ledger = tmp_path / "accuracy.md"
