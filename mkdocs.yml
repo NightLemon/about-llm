@@ -241,7 +241,14 @@ nav:
       - 岗位路线: career/roadmap.md
       - 面试题与回答方法: career/interview-questions.md
       - 应用、发布与治理面试题: career/applied-questions.md
-      - 编码轮: career/coding-round.md
+      - 编码轮:
+          - 答题方法与索引: career/coding-round.md
+          - 数值稳定 Softmax 与 Causal Attention: career/coding-softmax-attention.md
+          - Top-k 与 Top-p 采样: career/coding-sampling.md
+          - 带权限的 BM25 检索: career/coding-bm25.md
+          - Reciprocal Rank Fusion: career/coding-rrf.md
+          - LoRA Linear: career/coding-lora.md
+          - 幂等的工具执行: career/coding-idempotent-effect.md
       - LLM 系统设计: career/system-design.md
       - 行为面试与非技术环节: career/behavioral.md
       - 简历项目与作品集: career/resume-projects.md

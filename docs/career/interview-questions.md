@@ -7,435 +7,133 @@
 
 - **适合读者**：准备 LLM 应用、算法、训练、评测或推理岗位的开发者。
 - **先修**：学过 Transformer、RAG、微调和基础工程实践中的至少一条主线。
-- **首次阅读**：回答结构 → 题目地图 → 每个方向任选五题口述。
+- **首次阅读**：回答结构 → GQA 示例 → 题目地图 → 与目标岗位最相关的五题。
 - **完成信号**：能在 30 秒给出结论，在两分钟内补充机制、边界和验证方法。
 - **卡住时**：先用自己做过的一个项目回答，不要从术语定义开始背。
 
 </div>
 
-**求职导航**：[岗位路线](roadmap.md) · [应用与治理题](applied-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md) · [简历项目](resume-projects.md)
-· [深挖题与验证台账](../evidence/interview-controls.md)
+**求职导航**：[岗位路线](roadmap.md) · [应用与治理题](applied-questions.md) ·
+[编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md) ·
+[简历项目](resume-projects.md) · [深挖验证台账](../evidence/interview-controls.md)
 { .doc-nav }
 
-面试不是关键词召回测试。面试官通常在确认三件事：你是否真的理解机制，是否知道结论何时失效，以及是否能设计一个实验把争论变成证据。
+面试官通常在确认三件事：你是否理解机制，是否知道结论何时失效，以及能否设计实验把争论变成证据。
+本页负责答题方法和选题，不再重复各专题教材。
 
 ## 一道题怎样回答
 
-推荐使用四层结构：
+按“结论—机制—边界—验证”组织回答：
 
-1. **结论**：先直接回答，不绕背景。
-2. **机制**：用公式、数据流或状态变化解释为什么。
-3. **边界**：指出成立条件、代价和常见反例。
-4. **验证**：给一个最小实验或生产指标。
+1. 用一句话直接回答；
+2. 用公式、数据流或状态变化解释原因；
+3. 指出成立条件、代价和最可能的反例；
+4. 给出能推翻当前说法的最小实验或生产指标。
+
+回答深度跟随追问逐层增加。30 秒说结论、一个机制和一个边界；两分钟再加入公式、权衡与验证；
+白板深挖才展开 shape、复杂度和正反例；项目追问必须给环境、分母、原始结果和失败样例。
 
 ## 一场追问怎样逐层展开 { #gqa-walkthrough }
 
-以“GQA 为什么能降低推理成本”为例。
+以“GQA 为什么能降低推理成本”为例，先说：GQA 让多个 query heads 共享较少的 K/V heads，
+因此标准稠密 KV Cache 的理想容量和 decode 时的 K/V 读取量会下降。
 
-**面试官**：GQA 为什么更省？
-
-**你，先用 30 秒回答**：GQA 让一组查询头（query heads）共享较少的 K/V heads。
-
-标准稠密 KV Cache 的理想容量与 \(H_{kv}\) 成正比，因此它最直接地减少缓存容量，以及 decode
-时读取 K/V 的数据量。
-
-模型权重、Q/O 投影和 MLP 不会按同一比例缩小，所以不能从 KV 缩小倍数直接推出端到端加速倍数。
-
-这时已经完成“结论—机制—边界”。如果面试官追问“能不能算一个例子”，再上白板。
-
-标准 dense K/V 的理想 payload 是：
+如果面试官要求计算，再写：
 
 \[
-M_{KV}=2LBTH_{kv}d_hs,
+M_{KV}=2LBTH_{kv}d_hs.
 \]
 
-其中 2 代表 K 和 V，\(L\) 是层数，\(B\) 是活动序列数，\(T\) 是每条序列缓存的 token 数，
-\(d_h\) 是 head dimension，\(s\) 是每个元素的字节数。
-
-假设 \(L=32\)、\(B=1\)、\(T=4096\)、\(d_h=128\)，并用 BF16 保存 K/V：
-
-| Attention 设置 | \(H_{kv}\) | 理想 KV payload |
-|---|---:|---:|
-| MHA | 32 | 2 GiB |
-| GQA | 8 | 0.5 GiB |
-
-这组设置让理想 KV payload 缩小 4 倍。它没有计算 block allocator、对齐、workspace 和临时 tensor，
-也没有描述质量变化。
-
-**面试官继续追问**：那吞吐会提高 4 倍吗？
-
-**你**：不能这样推。只有 K/V projection、缓存容量和相关读取接近这个缩放；Q/O projection、MLP、权重读取、
-调度和其他运行时开销仍然存在。最终收益还取决于 batch、序列长度、kernel 和硬件。
-
-**面试官最后追问**：怎样验证？
-
-**你**：先说清要验证哪一个主张：容量就测真实 cache layout 和峰值显存；性能就固定 checkpoint、长度分布、并发和
-硬件后测 TPOT 与吞吐；质量就用留出的任务集。每项都配一个会推翻它的工作负载，例如长上下文解码。
-若只测短 Prompt 或只看显存，无法回答长上下文 decode 和质量取舍。
-
-这就是一条完整的回答链：先用一句话指出主因，再按追问加入算术、反例和实验。不要一上来横向罗列
-MHA、MQA、GQA 的全部定义。
-
-## 深度怎样控制
-
-| 时间 | 应完成什么 | 不要做什么 |
-|---|---|---|
-| 30 秒 | 结论、一个关键机制、一个边界 | 背完整教材 |
-| 2 分钟 | 公式或状态流、主要 trade-off、验证方法 | 抛出十个未解释术语 |
-| 白板深挖 | 明确假设，推导 shape/复杂度，设计正反例 | 用“框架会处理”结束 |
-| 项目追问 | 给环境、分母、原始结果和失败样例 | 把本地 toy 写成生产结论 |
-
-如果面试官继续追问，优先加深当前因果链；不要横向跳到更多名词。
-
-## 高频题地图
-
-| 方向 | 必须掌握的主线 | 深入章节 |
-|---|---|---|
-| Transformer / 生成 | attention、KV Cache、prefill/decode、采样 | [Transformer](../core/transformer.md)、[推理原理](../systems/inference.md) |
-| 训练 / 对齐 | loss mask、LoRA/QLoRA、分布式归一化、偏好优化 | [微调](../training/finetuning.md)、[对齐](../training/alignment.md) |
-| RAG / Agent | 检索归因、ACL、授权、幂等与恢复 | [RAG](../applications/rag.md)、[Agent](../applications/agents.md) |
-| 评测 | 评测单位、配对比较、切片、评审模型校准 | [评测方法](../quality/evaluation-methodology.md) |
-| 推理系统 | TTFT/TPOT、容量、量化、取消与重试 | [Serving](../systems/serving.md)、[推理优化](../systems/inference-optimization.md) |
-| 多模态 / 对话状态 | 视觉 token 化、metric 口径、记忆分层与修正 | [应用题 31-35](applied-questions.md)、[多模态](../frontier/multimodal.md) |
-| 产品 / 发布 / 治理 | 发布身份、校准与拒答、数据血缘、群体影响 | [应用题 36-40](applied-questions.md)、[治理与影响](../quality/governance-impact.md) |
-
-下面的题不是背诵答案，而是示范怎样把回答落到机制和实验。
-
-## Transformer 与生成
-
-### 1. 为什么 attention score 要除以 \(\sqrt{d}\)？ { #attention-scaling }
-
-**30 秒回答**：若 Q/K 各维近似独立且方差稳定，点积方差会随 head dimension \(d\) 增长。除以 \(\sqrt{d}\) 可稳定 score 尺度，避免 softmax 过早饱和。
-
-**展开时说明**：
-
-- LayerNorm 约束单个向量，不保证 QK 点积方差与 \(d\) 无关。
-- 这是尺度控制，不是推理时调节随机性的 temperature。
-- 实际分布不完全独立，但该缩放仍给初始化和优化提供稳定起点。
-
-**怎样验证**：固定 Q/K 分布，改变 \(d\)，比较缩放前后的 score 方差、softmax entropy 和 gradient norm。
-
-### 2. causal mask 怎样证明没有未来信息泄漏？
-
-**30 秒回答**：mask 让位置 \(t\) 对未来 key 的注意力权重为零，但还要同时检查数据构造、position、cache 和 loss mask。
-
-**怎样验证**：只修改 \(t\) 之后的 token；在 eval mode 下，位置 \(0..t\) 的 logits 应保持不变。若不变性失败，再定位 mask shape、广播方向和 cache。
-
-### 3. MHA、MQA 与 GQA 怎样取舍？
-
-**30 秒回答**：MHA 为每个查询头保留独立 K/V head，MQA 让所有查询头共享一组 K/V，GQA 位于两者之间。
-减少 \(H_{kv}\) 会降低 K/V 投影、KV Cache 和 decode 时的 K/V 读取量。最终仍要同时比较质量、显存和 TPOT。
-
-**展开时说明**：KV 公式只估算理想 K/V 数组，不含分页分配器、内存对齐、量化 scale、工作区和临时张量。
-遇到 MLA 或未知 cache layout 时，应先确认实际存储结构，不能套用标准 GQA 公式。
-
-完整的数值追问见[开头的 GQA 白板示范](#gqa-walkthrough)。
-
-### 4. Prefill 与 decode 为什么瓶颈不同？
-
-**30 秒回答**：Prefill 一次处理多个 token，矩阵乘规模较大，通常更容易吃满算力；decode 每步只生成少量 token，却反复读取模型权重和 KV，常受 memory bandwidth 限制。
-
-**怎样验证**：分开记录 TTFT、TPOT、每步 active sequences、算力利用率和 memory bandwidth。总延迟无法告诉你是哪一阶段退化。
-
-### 5. temperature、top-k 与 top-p 分别改变什么？
-
-**30 秒回答**：temperature 改变整个 logit 分布的尖锐程度；top-k 限制候选排名；top-p 保留累计概率达到阈值的最小前缀。顺序和重新归一化时点属于生成契约的一部分。
-
-**边界**：`temperature=0` 通常是 greedy 特例。即使参数相同，seed、RNG、并列规则、kernel 和版本漂移也可能让输出无法逐 token 重放。
-
-**怎样把定义说成可验证的选择**：先声明本实现的顺序，例如“temperature → top-k → 在保留集合上归一化 → top-p → 再归一化”。
-接着用一个 crossing-token 例子说明后果：若 top-k 后不重新归一化，top-p 的累计概率和最终抽样分布都会变成另一份契约。
-这解释的是该实现，不宣称所有框架都采用同一顺序；可用[编码题 2](coding-round.md#q-sampling)的固定 `uniform` 复现。
-
-### 6. “支持 1M context”是否等于有效利用 1M token？
-
-**30 秒回答**：不是。文档上限、请求可接受上限和任务有效上限是三件事。模型可能接受请求，却在中部证据、多跳、冲突版本或长输出上明显退化。
-
-**怎样验证**：改变证据位置、干扰数量和任务类型，报告准确率、引用、拒答、延迟和费用，而不是只做单一 needle retrieval。
-
-## 训练与对齐
-
-### 7. 什么时候用 RAG，什么时候微调？
-
-**30 秒回答**：易变、私有、需要引用的事实优先 RAG；稳定的行为、格式和风格可以微调。先按错误类型判断问题来自知识、检索、指令遵循还是输出格式。
-
-**验证路径**：至少比较 Prompt 基线、RAG、LoRA 和组合方案，并使用同一留出集。不要因为训练损失下降就跳过更便宜的基线。
-
-### 8. LoRA 的公式与参数量是什么？
-
-对线性层 \(y=Wx\)，LoRA 冻结 \(W\)，学习低秩更新
-\(\Delta W=(\alpha/r)BA\)。若 \(W\in\mathbb{R}^{d_{out}\times d_{in}}\)，新增参数约为 \(r(d_{in}+d_{out})\)。
-
-**边界**：可训练参数少，不表示峰值显存按同一比例下降。训练激活、优化器状态、量化缓冲区、适配的层数和序列长度
-都会占用显存。
-
-### 9. QLoRA 为什么不等于“用 4-bit 做全部训练”？ { #qlora-scope }
-
-**30 秒回答**：QLoRA 通常以低比特保存冻结的基础权重，计算时再反量化到 BF16 或 FP16 等计算精度。
-训练更新的是较高精度的 LoRA adapter；梯度和优化器状态并非全部变成 4-bit。
-
-**怎样验证**：打印每类参数的 storage dtype、compute dtype、`requires_grad`、optimizer state 和峰值显存，不要只看加载参数 `load_in_4bit=True`。
-
-### 10. assistant-only loss 怎样避免监督错位？
-
-**30 秒回答**：先用目标对话模板（chat template）渲染并分词，再让监督标签只覆盖 assistant 回复。
-系统消息、用户消息、补齐位置及不应学习的控制 token 全部设为 ignore index。
-
-**怎样验证**：打印最终 token ID、解码片段、label mask 和有效监督 token 数。只检查原始文本边界不够，因为模板和 tokenizer 会改变位置。
-
-### 11. 可变长度 micro-batch 怎样做正确 gradient accumulation？
-
-**30 秒回答**：每个微批次累积损失总和与有效监督 token 数。等整个参数更新窗口结束，再除以全局有效 token 数。
-直接平均各微批次的 mean loss，会让短批次获得过高权重。
-
-**分布式追问**：设 \(D\) 个进程一共有 \(N\) 个有效 token，本进程的损失总和为 \(S_r\)。
-若 DDP 会平均各进程的梯度，本进程应反向传播 \((D/N)S_r\)。完整累计后再执行反缩放、梯度裁剪和参数更新。
-
-### 12. DPO 与 PPO/RLHF 的训练信号有何不同？
-
-**30 秒回答**：DPO 从 chosen/rejected 样本对和参考策略直接构造偏好目标。PPO 通常从当前策略采样，
-再用奖励与价值估计 advantage，并通过概率比裁剪和 KL 约束限制更新幅度。
-
-**边界**：DPO 简单不代表数据无偏，PPO 奖励上升也不代表人类效用改善。两者都需要留出的偏好数据、任务验证器、安全回归和分布漂移检查。
-
-### 13. 训练 loss 下降为什么不保证产品质量？
-
-Loss 只衡量训练目标在当前数据和 reduction 下的改善。数据泄漏、错误 labels、shortcut、reward hacking、格式过拟合和通用能力回归都可能与 loss 同时发生。
-
-**怎样验证**：预先留出测试数据并固定版本，按任务和失败类型报告指标；同时保留简单基线、人工复核和真实约束下的延迟与成本。
-
-## RAG 与 Agent
-
-### 14. RAG 检索到了正确文档，答案仍错，怎样排查？
-
-按数据流逐层定位：
-
-1. 正确 chunk 是否真的进入 top-k；
-2. rerank 是否保留它；
-3. packing 后是否被截断；
-4. prompt 中证据和问题是否对应；
-5. 模型是否引用正确 span；
-6. 答案是否被独立 verifier 判为 supported。
-
-“文档在数据库里”与“模型当次看到了证据”不是同一个结论。
-
-### 15. 多租户 RAG 怎样防止数据泄漏？
-
-ACL 必须进入 retrieval query，或者在候选进入共享排序、缓存和生成前停止未授权数据继续流动。只在最终答案层
-过滤已经太晚，因为未授权文本可能已经影响 rerank、cache 或模型上下文。
-
-**负例**：让两个租户拥有相似文档，使用同一 query 和 cache key；验证未授权 source ID、正文和 embedding-derived result 都不会跨边界出现。
-
-### 16. Agent 与 Workflow 的边界是什么？
-
-固定步骤和少量已知分支优先 Workflow；只有下一动作确实依赖开放语言理解和中间结果时才使用 Agent。Agent 仍应运行在确定性的状态、权限和预算外壳中。
-
-**追问**：多 Agent 只有在权限隔离、上下文隔离、并行或独立验证有价值时才值得，否则只是增加协调失败和成本。
-
-### 17. 怎样避免 Agent 重复转账或重复发消息？ { #effect-idempotency }
-
-不能只让模型“记住不要重复”。应为逻辑动作生成稳定 ID，并持久化提议、审批、尝试和外部效果四阶段状态。
-外部系统还要支持幂等键（idempotency key）或可查询的执行回执。
-
-超时后的 outcome 可能是 `unknown`。此时先 reconcile，不能把 timeout 写成失败后直接重放。Transactional outbox 改善本地投递可靠性，也不能一般性地保证远端 exactly-once。
-
-### 18. 提示注入为什么不能只靠 system prompt？
-
-外部网页、邮件和工具结果与可信指令进入同一模型上下文，模型可能错误遵循低信任文本。分隔符和提示词能降低风险，却不是权限边界。
-
-真正的边界在模型外：最小权限、资源级 ACL、工具 allowlist、参数校验、秘密隔离、沙箱、审批和 effect verifier。
-
-### 19. Agent 怎样判断完成并安全恢复？
-
-模型可以提出“已完成”，但 verifier 应根据业务系统状态判断。每一步都持久化 task state、tool result、预算和 pending effect；恢复时从最后一个已确认状态继续。
-
-停止条件至少包含最大步数、deadline、费用、重复动作和无进展。达到限制时应报告停止原因，而不是生成一个看似成功的答案。
-
-## 评测与实验
-
-### 20. 评测的最小单位应该是什么？
-
-通常是带稳定 ID 的 case 或 task attempt，而不是一段孤立文本。一个结果要绑定输入、版本、输出、错误类型、指标和是否进入最终分母。
-
-如果同一用户或文档贡献多条 case，统计不再独立，应按相应 cluster 重采样或至少报告 cluster slice。
-
-### 21. 用大模型评分（LLM-as-a-Judge）有哪些偏差，怎样校准？
-
-评审模型常见位置、篇幅、风格、自偏好和 Prompt 敏感性等偏差。先把候选顺序交换后再评一次，并保留平局与原始理由。
-然后与盲化人工标注或确定性验证程序对照。
-
-报告 agreement、混淆矩阵和按语言/长度/难度的切片。高总体一致率不能掩盖某个关键 slice 的系统误判。
-
-### 22. 为什么比较模型要用 paired design？
-
-在同一个 case 上比较基线与候选系统，可以消除大量题目难度差异。先计算每条 case 的成对差值，
-再报告效应大小、置信区间和失败切片。
-
-Paired bootstrap 用于估计差异的不确定性；randomization/sign-flip test 检验交换标签后的零假设。`p < 0.05` 不说明提升足够大、指标有效或用户受益。
-
-### 23. 怎样防止测试集被反复调参污染？
-
-把训练集、开发集和最终测试集的权限与用途分开。Prompt、阈值和错误规则只在开发集上迭代；
-最终测试集只按事先登记的发布判据执行。每次查看最终测试结果都会泄露信息，因此要记录访问和后续决策。
-
-还要按用户、thread、来源或 problem family 分组切分，并检查 exact、near-duplicate、语义改写和时间穿越。Hash 相同门禁只覆盖字节身份。
-
-### 24. 总体提升但中文用户下降，怎样决策？ { #slice-regression }
-
-先确认 slice 是预定义还是事后发现，检查样本量、区间和流量权重。然后判断中文是否是发布硬约束，而不是用总体平均把它抵消。
-
-发布 gate 可以同时要求 overall non-inferiority、关键 slice 不退化和故障率上限。若数据不足，保持 canary 或收集更多样本，不应把不确定写成“无影响”。
-
-### 25. 生成了正确答案，为什么系统仍可能失败？
-
-先看四道任务，每道都生成 3 个候选。表中的“对”表示候选通过当前正确性判据；选择器只能从这三个候选中挑一个：
-
-| 任务 | 三个候选（1 → 3） | 选择器输出 |
-| --- | --- | --- |
-| A | 错 · 对 · 错 | 候选 1 → 错 |
-| B | 对 · 错 · 错 | 候选 1 → 对 |
-| C | 错 · 错 · 错 | 候选 2 → 错 |
-| D | 错 · 对 · 对 | 候选 2 → 对 |
-
-任务 A 已经生成正确候选，但选择器没有找到它。任务 C 则是候选生成阶段根本没有给出正确答案。于是得到三个不同结论：
-
-- **理想选择上限（`oracle@3`）**：A、B、D 都至少包含一个正确候选，所以是 \(3/4\)。
-- **实际选择结果（`selected@3`）**：选择器只在 B、D 选对，所以是 \(2/4\)。
-- **可解任务上的选择召回**：在三个“正确候选确实存在”的任务中选对两个，所以是 \(2/3\)。
-
-这三个数分别告诉你候选覆盖是否足够、选择器损失了多少机会，以及选择器在有解时表现怎样。
-
-仓库可以直接计算这个例子：
-
-```python
-from about_llm.evaluation import summarize_candidate_selection
-
-summary = summarize_candidate_selection(
-    candidate_correctness=(
-        (False, True, False),
-        (True, False, False),
-        (False, False, False),
-        (False, True, True),
-    ),
-    selected_indices=(0, 0, 1, 1),
-)
-assert summary.oracle_at_k == 3 / 4
-assert summary.selected_at_k == 1 / 2
-assert summary.selector_recall_on_oracle_positive == 2 / 3
-```
-
-#### `pass@k` 又在估计什么
-
-代码评测常先为同一题采样 \(n\) 个候选，其中 \(c\) 个通过测试，再估计随机给 \(k\) 次机会时至少一次通过的概率：
-
-\[
-\operatorname{pass@k}
-=1-\frac{\binom{n-c}{k}}{\binom{n}{k}},
-\qquad 1\le k\le n.
-\]
-
-例如 \(n=10\)、\(c=2\)、\(k=2\) 时，结果为 \(17/45\approx0.378\)。在常见的独立同分布生成设定下，
-这是常用的无偏估计。它衡量候选生成的覆盖能力，不包含真实选择器。
-
-`oracle@k` 则直接观察本次实际生成的 \(k\) 个候选中有没有正确答案。一个是从较大采样池得到的概率估计，
-一个是固定候选集上的任务级指示量；报告时要说明采用哪种口径。公式实现与更多边界见
-[代码 Agent 的评测章节](../applications/code-agent-workflow.md#pass-at-k)。
-
-#### 理想上限并不总能直接约束最终系统
-
-在同一批候选、同一正确性判据下，如果系统必须选已有候选中的一个，那么 `selected@k` 不会高于 `oracle@k`。
-上面的 A 就是两者差距的来源。
-
-这个关系有前提。若系统会合并多个候选、调用工具或重新生成一份新答案，最终产物已经不属于原候选集，不能再直接套用
-这条不等式。候选高度重复时，增加 \(k\) 带来的覆盖收益也会低于独立采样的直觉。
-
-三个指标还共享同一个“正确性判据”。测试漏掉安全缺陷时，一个补丁可能同时被计入通过、理想上限和实际选择成功，
-但真实用户仍会失败。因此还要单独审查验证程序本身。
-
-#### 线上成功率要重新使用全链路分母
-
-线上系统还会遇到生成超时、选择器超时、预算耗尽、工具失败、发布门禁和外部执行错误。线上成功率应从全部符合条件的
-真实任务出发，判断最终交付是否完成，而不是只统计成功生成候选的请求。
-
-完整报告至少包含：
-
-- 单次生成结果和 `pass@k`，说明 \(n\)、\(k\)、采样设置与候选重复率；
-- `oracle@k` 与 `selected@k`，说明选择器和正确性判据版本；
-- 可解任务上的选择召回，帮助定位选择器损失；
-- 全链路成功率、超时和失败终态，以及每次成功任务的成本与尾延迟。
-
-## 推理与生产系统
-
-### 26. p95 TTFT 突然升高，怎样排查？
-
-**30 秒回答**：先确认请求入口和统计口径有没有变化，再把 TTFT 拆成客户端排队、网关/网络、服务端排队、
-tokenization、prefill 和首 token 回传。只有 dispatch 之后的时间变慢，才继续把重点放在 tokenizer、调度和 GPU。
-
-按症状继续追：
-
-| 同时观察到什么 | 优先检查什么 |
-|---|---|
-| Offered rate 上升，服务队列变长 | Admission、并发上限、长短请求混排和副本健康 |
-| Prompt 变长，dispatch TTFT 上升 | Tokenization、chunked prefill 和 prefill kernel |
-| KV 接近容量，出现抢占或重算 | Block 使用、最大长度、并发和调度策略 |
-| TPOT 也变慢 | Decode batch、权重/KV 带宽、kernel 和功耗 |
-| 客户端 TTFT 高，服务端 trace 正常 | 网关、网络、客户端队列和流式缓冲 |
-
-只看成功请求的 p95 会隐藏 rejected、timeout 和排队失败。对比同一 workload 下的时间序列，并同时保存
-all-attempt 分母、输入长度、终态和 offered-to-first-token 时间。
-
-### 27. 4-bit 模型为什么不一定更快？
-
-量化减少权重存储和带宽，但可能引入反量化、scale 读取、kernel 不匹配和小 batch 开销。某些硬件或 shape 没有高效低比特 kernel，甚至会 fallback。
-
-在目标 GPU 上同时测质量、峰值显存、TTFT、TPOT 和吞吐。单矩阵压缩比不能外推为整个 checkpoint 或端到端加速比。
-
-### 28. 云 API 为什么不能对所有 429/5xx 自动重试？
-
-HTTP class 不足以决定 replay 是否安全。还要检查 provider 错误语义、请求是否有副作用、远端 outcome 是否已知、`Retry-After`、attempt/deadline 和费用预算。
-
-connect 前的明确失败与发送后 timeout 不同。后者可能已经生成、计费或执行工具；若有 request/background ID，应先查询和 reconcile。
-
-### 29. 客户端断开 SSE，是否证明服务端停止生成？
-
-不证明。连接关闭、应用 task 取消、backend iterator 停止、GPU work 结束、KV 释放和停止计费是不同层级。
-
-验收时用同一个 request ID 关联客户端请求、服务端任务、调度器、内存分配器和计费用量。
-至少分别报告“断连到计算停止”和“断连到资源释放”两段延迟。
-
-### 30. 模型版本相同，为什么请求仍未必可重放？ { #replay-identity }
-
-模型名称只覆盖了输入身份的一小部分。一次结果还取决于：
-
-| 层次 | 需要绑定的内容 |
-|---|---|
-| 模型输入 | Tokenizer、chat template、完整消息、工具 schema 和生成参数 |
-| 模型工件 | Checkpoint revision、adapter、量化格式与加载配置 |
-| 执行环境 | Runtime、kernel、硬件、随机数状态和并行拓扑 |
-| 外部状态 | Retrieval index、权限策略、缓存、工具结果和 Provider routing |
-
-闭源 alias 甚至可能在 model ID 不变时切换实际版本。先说明目标是字节级、token 级、指标级还是业务决策级重放，
-再保存对应工件。一个 config hash 只能覆盖被明确序列化的字段，不能代表遗漏的外部状态。
+当 \(L=32\)、\(B=1\)、\(T=4096\)、\(d_h=128\)，且 K/V 使用 BF16 时，
+32 个 KV heads 的理想 payload 是 2 GiB，8 个 KV heads 是 0.5 GiB。
+
+最后主动收住边界：这 4 倍只属于理想 K/V payload。Q/O 投影、MLP、权重读取、分页分配、工作区和临时张量
+不会同步缩小，所以端到端吞吐不能直接写成 4 倍。容量要检查实际 cache layout 和峰值显存，性能要固定 checkpoint、
+长度分布、并发、kernel 与硬件后测 TPOT 和吞吐，质量则要另用留出任务集。
+
+## 30 题路线索引
+
+每题只保留“回答焦点”和权威入口。先沿入口理解机制，再回本页口述；需要可执行数字和反例时查
+[深挖验证台账](../evidence/interview-controls.md)。
+
+### Transformer 与生成
+
+| # | 问题与回答焦点 | 权威入口 / 动手练习 |
+|---:|---|---|
+| <a id="attention-scaling"></a>1 | Attention score 为什么除以 \(\sqrt d\)：点积方差、softmax 饱和与尺度稳定。 | [Transformer](../core/transformer.md) · [编码题 1](coding-softmax-attention.md) |
+| 2 | Causal mask 怎样排除未来信息：区分 causal、padding、packing 和 loss mask，用未来 token 不变性反证。 | [Transformer](../core/transformer.md) · [编码题 1](coding-softmax-attention.md) |
+| 3 | MHA、MQA、GQA 怎样取舍：比较 K/V heads、理想 cache、decode 带宽与质量，避免把局部缩减外推成整机收益。 | [Transformer](../core/transformer.md) · [推理优化](../systems/inference-optimization.md) |
+| 4 | Prefill 与 decode 为什么瓶颈不同：分别观察 TTFT、TPOT、算力利用率和内存带宽。 | [推理优化](../systems/inference-optimization.md) · [Serving](../systems/serving.md) |
+| 5 | Temperature、top-k、top-p 改变什么：先声明处理顺序、重归一化、tie 与 crossing-token 契约。 | [生成与解码](../core/generation.md) · [编码题 2](coding-sampling.md) |
+| 6 | “支持 1M context”是否等于有效利用：把请求上限、任务有效长度、成本和延迟分开验证。 | [长上下文系统](../frontier/long-context-systems.md) |
+
+### 训练与对齐
+
+| # | 问题与回答焦点 | 权威入口 / 动手练习 |
+|---:|---|---|
+| 7 | 什么时候用 RAG，什么时候微调：先按知识、检索、行为和格式错误分类，再比较 Prompt、RAG、LoRA 与组合基线。 | [微调](../training/finetuning.md) · [RAG](../applications/rag.md) |
+| 8 | LoRA 的公式与参数量：解释 \(W+(\alpha/r)BA\)、初始化、冻结基座和可训练参数账本。 | [LoRA/QLoRA 工程](../training/peft-qlora-engineering.md) · [编码题 5](coding-lora.md) |
+| <a id="qlora-scope"></a>9 | QLoRA 为什么不等于“全部 4-bit”：区分冻结权重的存储精度、计算精度、adapter、梯度、optimizer 与 activation。 | [LoRA/QLoRA 工程](../training/peft-qlora-engineering.md) |
+| 10 | Assistant-only loss 怎样避免监督错位：在目标 chat template 和 tokenizer 之后检查最终 token labels。 | [SFT 数据闭环](../training/sft-data-pipeline.md) · [实验 4A](../practice/labs/lab-4a-sft-sample.md) |
+| 11 | 可变长度 micro-batch 怎样正确累计梯度：累积 loss sum 与有效 token 数，并处理 DDP reduction、AMP 和 clip 顺序。 | [SFT 数据闭环](../training/sft-data-pipeline.md) · [分布式正确性](../systems/distributed-training-correctness.md) |
+| 12 | DPO 与 PPO/RLHF 的训练信号有何不同：比较偏好对、reference、在线 rollout、advantage、ratio clip 与 KL。 | [对齐进阶](../training/alignment.md) |
+| 13 | Loss 下降为什么不保证产品质量：检查泄漏、错误 labels、shortcut、reward hacking 和能力回归。 | [微调](../training/finetuning.md) · [评测方法](../quality/evaluation-methodology.md) |
+
+### RAG 与 Agent
+
+| # | 问题与回答焦点 | 权威入口 / 动手练习 |
+|---:|---|---|
+| 14 | 检索到正确文档但答案仍错：沿召回、重排、packing、生成、引用和发布 gate 分层定位。 | [RAG 请求生命周期](../applications/rag-request-lifecycle.md) |
+| 15 | 多租户 RAG 怎样防泄漏：授权必须先于共享统计、排序、缓存和生成，并在边界处重新检查。 | [RAG 检索](../applications/rag-retrieval.md) · [编码题 3](coding-bm25.md) |
+| 16 | Agent 与 Workflow 的边界：固定高风险流程用状态机，开放语义决策才交给模型。 | [Agent 架构](../applications/agent-architecture.md) |
+| <a id="effect-idempotency"></a>17 | 怎样避免重复副作用：稳定 identity、审批绑定、pending、幂等键与 reconciliation 缺一不可。 | [任务生命周期](../applications/agent-task-lifecycle.md) · [编码题 6](coding-idempotent-effect.md) |
+| 18 | 提示注入为什么不能只靠 system prompt：可信指令和外部文本共享上下文，权限边界必须在模型外。 | [安全](../quality/safety.md) · [Agent 运行时](../applications/agent-runtime.md) |
+| 19 | Agent 怎样判断完成并安全恢复：模型只提出完成，verifier 检查业务事实；checkpoint 保存预算、pending effect 与身份。 | [Agent 任务生命周期](../applications/agent-task-lifecycle.md) |
+
+### 评测与实验
+
+| # | 问题与回答焦点 | 权威入口 / 动手练习 |
+|---:|---|---|
+| 20 | 评测最小单位是什么：用稳定 case/task-attempt 绑定输入、版本、输出、终态、指标和分母。 | [评测方法](../quality/evaluation-methodology.md) |
+| 21 | LLM-as-a-Judge 有哪些偏差：检查位置、篇幅、风格、自偏好和 Prompt 敏感性，并与盲化人工或确定性 verifier 校准。 | [评测测量](../quality/evaluation-measurement.md) |
+| 22 | 为什么使用 paired design：在同一 case 上计算差值，再按真实抽样单位估计区间或做检验。 | [评测统计](../foundations/evaluation-statistics.md) |
+| 23 | 怎样防止测试集被反复调参污染：隔离 dev/test 权限、记录访问，按用户或 problem family 分组并检查近重复。 | [评测方法](../quality/evaluation-methodology.md) |
+| <a id="slice-regression"></a>24 | 总体提升但中文用户下降怎样决策：关键 slice 若是发布硬约束，不能由总体平均抵消；样本不足就保持 canary。 | [评测方法](../quality/evaluation-methodology.md) · [应用题](applied-questions.md) |
+| 25 | 正确候选已经生成，系统为何仍失败：把候选覆盖、选择器能力、验证器有效性和全链路终态分账。 | [代码 Agent 工作流](../applications/code-agent-workflow.md) · [评测总览](../quality/evaluation.md) |
+
+### 25. 候选生成与选择必须分账 { #25 }
+
+设四个任务各生成三个候选。若三个任务至少有一个正确候选，`oracle@3=3/4`；选择器只在其中两个任务选对，
+则 `selected@3=2/4`，可解任务上的 selector recall 是 `2/3`。前者回答生成覆盖，后两者回答实际选择损失。
+
+`pass@k` 估计随机给 \(k\) 次候选机会时至少一次通过当前验证器的概率，也不包含真实选择器。
+若系统会合并候选、调用工具或重新生成，最终产物已不属于原候选集，不能继续把 `oracle@k` 当直接上界。
+线上还要把生成/选择超时、预算耗尽、工具失败和发布拒绝放回全部合格任务的分母。
+
+### 推理与生产系统
+
+| # | 问题与回答焦点 | 权威入口 / 动手练习 |
+|---:|---|---|
+| 26 | p95 TTFT 突然升高怎样排查：先统一计时起点，再拆客户端、网关、队列、tokenization、prefill 和首 token 回传。 | [Serving](../systems/serving.md) · [推理服务项目](../practice/projects/inference-serving.md) |
+| 27 | 4-bit 模型为什么不一定更快：文件、resident memory、峰值显存与目标 kernel 吞吐是不同命题。 | [推理优化](../systems/inference-optimization.md) |
+| 28 | 云 API 为什么不能对所有 429/5xx 自动重试：同时判断 provider 语义、是否已发送、远端 outcome、幂等、deadline 与预算。 | [云 API 可靠性](../models/cloud-api-reliability.md) · [实验 0C](../practice/labs/lab-0c-cloud-budget.md) |
+| 29 | 客户端断开 SSE 是否证明服务端停止生成：连接、task、backend、scheduler、KV 释放和计费需要分别观测。 | [Serving](../systems/serving.md) |
+| <a id="replay-identity"></a>30 | 模型版本相同为什么仍未必可重放：还要绑定 template、adapter、runtime、RNG、索引、策略和外部状态。 | [准确性方法](../reference/accuracy.md) · [云 API 契约](../models/cloud-api-contracts.md) |
 
 ## 代码题怎样准备
 
-至少能现场写出一个最小实现，并为它补正例、边界和失败例：
+索引页只教时间分配与表达方法；完整题面、参考实现和边界测试在独立练习页：
 
-| 代码题 | 必须测的边界 | 完整题面 | 仓库练习 |
-|---|---|---|---|
-| stable softmax / causal attention | 极大 logit、fully masked row、未来 token 不变性 | [题 1](coding-round.md#q-softmax-attention) | [Transformers Basics](../practice/projects/transformers-basics.md) |
-| top-k / top-p sampling | crossing token、tie、全非法 logits、seed | [题 2](coding-round.md#q-sampling) | [推理服务项目](../practice/projects/inference-serving.md) |
-| BM25 / RRF | 空查询、重复文档、排序 tie、ACL | [题 3](coding-round.md#q-bm25) · [题 4](coding-round.md#q-rrf) | [RAG Foundations](../practice/projects/rag-foundations.md) |
-| LoRA Linear | shape、scale、冻结 base、保存/重载 | [题 5](coding-round.md#q-lora) | [单卡微调](../practice/projects/single-gpu-finetuning.md) |
-| paired metric / bootstrap | case 对齐、空分母、cluster | — | [Evaluation Gate](../practice/projects/evaluation-gate.md) |
-| 幂等工具执行 | 重复 call、timeout unknown、审批变化 | [题 6](coding-round.md#q-idempotent-effect) | [Safe Agent](../practice/projects/safe-agent.md) |
+| 练习 | 最容易漏掉的边界 |
+|---|---|
+| [Softmax / Causal Attention](coding-softmax-attention.md) | 极大 logit、fully masked row、未来 token 不变性 |
+| [Top-k / Top-p](coding-sampling.md) | crossing token、tie、全非法 logits、可重放 RNG |
+| [带权限 BM25](coding-bm25.md) | ACL 必须先于语料级统计 |
+| [RRF](coding-rrf.md) | 同列表重复、排名起点与稳定 tie-break |
+| [LoRA Linear](coding-lora.md) | 冻结 base、缩放、合并与独立重载 |
+| [幂等工具执行](coding-idempotent-effect.md) | timeout unknown、参数漂移、并发同键与对账 |
 
-代码能跑只是起点。面试时要主动说明复杂度、数值稳定性、错误契约和怎样验证——
-可照做的模板见[编码轮](coding-round.md)。
+## 怎样使用深挖验证台账
 
-## 怎样使用深挖题库
-
-当核心题能脱稿回答后，再进入[深挖题与验证台账](../evidence/interview-controls.md)。那一页保留分布式 AMP、
-MoE、PPO、MCP、统计检验和 serving 的完整追问，用于二面或专项岗位。
-
-不要背其中的固定数字。选择与你岗位和项目相关的十题，把每题改写成自己的“结论—机制—边界—验证”，并准备一个真实失败样例。
+当核心题能脱稿回答后，再到[深挖验证台账](../evidence/interview-controls.md)按领域查 claim、可执行 control 和边界。
+选择与你岗位和项目相关的十项，把每项改写成自己的“结论—机制—边界—验证”，并准备一个真实失败样例。

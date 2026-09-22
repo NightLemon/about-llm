@@ -148,7 +148,7 @@ def test_repository_has_expected_canonical_pages_and_redirects() -> None:
     relative = [path.relative_to(ROOT / "docs").as_posix() for path in pages]
     config = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
 
-    assert len(relative) == 166
+    assert len(relative) == 172
     assert len(relative) == len(set(relative))
     assert "models/gemini-production.md" not in relative
     assert "quality/governance-templates.md" not in relative
