@@ -17,11 +17,8 @@
 [单卡微调](../practice/projects/single-gpu-finetuning.md) · [Llama 证据台账](../evidence/llama-controls.md)
 { .doc-nav }
 
-Llama 是学习开放权重模型工程的好入口：你可以检查 config、tokenizer、weights，运行 forward，再把静态推导与真实显存、质量和延迟对账。
-
-但 Llama 不是一个固定架构。不同代际、尺寸、Base/Instruct、text/multimodal 版本可能有不同词表、head 布局、RoPE、上下文、模板和许可。
-
-本章用一条主线组织这些知识：选定一个具体 checkpoint，把它变成一个可复现、可评测、可回滚的单卡系统。
+Llama 是学习开放权重模型工程的好入口：你可以检查 config、tokenizer 和 weights，运行 forward，
+再把静态推导与真实显存、质量和延迟对账。不同版本可能有不同词表、head 布局、RoPE、上下文、模板和许可，因此本章始终围绕一个具体 checkpoint 建立可复现、可评测、可回滚的单卡系统。
 
 ## 先运行：仓库真的验证了什么 { #run }
 
@@ -478,32 +475,23 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 
 选择一个许可允许且资源可承受的纯文本指令模型检查点，交付四类产物：
 
-1. **identity report**：revision、文件、config、tokenizer、template、license。
-2. **execution report**：prefill/cache/greedy 对账和峰值显存。
-3. **evaluation report**：逐 case 质量、安全、长上下文和失败分类。
-4. **serving report**：Transformers/vLLM 输入对齐、TTFT、TPOT、吞吐、取消和回滚。
+| 产物 | 必须记录 |
+|---|---|
+| Identity report | Revision、文件、config、tokenizer、template、license |
+| Execution report | Prefill/cache/greedy 对账和峰值显存 |
+| Evaluation report | 逐 case 质量、安全、长上下文和失败分类 |
+| Serving report | Transformers/vLLM 输入对齐、TTFT、TPOT、吞吐、取消和回滚 |
 
-每个实验先写预测，再运行，再解释公式与实测的差异。这样你学到的是模型工程因果链，而不是一串命令。
-
-可运行入口：
-
-- [Transformers Basics](../practice/projects/transformers-basics.md)
-- [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md)
-- [Inference Serving](../practice/projects/inference-serving.md)
-- [Evaluation Gate](../practice/projects/evaluation-gate.md)
+每个实验先写预测，再运行，再解释公式与实测的差异。运行入口见 [Transformers Basics](../practice/projects/transformers-basics.md)、
+[Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md)、[Inference Serving](../practice/projects/inference-serving.md)和 [Evaluation Gate](../practice/projects/evaluation-gate.md)。
 
 ## 常见错误
 
-- 把 Llama 当作固定 config，或只保存一个家族短名。
-- 把 model-card 参数与上下文声明写成独立测量。
-- 只固定 model，不固定 tokenizer、template 和 generation。
-- 把 GQA 公式样例计算出的数字写成目标 checkpoint 的真实显存。
-- 用文件位宽推断 GPU 峰值或端到端 speedup。
-- 把 LoRA trainable parameters 少写成训练显存同比下降。
-- 给 Base 套 Instruct template 并期待相同行为。
-- 把 vLLM 能启动当成正确性、性能和取消证据。
-- 把可下载权重写成 OSI 开源。
-- 把 SHA-256 当作发布者签名。
+- 把 Llama 当作固定 config，只保存家族短名，或把 model-card 声明写成独立测量。
+- 只固定 model，却让 tokenizer、template 或 generation config 漂移。
+- 把 GQA 公式样例写成目标显存，或用文件位宽和 LoRA 参数量推断峰值显存、训练内存与 speedup。
+- 给 Base 套 Instruct template 并期待相同行为，或把 vLLM 能启动当成正确性、性能和取消证据。
+- 把可下载权重写成 OSI 开源，或把 SHA-256 当作发布者签名。
 
 ## 面试时怎样回答
 
@@ -520,11 +508,9 @@ Model card 报告的 context length、runtime 接受的长度和任务有效长�
 
 ## 自测
 
-1. 为什么 model card、config、weights、runtime 和 task evaluation 不能互相借用结论？
-2. SwiGLU 为什么有三组主要投影？GQA 又减少了哪些部分？
-3. 理想 KV payload 与 GPU peak memory 之间还缺哪些项？
-4. 为什么 model revision 固定而 tokenizer 漂移仍不可复现？
-5. 单次量化 generation 看起来正常后，还缺哪些发布证据？
+1. 为什么 model card、config、weights、runtime 与 task evaluation 不能互借结论？Model revision 固定而 tokenizer 漂移时为何仍不可复现？
+2. SwiGLU 为什么有三组主要投影，GQA 减少了哪些部分，理想 KV payload 与 GPU peak memory 之间还缺什么？
+3. 单次量化 generation 看起来正常后，还缺哪些质量、性能、供应链与回滚证据？
 
 ## 一手资料入口
 
