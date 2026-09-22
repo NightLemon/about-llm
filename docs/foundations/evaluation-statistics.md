@@ -319,6 +319,102 @@ Simpson's paradox 的直觉是：流量配比变化可能让 overall 提升，�
 高相关性只描述总体上的同向变化，无法告诉我们评审模型是否漏掉了关键安全错误。除了相关性，
 还应保存评审模型与人工标注不一致的样本，逐个查看漏判发生在哪里。
 
+## 序贯查看需要预先设计
+
+多重检验处理同一时点的多个假设；序贯检验处理同一假设被反复查看。每周都按 0.05 检验一次，
+一旦显著就停止，会让整个实验的假阳性概率升高。
+
+~~~powershell
+python projects/evaluation-gate/sequential_peeking_toy.py
+~~~
+
+固定查看时点为 `[10,20,30,40,50]`。在这个独立公平符号的离散样例中，每次都用 0.05 并在首次拒绝时停止，
+精确算出的总体拒绝概率约为 `0.1010`；只在最终 \(n=50\) 查看一次时约为 `0.03284`。
+
+如果事前规定最多查看五次，并用 Bonferroni 将 0.05 平分为每次 0.01，同一例子的总体错误率约为 `0.01522`。
+
+正式实验还有几类序贯方法可选：
+
+- group-sequential boundary 预先安排观察时点和判断边界；
+- alpha spending 规定错误率预算怎样随信息量支出；
+- always-valid p-value 和 e-process 支持按对应协议持续观察；
+- confidence sequence 给出随观察更新的区间序列。
+
+选择前要先理解每种方法的假设和停止规则。
+
+这个小程序只处理没有平局的独立公平符号。线上 A/B 还要预先写下随机化单位、最大样本或时长、主要指标、
+保护指标、逐步放量方案、异常停止条件和每次查看的记录。
+
+## 系统能拒答时，评测置信度
+
+如果客服助手会根据置信度拒答或转人工，就要先定义这个概率对应的事件。例如 \(p_i\) 可以表示
+“这次结构化抽取完全正确的概率”，而且必须在看到最终标签前产生。标签 \(y_i\in\{0,1\}\) 时，Brier score 为：
+
+\[
+\operatorname{Brier}=\frac{1}{N}\sum_{i=1}^{N}(p_i-y_i)^2.
+\]
+
+分数越低越好。它同时受校准程度与区分能力影响，因此跨任务、基础发生率或时间窗口比较时，要带上各自基线。
+
+Equal-width Expected Calibration Error（ECE）把概率区间等宽分桶：
+
+\[
+\operatorname{ECE}=\sum_b\frac{|B_b|}{N}
+\left|\operatorname{acc}(B_b)-\operatorname{conf}(B_b)\right|.
+\]
+
+ECE 会受桶数量和边界影响，有限样本下也可能有偏。报告时应附上分桶方法、每桶数量、可靠性图和关键切片，
+而不是只展示一位小数。
+
+```python
+import math
+
+from about_llm.evaluation import binary_calibration
+
+result = binary_calibration(
+    labels=[0, 1, 1, 0],
+    probabilities=[0.1, 0.8, 0.6, 0.4],
+    bins=2,
+)
+assert math.isclose(result.brier_score, 0.0925)
+assert math.isclose(result.expected_calibration_error, 0.275)
+```
+
+Token log-prob、模型自述的“90% 有把握”、多次回答一致程度和裁判分数，都不会自然成为任务成功概率。
+可以把它们作为预测器的输入，再在目标请求分布上校准。
+
+### Risk–coverage 看“少答一些是否更可靠”
+
+系统按置信度 \(c_i\) 决定是否回答。阈值为 \(\tau\) 时：
+
+\[
+\operatorname{coverage}(\tau)=
+\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[c_i\ge\tau],
+\qquad
+\operatorname{risk}(\tau)=1-
+\frac{\sum_{i=1}^{N}\mathbf{1}[c_i\ge\tau]y_i}
+{\sum_{i=1}^{N}\mathbf{1}[c_i\ge\tau]}.
+\]
+
+提高阈值通常会降低错误风险，也会减少自动回答并增加人工处理。比较系统时可以展示整条 risk–coverage 曲线，
+也可以固定业务覆盖率后比较风险。总体曲线还应按语言、风险和用户群拆分。
+
+仓库把置信度相同的样例作为一组同时接受，避免输入顺序改变曲线：
+
+```python
+from about_llm.evaluation import risk_coverage_curve
+
+curve = risk_coverage_curve(
+    correctness=[1, 0, 1, 0],
+    confidence=[0.9, 0.8, 0.8, 0.1],
+)
+assert [(p.accepted_count, p.coverage) for p in curve] == [
+    (1, 0.25),
+    (3, 0.75),
+    (4, 1.0),
+]
+```
+
 ## 一个发布门禁怎样组合指标
 
 一次 release decision 可以按顺序做：

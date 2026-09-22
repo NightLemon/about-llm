@@ -29,12 +29,13 @@ REPORT_PACKAGES = (
     "mcp",
     "mkdocs",
     "mkdocs-material",
+    "mkdocs-redirects",
     "nbclient",
     "nbformat",
     "ipykernel",
 )
 PROFILE_REQUIREMENTS = {
-    "docs": ("about-llm", "Markdown", "mkdocs", "mkdocs-material"),
+    "docs": ("about-llm", "Markdown", "mkdocs", "mkdocs-material", "mkdocs-redirects"),
     "cpu-starter": ("about-llm", "numpy"),
     "notebooks": (
         "about-llm",
@@ -50,6 +51,7 @@ PROFILE_REQUIREMENTS = {
         "Markdown",
         "mkdocs",
         "mkdocs-material",
+        "mkdocs-redirects",
         "build",
         "pytest",
         "pytest-cov",

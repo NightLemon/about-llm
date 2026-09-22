@@ -13,7 +13,7 @@
 
 </div>
 
-**章节导航**：[总览](gemini.md) · [generateContent 与多模态](gemini-generate-content.md) · [生产接入](gemini-production.md) · [证据台账](../evidence/gemini-controls.md)
+**章节导航**：[总览](gemini.md) · [generateContent 与多模态](gemini-generate-content.md) · [生产接入差异](gemini.md#gemini-production-differences) · [证据台账](../evidence/gemini-controls.md)
 { .doc-nav }
 
 先看一个容易误判的场景。用户问“上海天气怎样”，模型没有直接回答，而是建议调用

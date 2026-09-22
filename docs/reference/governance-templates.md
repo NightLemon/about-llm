@@ -1,19 +1,22 @@
-# 治理工件模板：从一个用途走到发布决定
+# 治理工件模板：按问题查找并填写
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：需要把治理要求变成可填写、可审阅记录的产品、工程、法务、隐私、安全和治理团队。
-- **先修**：先读[一次招聘筛选的治理闭环](governance-impact.md)，理解用途、风险和控制措施怎样关联。
-- **首次阅读**：用途记录 → 影响评估 → 控制证据 → 发布决定。其余模板遇到对应问题时再查。
+- **适合读者**：已经明确具体用途，需要查找、填写或审阅治理工件的产品、工程、法务、隐私、安全和治理团队。
+- **先修**：先读[一次招聘筛选的治理闭环](../quality/governance-impact.md)，理解用途、风险和控制措施怎样关联。
+- **首次阅读**：先用下表定位所需记录；首次发布只顺序填写用途、影响、控制证据和发布决定。
 - **完成信号**：能用真实负责人、组件版本和证据填写四份核心记录，并说明还有哪些信息未知。
 - **卡住时**：回到招聘案例，先选一项具体风险，不要同时填写整套模板。
 
 </div>
 
-上一页的招聘筛选助手不能靠一份“AI 已评审”表格完成治理。团队先要说明系统被允许做什么，再写出候选人可能怎样受伤，
+这是一页查用型参考，不要求从头线性读完。先按当前问题跳到对应模板，再把记录链接回真实负责人、组件版本和测试证据。
+[招聘筛选治理案例](../quality/governance-impact.md)展示了四份核心记录怎样串成一次发布决定。
+
+团队不能靠一份“AI 已评审”表格完成治理。先要说明系统被允许做什么，再写出相关人员可能怎样受伤，
 接着证明保护措施确实生效，最后才有足够信息决定是否发布。
 
 这四步分别留下四份记录：
@@ -369,6 +372,39 @@
 ```
 
 删除数据库中的主记录只是起点。向量、缓存、备份、微调数据和第三方副本都有各自的传播路径与完成证据。
+
+## 威胁模型模板 {#threat-model-template}
+
+```yaml
+system: customer-support-agent
+assets:
+  - tenant documents
+  - scoped ticket-write capability
+actors:
+  - authenticated user
+  - malicious document author
+trust_boundaries:
+  - user -> gateway
+  - retrieved document -> model context
+  - model proposal -> tool gateway
+attacker_capabilities:
+  - multi-turn prompts
+  - upload HTML/PDF
+  - observe responses
+forbidden_outcomes:
+  - cross-tenant disclosure
+  - ticket write without bound approval
+controls:
+  - pre-ranking ACL
+  - no secrets in context
+  - parameter fingerprint approval
+  - egress allowlist
+evidence:
+  - 测试 ID 和产物版本
+residual_risk_owner: security-lead
+```
+
+模板必须链接真实测试和 owner；只填写表格不代表控制有效。
 
 ## 这些记录怎样连接起来
 

@@ -171,7 +171,7 @@ python -m pytest tests/test_budgeted_cloud.py `
 
 为每次 attempt 保存产品平台、API 与版本、端点、型号、区域、账号计费范围、价格快照、请求指纹和收到的供应商
 request ID。价格快照应带核对日期，并对应本次调用的实际配置；本实验的 `$1/$2` 只用于手算。Gemini 的接入示例见
-[生产接入](../../models/gemini-production.md#outcome-before-retry)。
+[云 API 可靠性](../../models/cloud-api-reliability.md#outcome-before-retry)。
 
 费用判断和重试判断要分开。第四部分已经展示：第一次费用仍是 `uncertain`，只要协议允许、业务能安全重放，且
 剩余预算与截止时间允许，就可以为下一次 attempt 另作预留。第一次的账继续等待 usage 或账单对账，不会因重试成功消失。

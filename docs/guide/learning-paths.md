@@ -98,7 +98,7 @@ HTTP 和基本性能测量。
 4. 运行多个 seed，报告原始结果、差异和失败情况。
 5. 解释证据只支持哪一层结论，并提出最可能推翻它的下一项实验。
 
-可从[近期论文](../papers/index.md)、[规模化](../core/scaling.md)、[可解释性](../core/architectures-interpretability.md)或[前沿主题](../frontier/reasoning-long-context-moe.md)选题。
+可从[近期论文](../papers/index.md)、[规模化](../core/scaling.md)、[机制可解释性](../core/mechanistic-interpretability.md)或[前沿主题](../frontier/reasoning-long-context-moe.md)选题。
 
 完成标准：别人能够根据你的记录重做实验，并得到相同方向的结论；负结果也必须保留。
 

@@ -86,7 +86,7 @@ terminal classification
 
 因此，attempt 2 不能复用 attempt 1 的 reservation ID。它要重新检查预算，再建立一笔新的预留。
 
-## 重试前回答三个独立问题
+## 重试前回答三个独立问题 {#outcome-before-retry}
 
 ### 1. 这个错误允许重试吗？ {#retryable}
 

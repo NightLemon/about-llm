@@ -76,8 +76,8 @@ python projects/transformers-basics/train_byte_bpe.py
 
 - **想理解模型内部**：按 [Tokenization](../core/tokenization.md) → [Transformer](../core/transformer.md) →
   [生成与解码入门](../core/generation-basics.md) 前进。走完后，你应能解释输入 token 怎样产生下一步概率。
-- **想做应用**：从生成进入 [RAG](../applications/rag.md)，再补[评测](../quality/evaluation.md)和
-  [安全与权限](../quality/safety.md)。错误分析是这条路线的一部分，不是项目结束后的附录。
+- **想做应用**：从生成进入 [RAG](../applications/rag.md)，再补[评测](../quality/evaluation.md)、
+  [系统安全](../quality/safety.md)和[隐私与公平](../quality/privacy-fairness.md)。错误分析是这条路线的一部分，不是项目结束后的附录。
 - **已经有 ML 基础**：自检中熟悉的内容可以跳过，但仍建议跑一次最小实验，确认本地环境和仓库约定。
 - **想做训练或系统**：完成[基础路线](learning-paths.md#beginner)的核心成果后，再选择
   [模型工程](learning-paths.md#model-engineering)或[系统工程](learning-paths.md#systems)。

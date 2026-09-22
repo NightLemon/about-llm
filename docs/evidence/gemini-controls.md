@@ -3,7 +3,7 @@
 本页保存仓库当前 Gemini adapter、stream parser、预算固定样例和可陈述 claim 的精确边界。第一次学习请从
 [Gemini 总览](../models/gemini.md)开始；只有需要复核实现覆盖、测试证据或作品集表述时再查本页。
 
-**证据导航**：[总览](../models/gemini.md) · [Interactions API](../models/gemini-interactions.md) · [generateContent 与多模态](../models/gemini-generate-content.md) · [生产接入](../models/gemini-production.md)
+**证据导航**：[总览](../models/gemini.md) · [Interactions API](../models/gemini-interactions.md) · [generateContent 与多模态](../models/gemini-generate-content.md) · [生产接入差异](../models/gemini.md#gemini-production-differences)
 { .doc-nav }
 
 

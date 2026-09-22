@@ -161,7 +161,7 @@
         "reviewer": "OpenAI Codex (GPT-5)",
         "record": "evidence/source-reviews/2026-09-20.md#gemini-interactions-overview"
       },
-      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "evidence/gemini-controls.md", "models/gemini-interactions.md", "models/gemini-production.md", "models/gemini.md", "reference/resources.md"]
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "evidence/gemini-controls.md", "models/gemini-interactions.md", "models/gemini.md", "reference/resources.md"]
     },
     {
       "id": "gemini-interactions-reference",
@@ -179,7 +179,7 @@
         "reviewer": "OpenAI Codex (GPT-5)",
         "record": "evidence/source-reviews/2026-09-20.md#gemini-interactions-reference"
       },
-      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-production.md", "models/gemini-interactions.md", "models/gemini-generate-content.md"]
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-interactions.md", "models/gemini-generate-content.md"]
     },
     {
       "id": "gemini-interactions-streaming",
@@ -197,7 +197,7 @@
         "reviewer": "OpenAI Codex (GPT-5)",
         "record": "evidence/source-reviews/2026-09-20.md#gemini-interactions-streaming"
       },
-      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-interactions.md", "models/gemini-production.md"]
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-interactions.md"]
     },
     {
       "id": "gemini-generate-content",
@@ -215,7 +215,7 @@
         "reviewer": "OpenAI Codex (GPT-5)",
         "record": "evidence/source-reviews/2026-09-20.md#gemini-generate-content"
       },
-      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "evidence/gemini-controls.md", "models/gemini-production.md", "reference/resources.md", "models/cloud-api-contracts.md", "models/gemini-generate-content.md"]
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/cloud-api-controls.md", "evidence/gemini-controls.md", "reference/resources.md", "models/cloud-api-contracts.md", "models/gemini-generate-content.md"]
     },
     {
       "id": "gemini-text-generation",
@@ -233,7 +233,7 @@
         "reviewer": "OpenAI Codex (GPT-5)",
         "record": "evidence/source-reviews/2026-09-20.md#gemini-text-generation"
       },
-      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini-production.md", "models/gemini.md"]
+      "used_by": ["evidence/accuracy-ledger.md", "evidence/gemini-controls.md", "models/gemini.md"]
     },
     {
       "id": "mcp-introduction",

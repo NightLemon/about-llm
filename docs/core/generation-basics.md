@@ -97,6 +97,20 @@ python projects/inference-serving/sampling_toy.py
 - `max_new_tokens`、EOS 和 stop string 都能结束循环，但恢复、计费和用户提示方式不同，因此要保留各自的 finish reason。
 - 客户端停止显示文本，只能说明客户端不再接收。服务端是否停算、KV 是否释放、费用是否继续，需要服务端证据。
 
+## 按任务选择一个可检验的起点
+
+| 任务 | 解码起点 | 必须同时验证 |
+|---|---|---|
+| 抽取/分类 | Greedy 或低随机性、约束 schema | 字段语义、漏抽、校准、拒答 |
+| 基于证据问答 | 低到中随机性、citation schema | 引用支持、不可回答、检索失败 |
+| 创意写作 | Temperature/top-p、多候选 | 多样性、连贯性、安全与成本 |
+| 代码生成 | Greedy 或多候选 + tests | 编译、单测、sandbox 与依赖 |
+| 数学/规划 | 多候选、搜索或 verifier | Verifier 偏差、共享错误、预算 |
+| 工具调用 | 结构约束、低随机性 | 权限、参数、幂等、审批和回执 |
+
+这些只是实验起点，不是通用最优值。多采样再选择只有在候选错误不完全相关、选择器确有区分能力时才可能提高质量。
+
 ## 进入完整章节
 
-当你能手算一步采样后，再读[生成与解码完整协议](generation.md)：beam search、logits processors、约束解码、KV Cache 成本、流式 UTF-8 边界和生产验收都保留在那里。
+当你能手算一步采样后，再读[生成与解码完整协议](generation.md)，继续学习 beam search、logits processors、
+跨 token 停止与约束解码。KV、流式传输和生产验收会从该页引向对应系统章节。

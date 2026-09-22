@@ -200,7 +200,7 @@ server_error / outcome_unknown
 返回普通成功，否则调用者无法知道实际运行了什么。
 如果产品允许降级，receipt 中要写实际 revision、降级原因和能力差异，质量与合规策略也要先批准这条路径。
 
-### 流式输出与取消是两个协议
+### 流式输出与取消是两个协议 {#streaming-and-cancellation}
 
 Server-Sent Events（SSE）只能证明服务在分块发送字节。后端可能先生成完整结果，再分块发出；
 要验证增量生成，需要观察首个 delta 到达时 decode 是否仍在运行。

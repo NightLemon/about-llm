@@ -25,6 +25,7 @@ llama-index-core==0.14.23
 Markdown==3.10.2
 mkdocs==1.6.1
 mkdocs-material==9.7.6
+mkdocs-redirects==1.2.3
 mcp==1.29.0
 mypy==1.20.2
 nbclient==0.11.0

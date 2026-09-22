@@ -48,8 +48,11 @@ flowchart TD
 2. [预训练](../training/pretraining.md)：next-token objective、优化与训练稳定性。
 3. [微调](../training/finetuning.md)：SFT、LoRA/QLoRA 与方法选择。
 4. [对齐入门](../training/alignment-basics.md)：偏好数据、DPO/RLHF 的基本问题。
-5. [分布式训练](../systems/distributed-training.md)：显存、并行策略和通信成本。
-6. [集合通信与数据中心网络](../systems/collective-communication-network.md)：结果布局、ring 载荷、ready time、rail 与割集。
+5. [分布式训练](../systems/distributed-training.md)：显存、global loss、并行策略和拓扑。
+6. [分布式训练正确性](../systems/distributed-training-correctness.md)：混合精度、checkpoint、恢复和 run 对比。
+7. [持续学习](../training/continual-learning.md)：沿 Task B 主线检查遗忘、replay、Adapter 和发布。
+8. [模型合并与编辑](../training/model-merging-editing.md)或[机器遗忘](../training/machine-unlearning.md)：按问题进入专项。
+9. [集合通信与数据中心网络](../systems/collective-communication-network.md)：结果布局、ring 载荷、ready time、rail 与割集。
 
 出口成果：一份包含数据契约、训练曲线、基线、失败样例和留出集评测的实验报告。
 
@@ -64,7 +67,8 @@ flowchart TD
 5. [Agent 总览](../applications/agents.md)：模型、工具、状态和停止条件。
 6. [Agent 决策理论](../applications/agent-decision-theory.md)与
    [Runtime](../applications/agent-runtime.md)：部分可观测决策、授权、幂等、恢复和人工确认。
-7. [安全](../quality/safety.md)：提示注入、数据泄露和工具副作用。
+7. [系统安全](../quality/safety.md)：提示注入、授权、sandbox、供应链和工具副作用。
+8. [隐私与公平](../quality/privacy-fairness.md)：数据泄露、内容安全、群体伤害和监控。
 
 出口成果：一个对无答案、冲突证据、越权请求和工具失败都有明确行为的应用。
 
@@ -88,7 +92,8 @@ flowchart TD
 
 先修取决于题目，至少应完成主干和对应工程分支。
 
-- [架构与可解释性](../core/architectures-interpretability.md)
+- [架构谱系与运行时](../core/architectures-interpretability.md)
+- [机制可解释性](../core/mechanistic-interpretability.md)
 - [规模化规律](../core/scaling.md)
 - [多模态](../frontier/multimodal.md)
 - [推理、长上下文与 MoE](../frontier/reasoning-long-context-moe.md)

@@ -6,7 +6,7 @@
 **学习导航**
 
 - **适合读者**：需要排查多 GPU 训练、分布式推理或 MoE 通信瓶颈的工程师。
-- **先修**：[高效与分布式训练](distributed-training.md)、张量切分和字节单位。
+- **先修**：[分布式训练](distributed-training.md)、张量切分和字节单位。
 - **首次阅读**：结果布局 → ring 账本 → ready time → rail 与割集 → MoE metadata。
 - **完成信号**：能为一次通信写出输入、结果布局、载荷、就绪时刻、拓扑与测量清单。
 - **卡住时**：先回到[全局 batch 与 loss](distributed-training.md#global-batch-loss-normalization)，只追踪两个 rank 的一个分片。
@@ -180,5 +180,6 @@ combine 阶段按 metadata 把结果放回原位置，再执行路由规则规�
 - NVIDIA，[NCCL Documentation](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/)：核对 collective API 与运行时行为。
 - Thakur、Rabenseifner、Gropp，*Optimization of Collective Communication Operations in MPICH*，2005，
   [DOI](https://doi.org/10.1177/1094342005051521)：比较 collective 成本模型。
-- [高效与分布式训练](distributed-training.md)：继续学习并行维度、global loss 和 checkpoint。
+- [分布式训练](distributed-training.md)：继续学习并行维度与 global loss；
+  [分布式训练正确性](distributed-training-correctness.md)负责 checkpoint、恢复和验收。
 - [MoE 系统](../frontier/moe-systems.md)：追踪 router、capacity、dispatch 与 combine。

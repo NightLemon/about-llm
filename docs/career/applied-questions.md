@@ -214,7 +214,7 @@ binary_calibration(labels, probs, bins=2).expected_calibration_error  # 0.225
   时才会移除 placement 并触发 shard 重建；若 cluster 里还有存活成员，数据实际上没有离开数据集。
   该实现把这种情况标为 `review-surviving-members`，并明确设置 `automatic_canonical_replacement_allowed: False`——
   **换一个 canonical 顶上是需要人工判断的决定，不能自动完成**。
-- **已经进入权重的影响不能靠删库行消除**。能撤销到什么程度要按[持续学习与机器遗忘](../training/continual-learning.md)说明。
+- **已经进入权重的影响不能靠删库行消除**。能撤销到什么程度要按[机器遗忘](../training/machine-unlearning.md)说明。
 - **供应商返回的不可读 reasoning 或 signature block 是单独的数据类别**。要知道谁能再次处理它、绑定哪个用户会话和模型版本、
   是否允许重放。只删除可见文本不能证明原始轨迹已脱敏。
 

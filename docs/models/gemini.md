@@ -13,7 +13,7 @@
 
 </div>
 
-**章节导航**：[Interactions API](gemini-interactions.md) · [generateContent 与多模态](gemini-generate-content.md) · [生产接入](gemini-production.md) · [证据台账](../evidence/gemini-controls.md)
+**章节导航**：[Interactions API](gemini-interactions.md) · [generateContent 与多模态](gemini-generate-content.md) · [云 API 可靠性](cloud-api-reliability.md) · [证据台账](../evidence/gemini-controls.md)
 { .doc-nav }
 
 “我们要接入 Gemini”还不是一个可执行的需求。Gemini 既是模型家族名，也出现在开发者 API、
@@ -278,13 +278,97 @@ candidate 的纯文本 parts；遇到工具或媒体 part 会拒绝。第二条�
 运行时验证。模型产生的 function call 也只是候选动作；通过权限、审批和幂等检查后，工具执行器才可以
 产生真实副作用。
 
+## Gemini 特有的生产接入差异 {#gemini-production-differences}
+
+通用重试、预算、发布和回滚不再在 Gemini 页面复制；它们分别由
+[云 API 可靠性](cloud-api-reliability.md)和[发布、观测与回滚](../applications/llmops-release.md)负责。
+接入 Gemini 时仍需保留下面这些供应商与接口差异。
+
+### 冻结四组部署身份 {#production-identity}
+
+- **产品平台**：Gemini API 或 Google Cloud 托管入口；它影响认证、区域和数据治理。
+- **API surface**：Interactions 或 `generateContent` 及版本；它决定对象、状态和流式事件。
+- **模型**：请求型号、别名性质、响应版本字段和供应商请求标识。
+- **运行环境**：SDK、区域或 location、账号层级、存储选择和核对日期。
+
+```yaml
+platform: gemini-api
+api_surface: interactions
+api_version: v1
+endpoint_origin: https://generativelanguage.googleapis.com
+model_id: deployment-owned-exact-id
+region_or_location: platform-defined
+account_tier: deployment-owned
+storage_mode: explicit
+sdk_version: pinned-by-deployment
+checked_at: YYYY-MM-DD
+```
+
+若型号是可漂移别名，保存精确请求字符串、响应版本字段、请求标识和检查日期；这些信息帮助追查变化，
+但不能自行认证供应商内部权重。
+
+### 同一个业务对象使用两套适配器
+
+```text
+CanonicalTask
+├── tenant / subject / device
+├── text + image digest
+├── system policy / expected schema
+├── allowed tool proposals
+└── generation / cost / retention policy
+    ├── Interactions adapter → input、steps、previous_interaction_id
+    └── generateContent adapter → contents/parts、systemInstruction、generationConfig
+```
+
+两套适配器可以共享图片校验、租户身份和内部结果类型，不能静默丢掉 step、part、终态、用量或未知扩展字段。
+纯文本便捷属性只能作为明确标注的有损视图。
+
+### 分项探测能力，不用一次大请求猜兼容性
+
+| 探测项 | 成功时保存什么 | 失败时怎样处理 |
+|---|---|---|
+| 同步纯文本 | 请求、响应、型号和用量 | 停止并检查身份 |
+| 图片输入 | MIME、大小、固定图片与有类型响应 | 标记不支持，不能静默删图 |
+| 流式文本 | 事件顺序、协议终态与传输结束 | 使用对应接口解析器 |
+| 工具建议 | 调用标识、参数和停止状态 | 关闭该能力或阻止发布 |
+| 结构化输出 | 实际 schema 与响应 | 进入预设降级 |
+| 状态/后台任务 | 创建、查询、取消与保留行为 | 不借用另一接口状态机 |
+
+图片发送前还要从可信会话解析租户、用户和设备；按实际字节核对 MIME、大小与解析结果；隔离不需要的
+metadata；给 OCR 与图中文字标记低信任来源；明确原图、派生文本、文件和缓存的删除路径。
+
+### 分开传输、协议和业务终态 {#production-terminals}
+
+```text
+传输层：HTTP body 或 SSE 连接结束
+协议层：Interaction status，或 candidate finish reason
+业务层：错误码、证据位置与工具建议通过验证
+```
+
+Interactions 流按 interaction 与 step 事件推进；`streamGenerateContent` 按 candidate、content parts、
+finish reason 和 usage 推进。二者可以共享 SSE 解码，上层状态机必须分开。连接结束而没有协议终态时，
+结果可能截断；供应商终态完成也不等于业务验证成功。
+
+告警截图任务发布前还要检查：错误码是否落在授权图片证据区域，设备是否属于当前租户，工具 proposal
+是否通过 schema、权限、审批和幂等校验，以及最终文字是否与已验证的真实副作用一致。
+
+### 真实账号的最小冒烟 {#real-account-smoke}
+
+取得合法账号、权限和预算后，先固定平台、API、型号、区域与存储选择，再用最小权限 secret 运行同步纯文本。
+保存脱敏请求、响应、标识、终态和用量；验证错误、超时、credential 脱敏和预算结算后，才逐项加入流式、
+状态、工具与图片。最后清理实验创建的 interaction、文件和缓存，并与控制台及账单导出对账。
+
+一次冒烟只覆盖当时的账号、区域、接口、型号和输入。仓库目前只有固定回放与供应商无关的外围控制；
+真实图片、工具、后台任务、长期可靠性和质量仍需在目标环境验证，具体边界见[Gemini 证据台账](../evidence/gemini-controls.md)。
+
 ## 下一步怎样读
 
 - 接入有状态对话或长任务：进入 [Interactions API](gemini-interactions.md)，先回答谁保存历史、step 和终态
   怎样推进。
 - 处理候选、parts 或媒体输入：进入 [`generateContent` 与多模态](gemini-generate-content.md)，检查解析器
   会丢哪些类型，并设计反事实图片。
-- 准备真实发布：进入[生产接入](gemini-production.md)，补齐身份、重试、预算、分母和回滚。
+- 准备真实发布：用本页的接口差异冻结身份，再进入[云 API 可靠性](cloud-api-reliability.md)和
+  [发布、观测与回滚](../applications/llmops-release.md)补齐重试、预算、分母与回滚。
 - 核对实现或简历表述：查看[证据台账](../evidence/gemini-controls.md)，确认当前代码实际运行过什么。
 
 第一次学习不必顺序读完所有页面。先用本页的告警截图建立心智模型，再沿自己的任务进入一条路径。

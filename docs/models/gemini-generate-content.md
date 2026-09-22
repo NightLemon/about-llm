@@ -13,7 +13,7 @@
 
 </div>
 
-**章节导航**：[总览](gemini.md) · [Interactions API](gemini-interactions.md) · [生产接入](gemini-production.md) · [证据台账](../evidence/gemini-controls.md)
+**章节导航**：[总览](gemini.md) · [Interactions API](gemini-interactions.md) · [生产接入差异](gemini.md#gemini-production-differences) · [证据台账](../evidence/gemini-controls.md)
 { .doc-nav }
 
 `generateContent` 以一次请求和响应为中心。本章先跟踪一条仓库里可以运行的纯文本样例，

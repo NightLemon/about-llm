@@ -209,6 +209,23 @@ C_{on\text{-}time}=\frac{C_{all}}{N_{q,d}}.
 既不冒充成功，也不从 attempted case 分母消失。离线 gate 通过只回答发布候选是否满足离线条件，
 不能替代线上业务 effect 的独立验证。
 
+## 生成配置的可复现边界
+
+即使 `temperature=0`，模型或 tokenizer 修订、chat template、浮点精度、kernel、量化、并行归约、
+dynamic batching、专家路由、tie-breaking 和供应商别名漂移仍可能改变输出。
+
+需要审计级重放时，至少保存具体 revision 或可见版本、模板渲染后的输入与 token IDs、完整 generation config、
+seed、框架、硬件、输出 token IDs、finish reason 和原始响应。第三方封闭 API 即使收到同一请求，也未必承诺
+bitwise replay；无法固定的部分应写进证据边界。
+
+比较 generation config 时，要让候选处理同一批 Prompt，并固定模型、模板和最大输出预算。报告任务质量、
+schema/引用、安全、输出长度、EOS/stop/length 分布、TTFT、TPOT、成本和多次运行波动。长度同时影响质量、
+费用和评审偏好，不能只展示最好样例。
+
+生产验收还要解析所有 finish reason；usage 缺失时保留未知，不能用 chunk 或字符数冒充 token；
+streaming 需要覆盖 UTF-8、跨 token stop、断连和取消。模型、模板、tokenizer 或 serving engine 升级后，
+重放同一套评测与失败终态。
+
 ## 运行仓库中的发布身份验证
 
 ```powershell

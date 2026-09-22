@@ -393,163 +393,22 @@ Agent 工具调用的完整路径见[运行时与副作用](../applications/agen
 此时应返回 constraint error，或切换到事先验证过的安全模板并重新开始请求。继续生成前必须显式记录回退；
 静默解除约束会把“保证输出结构”的契约变成一句空话。
 
-## 8. KV Cache、上下文与生成成本
+## 系统边界与下一步
 
-Decoder-only Transformer 通常把历史 token 的 K/V 缓存在每层，避免每步重复计算全部历史。于是：
+本页的职责到“怎样从 logits 选择 token、何时停止、怎样限制合法输出”为止。解码循环进入服务后，
+还要处理另外三组问题：
 
-- **prefill** 处理 prompt，可并行计算多个位置；
-- **decode** 通常每个活跃序列每步产生一个 token，受内存带宽、KV 读取和调度影响；
-- 输出越长，decode 步数和累计 KV 访问越多；
-- beam search 和 `best_of` 会增加活跃序列或内部候选，显著增加成本。
+- KV Cache 的容量、分页与调度见[推理优化](../systems/inference-optimization.md)和
+  [一次请求怎样穿过推理引擎](../systems/inference-request-lifecycle.md)；
+- 增量传输、背压、断连与取消见[服务与可观测性](../systems/serving.md#streaming-and-cancellation)；
+- 请求身份、质量/性能联合门禁与回滚见[发布、观测与回滚](../applications/llmops-release.md)。
 
-用同一段完整生成来数一次：prompt 有 4 个 token，要求生成 3 个新 token，暂不考虑提前停止。
-Prefill 产生第一个输出，再做两次 decode 就得到另外两个输出。
-
-若每次都重新处理完整前缀，三次前向计算的 K/V 投影分别处理 4、5、6 个位置，共 15 个；
-使用 cache 时，第一次处理 4 个位置，后两次各新增 1 个，共 6 个。两个总数都包含初始 prefill。
-省掉的是重复投影历史 token 的工作。两次 decode 的新 query 仍分别读取长度为 5、6 的 K/V 来做 attention，
-所以历史读取量仍随上下文增长。分页布局、批处理、GQA 和 kernel 还会影响实际延迟，不能把位置数之比当成吞吐倍数。
-
-生成退款 JSON 时，系统实际上同时维护几份状态：
-
-| 状态 | 它记录什么 |
-|---|---|
-| KV cache | 模型前向需要的历史 key/value |
-| JSON parser state | 当前前缀在语法中的位置 |
-| Stop matcher | 尚不能安全发送的文本后缀 |
-| Finish reason | 请求为何结束，结果能否继续使用 |
-
-`n=4`、`best_of=4`、并行采样 4 次和顺序调用 4 次，可能采用不同的调度、cache 共享与计费方式。
-返回内容也未必相同。
-
-服务基准应报告真实输入/输出 token、请求并发、TTFT、TPOT 和完成原因。
-指标定义见[推理与服务指标](../systems/inference.md)。
-
-## 9. 流式生成
-
-Server-Sent Events（SSE）和其他流协议发送的是**传输数据块（chunk）**，不是模型 token。
-一个数据块可以不含文本，也可以包含一个或多个 token 对应的片段。某个 token 还可能因为 UTF-8 字符
-尚未解码完整而延后显示。
-
-流式客户端要处理：
-
-- 心跳、空事件和服务商自定义的事件类型；
-- 增量文本、工具参数片段和最终汇总事件；
-- 网络中断、重复事件与部分结果；
-- Usage 只在结束事件给出，或根本不提供；
-- 客户端取消后服务端是否仍继续计费/执行。
-
-数据块数量无法换算成输出 token。仓库的服务基准在缺少 token usage 时会明确失败，
-不会用数据块数量伪造 TPOT。
-
-仓库的 `SSEDecoder` 用不同字节边界检查 BOM、换行、多行 `data`、截断 EOF 和大小上限。
-Cloud streaming executor 再检查断流、timeout、取消和关闭 response。
-
-这些实验验证的是客户端 framing 与资源清理。它们没有证明真实服务商已经收到取消、释放 GPU 或停止计费。
-TCP EOF 也不能代替协议定义的完成事件。精确控制见
-[推理服务证据页](../evidence/inference-serving-controls.md)。
-
-## 10. 确定性与可复现边界
-
-即使 `temperature=0`，以下因素仍可能改变输出：
-
-- 模型或 tokenizer 修订；
-- chat template、系统提示或工具 schema 变化；
-- 浮点精度、kernel、量化与并行归约顺序；
-- dynamic batching、专家路由或服务端调度；
-- 最大值并列时的 tie-breaking；
-- provider 在同一模型别名后更新权重或服务栈。
-
-需要审计级重放时，至少保存：
-
-- 模型的具体 revision 或 hash，以及 tokenizer 版本；
-- 模板渲染后的实际输入和 token IDs；
-- 完整 generation config、seed、框架和硬件；
-- 输出 token IDs、finish reason 与原始响应。
-
-即使这些信息齐全，第三方封闭 API 也可能只支持“再次发送同一请求”，无法保证 bitwise replay。
-
-## 11. 按任务选择策略
-
-下面是实验起点，不是通用最优值：
-
-| 任务 | 合理起点 | 必须同时验证 |
-| --- | --- | --- |
-| 抽取/分类 | greedy 或低随机性、约束 schema | 字段语义、漏抽、校准、拒答 |
-| 基于证据问答 | 低到中随机性、citation schema | 引用支持、不可回答、检索失败 |
-| 创意写作 | temperature/top-p、多候选 | 多样性、连贯性、安全与成本 |
-| 代码生成 | greedy/采样多候选 + tests | 编译、单测、沙箱与依赖风险 |
-| 数学/规划 | 多候选、搜索或 verifier | verifier 偏差、共享错误、预算 |
-| 工具调用 | 结构约束、低随机性 | 权限、参数、幂等、审批和回执 |
-
-“多采样再投票”只有在候选错误不完全相关、选择器确有区分能力时才可能提高质量。让同一模型生成并评判可能共享盲区。
-
-对开头的退款请求，一个合理起点是：低随机性或 greedy、JSON 语法约束、明确输出预算。
-返回后再验证 `order_id` 是否存在、动作是否获授权，并根据 finish reason 决定是否进入执行流程。
-
-## 12. 解码实验设计
-
-比较 generation config 时，应固定 Prompt 集、模型 revision、模板和最大输出预算，并让不同策略处理同一批 Prompt。
-
-### 12.1 建议记录
-
-- 任务成功率、事实/引用正确性与 schema validity；
-- 输出长度、EOS/stop/length 比例；
-- 每请求输入/输出 token 与成本；
-- TTFT、TPOT、端到端延迟；
-- 多 seed 均值、置信区间和最坏切片；
-- 重复率、多样性指标及人工偏好；
-- 安全、拒答和工具副作用失败。
-
-长度同时影响质量、成本和评审模型偏好。比较两个策略时，应使用相同预算并报告长度分布，
-再人工检查评分是否只是偏爱更长回答。
-
-### 12.2 区分两类非确定性
-
-1. 固定服务条件和 seed，多次发送完全相同请求，测量**系统非确定性**；
-2. 固定服务条件但改变 seed，测量**采样分布方差**；
-3. 锁定候选 token 序列，在离线 scorer 中复算 log probability，定位 processor/服务差异。
-
-封闭 API 若不保证 seed 或返回 logits，第 3 步可能不可做，应明确记录证据边界。
-
-## 13. 生产验收清单
-
-### 请求契约
-
-- 固定 model revision 或记录时间敏感 alias；
-- 保存渲染后的 prompt、template 与 generation config；
-- 区分 `max_new_tokens`、总上下文上限和服务端硬限制；
-- 明确 top-k/top-p/penalty 的支持范围和组合顺序。
-
-### 响应契约
-
-- 解析所有 finish reason，不能把 length truncation 当正常完成；
-- usage 缺失时标记未知，不用 chunk/字符数冒充 token；
-- 结构化输出继续做类型、业务、权限与引用验证；
-- 保存 request ID、模型版本和原始错误，密钥与敏感 prompt 需脱敏。
-
-### 运行时
-
-- 为超时、取消和重试定义幂等语义；
-- 监控输出长度、停止原因、拒答率、格式失败和成本漂移；
-- 对 streaming UTF-8、跨 token stop、批内独立 EOS 做测试；
-- 升级模型、模板、tokenizer 或 serving engine 后重放固定评测集。
-
-## 14. 常见错误结论
-
-- **“temperature=0 就能跨服务 bitwise 复现”**：模型、kernel、批调度和 tie-breaking 仍可能变化。
-- **“top-p=0.9 就保留概率大于 0.9 的 token”**：它保留累计概率首次达到 0.9 的最小高概率前缀。
-- **“beam search 找到全局最优序列”**：有限 beam 会剪枝，length/coverage penalty 也改变目标。
-- **“一个 SSE chunk 就是一个 token”**：chunk 是传输单位，不能用于 token 计数。
-- **“JSON Schema 保证工具调用正确”**：它只保证约束覆盖的结构性质。
-- **“重复惩罚越大越好”**：精确字符串、代码、数字和引用可能被破坏。
+这些系统机制不会改变本页的采样公式，却会改变用户何时收到结果、在途工作是否停止，以及一次请求能否安全发布。
 
 ## 自测与实践
 
-1. 给定概率 `[0.55, 0.25, 0.10, 0.06, 0.04]`，分别写出 top-k=3 与 top-p=0.8 的候选集合。
-2. 解释为什么 temperature 会改变 top-p 集合，却不改变 top-k 的排名。
-3. 实现 top-p 时，为什么要保留第一个让累计概率越过阈值的 token？
-4. 设计一个跨 token stop string 与 UTF-8 流式分片测试。
-5. 为工具调用列出“语法合法但语义/权限错误”的三个案例。
-6. 在 `MiniGPT.generate` 上以 20 个 seed 比较 top-k、top-p 和 greedy；报告任务指标、长度与置信区间，不只展示最好样本。
-7. 运行 `sampling_toy.py`，手算为什么 top-k 后的 top-p=0.7 最终得到 `[4/7,3/7,0,0]`，并构造一个 threshold tie 让“exact k”与“保留全部并列”产生不同 support。
+1. 为什么 temperature 不能改变 token 的排序，而 top-k 可以？
+2. 当 stop string 跨越两个增量片段时，匹配器要保留什么状态？
+3. 约束解码得到合法 JSON 后，为什么仍需 schema 与业务校验？
+4. 用[实验 0A](../practice/labs/lab-0a-sampling.md)观察采样，用
+   [实验 0B](../practice/labs/lab-0b-generation-protocol.md)观察停止与增量协议。

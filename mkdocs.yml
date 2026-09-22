@@ -72,6 +72,10 @@ plugins:
       lang:
         - zh
         - en
+  - redirects:
+      redirect_maps:
+        'models/gemini-production.md': 'models/gemini.md'
+        'quality/governance-templates.md': 'reference/governance-templates.md'
 
 nav:
   - 首页: index.md
@@ -106,7 +110,6 @@ nav:
           - 总览: models/gemini.md
           - Interactions API: models/gemini-interactions.md
           - generateContent 与多模态: models/gemini-generate-content.md
-          - 生产接入: models/gemini-production.md
       - 云 API 契约:
           - 契约基础: models/cloud-api-contracts.md
           - 可靠性、重试与预算: models/cloud-api-reliability.md
@@ -127,7 +130,9 @@ nav:
           - 入门: core/generation-basics.md
           - 完整协议与工程: core/generation.md
       - 规模化规律: core/scaling.md
-      - 架构谱系与可解释性: core/architectures-interpretability.md
+      - 架构与可解释性:
+          - 架构谱系与运行时: core/architectures-interpretability.md
+          - 机制可解释性: core/mechanistic-interpretability.md
   - 数据与训练:
       - 数据工程: training/data.md
       - 合成数据、蒸馏与反馈环: training/synthetic-data.md
@@ -140,7 +145,10 @@ nav:
           - 入门: training/alignment-basics.md
           - 强化学习基础: training/reinforcement-learning.md
           - 方法、实验与证据: training/alignment.md
-      - 持续学习与模型合并: training/continual-learning.md
+      - 持续更新:
+          - 持续学习: training/continual-learning.md
+          - 模型合并与编辑: training/model-merging-editing.md
+          - 机器遗忘: training/machine-unlearning.md
       - JAX、Optax 与函数式训练: training/jax-optax.md
   - 推理与系统:
       - LLM 算子与计算栈: systems/operator-stack.md
@@ -149,7 +157,9 @@ nav:
           - 一次请求如何穿过推理引擎: systems/inference-request-lifecycle.md
           - 算子、KV Cache 与量化优化（进阶）: systems/inference-optimization.md
           - vLLM 与单卡服务: systems/vllm-serving.md
-      - 高效与分布式训练: systems/distributed-training.md
+      - 分布式训练:
+          - 资源、并行与拓扑: systems/distributed-training.md
+          - 正确性、恢复与验收: systems/distributed-training-correctness.md
       - 集合通信与数据中心网络: systems/collective-communication-network.md
       - 服务与可观测性: systems/serving.md
       - 硬件与端侧部署: systems/hardware-edge.md
@@ -182,10 +192,11 @@ nav:
           - 测量学、标注与功效设计（进阶）: quality/evaluation-measurement.md
           - 方法、统计与发布决策（进阶）: quality/evaluation-methodology.md
           - Agent 仿真与红队: quality/agent-evaluation.md
-      - 安全、隐私与治理: quality/safety.md
+      - 安全与责任:
+          - 系统安全: quality/safety.md
+          - 隐私与公平: quality/privacy-fairness.md
       - Reasoning Block 的保存与发布: quality/reasoning-artifact-security.md
       - 一次招聘筛选的治理闭环: quality/governance-impact.md
-      - 治理工件：从用途到发布决定: quality/governance-templates.md
   - 前沿:
       - 多模态: frontier/multimodal.md
       - 推理、长上下文与 MoE:
@@ -261,6 +272,7 @@ nav:
       - 公式速查: reference/formulas.md
       - 常见问题: reference/faq.md
       - 资料与论文: reference/resources.md
+      - 治理工件模板: reference/governance-templates.md
       - 内容准确性与核验台账: reference/accuracy.md
       - 教材测试与证据策略: reference/testing.md
       - 治理决策:
