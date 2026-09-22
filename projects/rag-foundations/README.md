@@ -3,8 +3,8 @@
 这个项目用同一条问题串起 RAG 的完整控制流：可信身份进入请求，权限过滤先于检索，候选经过重排和上下文装箱，
 生成结果必须带可核对引用；证据不足时，系统明确拒答。
 
-第一次学习请从[项目教学页](../../docs/practice/projects/rag-foundations.md)开始。那里逐步解释一次回答和一次拒答；
-本页只保留快速运行、脚本索引和排错信息。
+第一次学习请从[项目教学页](../../docs/practice/projects/rag-foundations.md)开始，先理解一次回答和一次拒答。
+本页是该目录的权威运行手册，只维护安装、完整命令、输入输出和排错信息。
 
 ## 二十分钟最小路径 { #run }
 
@@ -32,7 +32,7 @@ trusted security context
 因此最终动作为 `abstain`。这个反例说明“检索到了内容”和“证据足以回答”是两件事。
 
 这条 walkthrough 不调用 embedding model、learned reranker 或 LLM。它先让权限、排序、装箱、引用和拒答逻辑变得
-可手算。完整逐步解释见[二十分钟最小路径](../../docs/practice/projects/rag-foundations.md#run)。
+可手算。各检查点为什么存在见[二十分钟最小路径](../../docs/practice/projects/rag-foundations.md#run)。
 
 ## 一次请求中各层负责什么
 
@@ -134,8 +134,114 @@ python -m about_llm.rag.cli evaluate-extractive `
 | 固定 Qwen 的真实生成失败 | `run_qwen_rag_control.py` |
 | 无证据预拒答与有证据后引用检查 | `replay_qwen_rag_publication_policy.py`、`run_qwen_guarded_rag_control.py` |
 
-每条入口的完整命令、预期现象和完成信号见[项目教学页](../../docs/practice/projects/rag-foundations.md)。精确运行结果与
+本页后续章节给出完整命令、输入输出和故障处理；项目教学页只说明学习顺序与关键观察。精确运行结果与
 适用范围保存在[RAG 回答证据页](../../docs/evidence/rag-answer-controls.md)，不要把固定样例分数写成线上质量结论。
+
+## 进阶命令索引
+
+安装全部可选路径：
+
+```powershell
+python -m pip install -c constraints/ci.txt -e ".[evaluation,api,transformers]"
+```
+
+检索表示学习与 recorded rerank：
+
+```powershell
+python projects/rag-foundations/retriever_learning_toy.py
+python -m pytest tests/test_retriever_learning.py -q
+
+python -m about_llm.rag.cli rerank-recorded `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --scores projects/rag-foundations/reranker-scores.example.jsonl `
+  --query "RAG 为什么要先做 ACL 权限过滤" `
+  --tenant tenant-a `
+  --principal engineering `
+  --candidate-k 3 `
+  --top-k 2
+```
+
+Byte budget 与目标 tokenizer budget：
+
+```powershell
+python -m about_llm.rag.cli pack `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --query "ACL 引用" `
+  --tenant tenant-a `
+  --principal engineering `
+  --candidate-k 20 `
+  --budget-bytes 500 `
+  --max-chunks-per-source 1
+
+python -m about_llm.rag.cli pack-tokenized `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --query "RAG 为什么要先做 ACL 权限过滤" `
+  --tenant tenant-a `
+  --principal engineering `
+  --candidate-k 20 `
+  --max-total-tokens 4096 `
+  --reserved-output-tokens 512 `
+  --tokenizer C:\path\to\deployed-model-or-tokenizer `
+  --tokenizer-revision exact-revision `
+  --local-files-only `
+  --system-prompt-file projects/rag-foundations/system-prompt.example.txt `
+  --user-prompt-template-file projects/rag-foundations/user-prompt-template.example.txt
+```
+
+Recorded answer、trace 与 citation gate：
+
+```powershell
+python -m about_llm.rag.cli evaluate-answers `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --cases projects/rag-foundations/sample_eval.jsonl `
+  --answers projects/rag-foundations/sample_answers.jsonl
+
+python -m about_llm.rag.cli audit-traces `
+  --corpus projects/rag-foundations/sample_corpus.jsonl `
+  --cases projects/rag-foundations/sample_eval.jsonl `
+  --answers projects/rag-foundations/sample_answers.jsonl `
+  --traces projects/rag-foundations/generation-traces.example.jsonl
+
+python -m about_llm.rag.cli audit `
+  --answer-file projects/rag-foundations/sample_answer.md `
+  --source-id S1 `
+  --source-id S2
+```
+
+版本化摄取、删除与备份：
+
+```powershell
+python projects/rag-foundations/rag_ingestion_walkthrough.py
+
+python -m about_llm.rag.cli store-delete `
+  --database artifacts/rag/rag-demo.db `
+  --tenant tenant-a `
+  --source-id rag-security `
+  --expected-current-version 1
+
+python -m about_llm.rag.cli store-backup `
+  --database artifacts/rag/rag-demo.db `
+  --backup artifacts/rag/backups/rag-snapshot.db `
+  --manifest artifacts/rag/backups/rag-snapshot.manifest.json
+
+python -m about_llm.rag.cli store-verify-backup `
+  --backup artifacts/rag/backups/rag-snapshot.db `
+  --manifest artifacts/rag/backups/rag-snapshot.manifest.json
+
+python -m about_llm.rag.cli store-restore `
+  --backup artifacts/rag/backups/rag-snapshot.db `
+  --manifest artifacts/rag/backups/rag-snapshot.manifest.json `
+  --database artifacts/rag/rag-restored.db
+```
+
+本地服务与固定 Qwen controls：
+
+```powershell
+python projects/rag-foundations/rag_service_control.py
+python projects/rag-foundations/run_qwen_rag_control.py --local-files-only
+python projects/rag-foundations/run_qwen_guarded_rag_control.py --local-files-only
+python -m pytest tests/test_rag_transformers_control.py -q
+```
 
 ## 版本化摄取与本地服务
 
@@ -242,10 +348,13 @@ python -m pytest `
   tests/test_rag_sqlite_store.py `
   tests/test_rag_citations.py `
   tests/test_rag_reranking.py `
+  tests/test_rag_context_packing.py `
+  tests/test_rag_extractive.py `
   tests/test_rag_cli.py `
   tests/test_rag_answer_eval.py `
   tests/test_rag_trace.py `
   tests/test_rag_generation_policy.py `
+  tests/test_rag_request_walkthrough.py `
   tests/test_rag_service.py `
   tests/test_rag_service_control.py -q
 

@@ -49,7 +49,7 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
   --tokenization-preflight-only
 ```
 
-完整的一步训练命令、三个输出报告和显存数字的含义见[项目教学页](../../docs/practice/projects/single-gpu-finetuning.md#run)。
+为什么按这个顺序推进、每一步应观察什么，见[项目教学页](../../docs/practice/projects/single-gpu-finetuning.md#run)。
 
 ## 完整主线
 
@@ -62,7 +62,87 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 5. 在新进程中重新加载 base 和 Adapter。
 6. 用同一组 held-out cases 比较基线与 Adapter，最后决定发布或回退。
 
-每一步的解释、命令和完成信号见[端到端主线](../../docs/practice/projects/single-gpu-finetuning.md#run)。
+每一步的解释和完成信号见[端到端主线](../../docs/practice/projects/single-gpu-finetuning.md#run)；完整命令由本 README 维护。
+
+## 目标 Qwen3 单步训练与重载
+
+完成 readiness 和 tokenizer preflight 后，先运行一个最小 SFT update：
+
+```powershell
+python projects/single-gpu-finetuning/train_trl_sft.py `
+  --model-id Qwen/Qwen3-0.6B `
+  --revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --train-jsonl projects/single-gpu-finetuning/train.example.jsonl `
+  --readiness-json artifacts/sft-prepare/sft-training-readiness.json `
+  --chat-template-path projects/single-gpu-finetuning/qwen3-0.6b-c1899de-generation-aware-sft.jinja `
+  --output-dir artifacts/qwen3-sft-one-step `
+  --max-length 512 `
+  --batch-size 1 `
+  --gradient-accumulation 1 `
+  --rank 8 `
+  --alpha 16 `
+  --fp16 `
+  --max-steps 1
+```
+
+训练完成后先验证 bundle 身份，再在新进程重载：
+
+```powershell
+python projects/single-gpu-finetuning/sft_adapter_bundle.py verify `
+  --bundle artifacts/qwen3-sft-one-step/adapter-bundle `
+  --expected-model-id Qwen/Qwen3-0.6B `
+  --expected-revision c1899de289a04d12100db370d81485cdf75e47ca
+
+python projects/single-gpu-finetuning/sft_adapter_bundle.py reload `
+  --bundle artifacts/qwen3-sft-one-step/adapter-bundle `
+  --expected-model-id Qwen/Qwen3-0.6B `
+  --expected-revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --report artifacts/qwen3-sft-reload.json `
+  --device cuda `
+  --dtype float16
+```
+
+显存不足时，先运行不加载权重的 QLoRA 估算：
+
+```powershell
+python projects/single-gpu-finetuning/train_qlora.py `
+  --model-id Qwen/Qwen3-0.6B `
+  --revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --num-parameters 600000000 `
+  --num-layers 28 `
+  --hidden-size 1024 `
+  --max-length 512 `
+  --micro-batch-size 1 `
+  --gradient-accumulation 1 `
+  --rank 8 `
+  --alpha 16 `
+  --target-linears-per-layer 4 `
+  --estimate-only
+```
+
+估算不是显存实测。实际 QLoRA 单步命令为：
+
+```powershell
+python projects/single-gpu-finetuning/train_qlora.py `
+  --model-id Qwen/Qwen3-0.6B `
+  --revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --train-jsonl projects/single-gpu-finetuning/train.example.jsonl `
+  --readiness-json artifacts/sft-prepare/sft-training-readiness.json `
+  --chat-template-path projects/single-gpu-finetuning/qwen3-0.6b-c1899de-generation-aware-sft.jinja `
+  --output-dir artifacts/qwen3-qlora-one-step `
+  --num-parameters 600000000 `
+  --num-layers 28 `
+  --hidden-size 1024 `
+  --max-length 512 `
+  --micro-batch-size 1 `
+  --gradient-accumulation 1 `
+  --rank 8 `
+  --alpha 16 `
+  --target-linears-per-layer 4 `
+  --max-steps 1
+```
+
+运行后保存真实峰值、终态和失败配置。
 
 ## 根据当前问题选择脚本
 
@@ -86,13 +166,63 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 | 文本 rollout 的 EOS、截断与 padding 怎样进入 PPO | `smoke_text_ppo.py`、`smoke_transformer_ppo.py` |
 | learned Reward Model 如何被 PPO 利用而造成 reward hacking | `smoke_learned_rm_ppo.py`、`reward_model_toy.py` |
 
-机制实验的推荐顺序和现象解释集中在[深挖机制实验](../../docs/practice/projects/single-gpu-finetuning.md#controls)。
+机制实验的选择顺序和问题归属集中在[深挖机制实验](../../docs/practice/projects/single-gpu-finetuning.md#controls)。
 精确数值、固定样例和适用范围见[项目实验台账](../../docs/evidence/project-controls.md)、
 [Qwen 证据台账](../../docs/evidence/qwen-controls.md)和[对齐证据台账](../../docs/evidence/alignment-controls.md)。
 
 前三个 PPO/RM 入口都是 CPU/tiny 控制实验；它们不证明目标 checkpoint、CUDA、Reward Model 质量或生产稳定性。
 完成 SFT/LoRA 后何时选择 DPO、Reward Model 或 PPO，以及目标 DPO 的离线预检，见
 [项目教学页的可选后续路线](../../docs/practice/projects/single-gpu-finetuning.md#next-routes)。
+
+## 可选与故障控制命令
+
+准备 preference train-only artifact，并做 DPO 数据预检：
+
+```powershell
+python -m about_llm.preference_cli prepare-training `
+  --train-jsonl projects/single-gpu-finetuning/preference.train.example.jsonl `
+  --audit-jsonl projects/single-gpu-finetuning/preference.example.jsonl `
+  --profile nfc_whitespace `
+  --ngram-size 5 `
+  --threshold 0.9 `
+  --governance-policy projects/single-gpu-finetuning/governance-policy.example.json `
+  --governance-evaluated-at 2026-08-06T12:00:00Z `
+  --output-dir artifacts/preference-prepare
+
+python projects/single-gpu-finetuning/train_trl_dpo.py `
+  --model-id Qwen/Qwen3-0.6B `
+  --revision c1899de289a04d12100db370d81485cdf75e47ca `
+  --train-jsonl projects/single-gpu-finetuning/preference.train.example.jsonl `
+  --readiness-json artifacts/preference-prepare/preference-training-readiness.json `
+  --output-dir artifacts/qwen3-dpo-preflight `
+  --data-preflight-only
+```
+
+先用 tiny controls 理解 Adapter 和 PPO/RM 接线：
+
+```powershell
+python projects/single-gpu-finetuning/smoke_peft.py `
+  --steps 8 `
+  --artifact-root artifacts/peft-export-control
+python projects/single-gpu-finetuning/smoke_trl_dpo.py
+python projects/single-gpu-finetuning/smoke_torch_ppo.py
+python projects/single-gpu-finetuning/smoke_text_ppo.py
+python projects/single-gpu-finetuning/smoke_learned_rm_ppo.py
+```
+
+遇到 packing、分布式归一化、AMP 或恢复问题时，再运行对应 control：
+
+```powershell
+python projects/single-gpu-finetuning/packing_loss_mask_toy.py
+python projects/single-gpu-finetuning/gradient_accumulation_toy.py
+python projects/single-gpu-finetuning/ddp_token_mean_control.py
+python projects/single-gpu-finetuning/ddp_accumulation_no_sync_control.py
+python projects/single-gpu-finetuning/amp_grad_scaler_control.py
+python projects/single-gpu-finetuning/ddp_amp_overflow_consensus_control.py
+python projects/single-gpu-finetuning/checkpoint_resume_control.py
+python projects/single-gpu-finetuning/dataloader_prefetch_resume_control.py
+python projects/single-gpu-finetuning/optimizer_commit_resume_control.py
+```
 
 ## 主要输入与输出
 

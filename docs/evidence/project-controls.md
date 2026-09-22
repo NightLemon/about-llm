@@ -20,11 +20,17 @@
 | [Evaluation Gate](../practice/projects/evaluation-gate.md) | target-Qwen behavior、strict JSON schema/value、citation evidence-span→score、comparison v2、完整本地复算、统计控制与发布账本 | L2：固定 Qwen 七次真实 generate、两组五例 structured/span metric control 与可复算证据图/ledger；非代表性、非 held-out、无性能/entailment 结论 | [运行与验收](../practice/projects/evaluation-gate.md#run) |
 | [Synthetic Data Audit](../practice/projects/synthetic-data-audit.md) | strict JSON→lineage graph→verifier gate→exact identity→target exposure→v2 full recomputation | L2：CPU/offline、输入/policy-bound artifact + 40 tests；teacher/verifier、训练、observed ledger 与质量未执行 | [运行与验收](../practice/projects/synthetic-data-audit.md#run) |
 
-这里使用[仓库统一的 L0–L4 定义](../guide/repo-map.md)：L0 是已写清机制与边界的文档，L1 是固定 CPU 输入的最小实现，L2 是可复现且能复算版本、输入、参数和结果的实验，L3 是接通多组件、错误和恢复路径的工程样例，L4 才是具备 SLO、权限、监控、成本和回滚方案的生产设计。表中的所有 L2 都只是具体 claim 的证据等级，不等于整个项目、GPU 性能或模型质量达到同级；额外 control 会在单元格内列出，不能用 `+` 暗示跨级。每个详情页给出复制即运行的最小命令、定向测试和当前结论边界；完整能力矩阵保留在对应项目 README 中。
+这里使用[仓库统一的 L0–L4 定义](../guide/repo-map.md)：L0 是已写清机制与边界的文档，L1 是固定 CPU 输入的最小实现，L2 是可复现且能复算版本、输入、参数和结果的实验，L3 是接通多组件、错误和恢复路径的工程样例，L4 才是具备 SLO、权限、监控、成本和回滚方案的生产设计。表中的所有 L2 都只是具体 claim 的证据等级，不等于整个项目、GPU 性能或模型质量达到同级；额外 control 会在单元格内列出，不能用 `+` 暗示跨级。站点项目页负责学习顺序和首次成功，项目 README 负责完整命令与排错，本页只保存固定结果和结论边界。
 
 录制报告保留了当时的日期、固定输入与 runtime，不能静默由当前机器替换。运行离线 verifier 时，它检查的是已记录 artifact 的结构、身份与声明范围；只有实际重新运行对应命令并另存报告，才产生新的运行观察。SHA-256 在已有可信 digest/manifest 的前提下只能检测选定 bytes 的变化，并不认证发布者、执行者或时间。
 
-JAX MiniGPT 的站点入口和根项目 README 现按四层证据组织：原生纯函数 JAX tiny overfit、同解析权重 LayerNorm/plain-SGD parity、shared-mask 三步 AdamW trajectory、`ALLMJAX1` 跨进程 strict resume；README 另补运行矩阵、故障树、生产扩展、验收与求职边界，并纳入独立防退化 gate。`train_tiny.py` 实际只报告 loss/gradient/timing，不生成文本；`block_until_ready()` 后的 CPU 计时也不是 accelerator benchmark。
+JAX MiniGPT 的站点入口按四步安排原生 JAX tiny overfit、同权重 plain-SGD parity、shared-mask 三步 AdamW 与
+`ALLMJAX1` 跨进程 resume；项目 README 独立维护命令、文件和故障树。`train_tiny.py` 实际只报告
+loss/gradient/timing，不生成文本；`block_until_ready()` 后的 CPU 计时也不是 accelerator benchmark。
+
+固定 seed 11、学习率 0.02 的一步记录使用 632 个参数和 8 个监督位置：更新前 loss 为
+`2.1085913181`，裁剪前全局梯度范数为 `1.6481350660`，更新后重新前向的 loss 为
+`1.9567849636`。这些数值只属于该固定 CPU tiny 输入；它们不证明泛化、收敛或目标设备性能。
 
 JAX MiniGPT 又新增 PyTorch↔JAX 同权重 control：显式对齐 affine LayerNorm、epsilon、GELU、mask、tied embedding、masked loss 与 plain SGD 后，初始 logits、20 个 unique parameter gradients、一步参数及 post-step forward 都在 `2e-6` 内。原生 JAX RMSNorm 反事实 logits 最大差 `0.37747739627957344`，因此默认两个 MiniGPT 不被误写成等价。该 L2 证据不比较 AdamW state、PRNG/JIT、GPU/TPU、sharding、收敛或性能。
 
@@ -32,7 +38,8 @@ JAX MiniGPT 的三步 AdamW parity control 再用三张共享 materialized embed
 
 JAX MiniGPT 的 strict resume control 进一步把 params、Optax state、typed PRNG、shuffle permutation/cursor 与 step 放进 **13,476-byte artifact**，由两个独立 spawn process 在 step 3 交接；六步 trace 和最终 full state 与 uninterrupted bit-exact，wrong-PRNG/wrong-cursor 负例则产生可测漂移。它仍只是 authored CPU 单设备 control，不证明 Orbax/TensorStore、directory durability、来源认证、accelerator/sharding、目标模型、收敛或性能。
 
-Transformers Basics 详情页已按四层证据重构为独立教程：先用 byte-BPE、dense/online/cache attention 锁定机制，再用随机 tiny Transformers 验证训练与 generation API，随后把 immutable model-card/config 投影和固定 Qwen 真实权重执行严格分账，最后以 activation patching 正负对照和六级 MoE 矩阵讲清从 routing 到 collective/backward 的递进关系。页面同时给出故障定位、面试问题与作品集证据包；这增强的是可学习性和可审计性，不新增 CUDA/NCCL、目标 MoE checkpoint、质量或性能证据。
+Transformers Basics 站点页现在只按四级证据组织 CPU 主线、静态 checkpoint 与按需机制实验；完整命令和故障处理
+由项目 README 维护，精确数值保留在本台账。这种分层不新增 CUDA/NCCL、目标 MoE checkpoint、质量或性能证据。
 
 Transformers Basics 的前两条 MoE 证据是单进程 controls：NumPy oracle 固定 padding-aware top-k/capacity/drop/combine；PyTorch CPU Float64 control 在同一训练图真正执行 top-2 router/三组 MLP experts 与 score-priority capacity/drop，对齐 sparse—dense forward/backward，并以 detached gate、collapsed balance step、两种 post-drop policy、全丢 token、padding exclusion 与 CPU-local routing groups 拆出梯度和 overflow 语义。v3 的独立 fixture 又执行 authored deterministic full-ranking reroute、token 内 duplicate-expert avoidance 与 dropless nominal-capacity-excess policy，reroute/dropless sparse—dense forward/materialized-zero backward 均对齐。这些单进程 fixtures 不执行 all-to-all；int64 group IDs 也不是 distributed collective，authored policy 不是目标框架默认。整个项目仍没有目标 MoE checkpoint、shared/fine-grained experts、目标级 distributed reroute/dropless、GPU training、收敛、专门化、质量或性能证据。
 
@@ -60,7 +67,9 @@ Inference Serving 先用 binary latent-regime oracle 展示相同单样本 0.6 �
 
 同项目复用 selected snapshot，把权重放进只监听 IPv4 loopback 的 Transformers reference subprocess，以随机 Bearer 真实调用 models/chat，并让 non-stream/SSE 各触发一次 `generate()`；但它先完整生成再发 SSE。第二条无模型 async control 验证 content-before-completion 与 ASGI/backend cancellation。第三条随机 tiny GPT-2 control 真实执行一次 forward/`GenerationMixin.generate()` thread，并以人为 streamer pause、event 与 `StoppingCriteria` 验证退出/join。三者分别补目标权重 HTTP 集成、async 传播和显式 cooperative thread 三层证据；合起来仍不是未修改/目标模型增量取消、vLLM/CUDA、KV/CPU/GPU release、完整 OpenAI compatibility、TLS/IAM、多 worker、provider billing、性能或质量证据。
 
-Single-GPU Finetuning 的站点入口现在先给出一条完整交付主线：审计身份生成不含 held-out 原文的 readiness，训练身份做零下载 identity preflight，再进入目标 template/mask/final-label 审计、tiny PEFT 发布 control、LoRA/QLoRA 或 DPO、独立 held-out gate。容量公式只用于筛配置；不同 CPU/Gloo/tiny/recorded control 不拼接成 CUDA/QLoRA、目标 GPU 峰值或业务质量证据。
+Single-GPU Finetuning 的站点入口只保留审计、labels、tiny smoke、目标单步、独立重载与 held-out gate 的
+交付顺序；项目 README 维护 SFT/QLoRA/DPO 和故障 control 的完整命令。容量公式只用于筛配置；
+不同 CPU/Gloo/tiny/recorded control 不拼接成 CUDA/QLoRA、目标 GPU 峰值或业务质量证据。
 
 Single-GPU Finetuning 先复用同一 selected snapshot 对账 tool-aware SFT final labels：原生 Qwen 模板在三条多轮/并行 tool fixture 上返回全零 assistant mask，审核模板保持 47 / 301 / 200 个 input IDs 一致并在 Arrow 前生成 masks；真实 TRL collator 得到 `[3,301]`、90 个监督 labels，目标权重 no-grad loss 为 `1.251716`。它没有 backward/optimizer，只证明固定 Qwen schema，不证明数据合法性、任意 provider schema、multimodal、收敛或质量。
 

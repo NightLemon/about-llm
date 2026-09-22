@@ -4,7 +4,9 @@
 PyTorch 与 JAX 是否真的实现了同一个函数，AdamW 的连续更新是否一致，以及训练中断后能否沿原来的轨迹继续。
 
 第一次学习时，只运行 `train_tiny.py`。确认 tiny batch 能被模型记住后，再按顺序执行其余三个实验。
-完整原理、公式和结果解释见 [JAX MiniGPT 教学页](../../docs/practice/projects/jax-minigpt.md)；本页只负责帮你把项目跑起来。
+[JAX MiniGPT 教学页](../../docs/practice/projects/jax-minigpt.md)负责学习顺序与观察方法；本页是该目录的权威
+运行手册，只维护安装、完整命令、文件、故障排查和测试。JAX 机制由[JAX/Optax 教材](../../docs/training/jax-optax.md)负责，
+精确版本与录制结果由[项目证据页](../../docs/evidence/project-controls.md)负责。
 
 ## 第一次运行
 

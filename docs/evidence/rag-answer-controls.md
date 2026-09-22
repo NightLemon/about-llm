@@ -103,7 +103,9 @@ answer coverage          = 1.0
 final action             = answer
 ```
 
-请求 B 使用 BM25-score passthrough 走过同一 rerank 边界，packing 后 lexical coverage 为 `2/9`，
+请求 A 的固定 BM25 source 顺序为 `rag-security 6.11`、`rag-evaluation 2.51`、
+`rag-security 0.68`，随后两个 security chunks 映射为 `S1/S2`。请求 B 使用 BM25-score passthrough
+走过同一 rerank 边界，packing 后 lexical coverage 为 `2/9`，
 最终 `abstain`。
 
 这条 control 没有执行 learned reranker、Embedding、ANN、目标 tokenizer 或 LLM。

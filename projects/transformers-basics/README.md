@@ -3,8 +3,8 @@
 这个项目把语言模型最容易混在一起的四层拆开：从零实现的数学与算法、框架中的 tiny model、公开 checkpoint 的
 配置与协议，以及真实权重运行。你可以先建立机制直觉，再判断 Transformers、模型仓库和推理 runtime 各自负责什么。
 
-第一次学习请从[项目教学页](../../docs/practice/projects/transformers-basics.md)开始。它从原始字节和 token IDs 出发，
-依次讲训练目标、注意力、微型模型、生成配置和 checkpoint。本页只保留运行入口、脚本索引和排错方法。
+第一次学习请从[项目教学页](../../docs/practice/projects/transformers-basics.md)开始，由它选择阶段和观察重点。
+本页是该目录的权威运行手册，只维护命令、脚本索引、输入输出和排错方法；机制解释回到对应主题正文。
 
 ## 第一次运行
 
@@ -34,7 +34,8 @@ python projects/transformers-basics/generation_runtime_control.py
 8. Transformers 的 tiny GPT-2 能否完成训练与生成接线？
 9. EOS、最大生成长度和调用参数覆盖怎样共同决定停止？
 
-先解释输出，再进入真实 checkpoint。完整的 90 分钟 CPU 路线见[推荐运行顺序](../../docs/practice/projects/transformers-basics.md#run)。
+先解释输出，再进入真实 checkpoint。阶段顺序与完成信号见[推荐运行顺序](../../docs/practice/projects/transformers-basics.md#run)；
+本页保留每个入口的完整命令。
 
 ## 从零实现、Transformers 与模型仓库的分工
 
@@ -79,6 +80,32 @@ sparse combine，后者把 router/MLP 的 sparse--dense forward/backward、capac
 双进程脚本依次只验证：global capacity competition、token-to-owner 前向、无容量的 reverse all-to-all training、
 以及 capacity/drop 下的 kept-only training。它们是 CPU/Gloo authored controls，不加载目标 MoE checkpoint，也不
 测 CUDA/NCCL、吞吐、显存或模型质量。
+
+## 静态协议与 checkpoint 命令
+
+```powershell
+python -m pytest tests/test_attention_numpy.py -q
+
+python projects/transformers-basics/verify_release_evidence.py
+
+python projects/transformers-basics/inspect_config.py `
+  projects/transformers-basics/configs/standard-gqa.example.json
+
+python projects/transformers-basics/inspect_config.py `
+  projects/transformers-basics/configs/mla-moe.example.json
+
+python projects/transformers-basics/inspect_generation_protocol.py `
+  projects/transformers-basics/protocols/aligned-superset-eos.example.json
+
+python projects/transformers-basics/inspect_generation_protocol.py `
+  projects/transformers-basics/protocols/drift-out-of-range.example.json
+
+python projects/transformers-basics/inspect_checkpoint.py `
+  <model-id> `
+  --revision <full-commit-hash>
+```
+
+前六条可使用仓库输入离线运行。最后一条按指定 revision 读取目标模型资料；是否需要网络取决于本机是否已有对应 snapshot。
 
 ## 追踪一条 Qwen3 对话输入
 
