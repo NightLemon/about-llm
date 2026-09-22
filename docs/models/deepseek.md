@@ -313,52 +313,25 @@ python projects/transformers-basics/inspect_config.py \
 第一条命令核对本地固定文件与预期字段，第二条命令会识别 MLA 并拒绝标准 K/V 容量计算。
 它们都不会加载模型权重。
 
-## 在 3070 Laptop 上怎样学习
+## 从本机实验走向 DeepSeek 目标验证
 
-完整 DeepSeek-V3 权重不适合作为单张消费级 GPU 的入门实验。
+完整 DeepSeek-V3 不适合作为 3070 Laptop 的入门对象。先用可承受的模型观察通用机制，再为 DeepSeek/Distill
+对象建立独立证据，不能借用实验结论。
 
-你现在使用的 Qwen3-0.6B + nano-vLLM 反而是理解运行时的好起点。它能让你亲手观察分词、预填充、
-逐 token 解码、调度、分页式 KV Cache 和采样，而不会先被超大权重与多卡通信挡住。
+| 阶段 | 本机可做 | 能迁移的理解 | 不能迁移的结论 |
+|---|---|---|---|
+| 静态检查 | 并排检查 Qwen3 GQA 与固定 DeepSeek-V3 config | 找到标准 K/V 公式从哪些 MLA markers 开始失效 | 真实 cache、参数量、权重完整性与 runtime 支持 |
+| 运行时机制 | [实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)观察 prefill/decode、Paged KV 与调度 | 学会追踪 token、cache 和服务状态 | Qwen GQA layout 不是 DeepSeek MLA，dense MLP 不是 expert dispatch |
+| Distill 学生 | 选择资源允许的 exact Qwen/Llama 系 checkpoint，使用其自身 config/tokenizer/runtime | 核对蒸馏后的行为和部署约束 | 不能把学生结果标成 V3 MLA/MoE 结果 |
+| 远程模型 | 固定 API/model、Prompt、预算、usage、terminal 与日期 | 评测行为、延迟与成本 | API 不能揭示服务端权重、量化或 kernel |
+| 目标 DeepSeek | 固定 code/weights 后采集 MLA cache、router/expert/collective、FP8 与 target workload | 建立真正的模型级/运行时证据 | 在完成前保持 unknown |
 
-把当前进度与 DeepSeek 页面对应起来：
+下载权重前先检查 shard 总量、量化格式、remote-code 与 kernel 支持、GPU/host RAM/disk 预算。
+从短输入、batch/concurrency 1 开始，保存 OOM、fallback、timeout 和失败分母。
 
-| 你已经能在 Qwen3 + nano-vLLM 中观察 | DeepSeek-V3 带来的新问题 |
-|---|---|
-| 稠密 GQA 的 prefill 与 decode | MLA 改变了跨 decode 保存的状态 |
-| Paged KV block 的分配和释放 | page 中究竟存潜在表示、位置分量还是展开后的 K/V |
-| 单张 GPU 上的模型 forward | MoE 需要保存大量专家，多卡时还要 dispatch token |
-| 普通 attention 与 MLP kernel | MLA、grouped GEMM 和 FP8 需要额外 kernel 支持 |
-| 一次生成的 token 轨迹 | R1 评测还要固定推理预算、候选数和验证程序 |
-
-推荐按三步推进：
-
-1. **先做静态对比**：把 Qwen3 的 GQA config 与本页 DeepSeek-V3 config 并排阅读，指出标准 K/V 公式
-   从哪个字段开始失效。
-2. **再运行可承受的 Distill 学生**：选择显存允许的具体 Qwen/Llama 系 Distill checkpoint，用学生自己的
-   config、tokenizer 和运行时做 prefill/decode；不要把学生结果标成 V3 架构结果。
-3. **最后研究远程行为**：如果需要评测较大的 DeepSeek 模型，使用云 API 保存 model ID、请求参数、usage、
-   finish reason 与核对日期。API 结果能回答行为和成本，不能揭示服务端权重或 kernel。
-
-下载任何 Distill 权重前，先检查 weight shard 总大小、量化格式、目标运行时支持和预期峰值显存。
-先跑短输入、并发 1 的冒烟测试，再逐步增加上下文与并发。
-
-## Test-time compute 怎样公平比较
-
-推理模型常通过更长生成、多次采样、self-consistency（自一致投票）、验证程序选择或工具调用增加
-test-time compute。比较两个系统时，至少要固定或同时报告：
-
-- prompt、chat template 与停止条件；
-- sampled tokens、候选数 \(k\) 和最大轮数；
-- temperature、top-p 与随机种子策略；
-- 验证程序、工具、超时和重试；
-- 所有尝试与成功样例各自的成本和延迟。
-
-`pass@k` 根据较大的采样池估计“给 \(k\) 次机会时至少成功一次”的概率；`oracle@k` 直接检查本次
-\(k\) 个候选中是否存在正确答案。它们回答候选集有没有覆盖正确解。Self-consistency 或验证程序选择还要
-回答另一件事：系统最终选出的答案是否正确。
-
-因此，候选覆盖率提高并不保证最终答案变好。验证程序很弱时，增加候选只会增加成本，甚至给错误候选更多
-被选中的机会。仓库的候选选择指标会同时报告“正确答案是否出现”和“最终答案是否选对”，避免把两者混为一谈。
+Test-time compute 的公平比较统一到[推理系统](../frontier/reasoning-systems.md)：固定总生成 token、候选数、采样、
+verifier/tool 和 deadline，同时报告 pass@1、oracle@k、selected@k、all-attempt latency 与每成功任务成本。
+候选覆盖提高不保证选择器最终答案改善。
 
 ## 常见错误
 

@@ -294,85 +294,24 @@ proposal
 
 若远端可能成功但本地没有确认，状态应是 outcome uncertain，并进入 reconciliation。把它当作普通失败自动重试，可能造成重复扣款、重复发信或重复删除。
 
-## Retry 先回答三个问题
+## 通用生产机制从哪里继续
 
-每次自动重放前回答：
+Claude 页面只保留 Messages 的对象、事件和工具差异；下面这些问题按共同机制处理，再用目标 Claude
+model/API/version 的真实响应校准。
 
-1. 该 failure 在当前版本 policy 中是否 retryable？
-2. 重放是否 replay safe？
-3. 能否证明上一次没有被接收、执行或计费？
+| 问题 | Claude 接入必须保存 | 权威入口 |
+|---|---|---|
+| Retry | `retryable`、`replay safe`、`outcome known` 三项分别判断；partial stream 默认不透明重放 | [云 API 可靠性](cloud-api-reliability.md) |
+| Deadline / cancellation | Pool/connect/write/read/attempt/logical-call timeout 与 caller cancel 分开 | [云 API 可靠性](cloud-api-reliability.md) |
+| Usage / budget | 每个 attempt 的 request identity、reservation、typed usage、uncertain 与 billing reconciliation | [实验 0C](../practice/labs/lab-0c-cloud-budget.md) |
+| 长上下文 | Protocol acceptance、runtime completion、位置/任务有效性 | [长上下文系统](../frontier/long-context-systems.md) |
+| Prompt caching | Model/API/beta、ordered blocks、tools、tenant/policy、TTL、cold/warm usage 与失效 | [Claude 证据台账](../evidence/claude-controls.md) |
+| 模型选型与迁移 | 同一 case、工具环境和总预算下的 quality/safety/latency/cost paired comparison | [评测方法](../quality/evaluation-methodology.md) |
+| 发布与回滚 | Model、headers、Prompt、tool schema、parser、retry、pricing 和 policy 的完整 bundle | [LLMOps](../applications/llmops-release.md) |
 
-一个 HTTP 5xx allowlist 不能替代这三个判断。即使没有外部工具，重新生成也会带来不同输出和额外 usage。
-
-流已经向用户发布部分内容时，默认不要透明重放。保留每个 attempt 的 request identity、状态、usage reservation 和最终结算，才能解释成本与用户实际看到的内容。
-
-## Usage 与预算要按 attempt 记账
-
-请求中的 `max_tokens` 是输出上限，不是实际用量。发送前可以按保守上界预留预算：
-
-\[
-R=C_{in}(\widehat T_{in})+C_{out}(T_{out,max})+C_{other,max}.
-\]
-
-输入 token 仍是目标 tokenizer/template 的估计。缓存、thinking、工具、tier、税费和币种怎样计价，必须来自带日期的正式 pricing contract。
-
-预算流程应是：
-
-~~~text
-preflight origin/model/version
-→ reserve upper bound
-→ send one attempt
-→ settle from complete trusted usage
-→ otherwise mark reservation uncertain
-→ reconcile with billing export
-~~~
-
-一次逻辑调用可能包含多个网络 attempt，每次发送都可能生成和计费。因此，每个 attempt 都需要自己的预算预留和终态。
-
-客户端账本只能保证本地状态一致，无法与远端生成和供应商账单组成同一个原子事务。
-
-## 长上下文不是“全部塞进去”
-
-标称 context window 只涉及协议容量的一部分，不证明每个位置和任务同样可靠。至少分开三层：
-
-| 层级 | 要验证的问题 |
-|---|---|
-| protocol acceptance | 请求是否被 API 接受 |
-| runtime completion | 是否在 timeout 和预算内正常结束 |
-| effective context | 不同位置和任务是否得到可靠答案 |
-
-有效长上下文评测应覆盖单点检索、多点综合、冲突消解、顺序、引用、全局聚合和长输出约束。一个 needle-in-a-haystack 分数不能代表全部能力。
-
-长上下文与 RAG 不是竞争关系。RAG 帮助更新知识、执行权限过滤并缩小输入；长上下文减少切分损失并支持跨文档综合。
-
-### Prompt caching 也有 identity
-
-Prompt caching 可能降低重复前缀的成本或首 token 延迟。判断两次请求能否复用缓存时，至少要考虑模型版本、
-block 顺序、工具 schema、预处理方式、租户、数据等级和缓存生命周期。
-
-只按可见 Prompt 字符串共享缓存，可能把一个租户或权限策略下的前缀用于另一个上下文。
-
-评测时应同时报告冷启动与缓存命中的延迟、可缓存请求数、命中与未命中数、用量、质量变化和失效行为。
-单独一个命中率无法说明缓存是否安全、有效。
-
-## 模型选型靠 workload，不靠代际名
-
-先固定代表性样例，再比较候选 model ID：
-
-- 任务质量：抽取、代码、综合、规划和工具参数；
-- 协议完整性：typed blocks、unknown fields 和 terminal；
-- 长上下文：位置、多跳、冲突、引用与聚合；
-- 安全：提示注入、越权工具、敏感数据和 over-refusal；
-- 系统：TTFT、terminal latency、限流、重试和取消；
-- 成本：每 attempted 与 successful task 的真实 usage；
-- 治理：区域、保留、日志、密钥和供应商要求。
-
-基线与候选版本使用同一组样例，并保存逐例输出、错误和统计分母。
-
-模型、API headers、Prompt、工具 schema、解析器、重试策略或价格快照发生变化时，改变的都是整个候选系统，
-不能把差异全部归因于模型本身。
-
-先 shadow，再 canary，并保留完整旧 bundle。回滚不是只改回一个 model alias。
+`max_tokens` 是输出上限而不是实际 usage；client close 不证明服务端停止生成或计费；标称 context window
+也不证明任意位置有效。具体的离线状态、固定预算数字与真实 provider 缺口集中在
+[Claude 证据台账](../evidence/claude-controls.md)。
 
 ## 一个渐进式接入实验
 

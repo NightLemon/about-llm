@@ -279,97 +279,33 @@ nano-vLLM 的固定版本实现了这些部件，因而能够加载该 checkpoin
 
 评测数据要按简繁体、地区表达、领域、长度和中英混合方式切片。总体平均分不能掩盖繁体中文或专业领域的退化。
 
-## 四条工程路线
+## Qwen 工程路线索引
 
-### RAG：先固定检索证据
+模型页只说明 Qwen 特有的输入与对象差异；通用机制由各专题负责。
 
-换成 Qwen 不会让 RAG 自动变正确。先用摘录式或模板化基线，逐项确认权限过滤、召回、重排和上下文装配。
-引用与无答案拒答都可靠以后，再让模型生成自然语言。
+| 路线 | Qwen 特有检查 | 权威入口 |
+|---|---|---|
+| RAG | 固定 generator checkpoint/template；换 embedding 或 reranker 时保留原候选列表，避免归因混乱 | [RAG 请求生命周期](../applications/rag-request-lifecycle.md) |
+| Tool calling | 用目标 tokenizer 渲染 tools/messages/result，版本化 parser；本地 checkpoint 模板不能推导云 API 协议 | [Agent 运行时](../applications/agent-runtime.md) |
+| LoRA / QLoRA | 从实际 module names 选择 target，先核对最终 labels；低比特只覆盖冻结基座的部分存储 | [LoRA/QLoRA 工程](../training/peft-qlora-engineering.md) |
+| 推理服务 | 将 checkpoint forward、HTTP/stream/cancel、容量与计费分开验收 | [推理服务](../systems/serving.md) |
+| 模型评测 | 同一 cases 下分别报告中文切片、格式/tool、RAG、通用/安全、系统终态与每成功任务成本 | [评测方法](../quality/evaluation-methodology.md) |
+| 发布与回滚 | 同时绑定 base、tokenizer/template、adapter、quantization、runtime、RAG index、tool schema 与 policy | [LLMOps](../applications/llmops-release.md) |
 
-至少区分：
+开头的本地链路只观察一条请求。[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)继续核对 Qwen3 在
+nano-vLLM 中的 prefill、decode、prefix、CUDA Graph 与预算；[推理服务项目](../practice/projects/inference-serving.md)
+再验证 HTTP、并发、取消和 SLO。精确运行数字与不可外推范围统一查
+[Qwen 证据台账](../evidence/qwen-controls.md)。
 
-~~~text
-没召回正确证据
-→ 召回后被重排或上下文装配丢失
-→ 模型看到了证据但回答错误
-→ 答案正确但引用位置错误
-~~~
+## Qwen 特有的错误边界
 
-入口见 [RAG Foundations](../practice/projects/rag-foundations.md)。
-
-### 工具调用：输出只是动作建议
-
-模型生成合法 JSON 或 function call，只说明它提出了一个结构化动作。执行层仍要检查字段结构、调用者身份、
-租户、资源、金额、审批和幂等键。动作执行后，还要保存可核对的结果回执。
-
-对话模板、工具 Schema 和运行时解析器必须一起版本化。云 API 的工具协议要以云端文档为准，不能从本地
-checkpoint 的模板反推。
-
-### LoRA/QLoRA：先检查 labels
-
-微调前先比较 Prompt 与 RAG 基线，并打印最终输入、labels 和参与监督的 token 数。QLoRA 通常以低比特形式
-存放冻结的底座权重，再用较高精度计算并训练 adapter。它不表示所有训练状态都是 4-bit。
-
-单卡实验按顺序增加复杂度：
-
-1. 运行不下载模型的数据预检；
-2. 在 CPU 上让一个微小 batch 过拟合；
-3. 目标 tokenizer 的 labels 检查；
-4. 小规模 LoRA 反向传播与 adapter 重载；
-5. 目标 GPU 的 QLoRA 显存测量；
-6. 留出集质量与通用能力回归。
-
-### 推理服务：模型与协议分开验收
-
-模型 forward 正确，只说明模型计算路径通过。HTTP、流式传输、取消、过载和计费仍要分别检查。
-同样，兼容 OpenAI 格式的请求能够解析，也不代表服务实际加载了目标权重。
-
-服务轨迹至少要绑定请求 ID、模型版本、对话模板和采样参数。排队、prefill 与 decode 的时间也要分开记录，
-同时保存 token 用量和请求终态。
-
-发布测试再关注用户真正感受到的结果：首 token 延迟、后续 token 延迟、吞吐、峰值显存、拒绝和取消。
-
-本章开头只追踪了引擎内部的一条请求。[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)
-会继续比较 eager 与 CUDA Graph、完整前缀与单 token 漂移，以及两种 prefill 预算。它帮助你解释性能变化来自
-哪段执行机制。HTTP 服务的容量与可靠性则要到[推理服务项目](../practice/projects/inference-serving.md)中继续验证。
-
-## 怎样做模型评测
-
-使用同一组样例比较基线与候选模型，并保留每条样例的输出。至少覆盖：
-
-- 中文任务质量与关键切片；
-- 格式、工具动作建议和业务结果检查；
-- RAG 引用、拒答与越权负例；
-- 通用能力与安全回归；
-- 固定到达负载下的延迟、吞吐和失败；
-- 每次尝试和每次成功任务的 token 与成本。
-
-一次生成、一个 batch 的 loss 下降或单个矩阵压缩，都只能说明局部机制已经运行。不能把这些结果拼成
-“已经完成生产微调和部署”。
-
-## 发布与回滚
-
-发布工件至少包含：
-
-- 底座 checkpoint、tokenizer、对话模板和 adapter 版本；
-- 量化方式、运行时、容器与硬件；
-- 数据和评测清单，以及没有被过滤掉的完整分母；
-- RAG 索引、工具和策略版本；
-- 能力探针、容量结果和已知限制；
-- 灰度指标、回滚触发器与旧版本工件。
-
-回滚不能只切换模型 ID。如果对话模板、adapter、索引、工具 Schema 或解析器也发生了变化，就要把它们
-作为同一个发布包恢复。
-
-## 常见错误
-
-- 用“Qwen”代替具体 checkpoint 或 API 产品。
-- 把一个固定小模型的 config 外推到整个家族。
-- 把 Instruct 模型当 Base 模型直接续写，或忽略 chat template。
-- 只看中文平均分，不看领域、简繁体和中英混合切片。
-- 把 4-bit 文件、单矩阵压缩或 CPU demo 写成整模型 GPU 结论。
-- 把 JSON 可解析、工具调用或模型生成的“完成”文本当作业务成功。
-- 把多条共享 checkpoint 的实验拼成一条未实际执行的生产故事。
+- “Qwen”不能代替代际、尺寸、Base/Instruct、模态、checkpoint revision 或云 API 产品身份。
+- 字符数不能代替目标 tokenizer 的 token 数；checkpoint 固定也不能省略 template/generation config。
+- Dense、MoE 与多模态版本不能共用参数、cache、processor 或 LoRA target 口径。
+- JSON 可解析、tool proposal 或模型输出“完成”都不是业务授权与 effect verification。
+- 4-bit 文件、单矩阵压缩、CPU forward 与目标 GPU 的显存/速度是不同证据。
+- 中文总体分数不能掩盖数字、实体、简繁体、中英混合、权限与拒答切片。
+- 共享 checkpoint 的多条 control 仍是独立实验，不能拼成未执行的生产流水线。
 
 ## 下一步怎样学
 
