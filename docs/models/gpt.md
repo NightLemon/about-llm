@@ -353,110 +353,47 @@ python -m pytest tests/test_openai_responses_replay.py -q
 当前样例只覆盖 Responses API 的一个小子集。其他输入与输出项、内置工具、音频和图像，以及网页、文件、计算机操作、
 错误事件和状态续接，都要根据实际接入的产品版本逐项实现。
 
-## 从离线参考实现走向生产适配器
+## 从离线重放进入真实系统
 
-### 把网络传输、协议状态和业务授权分层
+本页只保留 Responses 特有的对象和事件语义。跨供应商的网络、重试、预算与发布流程由
+[云 API 可靠性](cloud-api-reliability.md)和[LLMOps](../applications/llmops-release.md)负责。
 
-```mermaid
-flowchart TD
-    A["HTTP 客户端与总时限"] --> B["SSE 字节分帧"]
-    B --> C["供应商事件解码"]
-    C --> D["Responses 状态机"]
-    D --> E["应用内部的统一更新"]
-    E --> F["工具策略、Schema、权限与审批"]
-    E --> G["答案验证与发布门禁"]
-    D --> H["原始事件工件与脱敏 Trace"]
-```
+| 层 | GPT / Responses 接入要保留 | 不能据此推出 |
+|---|---|---|
+| Transport | Exact origin、总 deadline、取消和 response-byte gate | Client close 不证明服务端停算或停止计费。 |
+| SSE framing | UTF-8 bytes、lines/events、截断与大小上限 | Chunk/event/字符数都不是 token 数。 |
+| Responses state | Output item、content part、delta/done、response terminal 与 sequence | `response.completed` 不等于业务成功。 |
+| Adapter projection | Text、refusal、function call 与未知 item 的 typed 映射 | 只取第一个 text 会静默丢失状态。 |
+| Runtime | Schema、资源归属、权限、审批、幂等和 effect verifier | Function arguments 可解析不等于已获授权。 |
+| Audit | Model/API、response/request id、终态、usage、parser/prompt/tool fingerprints | 普通日志不保存密钥、完整 Prompt、敏感输出或 opaque reasoning。 |
 
-每层只承担一种责任：
+旧 `OpenAICompatibleTextStream` 只覆盖 Chat Completions 风格单 choice text delta、usage、finish reason 与
+`[DONE]`；`OpenAIResponsesEventReplay` 覆盖另一组已审阅的 Responses typed events。二者都不执行真实网络，
+也不能互借“完整 OpenAI API 兼容”结论。
 
-- 网络传输层管理连接、超时、取消和响应体字节上限；
-- SSE 解码层管理 UTF-8、行与事件分帧以及截断；
-- 供应商解码层管理事件类型和字段版本；
-- 状态机管理输出项、内容片段的生命周期和终态对账；
-- 策略与 Runtime 管理工具权限、幂等和外部副作用；
-- 发布门禁管理最终可以交给用户的内容。
+## 选型、升级与回滚边界
 
-### 日志与工件
+模型选择先固定 workload：任务和模态、语言/长度、RAG 与 tools、质量/安全 gate、TTFT/E2E/并发、治理限制，
+以及包含 retry 和工具成本的 cost per successful task。升级时在同一 cases、工具环境与总预算下做 paired evaluation，
+保留 raw response items/events、失败分母、切片和区间。
 
-原始事件可能含有 Prompt、输出、工具参数和隐藏工件，应进入加密且受访问控制的存储。另生成一份不含敏感值的审计投影，
-其中可以记录：
+发布 bundle 同时绑定 model id、Prompt、tools、adapter/parser、token budget、policy 与 routing；先 shadow、再 canary，
+回滚也恢复整套 bundle。`temperature=0` 不能保证跨服务版本、硬件、batching 与并发逐 token 一致。
 
-- 供应商、API 接口与版本、模型编号；
-- Response 和请求编号、事件类型与位置；
-- 终态、终止原因、用量和延迟；
-- 解析器版本、Prompt 与工具 Schema 指纹、输入工件哈希。
+## 检查矩阵
 
-普通日志只记录排障所需的脱敏字段。API 密钥、完整 Prompt、敏感输出、明文推理、工具密钥和被策略拒绝的参数，应留在
-各自的受控存储或直接丢弃。无密钥 SHA-256 可以绑定一串字节，但不提供来源认证和内容加密。
+| 问题 | 应回答的关键点 |
+|---|---|
+| Chat Completions 与 Responses 是否可直接换 URL | 不可；messages/choices 与 response/items/content parts 是不同对象图。 |
+| Delta、item done 与 response terminal 怎样对账 | 每个层次独立检查 identity、顺序和完成状态，EOF 不能补造 terminal。 |
+| Structured Outputs 保证什么 | 约束受支持 schema 的结构，不保证事实、引用、资源权限或副作用。 |
+| Tool call 能否执行 | 模型只给 proposal；业务 runtime 执行 schema、ACL、approval、budget 与 idempotency。 |
+| 2xx stream 中断后是否重试 | Outcome/usage 可能 unknown；保存 partial，按 attempt 记账并先 reconciliation。 |
+| 模型目录为何不能成为永久推荐 | Catalog、账号可用性、价格与能力都必须绑定查询日期和目标环境。 |
 
-### 重试、取消和费用
-
-2xx 流开始后如果连接截断，客户端可能既不知道远端最终结果，也不知道完整用量。自动重放可能造成重复生成、重复工具候选
-或重复计费。
-
-生产策略要按具体接口核对重放和幂等语义。每次尝试都要单独预留并核销预算；关闭本地 Response，只能证明客户端停止读取，
-服务端是否停止计算与计费仍要另行确认。
-
-旧 text-only SSE reference 与新 typed replay 的关系是：
-
-- `OpenAICompatibleTextStream` 覆盖 Chat Completions 风格的单 choice 文本增量、usage、finish reason 和 `[DONE]`；
-- `OpenAIResponsesEventReplay` 覆盖一组单独审核的 Responses typed events；
-- 二者都不执行真实网络，也不能互借“完整协议兼容”结论。
-
-## 模型选型与升级评测
-
-不要先问“哪个 GPT 最强”，先写 workload contract：
-
-1. 任务：抽取、代码、规划、长文综合、工具执行还是实时对话；
-2. 输入：模态、长度、语言、RAG 证据与工具数量；
-3. 质量：任务指标、schema 合法率、citation/tool 参数正确率与拒答口径；
-4. SLO：TTFT、E2E、吞吐、并发和可接受错误率；
-5. 治理：区域、保留策略、敏感信息、日志和人工审批；
-6. 成本：输入、缓存、输出、工具和重试后的 **cost per successful task**。
-
-模型升级采用 paired evaluation：在同一 case、工具环境和预算下运行旧/新快照，保存原始 response items/events，
-并报告总体与切片差异、置信区间、格式/安全 gate、延迟和每成功任务成本。
-
-上线顺序是先 shadow，再做小流量 canary；旧 model id、Prompt、adapter、parser 和路由都要保留，以便回滚。
-
-temperature=0 也不能宣称跨服务版本、硬件、批处理和并发严格确定。回归工件要记录实际输出 identity，而不是假设相同配置必得相同文本。
-
-## 常见错误
-
-- 把 GPT-3 论文参数写成当前 GPT 产品内部结构；
-- 把 model catalog 快照写成永久推荐或账号可用性保证；
-- 把 `OpenAI-compatible` 当作 Responses tools、events、errors 全部兼容；
-- 只解析第一个 text，静默丢掉 refusal、tool、reasoning 或其他 item；
-- 把 chunk 数、event 数或字符数称为 token 数；
-- 把 `response.completed` 当作业务正确或副作用成功；
-- 把 function arguments 可解析等价为已授权；
-- 把 schema 通过率代替事实正确率；
-- EOF 或断流后仍发布 accumulated partial text；
-- 自动重试 outcome-unknown stream，却不建立 attempt-level usage/费用账本；
-- 升级 model id，却沿用未经回归的 prompt、token budget 和 parser。
-
-## 求职与面试验收
-
-### 面试追问
-
-1. next-token prediction 为什么能支持 in-context learning？它和参数更新有什么区别？
-2. 预训练、SFT、偏好优化和工具系统分别解决什么问题？
-3. Responses 的 response/output item/content part 三层对象图为什么不能压成一个字符串？
-4. delta、done item 和 terminal response 应怎样对账？
-5. `completed`、`incomplete`、`failed` 与 EOF 有何区别？
-6. Structured Outputs 保证什么，为什么仍不能直接执行工具？
-7. 2xx stream 中途断开后，为什么不能无条件重试？
-8. 如何设计一次有统计把握、能回滚的模型快照升级？
-
-### 可写进简历的诚实版本
-
-> 为 OpenAI Responses 实现离线事件重放。程序从 15 个固定事件中重建一段文字和一次函数调用，并对账 Response、
-> 输出项、内容片段与 `12 + 9 = 21` 的用量。16 个测试覆盖错序、未知字段、拒答、非完整与失败终态、截断和非法 JSON 数值。
-
-紧接着应说明：样例只模仿 SDK 的事件形状，没有调用 OpenAI SDK 或真实 API，覆盖的也只是 Responses 的一个子集。
-如果候选人能解释本地重放与真实网络、计费、质量和安全验证的区别，这个项目就比只展示一次成功 API 调用
-更有说服力。
+当前离线重放可以诚实表述为：从 15 个固定事件重建一段文字和一次函数调用，并对账 response、output item、
+content part 与 `12 + 9 = 21` usage；16 个测试覆盖错序、未知字段、拒答、不完整/失败终态、截断和非法 JSON 数值。
+必须紧邻说明它没有调用 OpenAI SDK 或真实 API，只覆盖 Responses 的已审阅子集，也不证明网络、账单、模型质量或生产安全。
 
 ## 一手资料
 
