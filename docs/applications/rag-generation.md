@@ -385,15 +385,9 @@ Schema valid 只说明结构合法。`answer` 字段仍可能是错误事实。
 
 ## 固定 Qwen 失败告诉了我们什么
 
-仓库保留了 Qwen2.5-0.5B-Instruct 在 CPU、FP32 下运行的两个固定样例：
-
-- 有证据样例复述了核心事实，却漏掉引用。
-- 空上下文样例仍生成了 Kubernetes 灾备步骤。
-
-两个样例都没有通过行为检查，即结果为 `0/2`。这说明正确检索、贪心解码和清晰提示词不会自动带来可靠引用与拒答。
-
-仓库还保存了两种后续验证：一种对已录制输出重放发布策略，另一种让发布门禁真实包裹模型运行。
-三者的精确边界和命令见 [RAG 证据页](../evidence/rag-answer-controls.md)。
+固定 Qwen 样例显示过“有证据却漏引”和“空上下文仍作答”两类失败，因此生成以后仍需要 citation 与 action gate。
+具体模型、版本、输入、`0/2` 结果以及 recorded/live-gated 三层证据只在
+[RAG 证据页](../evidence/rag-answer-controls.md)维护；这里保留它对控制流的结论，不复制实验台账。
 
 ## 可运行实验
 
@@ -403,8 +397,7 @@ Schema valid 只说明结构合法。`answer` 字段仍可能是错误事实。
 python projects/rag-foundations/rag_request_walkthrough.py
 ~~~
 
-在输出中找到 `packing`、`answer`、`citation` 和 `final`。确认请求 A 的 `coverage` 为 `1.0`、最终动作为
-`answer`，请求 B 的覆盖率约为 `0.222`、最终动作为 `abstain`。
+在输出中找到 `packing`、`answer`、`citation` 和 `final`，分别解释有证据回答与证据不足拒答的状态变化。
 
 完成[实验 5](../practice/labs/lab-5-rag-request.md)后，再运行整组回答评测：
 

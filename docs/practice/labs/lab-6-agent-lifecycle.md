@@ -6,7 +6,8 @@
 2. 用 schema、ACL 和 approval 判断这项提议能否执行；
 3. 在 execution 之后，用 idempotency、verifier 和 recovery 收口副作用。
 
-实验使用固定输入，不调用真实模型或支付服务。重点是解释：远端已经受理请求但本地超时时，为什么不能直接重试。
+实验使用固定输入，不调用真实模型或支付服务。本页只保留预测、运行、观察和记录；各阶段的机制解释以
+[一次 Agent 退款任务](../../applications/agent-task-lifecycle.md)和 [Agent Runtime](../../applications/agent-runtime.md)为准。
 
 **相关教材**：[Agent 总览](../../applications/agents.md) ·
 [一次 Agent 退款任务](../../applications/agent-task-lifecycle.md) ·

@@ -99,42 +99,11 @@ result: session_mismatch
 
 ## 第二步：理解 AAD 做了什么 {#aad}
 
-AEAD 指“带关联数据的认证加密”，英文全称是 `authenticated encryption with associated data`。
-本实验使用 AES-256-GCM：推理内容被加密，AAD 保持可见但参与认证。
+比较两份报告中的 `aad_fields`：弱协议只认证格式、provider 与 key；上下文绑定协议还认证 artifact、subject、tenant、
+session、branch、predecessor、allowed models 和有效期。随后确认程序仍会把已认证 claims 与可信运行上下文逐项比较。
 
-两种实验协议的 AAD 如下：
-
-```text
-只认证内容的协议：
-  version + binding mode + provider + key id
-
-绑定上下文的协议：
-  上述字段
-  + artifact id
-  + subject / tenant / session / branch
-  + predecessor digest
-  + allowed model ids
-  + issued time / expiry time
-```
-
-把声明放进 AAD 能阻止攻击者悄悄改写它们。但“声明没有被改”仍不等于“声明属于当前请求”。因此解密成功
-后，程序还要把已认证声明与 `ReasoningReplayContext` 逐项比较。
-
-可信上下文应来自认证和控制面：例如服务端解析出的登录主体、租户和会话，以及运行时选择的模型。客户端
-自报的 `user_id`、Prompt 文字或 envelope 外另附的 JSON 都不能替代它。
-
-可以把三种安全属性记成：
-
-- **保密性**：没有密钥的人读不到推理明文；
-- **完整性/来源认证**：密文和 AAD 被改动后，tag 验证失败；
-- **授权**：即使工件原封不动，当前上下文也必须与其允许范围一致。
-
-AES-GCM 直接提供前两类密码学属性。第三类来自应用选择了哪些字段进入 AAD，以及解密后怎样比较可信上下文。
-
-消费顺序同样是协议的一部分。服务端先从登录、会话和控制面取得 `ReasoningReplayContext`，再验证 envelope、
-比较 claims、检查一次性消费记录；只有全部通过，才把解密后的 bytes 交给后续模型或工具链。不能因为
-`AES-GCM` 验证成功就先把明文拼回 Prompt，再补做授权。反过来，release gate 通过也只说明一个**已重建的**
-公开对象通过结构检查，并不授权把原 envelope 转发给另一个会话。
+AAD 能阻止声明被静默修改，却不会自动判断当前请求是否有权消费。完整的保密性、认证、授权与发布边界由
+[推理产物安全](../../quality/reasoning-artifact-security.md)解释；本实验只观察这两种协议在固定重放下的不同结果。
 
 ## 第三步：nonce 与消费记录解决不同问题 {#two-ledgers}
 
@@ -253,15 +222,9 @@ python -m pytest `
 
 ## 旧格式怎样迁移 {#migration}
 
-假设线上已经存在只认证内容的旧 envelope，可以按阶段处理：
-
-1. **发布修复**：停止签发旧格式；新工件使用上下文绑定格式，并记录 key id、owner 和格式版本。
-2. **迁移窗口**：旧工件只允许原会话所有者申请重新签发；重新核对 archive、审批和有效期。
-3. **窗口结束**：停用旧密钥，统计拒绝率和受影响会话；不能无限兼容旧格式。
-4. **泄露事件**：按 artifact、key、session 和公开副本范围撤销、隔离并传播删除。
-
-已经公开的旧工件需要密钥停用才能真正失效。暂停中的合法 Agent 工作流则需要在验证所有权后重新签发，
-或者明确告知用户旧状态已经失效。
+这不是迁移演练。若线上已有弱格式，应停止新签发，只允许经所有权复核的重签发，并在窗口结束后停用旧密钥；
+完整迁移、撤销和公开副本处理见[推理产物安全](../../quality/reasoning-artifact-security.md)。本实验只要求记录旧 key
+被停用后，固定样例是否得到预期拒绝。
 
 ## 本实验说明了什么 {#evidence-boundary}
 

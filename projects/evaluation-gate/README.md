@@ -1,13 +1,7 @@
-# Evaluation Gate：把“感觉更好”变成发布决定
+# Evaluation Gate 运行手册
 
-这个项目把 baseline 和 candidate 的已保存输出放到同一组 cases 上评分，再用配对统计、保护切片和明确阈值决定
-发布、拒绝发布，还是判定评测本身无效。
-
-它能重算保存的输出与分数，不能仅靠 manifest 认证某个真实模型曾执行。把 `system_id`、输出来源和目标环境运行记录
-一起保存，才能让发布会议追溯这条主张。
-
-第一次学习请从[项目教学页](../../docs/practice/projects/evaluation-gate.md)开始。那里完整走过 score → compare →
-verify → render → tamper；本页只保留运行入口、脚本索引和排错信息。
+本目录对同一组 cases 的 baseline/candidate 已保存输出执行 score、compare、verify 与 render。
+[项目教学页](../../docs/practice/projects/evaluation-gate.md)负责决策顺序与解释；本页只维护命令、输入输出和排错。
 
 ## 十分钟热身
 
@@ -22,19 +16,10 @@ python projects/evaluation-gate/trace_headline_accuracy_trap.py
 
 这是预期被拦截的教学场景，因此进程成功计算后仍返回 0。CI 发布门禁应使用下文的 `evaluation.cli compare`。
 
-## 开始前先固定评测问题
+## 运行前需要的输入
 
-看到 candidate 结果之前，至少写下：
-
-- 这次 gate 控制全量发布、canary，还是继续实验；
-- Baseline/candidate 的模型、Prompt、RAG、工具和 runtime 身份；
-- Case 的来源、抽样单位和 protected slices；
-- 主指标、方向和最小有意义差异；
-- 可接受的延迟、安全与关键切片退化上限；
-- 超时、拒答、解析失败和 judge failure 怎样进入总体及每个保护切片的分子、分母；
-- 最大样本量、bootstrap seed，以及是否允许中途查看。
-
-这些定义在看完结果后再改，最终区间和发布结论就不再回答原来的问题。
+先按[项目教学页](../../docs/practice/projects/evaluation-gate.md)写好评测协议，并准备 cases 与两侧 recorded answers。
+协议至少要给出系统身份、主指标、保护切片、失败分母和阈值；不要在看到结果后修改它们。
 
 ## 端到端主线 { #run }
 
@@ -92,8 +77,7 @@ python -m about_llm.evaluation.cli compare `
 
 CI 必须区分“有效地拒绝发布”和“评测坏了”。
 
-此命令的质量与保护切片 gate 都比较 95% bootstrap 区间下界和预定阈值。输出中的
-`probability_of_improvement` 只是重采样差值大于零的比例，不是 candidate 更好的概率，也不会单独触发通过。
+输出中的 `probability_of_improvement` 不是 candidate 更好的后验概率，也不会单独触发通过；解释见教学页。
 
 ## 验证证据，而不是只信最终 JSON
 
@@ -165,17 +149,27 @@ Schema-valid 的 JSON 仍可能写错值；引用 span 完全匹配也可能与 
 完整实验解释见[项目教学页](../../docs/practice/projects/evaluation-gate.md)，精确数值与范围见
 [评测证据页](../../docs/evidence/project-controls.md)。
 
-## 固定 Qwen 运行应该怎样解读
+统计与认证选修可直接运行：
 
-仓库保存了一组固定 Qwen2.5-0.5B-Instruct 的七条真实 CPU 输出，用来展示 metric choice 如何改变分数：
+```powershell
+python projects/evaluation-gate/clustered_bootstrap_toy.py
+python projects/evaluation-gate/paired_randomization_toy.py
+python projects/evaluation-gate/clustered_randomization_toy.py
+python projects/evaluation-gate/holm_correction_toy.py
+python projects/evaluation-gate/sequential_peeking_toy.py
+python projects/evaluation-gate/authenticated_release_ledger_toy.py
+```
+
+## 固定 Qwen 运行
+
+本地已有固定 snapshot 时，可核对仓库保存的 Qwen2.5-0.5B-Instruct CPU 报告：
 
 ```powershell
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py `
   --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
 ```
 
-这组小样例能证明目标 checkpoint 和 generation path 确实执行过，并展示 literal、normalized 与 token F1 的差异。
-它没有独立抽样或足够统计功效，不能代表 Qwen 的总体中文、数学、结构化输出或生产质量。
+精确版本、逐例结果和不可外推范围见[项目证据](../../docs/evidence/project-controls.md)。
 
 ## 主要输入与输出
 
@@ -218,7 +212,13 @@ python -m pytest `
   tests/test_evaluation_comparison_artifact.py `
   tests/test_evaluation_structured.py `
   tests/test_evaluation_statistics.py `
-  tests/test_evaluation_release_ledger.py -q
+  tests/test_evaluation_release_ledger.py `
+  tests/test_evaluation_comparison_html.py `
+  tests/test_clustered_bootstrap.py `
+  tests/test_paired_randomization.py `
+  tests/test_clustered_randomization.py `
+  tests/test_holm_correction.py `
+  tests/test_sequential_peeking.py -q
 
 python scripts/check_docs.py
 python scripts/check_content_accuracy.py

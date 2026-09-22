@@ -424,36 +424,14 @@ retry and failed attempts
 
 ## 可运行入口
 
-[RAG Foundations](../practice/projects/rag-foundations.md) 提供单机参考实现：
+[RAG Foundations](../practice/projects/rag-foundations.md)把本页的版本发布、权限、请求终态、备份与恢复装成单机项目；
+完整命令由项目 README 维护，具体运行范围见[RAG 证据页](../evidence/rag-answer-controls.md)。本页不再复制摄取、检索和
+生成各专题的实验步骤。
 
-- Markdown 切片与稳定片段 ID；
-- 先授权再执行的 BM25、重排与上下文组装；
-- 逐字回答、引用和拒答；
-- SQLite 更新、删除、备份和恢复；
-- 带持久化存储的抽取式 ASGI 服务；
-- 固定 Qwen 原始失败、发布策略回放和真实门禁运行。
+## 设计题出口
 
-先运行：
-
-~~~powershell
-python projects/rag-foundations/rag_request_walkthrough.py
-python projects/rag-foundations/rag_service_control.py
-~~~
-
-第一条展示检索到发布的内容状态，第二条展示身份、HTTP 和容量状态。它们都是帮助理解流程的本地程序，
-不是生产部署模板。具体适用范围见
-[RAG 证据页](../evidence/rag-answer-controls.md)。
-
-## 系统设计面试回答顺序
-
-1. 先问 corpus、用户、权限、freshness、流量与质量目标。
-2. 画控制面、数据面和证据面。
-3. 沿请求讲授权、召回、重排、packing、生成与发布。
-4. 沿更新讲 version、alias、delete、reconciliation 与 rollback。
-5. 给出质量、安全、SLO、成本的联合门禁。
-6. 最后讨论缓存、分布式索引、多区域与灾备。
-
-不要从“选择哪家向量数据库”开始。数据库是组件，不是系统边界。
+若要把本章整理成面试答案，进入[LLM 系统设计](../career/system-design.md)。这里保留长期运行与故障机制；答题节奏、
+容量估算和变体题不在生产正文中重复。
 
 ## 自测
 

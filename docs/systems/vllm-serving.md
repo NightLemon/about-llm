@@ -7,7 +7,7 @@
 
 - **适合读者**：准备在 Linux/GPU 上部署、验收和压测 vLLM 的开发者。
 - **先修**：[端到端请求生命周期](inference-request-lifecycle.md)、Linux、GPU 显存与 HTTP 流式协议。
-- **首次阅读**：一条请求的三段生命周期 → 启动 → 单请求验收 → 容量扫描 → 取消与回滚。
+- **首次阅读**：一条请求的三段生命周期 → 启动参数 → 单请求验收 → 容量扫描 → vLLM 故障定位。
 - **完成信号**：能沿同一个 request ID 解释客户端等待、服务端排队、prefill、decode、流式事件和资源释放。
 - **卡住时**：先只完成非流式单请求，不要同时打开量化、prefix cache、并发和公网访问。
 
@@ -320,101 +320,15 @@ TPOT 表示首 token 之后，平均每个输出 token 等多久。记 \(t_{firs
 
 快速失败的 429 可能让 offered-to-terminal 变小，所以延迟必须和 success rate 一起解释。
 
-## 先固定请求负载，再比较数字
+## 通用服务控制面不在这里重讲
 
-假设第一次测试使用请求 A，第二次却把输入缩短一半。即使第二次吞吐更高，也不能判断服务真的变快了。
-两次压测至少要固定：
+压测仍须固定输入/输出长度联合分布、到达方式、采样、超时和完整失败分母；取消仍须分别观察 HTTP 任务、运行时序列
+与 KV 释放。Admission、背压、跨副本路由、认证、日志、canary 和回滚由供应商无关的
+[服务与可观测性](serving.md)统一解释，发布清单见[生产检查表](../practice/production-checklist.md)。
 
-- 输入与输出长度的联合分布，而不只是平均长度；
-- 对话模板、采样、停止条件和输出上限；
-- 同时到达、固定间隔、Poisson 或真实流量轨迹；
-- 预热、持续时间、并发和客户端位置；
-- 超时、重试、取消和失败是否进入分母；
-- 服务是否与其他进程共享 GPU。
-
-输入更短、输出被截断或失败被排除，都可能让吞吐数字“变好”。
-没有固定请求负载的跨框架 tokens/s 排名通常不可解释。
-
-## 取消实验要观察三个终点
-
-现在重放请求 A，但在收到第一段内容后主动断开客户端。随后分别确认：
-
-1. HTTP/ASGI 响应任务是否结束；
-2. 运行时是否取消对应序列，不再继续 decode；
-3. KV block、序列名额和并发名额是否释放。
-
-三个终点不会自动同时发生。客户端可以先断开，而后端仍在生成；Python 任务收到取消，也不能让已经发出的
-GPU kernel 在任意位置中断。
-
-验收目标 vLLM 版本时，要使用该版本自己的取消接口、调度轨迹和 block 释放轨迹。
-本仓库的异步迭代器与 Transformers 线程验证程序只检查较低层的取消传播，见
-[推理服务证据页](../evidence/inference-serving-controls.md#local-http-cancel)。
-
-## Admission、背压与过载
-
-请求进入服务后，准入层只有三种诚实选择：立即接纳、在有界队列中等待，或者明确拒绝。无界队列只是把失败
-改写成长时间等待。准入判断至少应考虑：
-
-- 当前序列名额与 KV 容量；
-- 输入和最大输出的最坏资源需求；
-- 租户配额、优先级和截止时间；
-- 队列中最老请求已经等待多久，以及预计还要等待多久；
-- 取消、超时和 worker 故障后的资源回收。
-
-过载时返回明确的 429 或 503，通常比先接受所有请求、再让它们大面积超时更可控。调用方如需重试，必须设置
-总截止时间和退避策略。一次逻辑请求也要有幂等边界，避免被放大成多次昂贵生成。
-
-单个副本里的 semaphore 只能限制这个进程，不能自动形成整个服务的全局并发上限。
-
-## 可观测性：把协议、调度和 GPU 串起来
-
-一次性能分析至少需要三组信息：
-
-| 层面 | 观察内容 |
-|---|---|
-| 客户端与 API | 计划发送、实际发送、首 token、终态、状态码和用量 |
-| 调度器与 KV | 排队时间、接纳的序列、KV block、抢占和前缀命中 |
-| 模型与 GPU | prefill/decode 工作量、batch 形状、kernel、带宽利用率和峰值显存 |
-
-为请求 A 生成一个 request ID，并把它写入三层记录。模型、tokenizer 与模板版本也要进入同一条服务端生成轨迹。
-HTTP 200 只说明接口返回成功，不能单独证明目标 checkpoint 或目标 kernel 被执行。
-
-自动扩缩容不能只看 GPU 利用率。准入过严时，GPU 利用率可能很低；队列已经失控时，GPU 又可能长期满载。
-因此还要同时观察队列年龄、KV 容量、请求到达率、TTFT 和错误率。
-
-## 安全与部署边界
-
-最小生产边界包括：
-
-- 不默认绑定公网；前置 TLS、认证、授权、限流和 request-size 上限；
-- Token、Prompt、输出和 trace 按敏感数据处理，日志默认脱敏；
-- 固定 model revision、容器 digest、依赖和远程代码策略；
-- 对 tools、JSON schema、多模态和 adapter 建立独立 allowlist；
-- Readiness 检查 model/tokenizer/adapter、设备和 scheduler 是否真正可接流量；
-- Liveness 只回答进程是否需要重启，不能代替 readiness。
-
-滚动发布时，先从路由摘除、停止 admission、等待或有界取消 in-flight，最后释放模型和 KV。
-直接杀进程会把未决 attempts 留给调用方 reconciliation。
-
-## 升级与回滚
-
-升级前保存一份可重放的验收包：
-
-```text
-model/tokenizer/template/adapter identity
-runtime/container/driver/hardware identity
-启动配置
-token-level behavior samples
-质量与安全 case
-固定 workload attempts 和 server trace
-容量曲线与失败样例
-回滚命令
-```
-
-先在隔离环境跑单请求和错误协议，再运行同一 workload。比较的不只是平均性能，还包括 token ids、usage、
-finish reason、失败分布、KV/preemption 和尾延迟。
-
-Canary 期间保留旧版本容量，确认回滚真正可执行，而不是只保留旧镜像标签。
+回到 vLLM 时，只追加该运行时特有的证据：实际解析的启动参数、模型/tokenizer/template identity、attention backend、
+调度与 KV/preemption trace，以及当前版本对取消和高级 OpenAI-compatible 字段的实际行为。这样可以判断问题来自
+共同控制面还是 vLLM 引擎，而不会在两页维护两套服务原则。
 
 ## 常见故障从哪里查
 

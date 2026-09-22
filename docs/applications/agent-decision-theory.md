@@ -5,9 +5,9 @@
 
 **学习导航**
 
-- **适合读者**：希望理解 Agent 为什么要观察、行动、升级或停止的开发者与算法工程师。
+- **适合读者**：已经能实现 Agent 状态机，想形式化“观察、行动、升级或停止”的进阶读者。
 - **先修**：[Agent 架构](agent-architecture.md)；了解概率与条件概率即可，强化学习不是必需前置。
-- **首次阅读**：先运行二状态例子，再按“看到什么 → 相信什么 → 选什么 → 何时停止”的顺序阅读。
+- **首次阅读**：本页是进阶选读；先运行二状态例子，再按“看到什么 → 相信什么 → 选什么 → 何时停止”阅读。
 - **完成信号**：能为一个不确定任务写出隐藏状态、可见信号、允许动作和终态，并手算一次决策。
 - **卡住时**：把 `fault_a` 读成“配置错误”，把 `fault_b` 读成“依赖故障”，暂时忽略 POMDP 缩写。
 
@@ -402,28 +402,9 @@ Agent 之间的消息仍然只是 observation。接收方要验证消息格式�
 
 ## 把术语映射回 Agent Runtime
 
-| 决策理论对象 | 本仓库中的工程对象 | 仍要向外部系统确认 |
-|---|---|---|
-| State | task、ledger、Provider effect | 真实世界是否与记录一致 |
-| 观测（observation） | 有类型的工具结果、回执或产物 | 来源、可信度与完整性 |
-| Belief | pending、known、uncertain 与人工结论 | 校准概率或领域状态模型 |
-| Action set | Tool registry、policy 与 approval | 集中 IAM 和真实 capability |
-| Utility / cost | token、费用、延迟与任务结果 | 用户偏好、风险尺度和业务价值 |
-| Transition | handler、outbox 与 reconciliation | Provider 语义和故障分布 |
-| Terminal | completed、failed、escalated | 独立的完成和副作用验证 |
-
-Runtime 的执行顺序仍然是：
-
-~~~text
-schema
-→ trusted resource resolution
-→ policy
-→ approval
-→ handler
-→ verifier
-~~~
-
-决策理论只帮助 Agent 在允许动作中选择下一步。它不会把模型提出的 proposal 自动变成授权。
+State、observation、belief、允许动作、utility、transition 与 terminal 可以映射到任务记录、工具结果、policy、ledger
+和 verifier，但公式不会替运行时完成授权。具体执行顺序、审批绑定和对账原语见
+[Agent Runtime](agent-runtime.md)；本页只负责在允许动作集合内比较“继续观察还是行动”。
 
 ## 这个小程序说明了什么
 
@@ -460,20 +441,10 @@ schema
 
 **“多个 Agent 投票就是独立证据。”** 同模型、同数据和同 Prompt 会产生相关错误。
 
-## 面试时怎样回答
+## 复述检查
 
-面对“Agent 怎样决定下一步”，可以沿本章故障例子回答：
-
-1. 先区分隐藏 state、可见 observation、持久化任务状态和模型 context；
-2. 用带来源的信号更新 belief，或至少维护 `known / unknown / conflicting`；
-3. 由 policy 和 approval 形成允许动作集合；
-4. 在允许集合内比较期望效用；
-5. 用信息价值判断先诊断、澄清还是执行；
-6. 每次副作用后重新观察，并对不确定结果做 reconciliation；
-7. 用安全不变量、verifier、环/死路检测和 deadline 定义停止。
-
-关键不是声称系统求解了完整 POMDP，而是清楚说明哪些状态不可见、概率从哪里来、哪些动作根本不能执行，
-以及系统怎样从循环中退出。
+用“隐藏 state → 带来源的 observation → belief → 允许动作 → 信息价值 → terminal”复述二状态故障，并说明概率来源、
+权限边界与停止条件。通用面试组织方式留给[题库](../career/interview-questions.md)。
 
 ## 自测
 

@@ -1,11 +1,11 @@
-# 硬件性能模型与端侧部署
+# 硬件性能模型与容量验收
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
 
 **学习导航**
 
-- **适合读者**：性能分析、容量规划和端侧部署工程师。
+- **适合读者**：需要做性能分析、容量规划或目标设备验收的工程师。
 - **先修**：推理阶段、字节/FLOPs 单位和基础硬件组成。
 - **首次阅读**：单位口径 → 容量账本 → Roofline → prefill/decode → benchmark。
 - **完成信号**：能为目标设备写可复现 benchmark，而不是只引用峰值规格。
@@ -203,34 +203,11 @@ CUDA Graph、提前编译（AOT）、即时编译（JIT）和 kernel 自动调�
 这些概念在 [LLM 算子与计算栈](operator-stack.md)中沿一次 RMSNorm 展开；
 [实验 2D](../practice/labs/lab-2d-operator-stack.md)会实际打印非连续布局、FX、ATen 与 profiler 事件。
 
-## 7. GPU、TPU、NPU 与 CPU
+## 7. 设备名称不能代替可执行支持
 
-**GPU**
-
-通用矩阵/attention 生态成熟，HBM 带宽高；受显存、功率、kernel 与互联限制。消费 GPU 的显存、ECC、NVLink/虚拟化和长期稳定性可能不同于数据中心卡。
-
-**TPU / 专用加速器**
-
-适合编译后规则大图与特定低精度，但 host/device、shape、collective 和编译缓存影响体验。峰值只对支持的 op/dtype 成立。
-
-**移动 / 桌面 NPU**
-
-移动或桌面 NPU 的能效可能很高，但支持的算子、动态形状、上下文长度、量化格式和 SDK 往往更受限。
-一个不受支持的算子若回退到 CPU 或 GPU，会引入同步和内存复制；必须用 profiler 确认每个算子实际在哪个设备执行。
-
-**CPU**
-
-CPU 的优势是容量较大、设备普及、启动门槛低，并且容易使用内存映射权重。常见瓶颈是 DRAM 带宽、SIMD 优化算子、
-NUMA 和线程调度。低并发增量解码可能接近“每生成一个 token 都把权重流式读一遍”。
-
-运行 CPU 基准前，要固定：
-
-- 指令集与 kernel build；
-- 物理/逻辑核心数和线程绑定；
-- NUMA 节点与内存通道；
-- 电源模式与同机其他负载。
-
-线程越多不一定越快。跨 NUMA 访问和线程超额订阅都可能让性能变差。
+GPU、TPU、NPU 与 CPU 的峰值只对支持的算子、dtype 和 shape 有意义。目标设备验收要用 profiler 确认实际执行位置、
+回退、复制和同步，并记录设备代际、内存/互联、软件栈、功耗模式与同机负载。算子怎样穿过框架、编译器和 kernel，
+统一见[算子计算栈](operator-stack.md)；这里仅把实测带回容量和性能账本。
 
 ## 8. 单张消费级 GPU 的规划
 
@@ -274,54 +251,15 @@ NUMA 和线程调度。低并发增量解码可能接近“每生成一个 token
 消费设备长时间推理时，功耗或温度限制可能触发降频，导致第一分钟和一小时后的速度不同。报告中应记录环境温度、
 功耗上限、时钟频率、设备温度和持续吞吐。超频后的短时峰值不能代表稳定容量。
 
-## 9. 多设备与拓扑
+## 9. 多设备、Offload 与端侧是约束入口
 
-- **Tensor Parallel**：逐层 collective，延迟敏感，优先同一高带宽域；
-- **Pipeline Parallel**：stage 传激活，有 bubble，跨较慢链路有时更合适；
-- **Data/Replica Parallel serving**：每副本独立，简单但每卡需完整权重；
-- **Expert Parallel**：MoE all-to-all，负载不均和拓扑关键。
+多设备会把算术成本与 collective、同步和拓扑成本放在一起；offload 会把容量问题换成跨 PCIe 或存储的数据搬运。
+模型“刚好能放下”并不推出更快。这里先把通信 buffer、分层存储和搬运峰值纳入容量账本，再到
+[集合通信](collective-communication-network.md)选择并行策略。
 
-PCIe switch、NUMA root、NVLink/NVSwitch 和网络拓扑决定真实路径。模型分到两卡“刚好能放下”可能因每层同步比单卡小模型更慢。
-
-测 strong scaling efficiency：
-
-\[
-E_p=\frac{t_1}{p\,t_p}.
-\]
-
-若单卡无法运行，则不能伪造 \(t_1\)；改报相邻可测配置和 absolute throughput。
-
-## 10. Offload 与分层存储
-
-GPU↔CPU↔SSD offload 扩大容量，但每 token 若反复跨 PCIe/存储读取权重，性能上限由最慢链路决定。异步 prefetch 只有在传输可被独立计算隐藏时有效。
-
-适合：低吞吐、离线任务、稀疏专家或偶尔访问模块。不适合：严格 TPOT 且每层都需 offload 的交互 decode。
-
-内存映射可以减少启动时的复制，并利用操作系统 page cache。首次访问的缺页、文件格式、随机读取和系统内存压力，
-仍会影响冷启动时间。
-
-## 11. 端侧部署目标
-
-端侧价值：离线、隐私边界、低网络依赖、可控成本；限制：RAM、包大小、存储、功耗、热、后台竞争和更新。
-
-### 11.1 交付产物（artifact）
-
-端侧工件要明确记录模型、tokenizer、chat template、量化和运行时版本，以及哈希、签名与最低设备要求。
-同一个格式名称在不同运行时中也可能存在支持差异，需要用目标运行时实际加载验证。
-
-### 11.2 冷启动与更新
-
-冷启动要拆成应用启动、模型映射/加载、首 token 编译和第一次请求。模型更新还需要原子下载、签名验证、空间检查、
-失败回滚和旧版本清理。下载不完整的文件不能进入可加载目录。
-
-### 11.3 Context 与内存压力
-
-移动 OS 可能回收后台应用；动态 KV 增长会越过系统 memory pressure。设置硬 context/output limit、低内存降级和请求取消。不要依赖 swap 在交互延迟下救场。
-
-### 11.4 WebGPU/浏览器
-
-WebGPU 会受到浏览器实现、GPU adapter、buffer 上限、shader 编译、页面生命周期和来源隔离的影响。模型下载大小和
-浏览器缓存策略也是用户成本。跨站内容与模型工件还要设计 CSP、完整性校验和权限策略。
+端侧还要处理模型更新、应用生命周期、权限、隐私和产品路由。这些产品与交付问题由
+[端云小模型](../frontier/on-device-small-models.md)负责。本页只要求它们进入 benchmark 条件：目标设备、冷/热启动、
+内存压力、功耗与持续温度都必须实测。
 
 ## 12. Benchmark 协议
 
@@ -364,17 +302,11 @@ E=\int P(t)dt.
 
 更低 TPOT 不一定更低能量：高功率缩短时间可能改善或恶化总 J/token，需要实测。也不能用 FLOPs 直接推精确碳/水影响。
 
-## 14. 安全与可靠性
+## 14. 安全与可靠性是发布约束
 
-- 产物哈希/签名与安全更新；
-- 不加载不可信 pickle/remote code；
-- runtime/driver 供应链；
-- 设备丢失时本地数据/模型保护；
-- crash、OOM、thermal 与 watchdog fallback；
-- memory-mapped file 权限与临时文件清理；
-- 端侧日志/telemetry opt-in、最小化和 TTL。
-
-本地执行减少网络传输，不等于自动隐私：键盘、clipboard、缓存、crash log 和应用备份仍会泄露。
+容量通过后仍需检查工件签名、安全更新、remote code、驱动/runtime 供应链、OOM/thermal fallback 和日志最小化。
+本地执行减少网络传输，不等于自动隐私。完整端侧发布控制见
+[端云小模型](../frontier/on-device-small-models.md)，本页只记录这些控制是否改变可用内存、冷启动或持续性能。
 
 ## 15. 选型流程
 
@@ -411,5 +343,5 @@ JAX MiniGPT 当前录制的运行设备也是 CPU。
 2. 使用 `roofline_lower_bound` 构造 compute、memory、balanced 三个案例。
 3. 为什么提高 continuous batch 会增加吞吐但可能恶化 p99？
 4. 设计量化前后同时包含质量、TPOT、峰值内存和 J/token 的实验。
-5. 给移动 NPU 设计 operator fallback 的 profiler 验收。
-6. 解释为何一次 30 秒桌面 GPU benchmark 不能代表持续一小时的端侧体验。
+5. 给目标设备设计 operator fallback 的 profiler 验收。
+6. 解释为何一次 30 秒 benchmark 不能代表持续一小时的可用容量。

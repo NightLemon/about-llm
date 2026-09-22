@@ -1,10 +1,7 @@
-# Safe Agent：从模型提案到可恢复的副作用
+# Safe Agent 运行手册
 
-这个项目用一笔 300 元退款说明 Agent 为什么不能“让模型直接调用工具”。任务会从观察和动作提案开始，经过参数校验、
-权限与审批，再进入执行、幂等保护、结果核验和故障恢复。任何一步失败，都必须留下明确终态。
-
-第一次学习请从[项目教学页](../../docs/practice/projects/safe-agent.md)开始。那里按一笔真实任务解释完整链路；本页只保留
-快速运行、脚本索引和排错信息。
+本目录提供 Safe Agent 的离线运行入口。学习顺序与机制解释见
+[项目教学页](../../docs/practice/projects/safe-agent.md)；本页只维护命令、状态文件、脚本索引和排错。
 
 ## 第一次只跑这笔退款 { #refund-lifecycle }
 
@@ -137,6 +134,13 @@ python -m pip install -c constraints/ci.txt -e ".[agents]"
 框架、决策理论、MCP 和 A2A 的学习顺序见[项目扩展实验](../../docs/practice/projects/safe-agent.md#framework-tool-adapters)。
 精确输入、结果和适用范围保存在[项目实验台账](../../docs/evidence/project-controls.md)，避免把 transport round trip
 误写成业务权限、安全或生产互操作已经完成。
+
+Outbox 的独立 crash-window 样例使用新的数据库路径：
+
+```powershell
+python projects/safe-agent/outbox_demo.py `
+  --database artifacts/agent/outbox-demo-001.db
+```
 
 ## 主要输入与输出
 

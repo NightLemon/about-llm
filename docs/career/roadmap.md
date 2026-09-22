@@ -305,42 +305,18 @@ resume bullet
 
 ## 面试环节怎样准备
 
-| 环节 | 所有路线共同要求 | 路线差异 |
-|---|---|---|
-| 编码 | 正确性、边界、测试、复杂度、可读性 | 算法偏张量/统计，系统偏并发/缓存，应用偏 API/data |
-| 基础机制 | Transformer、tokenizer、generation、训练与评测边界 | 深度按岗位主要对象增加 |
-| 项目深挖 | 数据、基线、指标、失败、取舍、本人贡献 | 必须能打开实验产物或重建关键数字 |
-| 实验设计 | 假设、控制变量、切片、不确定性、停止条件 | 算法/评测权重更高，但任何路线都不能缺失 |
-| 系统设计 | 需求量化、数据流/控制流、容量、安全、降级 | 应用/Agent/推理强调不同瓶颈 |
-| 故障排查 | 从现象到分层假设、最小观测、止损、复盘 | RAG 召回、训练 NaN、OOM、尾延迟、重复 effect 等 |
-| 行为/协作 | 决策、冲突、失败、ownership、跨团队沟通 | 只讲成功故事无法证明事故处理能力 |
+岗位路线只决定“重点证明什么”。具体练习按需进入[编码轮](coding-round.md)、[系统设计](system-design.md)、
+[面试题与回答方法](interview-questions.md)和[行为面试](behavioral.md)，不要在本页再维护一套题库。
 
-### 项目深挖的六层回答 { #project-deep-dive }
+### 项目深挖的六层回答 {#project-deep-dive}
 
-1. **问题**：用户/系统目标和硬约束是什么？
-2. **基线**：为什么选择它，成功定义是什么？
-3. **机制**：你改变了哪一层，哪些层保持固定？
-4. **证据**：case、指标、区间、切片和原始失败在哪里？
-5. **取舍**：质量、风险、延迟、成本和复杂度怎样变化？
-6. **边界**：当前证据不能支持什么，下一项最可能推翻结论的实验是什么？
+按问题、基线、机制、证据、取舍和边界六层组织同一个主项目。回答中的数字必须能回到 workload、配置、原始失败和
+代码 revision；框架名称不能替代机制与对照。
 
-回答“我们用了某框架所以效果更好”会在第二、三和四层同时断裂。
+### 故障题的回答顺序 {#incident-order}
 
-### 故障题的回答顺序 { #incident-order }
-
-先止损，再分层，再观测，最后改动：
-
-```text
-影响范围/安全风险
--> rollback、限流、禁用副作用或降级
--> input/data/model/runtime/system 分层假设
--> 最小日志、trace、metric、replay
--> 一次只改变一个主要变量
--> 回归集与发布 gate
--> postmortem 和长期预防
-```
-
-不要一上来“换更大模型”或“调 Prompt”。
+先说明影响范围与止损，再按 input/data/model/runtime/system 建立假设，用最小日志或 replay 定位，只改变一个主要变量，
+最后补回归、发布门禁和复盘。具体题目留给相应面试页。
 
 ## 如何判断职级与 ownership { #ownership-levels }
 
@@ -391,40 +367,11 @@ CPU 样例、loopback、作者自编数据、schema 校验和模型拒答各自�
 
 框架会变，稳定能力是识别输入输出契约、构造正确基线、定位失败、验证修改并控制发布。熟练使用框架仍有价值，但必须能解释它替你做了什么。
 
-## 求职决策记录模板
+## 做岗位决定时只保留一页摘要
 
-为每个目标岗位维护一页，而不是维护一个无限增长的“LLM 技能清单”：
-
-```markdown
-# Role decision record
-
-## Target
-- company/team/JD snapshot:
-- primary failure ownership:
-- main deliverables and scale:
-
-## Evidence map
-- strongest K/I/V/O evidence:
-- 主项目和实验产物链接：
-- adjacent evidence:
-
-## Gaps
-- hard missing domain:
-- tool-level migration:
-- claim I must not make:
-- smallest falsifiable next experiment:
-
-## Interview
-- likely coding/mechanism/experiment/system loops:
-- three project decisions to defend:
-- two failures and one conflict story:
-
-## Decision
-- fit, learning surface and risks:
-- questions for the team:
-```
-
-这个模板不要求公开公司机密。真实工作证据应脱敏、获得授权，并避免上传客户数据、密钥、内部 Prompt、日志或专有代码。
+每个目标岗位只记录：JD snapshot 与主要失败责任、最强的 K/I/V/O 证据、硬缺口、不能声称的结论、三个准备中的
+项目决策，以及对团队的数据、预算、发布和 ownership 问题。作品集证据写法见[简历项目](resume-projects.md)，
+面试准备分别进入[系统设计](system-design.md)与[行为面试](behavioral.md)。不要在路线页长期维护一份不断增长的模板。
 
 ## 完成检查
 

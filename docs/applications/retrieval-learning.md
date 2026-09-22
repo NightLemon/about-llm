@@ -264,25 +264,9 @@ w_j(x)=\max_i \log(1+\operatorname{ReLU}(z_{ij})),
 
 ## 9. Exact search、ANN 与 Reranker 的误差分层
 
-固定 query/document embeddings 后，先用矩阵乘法得到全库 exact ranking。再比较 ANN：
-
-- **HNSW**：图搜索；`ef_search` 增大通常提高 recall 也增加延迟；
-- **IVF**：先选 centroid/inverted lists；`nprobe` 决定扫描范围；
-- **PQ**：对子空间做 codebook quantization，降低内存和带宽但引入 score 近似。
-
-至少报告三个不同指标：
-
-1. `model Recall@k`：exact ranking 相对 qrels 的召回；
-2. `ANN recall@k`：ANN 结果相对 exact top-k 的重合或覆盖；
-3. `end-to-end Recall@k`：线上授权、过滤、ANN 和 rerank 后相对 qrels 的召回。
-
-三个指标对应三种排查方向：
-
-- Model Recall 差：检查表示模型、标签和训练数据；
-- Model Recall 好而 ANN recall 差：检查索引参数和近似算法；
-- 大候选集有答案，重排后却消失：检查 cross-encoder、截断和授权后的候选身份。
-
-它们都叫 recall，但测量对象不同。
+本页只要求把表示误差与系统误差分开：用 exact ranking 相对 qrels 衡量表示模型，再用 ANN 相对 exact top-k 衡量
+近似损失。授权、过滤、索引和重排串起来后的端到端漏斗由[RAG 召回](rag-retrieval.md)负责。三个阶段都可能报告
+Recall@k，但分母和排查对象不同。
 
 ## 10. Reranker、Distillation 与训练漏斗
 
@@ -290,14 +274,8 @@ Cross-encoder 可以直接用作线上 reranker，也可以充当教师，为大
 [distillation](../reference/glossary.md#term-distillation) 训练 bi-encoder。教师分数不是人工真值；它可能包含位置、
 长度、语言和训练域偏差。
 
-训练时应分开比较：
-
-- 只用人工/行为 qrels；
-- 加教师 soft labels；
-- 加 mined hard negatives；
-- 同预算下的组合。
-
-线上 reranker 只能读取已经授权的 candidate content。先把越权文档送入 cross-encoder、最后再过滤，即使最终结果没有返回，也已经越过信息边界。
+训练时分别比较人工/行为 qrels、教师软标签和 mined negatives；线上授权与 reranker 的执行顺序回到
+[召回漏斗](rag-retrieval.md)。本页不把部署控制混进表示学习结论。
 
 ## 11. Qrels、Pooling 与不完整标注
 
@@ -322,29 +300,10 @@ Qrels pooling 会产生依赖既有系统的漏标：没有进入候选池的文
 
 ## 12. 单卡训练时最容易漏掉的契约
 
-一个最小训练 record 不应只有三段字符串，至少绑定：
-
-```text
-query_id, query_text, split, locale
-positive_document_ids, positive_relevance
-candidate_document_ids, candidate_source
-corpus_version, chunker_version, qrels_version
-```
-
-训练循环还应明确：
-
-- tokenizer 与 query/document prefix；
-- pooling、normalization、score 和 temperature；
-- per-device/global batch 以及 cross-device negatives；
-- duplicate/false-negative mask；
-- loss 是按 query、pair 还是 token reduction；
-- miner/index/checkpoint identity；
-- validation 使用 exact 还是 ANN search。
-
-单张消费级 GPU 可以从小 batch 和梯度累积开始，但梯度累积不会自动增加同一次前向中的 in-batch negative 数。
-每个 micro-batch 若独立计算 loss，候选分母仍然只包含当前 micro-batch。
-
-要扩大负例域，需要显式使用 embedding cache、跨 batch memory 或其他算法，同时处理过期 embedding 和梯度语义。
+训练 record 至少绑定 query、positive/candidate IDs、split、语料/chunker/qrels 版本；运行配置再固定 encoder、prefix、
+pooling、normalization、temperature、negative scope 与 loss reduction。梯度累积不会自动扩大同一次 forward 的
+in-batch negative 集合；跨 batch memory 或 embedding cache 会引入陈旧表示和新的梯度语义。完整训练运行与恢复约定
+交给具体项目 README，本页只保留这些会改变学习目标的契约。
 
 ## 13. 运行一个可手算的 NumPy 例子 { #exact-control }
 
@@ -405,18 +364,10 @@ model recall 单独衡量。
 | qrels 少且漏标严重 | lexical/dense 多系统 pooling | 人审 hard negatives，建立 multi-positive labels |
 | 第一阶段召回够、排序不够 | authorization-first cross-encoder | distill 到 bi-encoder 或优化候选漏斗 |
 
-## 16. 面试时怎样回答
+## 16. 用一条主线复述
 
-面对“怎样训练一个 dense retriever”，不要只说“用 sentence-transformers 微调”。可以按以下顺序：
-
-1. 定义 relevance、query 独立单位、corpus 与 qrels；
-2. 选择 bi-encoder、pooling、normalization 与 score；
-3. 写出 InfoNCE 分母，说明 positive/negative 来源和 false-negative mask；
-4. 只在训练集内挖掘负例，用验证集选配置，最后固定测试集版本并限制查看；
-5. exact search 测表示质量，再测 ANN approximation recall；
-6. 对授权后的候选做 cross-encoder rerank；
-7. 保存 checkpoint、tokenizer、index、qrels 和 metric 分母；
-8. 用 slice、消融与真实失败案例决定是否发布。
+复述本页时按“表示与打分 → positives/negatives → InfoNCE → exact 检索 → 系统漏斗”推进，并说明 checkpoint、prefix、
+corpus、qrels 与 miner identity。ColBERT/SPLADE 的差异落在交互粒度、索引结构和成本，不用再重复一套部署答案。
 
 ## 17. 自测与实践
 

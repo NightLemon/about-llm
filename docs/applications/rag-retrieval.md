@@ -188,14 +188,9 @@ Dense retrieval 能找出同义改写，例如“访问控制应在哪一步执�
 
 ### 表示是怎样学出来的
 
-Bi-encoder 常用 InfoNCE 或多正例对比目标。Negative 决定模型被要求区分什么：
-
-- Random negative 容易，但训练信号可能太弱。
-- In-batch negative 便宜，却可能包含漏标相关文档。
-- Hard negative 信号强，也最容易放大 false negative。
-- 负例挖掘必须与留出的数据划分隔离，避免把评测信息带回训练。
-
-完整公式、梯度和 ColBERT/SPLADE 路线见[检索表示学习](retrieval-learning.md)。
+本页把 embedding 当作召回系统的一个输入契约：固定 encoder、tokenizer、prefix、pooling 与 normalization，再评测它
+是否把答案证据带进候选集。InfoNCE、negative mining、ColBERT 与 SPLADE 的训练机制统一见
+[检索表示学习](retrieval-learning.md)，这里不重复展开。
 
 ## ANN：把向量表示误差与近似索引误差分开
 

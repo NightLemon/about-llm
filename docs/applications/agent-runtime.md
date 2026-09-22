@@ -1,4 +1,4 @@
-# Agent Runtime：一笔退款怎样只执行一次并安全收尾
+# Agent Runtime：授权、效果与恢复原语
 
 <!-- learning-contract -->
 <div class="learning-contract" markdown="1">
@@ -7,7 +7,7 @@
 
 - **适合读者**：需要实现工具调用、授权、审批与故障恢复的 Agent 工程师。
 - **先修**：先读[一次 Agent 退款任务](agent-task-lifecycle.md)，理解动作提议、审批和完成验证。
-- **首次阅读**：先运行退款实验，再依次理解 `pending`、执行身份、对账和事务发件箱。
+- **首次阅读**：从事故窗口进入，再依次理解执行身份、`pending`、对账和事务发件箱。
 - **完成信号**：面对工具超时，能判断何时可重试、何时必须查询远端状态。
 - **卡住时**：运行[实验 6](../practice/labs/lab-6-agent-lifecycle.md)，只观察一次状态怎样变化。
 
@@ -29,33 +29,11 @@
 2. 本地不知道远端结果时，怎样避免第二笔退款？
 3. 进程重启以后，系统从哪里继续，最后又凭什么报告“退款申请已受理”？
 
-## 先运行：看本地未知怎样得到已受理证据 { #run }
+## 从故事切到可复用原语 { #run }
 
-从仓库根目录运行：
-
-```powershell
-python projects/safe-agent/refund_lifecycle.py
-```
-
-这是一个离线模拟，不会调用真实模型或支付服务。第一次阅读不必逐字段看完整 JSON，先找到下面五个阶段：
-
-| 阶段 | 本地看到什么 | 固定模拟器的 effect count |
-|---|---|---:|
-| 跨租户反例 | 权限拒绝，Handler 没有执行 | 0 |
-| 合法退款执行 | Handler 收到超时，本地账本保持 `pending` | 1 |
-| 立即重放 | 账本阻止 Handler 再次执行，要求先对账 | 1 |
-| 独立查询 | 回执中的订单、金额、原因和状态全部匹配 | 1 |
-| 对账后重放 | 命中已确认结果，返回退款单号 | 1 |
-
-输出中的 `execution.status` 是 `failed`，表示这次本地 Handler 调用没有拿到成功响应；
-它不表示退款没有发生。与此同时，`local_ledger_state` 是 `pending`；固定模拟支付服务报告的
-`provider_effect_count` 为 1。这个字段是[固定样例](../reference/glossary.md#term-fixture)的内部观测，不是本地控制面在超时时已经取得的证据。
-
-随后，验证器按同一个幂等键查询支付服务。回执匹配后，账本才进入完成状态，最终回答是：
-
-> 退款已由支付服务确认受理，退款单号 refund-provider-7001。
-
-接下来的章节都在解释：为什么这五个阶段会在当前固定样例中拦住一次待定操作的重放，并让未知结果通过查询得到确认。
+[退款生命周期](agent-task-lifecycle.md)负责完整故事，[实验 6](../practice/labs/lab-6-agent-lifecycle.md)负责命令、预测和输出。
+本页从其中最危险的窗口开始抽象：Handler 已领取执行权并调用远端，响应却丢失，本地只能保存 `pending`。后续章节
+讨论怎样让任意工具运行时绑定身份、阻止盲目重放，并用独立 verifier 收尾。
 
 ## 先看事故发生在哪个窗口
 
@@ -308,27 +286,10 @@ Runtime 的安全边界还包括：
 
 ## 在仓库里运行两种恢复
 
-前面的退款主线执行了封闭参数校验、资源级权限检查、审批绑定、SQLite 调用领取，以及支付服务回执查询。
-规划器和支付服务都是进程内模拟器，因此适合观察控制流和状态变化。
-
-修改这条链路后，运行对应测试：
-
-```powershell
-python -m pytest tests/test_agent_refund_lifecycle.py -q
-```
-
-真实支付系统还要继续验证服务身份、网络错误、签名、账务和对账流程。
-
-再运行 outbox 的 ack-before-crash 场景：
-
-```powershell
-python projects/safe-agent/outbox_demo.py `
-  --database artifacts/agent/outbox-demo-001.db
-```
-
-预期会看到两次对模拟服务提供方的请求继续使用同一个幂等键。该固定样例记录一个模拟业务副作用，最终投递状态为 `delivered`；真实服务是否按键去重仍取决于其契约和对账证据。
-完整测试矩阵、SQLite 固定故障样例以及每个字段适用于哪些结论，见
-[Safe Agent 项目页](../practice/projects/safe-agent.md)和[项目控制台账](../evidence/project-controls.md)。
+退款对账与 outbox crash-window 是两个独立实验。运行命令、状态文件和专项测试由
+[Safe Agent README](https://github.com/NightLemon/about-llm/blob/main/projects/safe-agent/README.md)维护；学习顺序见
+[项目页](../practice/projects/safe-agent.md)，固定结果与适用边界见[项目证据](../evidence/project-controls.md)。这些本地模拟
+可以检查控制流，不能证明真实服务会按幂等键去重或完成账务对账。
 
 ## 自测
 

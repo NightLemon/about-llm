@@ -91,53 +91,8 @@ K 和 V 各有一份。Float64 每元素 8 bytes，所以固定 tensor payload �
 | `allocated_token_slots` |  |
 | `internal_fragmentation_slots` |  |
 
-### 三个预测点的推导
-
-填完表之后再核对下面的推导。
-
-**1. append prefix 后的状态**
-
-Allocator 总是先使用最小可用 block id。五个 token 应得到：
-
-```text
-request-a block table: [0, 1]
-block 0: 3/3
-block 1: 2/3
-```
-
-此时 block 1 是 partial tail，仍有一个空位。
-
-**2. fork 后的状态**
-
-Fork 不复制 K/V。Request B 先共享 A 的两个物理块：
-
-```text
-request-a: [0, 1]
-request-b: [0, 1]
-block 0 refcount: 2
-block 1 refcount: 2
-```
-
-逻辑上有四个 block reference，物理上仍只有两个 block。
-
-**3. A 再 append 一个 token**
-
-Block 1 还有空间，但它被 A/B 共享。如果 A 原地写入，B 的前缀会被污染。
-
-因此 A 需要把 block 1 的两个已有 token 复制到新 block 2，再写入第六个 token：
-
-```text
-request-a: [0, 2]
-request-b: [0, 1]
-copied partial block: 1 -> 2
-```
-
-写完后：
-
-- block 0 有 3 个物理 token，仍被两条序列共享；
-- block 1 有 2 个物理 token，只属于 B；
-- block 2 有 3 个物理 token，只属于 A；
-- block 3 仍空闲。
+填完预测表以后直接运行脚本，再用输出反推 block 0、1、2 的所有者和 refcount。Paged KV、三份账本与 COW 的完整
+机制解释见[推理优化](../../systems/inference-optimization.md)；本页不在运行前公布推导过程。
 
 ## 第二步：运行并解释输出
 
@@ -242,17 +197,10 @@ python -m pytest tests/test_paged_kv_torch.py::test_capacity_failure_preserves_a
 运行后把脚本恢复为 `total_blocks=4`。这个负例比“正常输出全是 true”更重要：
 它证明失败发生在 mutation 之前，而不是只证明 happy path 能运行。
 
-## 第五步：沿实现读一次 COW
+## 第五步：用测试核对原子失败
 
-按下面顺序阅读，不必逐行通读整个文件：
-
-1. `PagedKVAllocator.append()` 先计算 `copy_tail`、`tail_free_slots` 和 `required_blocks`。
-2. 它在修改 sequence 之前一次性预留所需 block。
-3. Shared partial tail 被复制后，只有当前 sequence 的最后一个 block id 被替换。
-4. `PagedKVTensorStore.append()` 再把相同状态变化应用到真实 K/V arena。
-5. Tensor backend 更新失败后 store 会进入 poisoned state，拒绝继续返回可能失配的数据。
-
-最后运行本实验的相关测试：
+若想追实现，只沿 `PagedKVAllocator.append()` 到 `PagedKVTensorStore.append()`，确认容量检查发生在 tensor mutation
+之前、COW 只替换当前序列的尾块。随后运行：
 
 ~~~powershell
 python -m pytest tests/test_paged_kv_torch.py -q

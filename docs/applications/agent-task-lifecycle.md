@@ -90,14 +90,10 @@ sequenceDiagram
 
 模型只出现在 proposal 一侧。它不能写可信身份、授权能力、审批或最终业务事实。
 
-## 先运行一次
+## 先看实验会产生哪些状态
 
-从仓库根目录执行：
-
-~~~powershell
-python -m pip install -c constraints/ci.txt -e ".[agents]"
-python projects/safe-agent/refund_lifecycle.py
-~~~
+完整安装、命令、逐步预测和记录模板由[实验 6](../practice/labs/lab-6-agent-lifecycle.md)维护。本页只借用它的状态结果，
+解释一次退款为什么能安全结束。
 
 输出的 `stages` 按本章顺序展开。先观察这几个终态：
 

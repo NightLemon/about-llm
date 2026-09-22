@@ -60,21 +60,11 @@ flowchart LR
 反过来，网关返回 `200` 也只说明 HTTP 路径成功。要确认目标 checkpoint、tokenizer 和 template 确实执行，
 还需要用 request ID 把网关记录与服务端 generation trace 连起来。
 
-### 这条服务链怎样对应 nano-vLLM
+### 模型引擎只覆盖服务链的一段
 
-nano-vLLM 实现的是模型引擎，不是一套完整的在线服务。把前面的服务状态映射到实验代码，可以看清边界：
-
-| 服务状态 | nano-vLLM 中能观察到什么 | 仍由服务外围负责什么 |
-|---|---|---|
-| `offered / eligible` | 尚未进入引擎 | HTTP、认证、Schema、租户配额与请求上限 |
-| `queued` | `add_request()` 创建 `WAITING` sequence | 服务队列 deadline、公平性和快速拒绝 |
-| `admitted` | Scheduler 选择 sequence，BlockManager 分配 KV block | 全局并发额度和跨副本 admission |
-| `running` | ModelRunner 执行 prefill/decode，Sampler 选 token | Socket 断连、流式背压和外部依赖 |
-| `terminal` | Postprocess 标记完成并释放活动 KV 引用 | HTTP 终态、费用核销、审计与重试语义 |
-
-[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)从 `LLM.generate → add_request` 开始，记录 Scheduler、
-BlockManager、ModelRunner、Qwen3 和 Sampler 的真实执行。它回答“引擎内部为什么走到这一步”。本章继续回答外围问题：
-请求是否应该进入引擎、客户端看到什么终态，以及服务过载时如何保持可解释。
+nano-vLLM、vLLM 或其他模型引擎从序列进入内部队列后管理调度、prefill/decode 与 KV；HTTP 认证、租户配额、
+跨副本准入、流式背压、费用和审计仍由外围服务负责。想追具体引擎状态时进入
+[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md)；本页继续使用供应商无关的服务状态。
 
 ## 第一个问题：哪些请求算成功
 

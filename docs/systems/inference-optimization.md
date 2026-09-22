@@ -89,15 +89,8 @@ I=\frac{\text{FLOPs}}{\text{bytes moved}}.
 FlashAttention 使用分块计算和在线 softmax，减少完整分数与概率矩阵在 GPU 高带宽显存中的反复读写。
 
 它优化的是 IO 路径，不是把精确 attention 的一般计算量变成线性，也不会减少长期保存的标准 KV 容量。
-
-仓库提供一个 CPU online-softmax 实验，用小块 recurrence 对账 dense reference：
-
-~~~powershell
-python projects/transformers-basics/online_softmax_demo.py
-~~~
-
-这个实验会逐块维护当前最大值、归一化因子和加权 value 累加值，并用它们重建最终结果。
-它只验证在线 softmax 的数学过程。FlashAttention 的 CUDA 内核、GPU 显存和性能需要在目标设备上测量。
+在线 softmax 的递推和 CPU 对照实验见[数值计算](../foundations/attention-numerics.md)；是否命中目标 CUDA kernel，
+仍要在目标 shape、dtype 与硬件上观察。
 
 ## KV 容量：先算理想 payload
 
@@ -123,97 +116,16 @@ M_{KV/token}=2\times L\times H_{kv}\times D\times bytes(dtype).
 ## Paged KV：把连续空间问题改成映射问题
 
 若每条请求预留最大长度的连续 KV，短请求会浪费尾部空间，动态增删也需要寻找连续区域。
-Paged KV 把物理 arena 切成固定 block，并让每条序列保存自己的 block table。
-
-假设 block size 为 4，序列长度为 6：
-
-```text
-logical block 0: 4 tokens -> physical block 5
-logical block 1: 2 tokens -> physical block 1
-block table: [5, 1]
-```
-
-物理 block 可以不连续。尾块仍浪费两个 slot，所以分页减少的是预留和外部连续性问题，
-不是让碎片自动归零。
-
-### 三份账本不要混在一起
-
-共享前缀和 COW 存在时，至少分开：
-
-| 账本 | 含义 |
-|---|---|
-| logical tokens | 各序列长度之和，共享 prefix 会按序列重复计数 |
-| physical token values | 物理 block 中实际保存的 token positions，共享只算一次 |
-| allocated token slots | 已分配物理 block 数乘 block size |
-
-内部碎片是 `allocated token slots - physical token values`，不能直接由 logical tokens 推导。
-
-### Shared partial tail 为什么必须 COW
-
-父子序列可以让 block table 指向同一组 prefix blocks，并用 refcount 管理生命周期。
-已填满的共享尾块不再变化，后续 append 可以分配新块。
-
-未填满的共享尾块不能原地写。实现必须先预留新物理块、复制已有 K/V、替换当前序列的尾块映射，
-再 append 新 token。若容量不足，整次 append 应在改变旧 tensor 前失败。
-
-用下面的 guided lab 观察真实 CPU K/V 值，而不只看 metadata：
-
-[实验 7A：亲手追踪 Paged KV 与 copy-on-write](../practice/labs/lab-7a-paged-kv.md)
-
-### “Paged KV”与“PagedAttention kernel”不是同一份证据
-
-块分配器可以只管理块 ID、已使用位置和引用计数。张量存储层继续保存真实 K/V 数值。
-GPU PagedAttention 内核则读取 block table，直接在不连续的物理块上完成注意力计算。
-
-本仓库当前实验覆盖前两层，并使用稠密因果 GQA 参考实现核对数值。
-实验中的注意力仍会收集完整序列并生成稠密分数矩阵，因此没有执行 CUDA PagedAttention 内核。
+Paged KV 把物理 arena 切成固定 block，由每条序列的 block table 映射逻辑位置。诊断时分开 logical tokens、实际保存的
+physical values 与 allocated slots；共享未满尾块继续写入前必须 copy-on-write。完整状态推导和真实 CPU K/V 观察放在
+[实验 7A](../practice/labs/lab-7a-paged-kv.md)。该实验验证 allocator 与张量等价性，没有执行 GPU PagedAttention kernel。
 
 ## Batching：GPU 忙不等于每个请求都快
 
-Static batching 等一批请求一起完成。Continuous batching 在调度边界加入新请求并移除已完成请求，
-减少因输出长度不同造成的空位。
-
-Scheduler 仍需明确：
-
-- Waiting 请求何时 admission；
-- 一轮最多包含多少 sequence 和 token positions；
-- Prefill 是否分块，能否与 decode 混合；
-- Decode、prefill 和 priority 的先后关系；
-- KV 不足时拒绝、等待、抢占还是交换；
-- 完成和取消在哪个 boundary 释放资源。
-
-### Chunked prefill
-
-一个很长的 Prompt 若在单轮完成，可能让所有 decode 请求等待。分块 prefill 把输入拆成多轮，
-让 decode 在中间获得调度机会。分块太小，则会增加调度次数和内核启动开销。
-
-用一个不包含启动开销的 toy 时间线先看调度差异。请求 A 已进入 decode，还要执行 4 轮、每轮 10 ms；
-请求 B 的 prefill 需要 40 ms，之后 decode 1 轮、耗时 10 ms。三种调度都在 90 ms 完成，
-但 A 的最长输出间隔不同：
-
-| Policy | 执行顺序 | A 的最长 ITL | 两请求完成时间 |
-|---|---|---:|---:|
-| Fixed admission | A 的 4 轮 decode → B prefill → B decode | 10 ms | 90 ms |
-| Continuous、整段 prefill | A decode 1 轮 → B prefill → A 余下 3 轮 → B decode | 50 ms | 90 ms |
-| 两个 20 ms prefill chunks | A decode 与 B 的两个 chunk 交错，再完成两条请求 | 30 ms | 90 ms |
-
-这个例子没有声称 chunk 一定改善 makespan。它只展示相同总工作如何产生不同的最大 Inter-Token Latency（ITL，
-token 间延迟）。真实系统还要加入每个 chunk 的调度、launch、KV 和抢占成本，再同时比较 makespan 与 ITL。
-
-因此必须用混合长短输入的真实 workload 测量 p95/p99，而不是只跑固定长度的满 batch。
-
-### Preemption 的账不能只记输出 token
-
-KV 不足时，recompute preemption 会释放某条序列的 cache。它重新 admission 后，需要重跑已经处理的 context。
-
-\[
-W_{executed}=W_{logical}+W_{recomputed}.
-\]
-
-被抢占请求恢复后，不应再次向用户发送已经返回的 token，但 GPU 确实会重复部分计算。
-因此要分开记录 API 用量、用户序列中的逻辑位置和 GPU 实际执行的位置。
-
-端到端的 A/B 请求时间线见[请求生命周期](inference-request-lifecycle.md#request-b)。
+Continuous batching 在调度边界加入新请求、移除已完成请求；chunked prefill 把长 Prompt 拆开，让 decode 获得调度机会。
+两者都在吞吐、TTFT 与 token 间延迟之间重新分配等待。KV 不足触发 recompute preemption 时，还要分开 logical work 与
+GPU 重算的 executed work。完整时间线与分母见[请求生命周期](inference-request-lifecycle.md#request-b)；本页只把这些机制
+作为“队列或 ITL 先恶化”时的候选解释，并要求用混合长短请求实测。
 
 ## Prefix cache：命中首先是 identity 问题
 
@@ -234,39 +146,10 @@ Prefix cache 只减少可复用的 prefill。它不会减少后续 decode 的权
 
 ## Quantization：文件更小不等于服务更快
 
-### Weight-only quantization
-
-若 \(N\) 个权重从 FP32 变为 4-bit，单看量化编码，理论存储可以缩小 8 倍。
-真实格式还要保存每组缩放因子、可选零点、对齐填充、容器和索引，并保留未量化层。
-
-Group 越小，量化尺度越能适应局部范围，但 metadata 和 kernel 处理开销更高。
-最终速度取决于硬件是否有匹配的低位 kernel，以及瓶颈是否原本就在权重带宽。
-
-仓库的 CPU 权重量化实验会实际执行整数编码、缩放、位打包、文件重载和反量化矩阵乘：
-
-~~~powershell
-python projects/inference-serving/quantization_toy.py `
-  --seed 17 --bit-width 4 --group-size 8 `
-  --output-features 16 --input-features 33 --batch-size 8
-~~~
-
-它最终仍使用 FP32 NumPy 矩阵乘，因此适合检查文件格式和量化误差。
-低位 GPU 是否加速、常驻显存是否下降，要使用匹配的 GPU 内核和显存测量回答。
-
-### Activation 与 KV quantization
-
-Activation 分布和 outlier 会影响量化误差。KV quantization 还会把误差带入后续每一步 attention，
-需要按长度、任务和 head/layer 切片评价。
-
-若一个长度为 \(D\) 的 FP32 向量使用 INT8 code 加一个 FP32 scale，理想 payload ratio 是：
-
-\[
-\frac{4D}{D+4}.
-\]
-
-若原始是 BF16，则分子应为 \(2D\)。Allocator、alignment 和 workspace 尚未计入。
-
-Weight RMSE 或单层 attention parity 都不能替代目标任务质量、长上下文和安全切片评测。
+Weight、activation 与 KV quantization 改变的对象不同。文件缩小只有在目标 shape/dtype 命中低位 kernel，且瓶颈确实
+位于相应带宽时，才可能转成服务收益；metadata、未量化层、allocator 与 workspace 仍要计数。公式口径见
+[参考公式](../reference/formulas.md)，packing/reload 实验见下方入口。诊断结论必须同时报告 payload、峰值显存、
+TTFT/TPOT 与任务质量，不能用单层误差替代端到端结果。
 
 ## Speculative decoding：先保证分布，再谈加速
 
@@ -279,41 +162,15 @@ Draft 模型先提出若干 token，target 模型并行验证。Sampling 版本�
 P(accept)=\min(1,p/q).
 \]
 
-第一次拒绝时，要从归一化后的正残差 \((p-q)_+\) 中采样，并丢弃草稿中位于它后面的 token。
-如果整段草稿全部接受，再从目标模型多计算出的下一个位置采样一个额外 token。
-
-这里要求 \(p\) 和 \(q\) 使用相同的分词器、词表、已接受前缀和实际采样变换。
-贪心投机解码采用另一套接受规则，不套用随机采样的残差分布。
-
-是否加速取决于接受率、draft 成本、验证长度、batch 和 kernel。分布正确不等于 wall-clock 更快。
-
-把 KV quantization 和 speculative decoding 放进同一张验收表，可以防止局部收益被写成服务结论：
-
-| 变化 | Payload / peak | 新增工作 | TTFT | TPOT / ITL | E2E | 质量与终态 |
-|---|---|---|---|---|---|---|
-| KV quantization | cache payload、scale、allocator、workspace | quantize/dequantize 与新 kernel | 单列 | 按长度与 batch | 含排队和重试 | 长上下文、任务与安全切片 |
-| Speculative decoding | draft/target KV 与临时状态 | draft、验证、拒绝后残差采样 | 单列 | 接受 token/轮与尾部 | 含 draft 启动 | 分布、答案、失败与超时 |
-
-只有 payload 变小或 decode-only 时间下降时，表中其他格仍是未知。最终结论应同时固定 checkpoint、
-runtime、硬件、输入输出分布、并发、重复次数和完整失败分母。
+第一次拒绝时要从归一化后的正残差 \((p-q)_+\) 采样；整段接受时再从目标模型的下一位置采样。这里要求 draft 与
+target 使用同一 tokenizer、词表、已接受前缀和采样变换。分布正确仍不等于更快：接受率、draft 成本、验证长度、
+batch 与 kernel 都要进入同一 workload 的 TTFT、TPOT、E2E、质量和失败分母。
 
 ## Parallelism、kernel 与编译
 
-### Tensor parallelism
-
-Tensor parallelism 把一层矩阵或 attention heads 分到多个设备，并用 collective 合并结果。
-它能解决单设备容量和计算问题，也引入通信、同步和更复杂的故障边界。
-
-小模型或低 batch 下，通信可能抵消并行收益。单张消费级 GPU 的首选通常是先选合适模型、dtype 和 runtime，
-而不是把多卡策略当作默认答案。
-
-### Kernel fusion 与 CUDA Graph
-
-内核融合减少中间数据读写和内核启动次数，但通常只支持特定形状、数据类型和硬件。
-CUDA Graph 适合重复且形状较稳定的执行路径，因此常用于 decode；动态控制流和频繁变化的形状会降低适用性。
-
-`torch.compile`、Triton、FlashAttention 和 CUDA Graph 解决的问题不同。
-看到某个开关可用，不代表它位于当前瓶颈路径。
+Tensor parallelism 用通信换单设备容量；kernel fusion 减少中间读写和 launch；CUDA Graph 复用形状较稳定的执行路径。
+三者处理不同瓶颈，也都可能因小 batch、动态 shape 或通信成本而退化。多卡通信见
+[集合通信](collective-communication-network.md)，算子与编译层次见[算子计算栈](operator-stack.md)。
 
 ## 把诊断带回 Qwen3 与 nano-vLLM { #nano-vllm }
 

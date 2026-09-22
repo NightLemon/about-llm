@@ -303,94 +303,25 @@ MoE 的路由、专家容量、分组矩阵乘法和专家并行见 [MoE 系统]
 从 FX/ONNX 图导出 operator inventory 是盘点起点，不是完整结论。运行时控制流、custom op、sampling、cache 管理、
 通信和形状特化路径仍需单独覆盖。
 
-## 跨平台迁移时，按层映射而不是翻译 API
+## 跨平台迁移仍使用同一张支持卡
 
-把 CUDA 程序迁到其他 GPU/NPU，第一步不是寻找同名 API，而是固定数学语义和算子契约，然后逐层回答：
+迁移到另一种 GPU、NPU 或编译后端时，先固定数学语义，再逐项核对 dtype、shape、layout、动态性、forward/backward、
+设备回退和性能。接口同名只说明调用表面接近，不能推出 kernel 与数值边界相同。设备代际、软件版本、显存与互联必须
+随结果保存；本仓库尚没有可用于跨厂商性能结论的双平台实测。
 
-```text
-模型算子清单
-→ 目标框架/编译器能否表达
-→ dtype、shape、layout 和动态性是否覆盖
-→ 使用现有库、算子组合还是自定义 kernel
-→ forward/backward 与分布式如何注册
-→ 差分正确性
-→ microbenchmark
-→ 模型与服务回归
-```
+## Profiling 从系统症状进入
 
-不同加速器有各自的软件栈：
+本页只负责说明 profiler 里的事件属于哪一层。如何从 TTFT、TPOT、吞吐或 OOM 定位瓶颈，以及怎样固定 workload、
+预热、同步和报告结果，统一见[推理优化](inference-optimization.md#worked-diagnosis)与
+[硬件 benchmark 协议](hardware-edge.md#gpu-timing)。Microbenchmark 只回答一个算子在给定 shape/dtype/layout 下的成本，
+不能替代端到端请求测量。
 
-- NVIDIA 使用 CUDA；
-- AMD 使用 ROCm/HIP；
-- 昇腾使用 CANN；
-- Intel GPU 使用 oneAPI/XPU；
-- TPU 通常通过 XLA 编译和执行。
+## 从这条 trace 继续
 
-比较这些平台时，可以逐项回答四个问题：
-
-1. 算子语义是否一致？
-2. 哪些数据类型、形状和内存布局可用？
-3. 运行中是否回退到主机或较慢的实现？
-4. 性能是否满足目标工作负载？
-
-接口相似只代表其中一层容易迁移，不能推出数值边界、kernel 选择和实际性能也相同。
-
-做跨厂商比较时，需要记录设备代际、软件版本、显存与互联。动态形状、自定义算子、集合通信和性能分析工具也要
-分别核对，最后在相同的真实模型任务上测量。这里给出的是统一比较方法，不表示不同平台的功能或性能等价。
-
-## Profiling：先从症状缩小范围，再下钻 kernel
-
-一次可信的性能诊断按下面顺序进行：
-
-1. 先固定模型 revision、输入/输出长度、batch、dtype、功耗模式和软件版本；
-2. 用 reference 验证输出和梯度，再讨论速度；
-3. 预热编译、allocator 和 cache，计时窗口前后按设备语义同步；
-4. 先看端到端 TTFT、TPOT、吞吐、显存和失败，再看 PyTorch profiler；
-5. 用 Nsight Systems 找 CPU gap、launch、复制、同步和 collective；
-6. 对确认的热点再用 Nsight Compute 分析 occupancy、memory throughput、指令与 Roofline；
-7. 只改一个变量，保留原始数据和退化结果。
-
-Microbenchmark 回答一个算子在指定 shape/dtype/layout 上的成本；端到端 benchmark 还包含调度、cache、tokenizer、
-网络和请求分布。两者不能互相替代。
-
-## 当前仓库已经覆盖到哪里
-
-需求大纲中的内容不是全部空白。下面按“能否形成完整学习闭环”归类：
-
-| 主题 | 当前状态 | 主要入口 |
-|---|---|---|
-| Transformer 算子与 shape | 已有完整主线 | [Transformer](../core/transformer.md) |
-| Attention/online softmax | 已有数学与参考实现 | [Attention 数值计算](../foundations/attention-numerics.md) |
-| KV、PagedAttention、prefix reuse | 已有状态机、真实 tensor 与 nano-vLLM 路线 | [推理请求](inference-request-lifecycle.md)、[实验 7A](../practice/labs/lab-7a-paged-kv.md) |
-| Prefill/decode、batching、CUDA Graph | 已有请求级与源码级实验 | [推理优化](inference-optimization.md)、[实验 7B](../practice/labs/lab-7b-nano-vllm-qwen3.md) |
-| Weight/KV quantization | 已有 packing、scale、误差与 reload 实验 | [推理优化](inference-optimization.md) |
-| MoE routing/grouped work/all-to-all | 已有前向、capacity、通信和反向主线 | [MoE 系统](../frontier/moe-systems.md) |
-| 分布式训练与通信 | 已有 DP/TP/PP/EP、global loss 与恢复 | [分布式训练](distributed-training.md) |
-| Roofline、显存与消费 GPU | 已有公式、预算和 3070 路线 | [硬件与端侧](hardware-edge.md) |
-| 框架算子、export 与支持审计 | 本章和实验 2D 补成入门闭环 | [实验 2D](../practice/labs/lab-2d-operator-stack.md) |
-| 自定义 Triton/CUDA kernel 优化 | 尚无经过目标 GPU 验证的优化日志 | 需要在 3070 或其他目标设备实测 |
-| 跨厂商 backend 对照 | 目前只有统一审计方法，没有双平台实测 | 不能写成已完成适配 |
-
-Attention、KV Cache 和 MoE 已经有各自的学习主线。接下来更值得做的是在目标 GPU 上选择 RMSNorm 或另一种
-逐元素/归约 kernel，依次完成正确性对账、性能分析和优化，再用同一张支持卡审查第二种后端。
-
-## 推荐学习顺序
-
-```text
-Transformer shape
-→ 本章 RMSNorm 计算栈
-→ 实验 2D 的 FX/export/profiler
-→ Attention 与 KV
-→ Roofline 与 profiling
-→ nano-vLLM 请求 trace
-→ 目标 GPU kernel 或跨平台适配
-```
-
-后续路线取决于你的目标：
-
-- 学习推理服务：进入 [Inference Serving](../practice/projects/inference-serving.md)；
-- 学习训练系统：进入[分布式训练](distributed-training.md)；
-- 学习 kernel 工程：继续在目标设备上编写 Triton/CUDA 实现，并用 Nsight 和多组形状测量验证优化。
+学习路径按问题分流：Attention 数值进入[数值计算](../foundations/attention-numerics.md)，KV 与调度进入
+[推理优化](inference-optimization.md)，MoE 进入[MoE 系统](../frontier/moe-systems.md)，集合通信进入
+[分布式训练](distributed-training.md)。要亲手观察 FX、ATen 与 profiler，继续[实验 2D](../practice/labs/lab-2d-operator-stack.md)；
+要做目标 GPU 验收，进入 [Inference Serving](../practice/projects/inference-serving.md)。
 
 ## 自测
 

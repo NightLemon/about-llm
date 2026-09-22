@@ -58,37 +58,13 @@ python projects/inference-serving/generation_work_ledger.py
 长实验开始前，先运行[实验 1B](../labs.md#lab-1b)，亲眼看一次真实 message 怎样变成 Qwen3 的 29 个输入 ID。
 回到本页后，只研究输入长度、前缀变化、调度和 KV block。前一个实验解释文本编码，本实验解释 runtime 执行。
 
-加载模型以前，收集程序先核对 nano-vLLM 的 Git commit 和远端地址，并确认源码目录没有本地修改或未跟踪文件。
+收集程序会核对源码、模型、tokenizer、生成配置和权重摘要；任何 identity 漂移都会停止。Clone、snapshot 下载、依赖和
+GPU 预检命令只在[项目运行手册](https://github.com/NightLemon/about-llm/blob/main/projects/inference-serving/README.md)
+维护，避免 Lab 复制一套易过时的安装步骤。Windows CPU 运行不能替代目标 GPU 预检。
 
-接着，它逐个检查模型配置、tokenizer、生成配置和权重文件的大小与 SHA-256 摘要。
-只要版本或文件内容与表中记录不同，程序就会停止，并指出不一致的项目。
+## 先标出要观察的源码边界
 
-推荐在 WSL 的独立环境准备依赖。安装时避免用 editable install 向被检查的源码目录写入构建产物：
-
-~~~bash
-git clone https://github.com/GeeeekExplorer/nano-vllm.git ~/src/nano-vllm
-git -C ~/src/nano-vllm checkout --detach \
-  bb823b3e06983d71485a8e1f23715ebd87d98ef8
-git -C ~/src/nano-vllm status --short
-
-hf download Qwen/Qwen3-0.6B \
-  --revision c1899de289a04d12100db370d81485cdf75e47ca \
-  --local-dir ~/models/Qwen3-0.6B-c1899de
-~~~
-
-依赖安装以这个 nano-vLLM 版本的 `pyproject.toml` 为准。在 WSL 中依次确认：
-
-- `nvidia-smi` 能看到目标 GPU；
-- PyTorch 可以访问 CUDA；
-- FlashAttention 可以导入；
-- Triton kernel 可以执行。
-
-Windows 下的 CPU Python 不能替代这次 GPU 预检。
-
-## 先看一次请求的源码路线
-
-nano-vLLM 的公开 `LLM` 直接继承 `LLMEngine`。普通 `generate()` 先逐条调用 `add_request()`，
-再循环调用 `step()`，直到 scheduler 中既没有 waiting，也没有 running sequence：
+本实验只沿一次请求读取这条路径：
 
 ```text
 LLM.generate
@@ -105,36 +81,9 @@ LLM.generate
   -> tokenizer.decode
 ```
 
-收集程序没有重写一套 scheduler，也没有伪造模型输出。它只临时包装 `Scheduler.schedule()`，读取本轮调度结果和
-KV 账本；真正的计算仍由原版 `LLMEngine.step()` 完成。
-
-一次 step 返回后，程序再记录 model runner、sampler 和 postprocess 留下的状态。因此，报告中的 trace 和模型输出
-来自同一次真实执行。
-
-### 谁负责模型，谁负责推理运行时
-
-Transformers 参与读取配置和 tokenizer；真正执行这次 forward 的模型类来自 nano-vLLM。
-
-| 部件 | 在本实验中承担的职责 | 它不负责什么 |
-|---|---|---|
-| Transformers | 读取 `AutoConfig`、`AutoTokenizer` 和 Qwen3 配置类型 | 调用 `AutoModel.generate()` 生成 |
-| nano-vLLM | 实现 Sequence、Scheduler、BlockManager、ModelRunner、Qwen3 模型和 Sampler | 充当官方 vLLM 的完整替代品 |
-| Qwen3 checkpoint | 提供 config、tokenizer 和 safetensors 权重 | 自带 scheduler 或 CUDA kernel |
-| PyTorch | 提供 Module、tensor、CUDA allocator、distributed、`torch.compile` 和 CUDA Graph API | 决定怎样组 batch |
-| FlashAttention | 执行变长 prefill 和带 KV Cache 的 decode attention | 管理 sequence 生命周期 |
-| Triton | 用自定义 kernel 把本轮 K/V 写入 block slot | 实现全部 attention 逻辑 |
-| xxhash | 计算链式 token-block cache key；命中后仍比较 token ID | 做权限校验或密码学认证 |
-| NCCL | 初始化 tensor parallel 进程组；本实验 world size 为 1 | 证明多卡通信已经测试 |
-
-这里使用的 Qwen3-0.6B 是纯文本稠密解码器（text-only dense decoder）。它需要的主要模型部件由 nano-vLLM 自己实现：
-
-- RMSNorm；
-- 旋转位置编码（RoPE）；
-- 分组查询注意力（GQA）；
-- gated SiLU MLP；
-- 因果语言模型输出头。
-
-这条模型路径不需要多模态 processor，也不会启动视觉 encoder。
+收集程序包装 scheduler 读取 trace，但仍由原版 `LLMEngine.step()` 执行模型。Transformers 读取配置与 tokenizer；
+nano-vLLM 拥有 sequence、scheduler、block manager、model runner 与 sampler。完整组件职责由
+[请求生命周期](../../systems/inference-request-lifecycle.md)解释，本实验只核对上述边界实际出现于报告。
 
 ## 768 个 prompt token 怎样进入三个 block
 
@@ -229,7 +178,7 @@ sum(block.ref_count) == 所有活动 block-table references
 `Sequence.is_prefill` 是另一个状态字段，首次调度 decode 时才会变成 false。
 判断 Model Runner 当前走哪条路径，要同时查看 sequence 状态、本轮 `is_prefill` 和实际调度工作量。
 
-## CUDA Graph 究竟覆盖哪一段
+## CUDA Graph 对照只看 decode
 
 这个版本的 `ModelRunner.run_model()` 按下面的条件选择执行路径：
 
@@ -240,16 +189,9 @@ decode batch > 512       -> eager model call
 其他 decode              -> captured CUDA Graph replay
 ```
 
-本实验最多并发 8，请求数没有超过图回放的 batch 上限。因此，`cuda_graph` 组的 decode 会使用已捕获图；
-prefill 在所有组里都按普通 eager 路径执行。
-
-`enforce_eager=True` 只关闭 Model Runner 的 CUDA Graph 分支，并不等于关闭进程中的全部编译。
-例如，这个版本的 Sampler 仍使用 `torch.compile`。
-
-CUDA Graph 在引擎初始化时捕获，捕获耗时不计入单次测量。捕获后保留的 graph pool、模型、KV arena 和 allocator
-预留内存仍构成测量开始时的显存基线。
-
-`reset_peak_memory_stats()` 只重置峰值计数器，不会释放已经保留的显存。
+当前对照只要求确认 prefill 走 eager，符合条件的 decode 才报告 graph replay。`enforce_eager=True` 不等于关闭进程内
+全部编译；图捕获时间不进入单次测量，graph pool 与 allocator 预留仍进入显存基线。更一般的 CUDA Graph 取舍见
+[推理优化](../../systems/inference-optimization.md)。
 
 ## 运行完整消融
 
@@ -263,14 +205,8 @@ python projects/inference-serving/nano_vllm_study.py collect \
   --output artifacts/inference/nano-vllm-study.json
 ~~~
 
-收集程序为 `(eager|cuda_graph) × (256|1024)` 启动四个独立子进程。这样，前一组留下的 CUDA Graph、allocator、
-前缀缓存和进程组不会进入后一组。
-
-每个 case 先预热一次，再测量五次。报告同时保留五个原始值、中位数和失败终态。
-
-这四个进程只隔离“执行模式 × token 预算”。同一进程内，两个前缀版本和四档并发仍按固定顺序复用一个引擎，
-所以 allocator 和前缀缓存的历史会延续到后面的 case。若两组结果只差很小，先把它视为可能的顺序效应；
-更严格的比较还需要逐 case 进程隔离或随机化运行顺序。
+收集程序为 `(eager|cuda_graph) × (256|1024)` 启动四个独立子进程，每个 case 预热一次、测量五次并保留失败终态。
+同一进程内的 prefix 与并发 case 仍按固定顺序共享引擎；小差异要先视为可能的顺序效应。
 
 运行完成后先离线验证：
 
@@ -301,15 +237,8 @@ python projects/inference-serving/nano_vllm_study.py explain \
   --sample-index 0
 ~~~
 
-`explain` 会再次验证整份报告，然后只读取这个成功 case 的第一份测量样本。输出表的每一行对应一次 engine step：
-
-- `sequence 状态` 显示请求怎样从 waiting 进入 running，最后变成 finished；
-- `cached tokens` 分别显示调度前、调度时和 postprocess 后的位置；
-- `本轮调度` 与 `本轮提交` 可以区分“模型算过候选”和“用户真的得到一个 token”；
-- `used KV blocks` 显示调度前、分配后和本轮结束后的活动块数。
-
-最后一行应结束于 `finished`，完成摘要中的 `used_blocks` 与 `ref_count_total` 都应为 0。
-若所选 case 在采集时失败，命令会保留并报告它的失败阶段，不会把失败轨迹拼成成功表格。
+`explain` 会先验证报告，再把选中样本展开为 engine step。逐行核对 sequence 状态、cached/scheduled/committed token
+和 used blocks；最后一行应为 `finished`，活动 block 与 refcount 均为 0。失败 case 必须保留失败阶段，不能拼成成功表格。
 
 ## 怎样读四组消融，而不是只找最快数字
 

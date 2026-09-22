@@ -300,40 +300,19 @@ NumPy 测试验证局部代数。PyTorch 和 JAX 的 tiny GPT 测试再向外走
 
 ## 10. 复杂度和 kernel 边界
 
-标准稠密注意力的每个 head 都有 \(T_qT_k\) 个分数和对应概率。计算分数、再按概率聚合 V，主要算术量随
-\(T_qT_kD\) 增长。线性投影和 MLP 则通常包含 \(Td^2\) 量级的计算。
+标准稠密 attention 的 score 数随 \(T_qT_k\) 增长，线性投影与 MLP 通常包含 \(Td^2\) 量级计算；这只能描述
+增长趋势，不能直接预测某个硬件上的延迟。FlashAttention 等实现改变中间量存放和 HBM 往返，不改变本页使用的
+精确 attention 目标。
 
-序列较短而隐藏维度较大时，线性层可能占主导；序列变长后，Attention 计算与 KV 读写会更加突出。渐近复杂度只能
-说明增长趋势，实际延迟还取决于 kernel、显存带宽、batch 和硬件利用率。
+要继续追数值递推、编译图和真实性能，分别进入[Attention 数值计算](../foundations/attention-numerics.md)、
+[算子计算栈](../systems/operator-stack.md#rmsnorm-trace)和[推理优化](../systems/inference-optimization.md)。本页只要求记住：
+配置开关不证明目标 kernel 已命中，部署验收必须记录实际 backend、shape、dtype、mask、GQA 与 RoPE 组合。
 
-FlashAttention 通过 tiling、重计算和 online softmax 减少 HBM 往返与完整中间矩阵存储。它仍计算精确 attention
-的数学目标，不是把一般复杂度改成线性；不同浮点归约顺序也可能产生细小差异。
+## 11. 架构谱系是另一张地图
 
-[Attention 数值计算](../foundations/attention-numerics.md)给出递推公式，
-`projects/transformers-basics/online_softmax_demo.py` 会逐块与 dense reference 对账。这项 NumPy 实验只验证代数，
-执行范围不包含 CUDA kernel 和 HBM 流量测量。
-
-部署时应记录实际使用的计算后端，并确认 head dimension、数值类型、mask、GQA、RoPE 和硬件组合确实选择了预期
-kernel。配置中出现一个启用开关，并不能证明运行时没有回退。
-
-如果这里的“模型算子、ATen、编译图和 kernel”仍容易混在一起，先跟一次
-[RMSNorm 算子计算栈](../systems/operator-stack.md#rmsnorm-trace)，再回来看 Attention backend。
-
-## 11. 架构类型
-
-- Encoder-only：通常用双向 self-attention，适合表示、分类和抽取；
-- Decoder-only：用 causal self-attention 将任务统一为 continuation；
-- Encoder-decoder：encoder 双向处理 source，decoder 通过 causal self-attention 与 cross-attention 条件生成；
-- 稀疏/线性 attention、SSM、卷积或混合架构：改变信息混合、状态与硬件权衡，不能只按渐近复杂度判断真实速度或质量。
-
-“Transformer”代表一类架构，不是一份固定配置。阅读具体模型时，至少确认下面四组选择：
-
-- 归一化：类型、放在子层之前还是之后；
-- Attention：位置编码、head 分组和滑动窗口；
-- Block：MLP 形式、bias 与并行残差；
-- 输出：logit 缩放与输入输出权重共享。
-
-加载 checkpoint 前，应从 config 和模型代码确认这些选择。
+本页只沿 decoder-only 前向路径讲张量契约。Encoder-only、encoder-decoder、稀疏 attention、状态空间或混合架构的
+差异见[架构谱系](architectures-interpretability.md#architecture-runtime-dependencies)。加载任一 checkpoint 时，仍要从
+config 和模型代码确认归一化位置、attention 分组与位置编码、MLP 形式以及输出权重共享；“Transformer”不是一份固定配置。
 
 ## 12. 常见错误定位
 

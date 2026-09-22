@@ -1,11 +1,7 @@
-# LangChain 与 LlamaIndex：让同一次 RAG 检索保持一致
+# RAG Framework Adapters 运行手册
 
-这个项目演示怎样把已有 RAG 核心接入 LangChain 和 LlamaIndex，同时不改变原来的权限、排序、Prompt 与评测语义。
-应用仍然拥有 canonical `Document` 和 `SearchResult`；框架对象只负责在各自 API 中传递结果。
-
-第一次学习时直接运行 `parity_control.py`。先预测两类用户能看到哪些文档，再检查 canonical、LangChain 和
-LlamaIndex 三条路径是否给出相同结果。完整推导见
-[RAG Framework Adapters 教学页](../../docs/practice/projects/rag-framework-adapters.md)。
+本目录提供 canonical RAG 结果到 LangChain/LlamaIndex 的适配与对账命令。比较方法和结论边界见
+[项目教学页](../../docs/practice/projects/rag-framework-adapters.md)；本页只维护安装、命令、字段、文件和排错。
 
 ## 第一次运行
 

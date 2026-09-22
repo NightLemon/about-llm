@@ -315,39 +315,17 @@ L_{bal}^{ref}=E\sum_e f_ep_e.
 
 ## 模型、运行时与底层库分别负责什么 {#runtime-stack}
 
-一条 MoE 路径通常跨过下面几层：
-
-| 层次 | 在 MoE 中负责什么 |
-|---|---|
-| 模型架构与权重 | 规定专家数、路由形式、top-k、共享专家以及训练得到的参数 |
-| 模型实现 | 把路由、专家 MLP、残差与辅助损失写成张量计算 |
-| 训练或推理系统 | 管理批次、容量、跨设备分发、并行组、故障和指标 |
-| PyTorch/JAX 等框架 | 提供自动微分、张量、模块与分布式 API |
-| NCCL/Gloo 等通信后端 | 执行设备或进程间的集体通信；它不负责决定该发送哪些词元 |
-| CUDA 与计算内核 | 执行路由、排序、打包、分组矩阵乘法与结果合并 |
-
-配置文件中出现 `num_experts_per_tok` 或 `top_k`，只能说明发布者声明了某些字段。Tie-break、分组选择、
-capacity、drop/reroute、gate normalization 与训练梯度，仍要核对同版本模型代码和 runtime。
-
-通信后端支持 all-to-all，只表示它提供了全互连搬运能力。生产实现还要降低打包开销，并把进入同一专家的
-词元组织成分组矩阵乘法（grouped GEMM）。数值类型、GPU 和网络不同，适合的计算内核也会变化。
+模型定义专家、路由与权重；运行时管理容量、dispatch、并行组和故障；通信库只搬运已经打包的数据；kernel 执行
+排序、分组矩阵乘法与合并。配置里出现 `top_k` 不能证明 tie-break、capacity、drop/reroute、归一化和梯度语义。
+通用框架、编译和 kernel 分层见[算子计算栈](../systems/operator-stack.md)，collective 选择见
+[集合通信](../systems/collective-communication-network.md)。本页只追这批 token 的 MoE 路由账本。
 
 ## 到推理服务时，prefill 与 decode 要分开看
 
-推理不再计算 backward，但总权重加载、路由、跨卡通信和负载倾斜仍然存在。
-
-预填充（prefill）一次处理较多提示词词元，同一专家往往能凑出更大的批量。逐词元解码（decode）时，
-每个活跃序列每轮通常只新增一个词元。单个专家收到的批量更小，通信与计算内核的启动开销更容易占主导。
-
-因此服务评测至少分开记录：
-
-- prefill 与 decode 的 expert batch size、通信时间和吞吐；
-- 每个 expert 的负载与尾延迟；
-- 总权重、KV Cache、通信 buffer 和 workspace 显存；
-- 请求并发变化时的质量、tokens/s 与端到端延迟。
-
-模型层的专家容量与服务层的接入容量位于不同层级。前者决定一层内部怎样处理路由任务，后者决定请求能否
-进入队列。即使模型采用不丢任务的路由，服务仍可能因为显存、截止时间或并发上限而拒绝请求。
+推理虽然不再计算 backward，总权重、路由、跨卡通信和负载倾斜仍存在。Prefill 的 expert batch 往往较大；decode
+每轮新增 token 少，通信与 kernel launch 更容易占主导。服务评测因此分开记录两阶段的 expert batch、通信、负载尾部、
+显存和端到端延迟。模型内部的 expert capacity 与服务 admission 是两层不同控制；通用队列与 SLO 见
+[服务与可观测性](../systems/serving.md)。
 
 ## 用仓库里的实验逐级验证
 
@@ -386,9 +364,9 @@ Gloo/all-to-all 实验的完整命令、固定输入和结果在[证据台账](.
 真实模型性能属于下一层证据。它需要加载目标 checkpoint，并在 GPU 上运行分组矩阵乘法、NCCL 通信和目标
 工作负载，再分别测量吞吐、显存、收敛或模型质量。
 
-## 面试时怎样回答
+## 用一个 assignment 复述
 
-面对“解释 MoE”时，沿一个 assignment 的生命周期回答：
+沿一个 assignment 的生命周期回答：
 
 1. 路由器为词元打分，top-k 产生词元—专家任务。
 2. 容量策略决定每个任务是接受、重路由还是继续超额执行。
