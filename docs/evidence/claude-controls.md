@@ -385,397 +385,105 @@ Timeout/cancel/read failure 不能证明 provider 或工具没有执行。对于
 
 Exactly-once 不能由一次 Messages loop、SQLite transaction 或 idempotency header 单独证明。
 
-## Retry、Deadline 与 Cancellation
+## 跨主题控制索引
 
-自动重试前必须分别回答：
+下列规则属于跨供应商运行时，不在 Claude 台账重讲。Claude 接入只需记录固定 API/version 对这些规则的差异。
 
-1. **retryable?** 当前 failure/status/version 的 policy 是否允许？
-2. **replay safe?** 重放请求是否会重复业务副作用或不可接受的生成/费用？
-3. **outcome known?** 本地是否能证明前一次没有被 provider 接收/执行/计费？
-
-三问不能压成 `if status >= 500: retry`。即使请求没有外部工具副作用，重复模型生成也可能产生另一份 output/usage/cost。
-
-### 仓库 provider-neutral retry evidence
-
-本地 `RetryPolicy`：
-
-- 使用 bounded max attempts；
-- 同时受 monotonic deadline 限制；
-- 解析有效 `Retry-After` 并受 policy/deadline 截断；
-- 注入 jitter，测试不依赖真实 sleep；
-- 要求 `replay_safe=true` 且 `outcome_uncertain=false` 才自动重放；
-- cancellation 原样传播。
-
-这不是 Anthropic 当前错误/限流/重试规范。部署必须按固定 API/version 官方文档和真实 responses 校准 status/error allowlist。
-
-### Transport failure 的保守分类
-
-仓库 JSON HTTP executor 的 authored policy：
-
-| failure stage | 本地 outcome classification | 自动 replay |
+| 主题 | 本页需要绑定的 Claude 对象 | 权威正文 |
 |---|---|---|
-| pool/connect 前失败 | known not sent | policy 允许时可候选 |
-| write/read/protocol/attempt timeout | uncertain | 默认不重放 |
-| 收到任何 HTTP response | request 越过“确定未发送”边界 | 费用/usage 另行对账 |
-| task cancellation | 不等于 server cancellation | 默认 uncertain |
+| Retry / deadline / cancellation | Status/error allowlist、`Retry-After`、request id、是否已发送、远端 outcome 和 usage | [云 API 可靠性](../models/cloud-api-reliability.md) |
+| Usage / budget | `max_tokens`、typed usage、cache/thinking/tool 字段、pricing snapshot 与每 attempt receipt | [云 API 可靠性](../models/cloud-api-reliability.md) |
+| 长上下文 | Protocol acceptance、runtime completion、位置/任务有效性 | [长上下文系统](../frontier/long-context-systems.md) |
+| Prompt caching | Ordered blocks、model/API/beta、tools、tenant/policy、TTL 与正式 usage 字段 | [Claude 教材](../models/claude.md) |
+| 模型迁移 | Exact model id、prompt/tools/parser、case manifest、all-attempt 分母与 paired result | [评测方法](../quality/evaluation-methodology.md) |
+| Agent 安全 | Proposal、authorization、approval、effect 与 reconciliation | [Agent 任务生命周期](../applications/agent-task-lifecycle.md) |
+| Rollout / rollback | Model、headers、prompt、schema、parser、retry、pricing 与 evaluation 的完整 bundle | [LLMOps](../applications/llmops-release.md) |
+| 数据治理 | 目标账号/地区/合同的 retention、training use、residency、logging、deletion 与 subprocessors | [隐私与公平](../quality/privacy-fairness.md) |
 
-这是 fail-closed 客户端规则，不证明真实 provider 是否处理/计费。HTTP status、request id、error body、attempt trace 和 timing 都应保存。
+## 本地可靠性与预算记录
 
-### Streaming partial output 默认不自动 replay
-
-流已经向用户发布部分文本时，reconnect/retry 可能导致：
-
-- 文本重复或分叉；
-- tool proposal 重复；
-- 两次 usage/费用；
-- 下游已消费但本地状态未提交；
-- 不同随机 continuation。
-
-恢复策略应显式选择 fail terminal、从头新调用并标新 identity，或使用 provider 正式支持的 resume contract；不能由通用 SSE decoder 猜测。
-
-## Usage 与预算账本
-
-Messages request 的 `max_tokens` 是输出上限，不是最终 usage。发送前预算至少拆成：
-
-\[
-R=C_{in}(\widehat T_{in})+C_{out}(T_{out,max})+C_{other,max}.
-\]
-
-其中输入只是目标 tokenizer/template estimate；cache、thinking、tool、batch/tier、最低计费单位、税费/币种等是否存在及怎样计价，必须来自带日期的正式 pricing contract。
-
-### 本地预算 control 对 Anthropic 子集做什么
-
-- 从 RequestSpec 顶层提取唯一正整数 `max_tokens`；
-- 从 body 提取 model，并要求与 pricing snapshot 精确相等；
-- fingerprint 绑定 billing scope、URL、完整 JSON body 和规范化 headers；
-- credential header value 替换后再建立 identity；
-- reserve 前执行 HTTPS/exact-origin/query target preflight；
-- 2xx + strict parser + 完整非负 usage 才 settle；
-- 能证明未发送才 cancel；
-- HTTP response、缺 usage、parser failure 或 uncertain transport 按完整 reservation 记 uncertain；
-- post-call overrun 先提交已发生 usage，再阻断未来调用。
-
-### 固定数字不是 Anthropic 价格
-
-Authored pricing fixture 使用 input `$1/M`、output `$2/M`：
-
-- estimated 60 input + 10 max output → reserve 80 micro-USD；
-- reported 58 input + 4 output → settle 66 micro-USD。
-
-这些数字只验证整数算术、reservation/reconciliation 和 hard gate，**不是 Claude/Anthropic 价格、usage 或发票**。
-
-### 每个 replay attempt 单独记账
-
-HTTP 500→200 authored retry demo：attempt 1 的 80 micro-USD reservation 因证据不足记 uncertain；attempt 2 按 58+4 settle 66，逻辑调用合计 146。Hard limit=140 时，attempt 2 在 transport 前被拒绝。
-
-不能“一次 logical call 只 reserve 一次，然后内部重放三次”；每次真正发送前建立 `logical-call:attempt:N` reservation，并在下一 attempt/sleep 前 terminalize。Local SQLite commit 不可能与远程 provider generation/billing 原子，active reservation 也不能因 TTL 自动释放。
-
-### 当前预算证据缺什么
-
-- Anthropic 真实 tokenizer/input estimate；
-- cache/thinking/tool 等全部 usage 字段；
-- 当前官方 pricing、tier、batch、币种/税费；
-- provider billing export/invoice reconciliation；
-- server cancellation/zero-charge confirmation；
-- 跨区域 distributed quota 或 exactly-once billing。
-
-因此可写“实现保守预算账本”，不能写“已验证 Claude 成本或账单准确”。
-
-## 长上下文与 Prompt Caching
-
-标称 context window 只说明协议上限，不证明所有位置和任务同样可靠。长上下文评测至少分开：
-
-- 单点检索：目标事实在开头、中间、结尾；
-- 多点综合：答案需要跨多个片段组合；
-- 冲突消解：新旧版本、可信度和时间戳冲突；
-- 顺序与引用：事件先后、页码、段落证据；
-- 全局聚合：计数、分类和覆盖全部文档；
-- 长输出：约束是否在生成后段仍保持。
-
-长上下文与 RAG 互补。RAG 用检索降低输入规模、更新知识并给出证据；长上下文减少切分损失并支持跨文档综合。把整个知识库塞进窗口通常会增加延迟、成本和干扰，也不能替代权限过滤。
-
-Prompt caching 可以降低重复前缀的计算成本或 TTFT，但工程上要记录：哪些 block 可缓存、cache 命中与创建 token、失效条件、敏感数据生命周期、租户隔离、模型/工具 schema 版本和观测字段。缓存命中不代表回答质量不变。
-
-### 长上下文的三层上限
-
-| 层 | 问题 | 证据 |
+| Control | 本地契约 | 证据边界 |
 |---|---|---|
-| protocol acceptance | 请求是否被 API 接受 | real response/error |
-| runtime completion | 是否在 timeout/预算内完成 | terminal + usage/latency |
-| effective context | 各位置/任务是否可靠 | sliced task evaluation |
+| Retry policy | Bounded attempts、monotonic deadline、受限 `Retry-After`、injected jitter；仅 `replay_safe=true` 且 `outcome_uncertain=false` 自动重放 | 不能简化为 `if status >= 500: retry`；它也不是 Anthropic 当前错误规范。 |
+| Transport classification | Pool/connect 前失败可标 known-not-sent；write/read/protocol/attempt-timeout、HTTP response 和 cancellation 默认 uncertain | 客户端观测不证明 provider 没有生成或计费。 |
+| Partial stream | 已发布文本后默认不自动 replay；若重启则使用新 identity，除非 provider 有正式 resume contract | 防止重复文本/tool/usage；不证明 server cancellation。 |
+| Budget reservation | Request identity 绑定 billing scope、URL、完整 JSON body、redacted headers 和唯一 `max_tokens`；发送前 reserve，完整 usage 后 settle | SQLite 原子性只覆盖本地账本，不覆盖 provider。 |
+| Fixed pricing fixture | Input `$1/M`、output `$2/M`；60 input + 10 max output reserve 80 micro-USD，58 input + 4 output settle 66 | 这些不是 Claude/Anthropic 价格、usage 或发票。 |
+| Retry budget fixture | HTTP 500→200；attempt 1 的 80 记 uncertain，attempt 2 结算 66，总计 146；limit=140 时第二次发送前阻断 | 每个 replay attempt 独立记账；TTL 不能自动释放 uncertain reservation。 |
+| Prompt cache | 当前仓库没有真实 request/response | 没有 hit rate、节省比例、TTFT、费用、租户隔离或删除证据。 |
 
-产品标称 window 只回答第一层的一部分。即使请求成功，provider 仍可能截断、拒绝、达到 output cap 或在某些位置任务失败。
+Messages 的 `max_tokens` 是输出上限，不是最终 usage。Cache、thinking、tool、batch/tier、最低计费单位、
+币种与税费都要来自带日期的正式 pricing contract，并以 provider billing export 做最终 reconciliation。
 
-### Prompt cache identity
+## 可运行 controls
 
-缓存 key/eligibility 的业务 identity 至少应绑定：
+**三供应商离线 contract fixture**
 
-```text
-provider + model id + API/version/beta headers
-ordered system/messages/content blocks
-tool schemas and ordering
-template/normalization/preprocessing
-tenant/data-classification/policy context
-cache TTL/lifecycle contract
-```
-
-只按可见 prompt 字符串共享 cache 可能跨租户、跨工具版本或跨 policy context 错用。Provider cache 是产品能力，不等于应用层授权或数据删除已经满足。
-
-### Cache 评测不能只报 hit rate
-
-同时报告：
-
-- eligible/read/create/hit/miss/expired 分母；
-- cache creation/read token 的正式 usage 字段；
-- cold/warm TTFT、E2E 与 cost per successful task；
-- hit/miss 输出质量和 stop/usage drift；
-- 敏感数据、租户隔离、retention/deletion 验证；
-- model/prompt/tool schema 升级后的失效行为。
-
-仓库没有真实 prompt-caching request/response，所以没有 hit rate、节省比例、TTFT 或费用证据。
-
-### Long-context case manifest
-
-每个 case 保存：
-
-```text
-case id + source/version/ACL
-target facts and allowed evidence spans
-ordered rendered blocks + token estimate
-target position/slice + distractors/conflicts
-output cap + stop/timeout policy
-raw typed response + citations/claims
-usage/latency + verifier/annotation revision
-```
-
-Needle retrieval、multi-hop synthesis、conflict resolution、global aggregation 和 long-output adherence 应分别统计；不能用一个 needle 成功率代表有效上下文。
-
-## 模型选型与版本迁移
-
-不要按“最强 Claude”选型，先定义 workload：
-
-| 维度 | 需要测什么 |
-|---|---|
-| 任务质量 | 抽取、代码、长文综合、规划、工具参数正确率 |
-| 结构 | schema 合法率、block 保真、未知 block 处理 |
-| 长上下文 | 位置、多跳、冲突、引用和全局聚合 |
-| 安全 | 提示注入、越权工具、敏感数据、拒答误伤 |
-| 性能 | TTFT、E2E、输出速度、并发、限流与重试 |
-| 成本 | input/output/cache/tool/retry 后每成功任务成本 |
-| 治理 | 区域、日志、数据保留、密钥与供应商风险 |
-
-### Evaluation unit 与分母
-
-```text
-case → attempt → candidate/block → parsed task result → policy decision
-```
-
-至少保存：
-
-- immutable case/input/gold/slice identity；
-- exact model id、API/version/beta headers；
-- system/messages/tools/output cap/sampling identity；
-- raw typed response/stream terminal/usage/request id；
-- parser/policy/scorer revisions；
-- timeout/rate-limit/provider/local errors；
-- all-attempt 与 success-conditional metrics。
-
-对 paired baseline/candidate 使用同一 cases，报告 per-case difference、confidence interval 或 paired randomization；有多 slice/多指标时控制多重比较。只展示几个聊天截图不能证明升级。
-
-### Agent 评测要把安全失败单列
-
-| 结果 | 是否 task success | 是否 safety success |
-|---|---:|---:|
-| 正确回答，无越权 | 是 | 是 |
-| 工具执行正确但越权 | 业务可能完成 | 否 |
-| 过度拒绝安全请求 | 否 | 可能属于 over-refusal |
-| 工具 proposal 合法但 effect uncertain | pending | 未完成 |
-| 内容正确但 raw secret 泄露 | 可能 | 否 |
-
-总体成功率不能掩盖越权、副作用重复、敏感数据泄露或 policy over-refusal。
-
-### 系统指标
-
-区分：
-
-- offered/admitted/started/completed/successful requests；
-- client queue、provider queue（若可观测）、TTFT、TPOT、terminal latency；
-- stream 首 block、首 text 与 provider terminal；
-- input/output/cache/other usage；
-- retry attempts、rate limit、timeout、cancel、uncertain；
-- per-attempt 与 per-success cost。
-
-Chunk/event count 不是 token count，client disconnect 也不是 server cancellation。
-
-升级时固定旧/新 model id、prompt、工具 schema、token 预算和 case 集，执行 paired evaluation；分别报告总体与语言、长度、工具类型等切片。先 shadow，再 canary，保留旧 adapter/parser 与路由以便回滚。模型别名若会漂移，不适合作为唯一可复现标识。
-
-### 生产 rollout / rollback bundle
-
-```json
-{
-  "provider": "anthropic",
-  "model_id": "<exact-id-or-reviewed-alias>",
-  "checked_at": "<date>",
-  "api_version": "<version>",
-  "beta_headers": [],
-  "request_schema": "sha256:...",
-  "parser_policy": "sha256:...",
-  "prompt_tools": "sha256:...",
-  "pricing_snapshot": "sha256:...",
-  "evaluation_artifact": "sha256:..."
-}
-```
-
-模型、API header、prompt、tool schema、parser、retry、pricing 任一变化都视为候选系统变化。Rollback 要恢复完整 bundle，不只把 model alias 改回去。
-
-### 数据治理与供应商边界
-
-上线前由责任主体核对目标账号/地区/合同下的：
-
-- data retention、training/use policy；
-- region/data residency；
-- logging、support access 与 deletion；
-- prompt caching lifecycle；
-- encryption/key/IAM/secret rotation；
-- subprocessor 与合规要求；
-- incident/export/audit 能力。
-
-教材不把一般产品文档外推成你的合同事实。应保存 legal/security review id 与 checked_at，而不是写“Claude 天然合规/安全”。
-
-## 可运行实验
-
-本仓库 `about_llm.integrations.cloud_api` 中的 Anthropic adapter 用离线 fixture 检查顶层 system、消息映射、文本解析、usage 和 stop reason；`AnthropicTextStream` 还校验 text block start/delta/stop、message_delta 与 message_stop 的状态次序。它只覆盖 text_delta 子集，不支持 tool/thinking/signature 等 block，也没有接入真实 streaming HTTP 或访问 Anthropic 账号。
-
-### 1. 三供应商离线 contract fixture
-
-```powershell
+~~~powershell
 python -m about_llm.integrations.cloud_api_cli verify `
   --contracts projects/cloud-api-contracts/contracts.example.jsonl `
   --output artifacts/cloud-api/contracts.json
-```
+~~~
 
-Anthropic case 验证：顶层 system、`/v1/messages`、redacted `x-api-key`、version header、text/usage/stop mapping。整份报告必须写 `network_performed=false`、`real_credentials_used=false`；三个 provider fixture 一起通过不表示协议语义相同。
+Anthropic case 检查顶层 system、`/v1/messages`、redacted `x-api-key`、version header、text/usage/stop mapping。
+报告必须保留 `network_performed=false` 与 `real_credentials_used=false`；三家 fixture 一起通过不表示协议语义相同。
 
-### 2. Request/response 与 stream state tests
+**Request/response 与 stream state**
 
-```powershell
+~~~powershell
 python -m pytest tests/test_cloud_api.py tests/test_cloud_stream.py -q
-```
+~~~
 
-负例覆盖 invalid endpoint、布尔/非 finite 数值、无 text block、event/payload mismatch、inactive block delta、缺 stop_reason 和 truncated terminal。它不覆盖真实 SDK/HTTP/tool/thinking。
+负例覆盖 invalid endpoint、布尔/非 finite 数值、无 text block、event/payload mismatch、inactive block delta、
+缺 stop reason 和 truncated terminal；没有执行真实 SDK/HTTP/tool/thinking。
 
-### 3. Retry、HTTP 与预算 controls
+**Retry、HTTP 与预算**
 
-```powershell
+~~~powershell
 python -m about_llm.integrations.cloud_api_cli retry-matrix `
   --output artifacts/cloud-api/retry-matrix.json
-
 python -m pytest tests/test_cloud_api_retry.py tests/test_cloud_http.py `
   tests/test_usage_budget.py tests/test_sqlite_usage_budget.py `
   tests/test_budgeted_cloud.py -q
-```
+~~~
 
-这些是 provider-neutral authored policies。MockTransport/SQLite 证明本地状态转移与原子 capacity，不证明 Anthropic error status、request acceptance、usage、invoice 或 server cancellation。
+**Opaque artifact 与 trajectory publication**
 
-### 4. Opaque artifact 与 trajectory publication
-
-```powershell
+~~~powershell
 python -m about_llm.integrations.cloud_api_cli reasoning-replay-matrix `
   --output artifacts/cloud-api/reasoning-replay-matrix.json
-
 python -m about_llm.integrations.cloud_api_cli trajectory-release-gate `
   --input projects/cloud-api-contracts/trajectory-release.example.json `
   --output artifacts/cloud-api/trajectory-release-report.json
-```
+~~~
 
-AES fixture 与 allowlist gate 不模拟 Anthropic thinking/signature 协议；它们只验证通用 context binding 与公开轨迹最小化。
+AES fixture 和 allowlist gate 只验证通用 context binding 与公开轨迹最小化，不模拟 Anthropic thinking/signature。
 
-### 5. 仍缺的真实 provider control
+## 真实 provider 证据缺口
 
-在取得明确授权和费用预算后，最小真实 smoke 应：
+取得明确授权和费用预算后，最小 smoke 应固定 exact origin、model/API/version/beta headers，并：
 
-1. exact allowlisted origin + pinned model/version headers；
-2. 单次最短 text request，严格 input/output cap；
-3. 保存脱敏 request id、typed blocks、stop、usage 与 latency；
-4. 分别执行 non-stream 与 stream，不假设两者 byte-identical；
-5. 测一个确定未发送负例、一个 provider error，不自动重试 uncertain；
-6. 设置 hard cost/request/deadline gate；
-7. 明确 real credentials/network/billing scope；
-8. 不在 CI 默认运行。
+1. 发送一次有严格 input/output cap 的最短 text request；
+2. 保存脱敏 request id、typed blocks、stop、usage 与 latency；
+3. 分别执行 non-stream 与 stream，不假设两者 byte-identical；
+4. 测一个确定未发送负例和一个 provider error，不自动重试 uncertain；
+5. 设置 hard cost/request/deadline gate；
+6. 标注真实 credential、network 和 billing scope，且不在默认 CI 运行。
 
-即使该 smoke 成功，也只得到 L4 单请求协议证据，不得到代表性质量或生产 SLO。
+这只得到 L4 单请求协议证据，不得到代表性质量、prompt-cache 收益、tool/thinking 完整性或生产 SLO。
 
-建议把实验扩成三组：
+## Claim 导出矩阵
 
-1. **契约回放**：为 text、多 text block、tool use、无文本、max token、未知 block 和错误响应保存脱敏 fixture；
-2. **长上下文评测**：生成带位置、冲突和跨文档依赖的 case，报告答案与证据定位，不只报 needle 命中；
-3. **受控 Agent**：让模型调用只读查询、幂等写入和高风险写入三类工具，测参数正确率、审批触发、重复副作用和注入攻击。
+| 可写 claim | 必须紧邻说明 | 禁止升级 |
+|---|---|---|
+| Anthropic Messages 离线 adapter | 显式拆分顶层 system、ordered content blocks、usage、stop reason 与 `message_stop`；对 event/payload mismatch、inactive block、重复 terminal、truncated EOF 和 non-text delta fail closed | 没有执行 Anthropic SDK、真实网络/账号/model、tool/thinking blocks 或 prompt caching。 |
+| Tool 状态机 | Tool proposal 与 authorization/effect 分离；参数 block 闭合后才做 schema、ACL、approval 和 idempotency | SDK auto-loop 或 tool-use block 不是授权，也不证明真实 effect。 |
+| Retry / budget contracts | MockTransport 与 SQLite 上按 attempt 保存 retry、unknown outcome、reservation 和 reconciliation | 不证明 Anthropic error semantics、usage、invoice、server cancellation 或 exactly-once billing。 |
+| Opaque state 发布 | Unknown/thinking/signature blocks 默认保留在受控审计面，公开 trajectory 使用 allowlist | 不证明现行 thinking protocol、安全加密或当前存在历史论文所述漏洞。 |
+| 固定文档核对 | 接口事实截至 2026-09-20 由 LLM 逐项复核，并保留来源状态 | 不能写成 immutable 协议快照或当前账号能力。 |
 
-若接入真实 API，保存 provider、model id、API/version header、checked_at、request id、原始 block、usage、stop reason、重试和延迟；密钥、用户内容与工具结果按数据分级脱敏。真实端点结果与离线 fixture 结果必须分栏报告。
-
-## 常见错误
-
-- 把 Constitutional AI 论文写成当前产品的完整内部实现；
-- 把 RLAIF 描述成不需要人类定义原则和监督；
-- 从输出风格猜参数量、MoE/稠密结构或训练数据；
-- 把 2026-09-20 的官方网页 LLM 复核写成 immutable 协议快照；
-- 把顶层 `system` 当作普通 role message；
-- 只取第一个 text block，丢掉工具、引用或未知 block；
-- 把仓库 text-only parser 写成完整 Messages adapter；
-- 把 `content_block_stop`、stop_reason、`message_stop` 与 EOF 混成同一个结束；
-- 认为一次 network read 等于 event/JSON/token；
-- 在工具参数尚未流完时执行；
-- 把 tool proposal 或 SDK auto-loop 当授权层；
-- 对 write/read timeout 或 partial stream 自动 replay；
-- 一次 logical call 只 reserve 一次，却内部发送多次；
-- 把固定样例中的 80/66 micro-USD 写成 Claude 定价；
-- 用长 context window 数字代替位置鲁棒性评测；
-- 认为 prompt caching 自动满足租户隔离和数据删除；
-- 把 tool use 当作授权，把 tool result 当作高信任指令；
-- 把历史 reasoning replay 论文写成当前端点仍可攻击；
-- 只换 model id，不回归 parser、prompt、token 预算与拒答行为。
-
-## Claim 复核问题
-
-1. 闭源 API 的 L1–L5 证据和开放权重证据阶梯有何不同？
-2. Constitutional AI 的批评/修订与偏好训练怎样衔接？边界在哪里？
-3. 为什么 RLAIF 不能消除人类监督，且可能放大 evaluator 偏差？
-4. 顶层 system 与普通 role message 为什么不能互换？
-5. Content blocks 对数据库 schema、stream parser 和回放系统有什么影响？
-6. 为什么仓库 text-only parser 是有损 projection，不是完整 Messages client？
-7. Block stop、model stop、message stop 与 transport EOF 有何区别？
-8. Arbitrary byte chunks 如何组成 SSE event，再进入 provider state machine？
-9. `tool_use` 到 `tool_result` 的 call id、审批和幂等怎样设计？
-10. Retryable、replay safe、outcome known 三问为何独立？
-11. 为什么 client cancel 不能证明 server 停止生成/计费？
-12. 每个 retry attempt 为什么需要独立 reservation？
-13. 长上下文与 RAG 为什么互补？怎样测 lost-in-the-middle？
-14. Prompt caching 的命中率、TTFT、成本和敏感数据风险怎样联合观测？
-15. Opaque reasoning artifact 为什么不能跨上下文移植或直接公开？
-16. 闭源模型升级怎样做到统计可比、可审计和可回滚？
-
-## 作品集与简历证据边界
-
-### 当前可写版本
-
-> 为 Anthropic Messages 构建 canonical→provider adapter 与 text-block streaming state machine：显式拆分顶层 system、ordered content blocks、usage、stop_reason 与 `message_stop`，对 event/payload mismatch、inactive block、重复 terminal、截断 EOF 和非 text delta fail closed；另接入 provider-neutral retry/outcome 与逐 attempt budget contracts。
-
-必须紧邻说明：这些结果都来自本仓库准备的固定样例、MockTransport、SQLite 和离线验证；没有执行 Anthropic SDK、真实网络/账号/model、tool/thinking blocks、prompt caching、usage/billing、server cancellation，也没有测量质量或生产 SLO。
-
-### 可以强调的工程判断
-
-> 将 tool proposal 与授权/effect 分离；只在参数 block 闭合后做 schema/ACL/approval/idempotency，partial stream 与 uncertain outcome 不自动重放。公开 trajectory 使用 allowlist，opaque reasoning/signature/unknown blocks 默认不发布。
-
-这说明安全状态机设计，不证明 Claude 自身安全、当前 provider thinking protocol 或真实 tool execution。
-
-### 禁止表述
-
-- “复现 Claude 架构/Constitutional AI 训练”；
-- “完成 Claude 全量 SDK/API 兼容”；
-- “实现真实 Claude tool calling 和断连取消”；
-- “验证 prompt cache 节省比例/Claude 价格”；
-- “证明 reasoning 已加密安全或当前存在 replay 漏洞”；
-- “达到生产质量、性能或安全 SLO”。
+禁止表述：“复现 Claude 架构/Constitutional AI 训练”“完成全量 SDK/API 兼容”“实现真实 Claude tool calling
+和断连取消”“验证 prompt cache 节省比例或 Claude 价格”“达到生产质量、性能或安全 SLO”。
 
 ## 一手资料
 
