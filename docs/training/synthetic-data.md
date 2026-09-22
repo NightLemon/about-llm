@@ -177,52 +177,18 @@ q_{accept}(x)=\frac{q(x)A(x)}{\mathbb E_{x\sim q}[A(x)]}.
 
 一致性、低 entropy（熵）或多数投票只是选择信号。多个 sample 来自同一模型时，错误也可能高度相关。
 
-## 蒸馏传递的是行为信号
+## 第二遍：蒸馏传递的是行为信号
 
-### Hard target：直接学习生成结果
+第一次沿“4 条候选→2 条 eligible→1 条 unique”主线阅读时可以跳过本节。需要训练 student 时，再区分：
 
-教师模型先生成完整答案，学生模型再把答案序列作为监督标签，学习预测下一个 token。这种做法只需保存文本，容易
-接入现有 SFT 流水线。它会丢掉一部分信息：学生模型看不到教师模型对其他候选 token 的相对偏好。
+| 目标 | Student 实际学习 | 必须固定 | 不能推出 |
+|---|---|---|---|
+| Hard target | Teacher 生成的完整答案序列 | Teacher/output identity、sampling/filter、student template 与 response mask | Student 看不到其他 token 的相对概率。 |
+| Soft target | 对齐 token space 上的 teacher distribution；常见目标为 `T^2 D_KL(p_T || p_S)` | Teacher/student prefix、tokenizer、有效位置、temperature、top-k logits 与 hard/KD 权重 | 不同 tokenizer 的同一 logit index 通常不是同一 token。 |
+| Distillation result | Student 在目标任务上的新行为 | Student base、训练数据 lineage、独立 held-out 与失败切片 | 不复制 teacher 的 MoE/MLA、参数规模、知识或内部轨迹。 |
 
-### Soft target：学习概率分布
-
-当 teacher/student token space 对齐，可在有效 response token 上最小化：
-
-\[
-\mathcal L_{KD}
-=T^2\sum_t
-D_{KL}\left(
-p_T(\cdot\mid x,y_{<t};T)
-\|p_S(\cdot\mid x,y_{<t};T)
-\right).
-\]
-
-\(T\) 是蒸馏温度。升高温度会让概率分布更平缓，使低概率 token 之间的关系更明显；公式中的 \(T^2\) 是常见的
-梯度尺度补偿约定，不是所有实现都必须采用。
-
-复现实验时至少记录：
-
-- teacher 与 student 分别看到了什么前缀；
-- 哪些 response token 参与 loss，以及 loss 怎样归约；
-- 是否只保存 top-k logits；
-- hard-label loss 与蒸馏 loss 各占多大权重。
-
-逐 token KL 还要求两边的 token 位置和词表可以对应。分词器不同，两个 logits 向量的同一索引通常不再表示同一个
-token，不能直接比较。
-
-### 蒸馏不会复制模型架构
-
-Student 学到的是输出行为，teacher 的 MoE、MLA、训练数据或参数规模不会随文本一起迁移。例如，DeepSeek 生成的
-文本可以用来训练 Qwen 或 Llama。
-
-训练完成后，部署方式、LoRA 目标层和 KV cache 公式仍由 student checkpoint 的架构决定。
-
-### Teacher 的错误也会一起迁移
-
-Teacher 的事实错误、拒答边界、长度偏好、写作风格和 benchmark 记忆都可能被复制。只用 teacher 答对的样本训练，
-得到的是“通过筛选条件下”的分布。
-
-要知道 student 是否改善了 teacher 原本会失败的区域，应单独保留 teacher 失败、student 失败和双方分歧的样本。
+Teacher 的事实错误、拒答边界、长度/风格偏好和 benchmark 记忆也会进入筛选后的数据。
+必须保留 teacher/student 各自失败和分歧样本，才能判断 student 是否只学会了通过当前 gate。
 
 ## 过程数据最好能够重新执行
 
@@ -350,7 +316,7 @@ D_{g+1}=\rho D_{real}+(1-\rho)S(M_g,D_g,V_g),
 因此，“用了合成数据就一定 collapse”和“平均 benchmark 上升就没有 collapse”都缺少必要证据。结论应限定到具体
 数据比例、反馈代数、筛选方法和评测切片。
 
-## 合成数据仍然有隐私与版权问题
+## 第二遍：隐私、版权与删除责任
 
 Generator 可能复述训练记忆、seed 中的个人信息、secret 或受限内容。合成数据应继承来源审查，并重新检查模型生成
 带来的隐私、版权和用途风险：

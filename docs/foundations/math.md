@@ -7,7 +7,7 @@
 
 - **适合读者**：学过高中数学，但没有系统学过线性代数、概率论或机器学习数学。
 - **先修**：知道加减乘除，会把数字代入简单公式；不要求会 Python。
-- **首次阅读**：沿着“天空通常是”这个例子一直读到两-token Attention，不必先看三个深入页。
+- **首次阅读**：沿着“天空通常是”读到一次参数更新；两-token Attention 与真实存储留到第二遍。
 - **完成信号**：能用自己的话解释向量、矩阵乘法、logit、softmax、loss 和梯度，并手算本页的小例子。
 - **卡住时**：矩阵看[线性代数](math-linear-algebra.md)，概率看[概率与信息论](math-probability.md)，梯度看[训练数学](math-training.md)；
   遇到不认识的词先查[术语表](../reference/glossary.md)，本页关键词都在里面。
@@ -383,7 +383,7 @@ python projects/transformers-basics/math_learning_walkthrough.py
 
     不能。它只说明这组数字和这一步更新中，公式、实现和方向一致。泛化能力需要独立数据和更完整的实验。
 
-## 9. 用同一套工具手算两-token Attention {#two-token-attention}
+## 9. 第二遍：用同一套工具手算两-token Attention {#two-token-attention}
 
 现在已经认识矩阵乘法、softmax、loss 和梯度，可以把它们用于 Attention。先暂时去掉 batch 和多头，
 只保留两个 token、每个 token 两个特征：

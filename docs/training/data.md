@@ -364,49 +364,27 @@ python projects/single-gpu-finetuning/packing_loss_mask_toy.py
 - labels 与 loss mask；
 - position IDs 和实际 attention mask。
 
-## 合成数据也要进入同一条 lineage
+## 派生数据与删除请求怎样回到 lineage
 
-指令扩写、难例、翻译、蒸馏、工具轨迹和拒答样本都可能来自生成模型。
-每条合成数据至少保留：
+主线仍沿 source → raw/parsed/normalized revision → dedup decision → split/mixture → token span → run/checkpoint。
+下面两类需求只增加节点和处置动作，不改变这条身份链。
 
-- 生成模型、Prompt 模板、采样设置与生成时间；
-- 原始响应和随机种子；只有目标接口承诺可重放时，种子才表示可复现；
-- 验证器、执行测试、过滤原因与人工复核状态；
-- 父数据，以及继承的许可证和隐私约束。
+| 需求 | 必须新增的记录 | 决策出口 |
+|---|---|---|
+| 合成数据 | Generator、Prompt/template、sampling/time、raw response、parent、verifier/filter 与 inherited license/privacy | [合成数据](synthetic-data.md) |
+| 删除请求 | Tombstone、受影响 revisions/cluster/shards/runs/checkpoints，以及存储删除与模型影响处置的独立状态 | [机器遗忘](machine-unlearning.md) |
 
-同一模型同时生成、评价和过滤时，盲点会相关。可以引入独立验证器、可执行测试、人工抽样、真实数据锚点和多样性约束。
-拒绝采样提高的是通过特定验证器的比例，也可能只是在利用验证器漏洞。
+同一模型同时生成、评价和过滤时，错误会相关；seed 也只有在目标接口承诺可重放时才是复现证据。
+拒绝采样可能提高 verifier pass rate，也可能只放大 verifier 漏洞。完整的多代反馈、真实锚点、隐私和版权判断
+由合成数据专题负责。
 
-合成数据不会自动导致或避免 model collapse。风险取决于占比、选择机制、真实锚点、模型和跨代迭代，
-因此要观察覆盖、长尾和多代质量，而不只看平均 loss。完整讨论见[合成数据、蒸馏与反馈环](synthetic-data.md)。
+对 §thread-8841§ 的固定 trace，§r2§ 与 §r3§ 都受影响；当前数据集需移除主帖和回复，
+§train-00031.bin§ 需要重建，§pretrain-cn-run-42§ 与两个 checkpoint 进入后续处置清单。
+先写 tombstone，阻止未来构建继续消费该来源，再更新 dedup cluster 与 shard。主帖原为 canonical item；
+剩余镜像不能自动顶替，必须重新检查独立授权和质量。
 
-## 删除请求怎样沿来源链返回
-
-现在来源方要求删除 `thread-8841` 的全部历史版本。系统需要沿着这条关系查找：
-
-```text
-source item
-  -> raw / parsed / normalized revisions
-  -> dedup cluster and canonical decision
-  -> split / mixture manifest
-  -> tokenized shard and token spans
-  -> training runs
-  -> checkpoints / adapters
-```
-
-前面的 `trace` 命令会给出具体结果：`r2` 与 `r3` 都受影响；当前数据集需要移除主帖和回复；
-`train-00031.bin` 需要重建；`pretrain-cn-run-42` 与两个 checkpoint 需要进入后续处置清单。
-
-处理时先写删除标记（tombstone），让未来构建不再消费该来源；然后更新去重簇并重建受影响的 shard。
-主帖是当前簇的 canonical item，删除后虽然还剩一份镜像，也不能直接拿镜像顶替。团队要重新判断镜像是否有独立授权，
-以及它是否符合当前质量规则。
-
-删除 final dataset 中一行不会让已经训练的权重恢复到未见过该数据的状态。后续处置可能包括未来训练排除、
-从干净 checkpoint 重训、经过验证的近似 unlearning，或系统层过滤。采用哪种方式取决于政策和威胁模型，
-报告中应区分“数据存储已删除”和“模型影响已处置”。
-
-同一来源版本重跑应得到同一结果；解析器、规则或分词器更新后，则应产生新的数据集版本。
-构建清单要保存父版本、新增、更新和删除数量，以及去重簇的变化。旧版本不能被悄悄覆盖。
+删除最终数据行不会让已训练权重恢复到“从未见过”。未来训练排除、从干净 checkpoint 重训、经过验证的近似
+unlearning 与系统层过滤是不同处置；报告必须分开“存储已删除”和“模型影响已处置”。
 
 ## 构建清单（manifest）把一次构建固定下来
 
