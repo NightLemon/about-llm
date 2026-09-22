@@ -296,72 +296,23 @@ DPO 的 \(\beta\) 控制相对偏好信号的尺度。它不是简单的学习�
 DPO 仍依赖可靠的回答对、固定参考策略、分布覆盖和独立评测。它省去了显式奖励模型和在线采样循环，
 但数据和目标函数中的对齐假设仍然存在。
 
-## PPO：在策略自己生成的回答上学习
+## PPO：本页只保留选择边界
 
-PPO 适合需要在线采样、环境反馈或可验证奖励的场景。它比 DPO 多出一份完整的采样轨迹：
+PPO 适合确实需要在线采样、环境反馈或可验证奖励的场景。它比 DPO 多出 rollout policy、old log-prob、
+reward/value、advantage/return、optimizer 与边界 mask 等状态；奖励模型或 verifier 的漏洞也会被主动放大。
 
-~~~text
-问题
-→ 旧策略采样回答
-→ 奖励模型或验证程序给轨迹打分
-→ 价值模型估计未来回报
-→ 计算优势值
-→ 用裁剪目标更新策略和价值模型
-~~~
+| 当前决策需要知道 | 最小检查 |
+|---|---|
+| Rollout 是否来自声明的行为分布 | 保存实际 temperature/top-p/allowlist 后的采样概率，不能拿原始 logits 冒充 |
+| Update 是否绑定原 rollout | Old policy snapshot 与逐 token old log-prob 在多 epoch 内冻结 |
+| 序列终态是否正确 | EOS、environment termination、time-limit truncation 与 padding 分开 |
+| Reward 是否可信 | 同时看 held-out task、shortcut/OOD、安全与 reference drift |
+| 更新是否受控 | 记录 ratio/clip、sampled KL proxy、value error、entropy、长度与失败分母 |
 
-同一条 API key 问题进入 PPO 后，不再只是重放原来的 A/B。当前策略会生成新回答，奖励模型或规则再给它打分。
-如果奖励模型偏爱冗长、自信的文字，一条与 B 类似的错误回答也可能得到高分；PPO 随后会增强这种错误。
-这就是“原始偏好标签正确，在线优化仍然走偏”的一种方式。
-
-每个 token 的新旧策略概率比为：
-
-\[
-\rho_t(\theta)
-=\frac{\pi_\theta(a_t\mid s_t)}
-{\pi_{\mathrm{old}}(a_t\mid s_t)}.
-\]
-
-这个基本推导假定回答由式中的旧策略分布采样。实际 rollout 若用 temperature、top-p、token allowlist 等规则改变了
-采样分布，应把实际行为分布记为 \(q\)，先说明要优化的 policy、\(q\) 的支持集和概率比怎样定义；不能把原始 logits
-下的 log probability 当成截断后 \(q\) 的 log probability。具体不匹配修正超出本页范围，先回到
-[LLM 强化学习](reinforcement-learning.md#rollout-identity)核对数据契约。
-
-裁剪后的策略目标可写成：
-
-\[
-\mathbb E_t
-\left[
-\min\left(
-\rho_t A_t,\;
-\operatorname{clip}(\rho_t,1-\epsilon,1+\epsilon)A_t
-\right)
-\right].
-\]
-
-裁剪只限制当前样本上的单轮更新幅度，不保证训练稳定或模型安全。RLHF 通常还会加入参考策略 KL、
-价值损失、熵、奖励归一化和回答掩码。
-
-### 序列奖励怎样分配给 token
-
-很多任务只在序列结束时得到一个分数。价值模型和广义优势估计（Generalized Advantage Estimation，GAE）
-用于估计每一步相对预期是更好还是更差。
-
-若终局奖励、KL 惩罚、padding 掩码或截断后的 bootstrap 处理错误，代码仍可能正常反向传播，却优化错误目标。
-
-PPO 验收至少观察：
-
-- 旧策略、当前策略和参考策略的对数概率；
-- 奖励、KL、优势值与回报；
-- 裁剪比例、熵与价值误差；
-- 回答长度和无效率；
-- 留出任务、安全与捷径切片。
-
-### 为什么 PPO 更容易产生证据错觉
-
-奖励曲线上升可能来自奖励模型捷径、输出变长、采样分布改变或验证程序漏洞。
-小型 CPU 采样实验通过，只能证明局部数学和状态转移，不证明目标 checkpoint 已经完成 RLHF。
-
-只有在奖励可审计、在线探索确有价值、计算预算允许且回滚机制成熟时，PPO 才优先于更简单的 SFT/DPO 路线。
+Clipping 只限制已采样 action 对 surrogate 的贡献，不保证完整策略 KL、训练稳定或安全。
+序列奖励怎样进入 token、GAE 的 bootstrap/continuation mask、PPO 与 GRPO 的公式和可执行反例统一见
+[LLM 强化学习](reinforcement-learning.md#rollout-identity)；精确 control 结果查
+[对齐证据台账](../evidence/alignment-controls.md)。
 
 ## DPO、RM+PPO 怎样选择
 

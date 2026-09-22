@@ -362,100 +362,42 @@ python projects/single-gpu-finetuning/train_trl_sft.py `
 Readiness 回答“这份训练数据是否经过约定审计”。Tokenizer 和 mask 要在模型 revision 加载后继续检查。
 训练入口应拒绝静默截断，保存模板与 mask 报告，并核对实际 collator 产生的最终 labels。
 
-## 训练先从 8–32 条样本过拟合开始
+## 从 labels 进入训练系统
 
-先让 8–32 条样本 overfit，是为了验收训练管道。
+本页到最终 labels 与全窗口有效 token 分母为止。训练运行、故障恢复和发布分别由项目页与系统页负责。
 
-预期现象是 loss 明显下降，生成结果能复现目标格式。若做不到，先检查模板、mask、冻结参数、optimizer、数据读取和学习率；
-增加 GPU 解决不了管道错误。
+| 阶段 | 本页之后要验证什么 | 入口 |
+|---|---|---|
+| Pipeline smoke | 用 8–32 条样本 overfit，检查模板、mask、冻结参数、optimizer、读取与 LR | `python projects/single-gpu-finetuning/smoke_trl_sft.py` |
+| 短训练 | 运行 100–1000 steps，检查 checkpoint、adapter reload 与留出评测 | [Single-GPU Finetuning](../practice/projects/single-gpu-finetuning.md) |
+| Resume | 对齐 sampler emitted、main-loop consumed、optimizer committed 和 accumulation window | [分布式训练正确性](../systems/distributed-training-correctness.md) |
+| 模型选择 | Validation 用于早停/调参，受限访问的 test 用于最终判断 | [评测方法](../quality/evaluation-methodology.md) |
+| 发布 | 对账 base/adapter、tokenizer/template、merge、量化和完整质量/安全/性能 gate | [LLMOps](../applications/llmops-release.md) |
 
-仓库的离线 smoke test 会先检查输入记录，再依次贯通 Transformers 模板 mask、TRL collator labels 和一次参数更新：
+固定恢复反例中，sampler emitted=`7`、main loop consumed=`3`、optimizer committed=`2`。
+如果 checkpoint 没有保存 partial-window gradients、分母和 crash-time RNG，就从 committed boundary 重放；
+只有 sidecar 完整绑定 pending sample IDs、position/divisor、gradients 与 RNG 时，才可从 consumed 位置继续。
+完整 fault matrix 见[准确性台账](../evidence/accuracy-ledger.md)。
 
-~~~powershell
-python projects/single-gpu-finetuning/smoke_trl_sft.py
-~~~
+训练结果至少绑定：
 
-接着运行 100–1000 步冒烟训练，检查 checkpoint、续训、adapter 加载和留出集评测，
-最后才启动完整实验。
-
-训练配置至少保存下面五类状态：
-
-- 模型与 Adapter 身份；
-- Optimizer、scheduler、scaler 和 global step；
-- Sampler 与各类随机数状态；
-- Data manifest、tokenizer、template、mask policy 和 packing 配置；
-- 代码 revision 与完整训练参数。
-
-Train loss 下降说明模型更能预测训练 labels，不会自然证明部署任务更好。
-
-## Resume 的位置必须与 optimizer commit 对齐
-
-多 worker DataLoader 会提前把样本 ID 发到 worker 队列，因此同一时刻可能存在三个不同位置：
-
-```text
-sampler emitted       = 7  # 已发往 worker
-main loop consumed    = 3  # 已交给训练循环
-optimizer committed   = 2  # 已反映到参数更新
-```
-
-只有第三个位置表示训练状态已经提交。若把 emitted cursor 当成“已训练位置”，恢复时会直接跳过仍在队列中的样本。
-
-Gradient accumulation 崩溃时还可能存在 partial-window gradients。两种恢复策略是：
-
-1. 回到 optimizer-committed boundary，恢复该时刻的随机数状态，并重放尚未提交的样本；
-2. 保存 pending sample IDs、累积位置与除数、梯度和崩溃时的 RNG sidecar，然后从窗口中间继续。
-
-仓库的 CPU 实验会把两种恢复路径与不中断运行逐项比较，并用“漏掉梯度”和“恢复错误 RNG”的负例展示参数漂移。
-最后写 manifest 可以检测当前 bundle 是否完整，但不会让样本、optimizer 和所有 checkpoint 文件自动成为一个跨故障事务。
-
-真实 SFT 还要一起恢复 assistant mask、有效 token 分母、Adapter 和训练器状态。
-
-随机数状态要覆盖 Python、NumPy、CUDA 与 DataLoader worker。分布式运行还需要各 rank 对恢复决定达成一致。
-详细故障矩阵见
-[单 GPU 微调项目](../practice/projects/single-gpu-finetuning.md)。
-
-## 验证集与测试集回答不同问题
-
-验证集用于早停和超参数选择；最终测试集应限制查看次数。教师强制下的损失与真实生成质量不完全一致，
-开放生成评测要使用部署时的解码参数、对话模板和工具 schema。
-
-每个 checkpoint 至少比较：
-
-- 目标任务与格式合法率；
-- 通用能力与语言切片；
-- 安全拒答和 over-refusal；
-- 长度、重复与 tool behavior；
-- 延迟、显存和每成功任务成本。
-
-领域数据过采样可能提高目标任务，同时造成 catastrophic forgetting。记录通用 instruction、拒答、格式和领域样本比例，
-并在真实 validation 分布上评测，不让 validation 跟随训练采样权重变化。
-
-课程顺序、loss weighting 和采样权重都需要一个随机顺序或统一采样 baseline。早停依据应在训练前定义，并同时包含
-主指标和不可退化门禁；不要从多个 checkpoint 中挑一个单项分数最好看的版本。
-
-训练后还要检查 Adapter 与底座 revision 是否兼容、合并前后的 logits 和生成是否在容差内、部署模板是否一致。
-量化完成后，再重新评测未见 Prompt、长输入、空输入和注入攻击样例。
-
-## 一份实验记录应该能重建决策
-
-| 类别 | 最少保存什么 |
+| 类别 | 最少保存 |
 |---|---|
 | Identity | Run ID、git revision、seed、owner |
-| Model | Model / adapter revision、tokenizer/template、dtype |
-| Data | Manifest、来源比例、split、长度、dedup / governance |
+| Model | Base/adapter revision、tokenizer/template、dtype |
+| Data | Manifest、来源比例、split、长度、dedup/governance |
 | Objective | Assistant mask、packing、loss denominator、label policy |
 | Optimization | LR、batch、steps、scheduler、clip、scaler |
-| PEFT | Rank / alpha / dropout、target modules、quantization |
-| Evidence | Checkpoints、logs、显存、逐 case evaluation 与失败样本 |
+| PEFT | Rank/alpha/dropout、target modules、quantization |
+| Evidence | Checkpoints、logs、显存、逐 case 结果与失败样本 |
 
-模型卡据此记录训练数据范围、已知限制、硬件、评测和不支持的场景。
+Train loss 只说明模型更能预测当前 labels。最终判断还要覆盖目标任务、格式、语言/领域、安全与过度拒答、
+长度/tool behavior、延迟、显存和每成功任务成本；训练采样权重不能偷偷替代真实 validation 分布。
 
-## 自测与面试追问
+## 复核问题
 
-1. 售后样本中哪些 tokens 应参与 assistant-only loss，tool response 为什么通常不参与？
-2. Chat template 输出看起来正确，为什么仍要检查 collator 的 final labels？
-3. 同一客户的不同工单为什么可能需要按 group 切分？
-4. 两个 micro-batches 的有效 labels 分别为 1 和 9，等权 mean 会怎样改变 objective？
-5. Sampler emitted=7、consumed=3、optimizer committed=2 时，从哪个位置恢复，各需保存什么？
-6. SFT 损失下降而留出任务变差时，你会沿哪几层定位？
-7. 怎样用权限和产物边界证明训练器没有读取留出集原文？
+1. 售后样本中哪些 token 应进入 assistant-only loss，tool response 为什么通常不进入？
+2. Chat template 输出正确，为什么仍要检查 collator final labels？
+3. 同一客户的工单为什么应按 group 切分？
+4. 有效 labels 为 1 和 9 的两个 micro-batches 等权平均，会怎样改变目标？
+5. Emitted=7、consumed=3、committed=2 时，两种恢复策略各需保存什么？

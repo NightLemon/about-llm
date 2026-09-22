@@ -283,104 +283,36 @@ JAX 默认数据类型、是否启用 x64、加速器 kernel 和矩阵乘精度�
 与 PyTorch 对账时，先固定相同权重、输入和 mask，再统一 GELU 近似、归一化 epsilon 与 embedding 权重共享方式。
 比较顺序从 logits 和 loss 开始，再到单步梯度与参数更新。只看最终生成文本，无法定位数值分叉发生在哪一步。
 
-## 第六步：先证明 PyTorch 与 JAX 算的是同一个函数
+## 从函数式心智模型进入验证
 
-“Decoder-only Transformer”只描述了大类，不能确定两份代码计算同一个函数。
+“Decoder-only Transformer”不能保证两份实现计算同一个函数。验证顺序与固定结果由项目和证据页负责：
 
-仓库原生 PyTorch MiniGPT 使用带仿射参数的 LayerNorm。JAX 版本使用 RMSNorm，而且没有 bias。
-只这一处架构差异，就足以让 logits 明显分叉。
+| Control | 必须统一或保存 | 能证明 / 不能证明 |
+|---|---|---|
+| PyTorch↔JAX 单步 | 同一参数、输入、mask、affine LayerNorm、epsilon、tanh-GELU、tied embedding、masked loss 与 plain SGD | 依次对账 logits/loss、20 个 unique gradients、一步参数和 post-step forward；原生 JAX RMSNorm 是故意反例。 |
+| 三步 AdamW | 同一 materialized dropout masks、clipping、first/second moments、count 与 schedule | 证明共享随机输入下的更新 parity；绕开而非证明两套 native RNG 等价。 |
+| 跨进程 resume | Params、Optax state、typed PRNG、permutation/cursor、step 与每个 PyTree leaf 的 identity | 六步 split/uninterrupted bit-exact；只覆盖 authored CPU 单设备格式。 |
+| 目标训练 | Native RNG、worker/prefetch、mixed precision、sharding/topology、atomic publication 与数据 identity | 当前项目尚未证明 accelerator、分布式、长训练收敛或性能。 |
 
-`cross_framework_parity.py` 先把归一化与 epsilon、tanh-GELU、因果 mask、embedding 权重共享和 masked loss
-全部统一。优化器先选择没有历史状态的普通 SGD，然后按顺序比较：
+精确误差、artifact 字段和 wrong-mask/wrong-key/wrong-cursor 结果见
+[JAX MiniGPT 项目](../practice/projects/jax-minigpt.md#run)与[项目证据台账](../evidence/project-controls.md)。
+文件能打开只证明可解析；训练轨迹连续必须在独立进程中对账下一批 sample、loss、gradient、optimizer 和最终参数。
 
-```text
-same params + same inputs
-→ logits / loss
-→ every unique parameter gradient
-→ one update
-```
+## 可运行入口
 
-结果通过说明：在当前 CPU、Float32 和报告容差内，这两份显式数学实现得到了一致结果。
-程序随后把同一主干权重送入原生 RMSNorm 路径，刻意得到明显差异。这个反例提醒我们，参数形状能够映射，
-并不代表两种架构约定等价。
+完整参数和故障树由项目 README 维护；本页只保留最短执行顺序：
 
-`cross_framework_training_parity.py` 再连续比较三步 AdamW。每一步分别核对 masked loss、裁剪前后梯度、
-一阶与二阶矩、优化器步数、参数和更新后的 logits。
-
-两边读取同一份由 NumPy 生成的随机 mask，这样可以暂时排除“随机输入不同”，集中检查更新公式。
-
-这个实验只能称为“共享随机输入下的训练对账”，不能推出 PyTorch 与 JAX 的原生随机数算法相同。
-精确误差、容差和反事实结果见 [JAX MiniGPT 项目](../practice/projects/jax-minigpt.md#run)。
-实验没有覆盖混合精度、加速器 kernel、多设备分片或长期收敛。
-
-## 第七步：保存所有会影响下一步的状态
-
-如果目标是“中断后继续原来的训练轨迹”，checkpoint 至少要保存：
-
-```text
-模型参数
-优化器状态
-全局步数与已消费 token 数
-下一次随机操作要使用的 PRNG keys
-数据迭代器与 shuffle 位置
-配置和学习率计划
-PyTree 结构、数据类型与分片元数据
-代码、依赖和数据清单版本
-```
-
-保存成功只说明文件写出来了。真正的恢复测试要换一个进程加载，让它读取预定的下一批数据，
-再核对 loss 和参数更新。设备拓扑改变时还可能需要重新分片；文件能打开，不代表训练语义连续。
-
-### 训练三步后退出，再由新进程继续
-
-`checkpoint_resume_control.py` 保存参数、Optax 状态、带类型的 PRNG key、样本排列与读取位置，以及全局步数。
-文件中的清单为每个 PyTree 叶子记录名称、形状、数据类型、字节位置、长度和摘要。
-
-加载程序会先检查字段、叶子顺序、形状、数据类型、截断和多余字节；全部通过后，才创建 JAX 数组。
-
-实验先连续训练六步，保存一条不中断的参考轨迹。另一条路径在第三步后结束进程，再由新进程完成第四到第六步。
-两条路径使用的样本编号、loss、梯度、参数、Optax 状态、随机状态和数据位置逐位一致。
-
-程序还故意重置一次 dropout key，再故意重置一次数据读取位置。两种情况下文件仍能加载，
-后续参数却会分叉，说明这两项状态都不能遗漏。
-
-这个结果说明，参数和优化器状态只是完整恢复状态的一部分。仓库的单文件格式专门用于解释这条教学结论。
-
-生产工具链还要处理断电时的原子写入、来源认证、数据 worker 与加速器的其他随机状态，
-并支持 CUDA、TPU 或拓扑变化后的重新分片。Orbax、Flax 与 TensorStore 等生态组件承担的范围也各不相同，
-不能由这个教学格式替代。
-
-## 可运行实验与验收
-
-运行：
-
-```powershell
+~~~powershell
 python -m pip install -e ".[dev,torch,jax]"
 python projects/jax-minigpt/train_tiny.py --steps 60 --learning-rate 0.02 --seed 11
 python projects/jax-minigpt/cross_framework_parity.py
 python projects/jax-minigpt/cross_framework_training_parity.py
 python projects/jax-minigpt/checkpoint_resume_control.py
 python -m pytest tests/test_gpt_jax.py
-```
+~~~
 
-验收项：
-
-1. 改未来 token 不影响过去位置 logits，说明当前实现的因果 mask 生效；
-2. 初始 loss 有限；
-3. JIT 训练步返回有限的裁剪前梯度范数；
-4. Token embedding 确实变化；
-5. 固定 tiny batch 的 final loss 显著低于 initial loss；
-6. 输出实际 backend、device 和同步计时边界；
-7. 未安装 Optax 时测试不能被宣称为通过。
-8. LayerNorm 对账路径在容差内一致，而 RMSNorm 反事实保留明显差异；
-9. 共享随机 mask 时，三步 AdamW 的梯度、moments 和参数都在容差内一致；
-10. 换进程恢复与不中断运行逐位一致，重置随机 key 或数据位置后则会分叉。
-
-小批量过拟合只检查训练闭环，不衡量泛化。跨框架对账只检查本页明确统一的数学契约，
-不能推出两个默认模型或完整训练栈等价。
-
-向真实训练扩展时，还要加入独立验证集、多随机种子、所有 dropout 位置，以及归一化参数与 bias 的衰减 mask。
-如果两边都使用各自原生随机数生成器，还要分别验证随机状态与恢复语义。
+验收时确认 causal mask 不泄漏未来、loss/gradient 有限、embedding 更新、JIT 结果已 `block_until_ready()`，
+并分别记录实际 backend/device。小批量 overfit 不衡量泛化；跨框架 parity 只覆盖显式统一的数学契约。
 
 ## 常见错误
 
