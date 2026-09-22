@@ -595,288 +595,95 @@ Frozen base、完整 non-adapter state、model config 与 generation config fing
 
 这张表是防止把三条 control 拼成“完整 SFT→DPO→部署流水线”的最低门禁。
 
-## Base、Instruct 与思考模式
+## 跨主题职责索引
 
-Base checkpoint 适合续写、继续预训练和自定义后训练；Instruct checkpoint 依赖官方 chat template。对话模板通常编码 role、turn boundary、generation prompt、tool schema/result 和停止 token。
+下列主题只在此记录 Qwen 特有身份和固定观察；机制与操作步骤由链接页面负责。
 
-部分公开 Qwen checkpoint 或模板支持可配置的思考/非思考行为。是否存在、怎样开启、reasoning 文本是否暴露以及对应 token 预算，必须查看具体 model card 和 tokenizer template。不要跨版本复制参数，也不要通过脆弱的字符串删除“思考标签”；parser 应基于该版本明确协议，并保留原始输出用于审计。
+| 主题 | Qwen 特有核对项 | 权威正文 |
+|---|---|---|
+| Base / Instruct / 思考模式 | 固定 model card、template、reasoning 输出协议与同预算比较；不跨版本复制开关或删标签 | [Qwen 教材](../models/qwen.md) · [生成与解码](../core/generation.md) |
+| Tool calling | 用目标 tokenizer 渲染 tools/messages/result，固定 parser 与 stop；模型 proposal 不拥有执行权 | [Qwen 教材](../models/qwen.md) · [Agent 运行时](../applications/agent-runtime.md) |
+| 中文 RAG | 更换 generator 时固定检索结果；更换 embedding/reranker 时保存候选列表 | [RAG 请求生命周期](../applications/rag-request-lifecycle.md) |
+| LoRA / QLoRA | Target modules 取自实际 module names；云 API 与本地权重分别评测 | [LoRA/QLoRA 工程](../training/peft-qlora-engineering.md) |
+| 单卡容量 | 权重、KV、activation、workspace、allocator 与 runtime 分账 | [硬件性能模型](../systems/hardware-edge.md) |
+| 任务评测 | 中文、工具、RAG、长上下文和系统终态分别报告 | [评测方法](../quality/evaluation-methodology.md) |
+| 发布与回滚 | Bundle 同时绑定 weights、adapter、tokenizer、template、parser、runtime、RAG 与 policy | [LLMOps](../applications/llmops-release.md) |
+| 多模态 | 使用目标 `AutoProcessor` 或专用 processor，记录媒体、采样和 revision；媒体文本仍是不可信输入 | [多模态](../frontier/multimodal.md) |
 
-思考模式比较要固定：最大输出、实际 token、采样、候选数、验证器、wall time 和任务成功率。更长轨迹不保证答案更正确。
+## 单卡 payload 记录
 
-## Tool calling 与结构化输出
+这些值属于固定的 494,032,768 参数 checkpoint，不是任意 Qwen 型号的容量结论。
 
-工具 schema 往往不是简单附在普通用户文本后，而是由 chat template 序列化成训练见过的控制格式。正确流程：
-
-1. 用 checkpoint tokenizer 渲染 tools、messages 和 tool result；
-2. 检查 token ids、generation prompt 与 stop tokens；
-3. 对模型输出做版本化 parser；
-4. schema/范围/资源归属校验；
-5. 外部 Agent runtime 执行 ACL、审批、幂等和审计。
-
-模型只提出调用。即使官方示例能自动执行工具，生产系统也不能把该便捷循环当作授权层。
-
-结构化输出评测包含语法合法率、schema 合法率、字段语义、枚举/单位、未知字段、恶意字符串和越权资源 id。不要只统计 JSON 可解析率。
-
-## 中文 RAG 实践
-
-Qwen 的中文生成能力不能补偿检索错误或 ACL 泄漏。至少比较：
-
-| 组件 | 必测基线 |
-|---|---|
-| sparse | 字符 n-gram、中文分词 BM25 或兼顾英文 token 的 BM25 |
-| dense | 多语言/中文 embedding，并固定 query/document 前缀 |
-| reranker | cross-encoder 与无重排基线 |
-| chunking | 中文标题/段落/表格结构，不只固定字符数 |
-| query | 精确实体、型号、英文缩写、中英混合、错别字 |
-| generation | 有答案、无答案、冲突、过期证据与引用 |
-| security | tenant/ACL 过滤、间接提示注入和敏感字段 |
-
-更换 Qwen generation checkpoint 时保持检索结果固定，先测生成器；更换 embedding/reranker 时保存候选列表，先测召回与排序。否则无法归因提升来自哪一层。
-
-## 单卡 LoRA/QLoRA
-
-LoRA target modules 由实际 module names 决定，不能从 Llama 教程机械复制。MoE checkpoint 还要决定是否训练 shared/routed expert、router 或普通 attention/MLP 投影；不同选择的训练参数、通信和过拟合风险不同。
-
-单卡实验顺序：
-
-1. 固定 revision 与许可，检查 tokenizer/template；
-2. 运行 Base/Instruct Prompt 基线和 RAG 基线；
-3. micro-batch 1、短序列、少量样本过拟合，检查 labels；
-4. LoRA rank/target 消融；
-5. 保存/reload/merge 数值回归；
-6. 领域、中文长尾、通用、安全和格式切片评测；
-7. 记录峰值显存、训练 token、时间和 adapter 大小。
-
-云端 Qwen API 与本地开放权重分别评测：它们可能使用不同模型、模板、路由、量化与内容策略。
-
-## 单消费级 GPU：先做状态账本，再谈“能跑”
-
-对固定 494,032,768 参数 checkpoint，纯参数 payload 的理论主项为：
-
-| 存储假设 | 理论参数 payload | 证据性质 |
+| 对象 | 已记录值 | 边界 |
 |---|---:|---|
-| FP32 | 1,976,131,072 bytes | 目标 CPU report 实际 parameter storage |
-| 2-byte dtype | 988,065,536 bytes | 参数数乘 2 的公式值，未在 GPU 实测 |
-| ideal 4-bit codes | 247,016,384 bytes | 仅 code payload，不含 scale/zero/packing/未量化层 |
+| FP32 参数 payload | 1,976,131,072 bytes | 目标 CPU report 的 parameter storage |
+| 2-byte 参数公式值 | 988,065,536 bytes | 未在目标 GPU 实测 |
+| Ideal 4-bit codes | 247,016,384 bytes | 不含 scale、zero、packing 与未量化层 |
+| `model.safetensors` | 988,097,824 bytes | 文件含容器 metadata；不等于 resident/peak bytes |
+| LoRA 参数 | 270,336 个 FP32 参数，理论 1,081,344 bytes | 不含 gradient、optimizer、master state 与 activation |
+| `adapter_model.safetensors` | 1,093,728 bytes | Adapter 文件大小不能外推训练峰值 |
 
-`model.safetensors` 是 988,097,824 bytes，和“2 bytes × 参数数”接近但不相等；文件包含容器 metadata，且 file bytes 不等于 runtime resident/peak bytes。
+推理峰值仍需对账
+\(M_{weights}+M_{KV}+M_{activations}+M_{workspace}+M_{allocator}+M_{runtime}\)；
+训练还要加入 gradient、optimizer、master weight、saved activation、dataloader 和通信 buffer。
+截至 2026-09-13，仓库没有目标 GPU 运行报告，不能填写显存、tokens/s、TTFT、TPOT、最大并发或加速百分比。
 
-推理峰值应拆成：
+## 固定七例行为 control
 
-\[
-M_{peak}\approx M_{weights}+M_{KV}+M_{activations}
-+M_{workspace}+M_{allocator}+M_{runtime}.
-\]
+固定 Qwen2.5-0.5B-Instruct snapshot 在加载前重哈希 7 个文件、999,586,347 bytes，并以 CPU FP32/eager、
+batch 1、greedy、`max_new_tokens=12` 真实调用七次 `GenerationMixin.generate()`：
 
-训练还要加入 gradients、optimizer states、master weights、saved activations、adapter、dataloader 和 communication buffers。QLoRA 只降低 frozen-base 的部分存储，不会把这些状态全部变成 4-bit。
-
-### LoRA 状态也不能只看 adapter 文件
-
-当前 LoRA control 的 270,336 个 FP32 adapter parameters 理论参数 bytes 为 1,081,344；实际 `adapter_model.safetensors` 为 1,093,728 bytes。训练时还存在：
-
-- adapter gradients；
-- optimizer first/second moments；
-- 可能的 FP32 master/state；
-- base dequant/compute workspace；
-- activations 与 checkpointing trade-off；
-- padding/truncation 后的真实 token workload。
-
-因此“adapter 只有约 1.09 MB”不能推导训练峰值也只有约 1.09 MB。
-
-### 目标 GPU 实测 runbook
-
-1. 固定 checkpoint、adapter、tokenizer/template 和 runtime/container digest；
-2. 输出 GPU 型号、driver、CUDA、PyTorch、Transformers/PEFT/bitsandbytes 版本；
-3. 从 batch 1、短 input/output、greedy/no-grad 起步；
-4. warm-up 后同时采集 framework allocated/reserved、NVML process/device 和 OOM；
-5. 扫 input length、output cap、batch/concurrency、KV dtype、quantization；
-6. 训练时另扫 sequence length、micro-batch、accumulation、checkpointing、LoRA targets/rank；
-7. 保存每个失败点，不只保存最好结果；
-8. 用同一 quality/safety cases 对比 FP/BF16、量化、adapter 与 runtime。
-
-截至本次台账审校（2026-09-13），仓库未录入目标 GPU 运行报告，所以不能填写任何“显存占用、tokens/s、TTFT、TPOT、最大并发或加速百分比”的事实数字。
-
-## 评测：中文能力、工具、RAG 与系统指标分层
-
-### 固定七例行为 control：真实生成仍不是 L5
-
-仓库为同一固定 Qwen2.5-0.5B-Instruct snapshot 增加了独立行为评测 control。它在加载前重哈希 7 个文件、999,586,347 bytes，以 CPU FP32/eager、batch 1、greedy、`max_new_tokens=12` 真实调用七次 `GenerationMixin.generate()`：
-
-```powershell
+~~~powershell
 python projects/evaluation-gate/run_qwen_target_behavior_evaluation.py --verify projects/evaluation-gate/target-qwen-behavior.recorded-report.json
-```
+~~~
 
-Suite/report fingerprints 分别为 `sha256:27ada9b1b16cebca8dd9135a5b875de11f412fc9a0f10c6acc462ff76b316201` 与 `sha256:dd30a278cbc076c973c0b0babc9e752b1063d8bfb114c852b34ea42b2cd85c43`。逐例结果如下；这里的 normalized exact 固定为 NFKC + `casefold()` + 首尾/连续 whitespace 归一化，token F1 再按英文数字串或单个中日韩统一表意字符切分：
+Suite/report fingerprints 分别为
+`sha256:27ada9b1b16cebca8dd9135a5b875de11f412fc9a0f10c6acc462ff76b316201` 和
+`sha256:dd30a278cbc076c973c0b0babc9e752b1063d8bfb114c852b34ea42b2cd85c43`。
 
-| case | expected → raw output | literal exact | normalized exact | token F1 |
+| Case | Expected → raw output | Literal | Normalized | Token F1 |
 |---|---|---:|---:|---:|
 | 中文算术 | `42` → `42` | 1 | 1 | 1 |
 | 英文算术 | `42` → `112` | 0 | 0 | 0 |
-| 中文/英文事实 | `北京`/`Paris` → 同值 | 2/2 | 2/2 | 2/2 |
+| 中文 / 英文事实 | `北京` / `Paris` → 同值 | 2/2 | 2/2 | 2/2 |
 | 空证据拒答 | `无法回答` → `无法回答` | 1 | 1 | 1 |
 | 大小写复制 | `LLM-2026` → `llm-2026` | 0 | 1 | 1 |
 | JSON | `{"answer":42}` → `{"answer": 42}` | 0 | 0 | 1 |
 | **汇总** | 7 cases | **4/7** | **5/7** | **6/7** |
 
-三个分数回答不同问题。大小写复制 case 说明 `casefold()` 会掩盖本应保真的大小写错误；JSON case 说明当前 normalized exact 保留内部空格，而 token F1 会忽略标点和空白。结构化输出若只看 token F1，甚至无法区分部分语法错误，因此还应 parse JSON、验证 schema 和字段语义。
+Normalized exact 固定为 NFKC + `casefold()` + 首尾/连续 whitespace 归一化；token F1 按英文数字串或单个中日韩
+统一表意字符切分。另一个版本化 scorer 的 `json_value_exact` 会把两个 JSON 判为相等，但不得据此改写历史三指标报告。
 
-在另一个明确版本化的 scorer 中，`{"answer":42}` 与 `{"answer": 42}` 会通过 `json_value_exact`，因为两者 strict parse 后的 canonical value 相同；这不应反向修改已录制三指标 report。`json_schema` 仍需要 case 提供 schema，且 schema-valid/value-equal 都不证明数字来源、单位、权限或业务状态。比较 Qwen 的 JSON 能力时应新建 run manifest，同时报告 strict syntax、schema、value 与 domain validator，不能挑对模型最有利的口径。
+该 control 保存 raw output、prompt/continuation token identity 与 EOS/length-cap 终态，没有 latency、judge、人类标注、
+系统对照、置信区间或发布决策。七条 authored cases 未外部预注册、未独立抽样，不能写成总体准确率或 L5 质量证据。
 
-这条 control 记录 raw output、prompt/continuation token identity、EOS/length-cap 终止和 deterministic slice aggregate，但**没有记录 latency**，也没有 judge、人类标注、系统对照、置信区间或发布决策。七条 case 是 authored、未外部预注册、未独立抽样且不保证未受 prompt 选择影响；它不代表中文、英文、数学、事实性、指令遵循或结构化输出总体质量。因此它提升的是“固定权重确实在固定输入上生成了什么”的 L4 行为证据，L5 仍未取得。
+## 运行索引
 
-### 任务质量
+先复核当前固定对象，再为新 checkpoint 建新报告；完整参数和环境要求见
+[Transformers Basics README](https://github.com/NightLemon/about-llm/tree/main/projects/transformers-basics)与
+[Single-GPU Finetuning README](https://github.com/NightLemon/about-llm/tree/main/projects/single-gpu-finetuning)。
 
-| slice | 最低指标 | 关键失败 |
+1. `run_target_checkpoint.py --local-files-only`：重放固定权重 prefill/cache/generate。
+2. `run_qwen_weight_quantization_control.py --local-files-only`：核对 selected-weight artifact 与反量化 forward。
+3. `run_qwen_target_behavior_evaluation.py --verify ...`：复核七例历史报告，不重新生成。
+4. `inspect_checkpoint.py`：为另一个 immutable revision 导出 config/template inventory。
+5. 中文、英文、数字和代码 token 长度要用目标 tokenizer 重新统计。
+6. Tool、RAG、LoRA/QLoRA 与服务实验分别进入对应项目；不得借用本页其他 control 的证据等级。
+
+## Claim 导出矩阵
+
+| 可写 claim | 必须同时保留的精确记录 | 不可合成的结论 |
 |---|---|---|
-| 中文事实/抽取 | exact/F1 + case audit | 实体、数字、单位、否定 |
-| 中英混合 | task score + token length | 缩写、型号、代码切换 |
-| 结构化输出 | syntax/schema/semantic 三层 | 可解析但字段含义错 |
-| tool proposal | name/arguments/resource policy | 越权 ID、未知字段、单位错 |
-| RAG | retrieval + citation + entailment + abstention | 漏引、错引、空证据生成 |
-| reasoning mode | 同 output budget 的 success/cost | 轨迹更长但结果不改进 |
-| safety | policy slices 与 over-refusal | 只报整体拒绝率 |
+| 固定权重执行 | 7-file/999,586,347-byte snapshot；31-token prefill；`[17,151645]` argmax；cached/full error `3.7193e-05≤1e-4` | 不证明质量、32k、GPU、vLLM、许可或生产；仍有 verify→loader reopen TOCTOU。 |
+| Selected-weight INT4 | `[896,896]` `o_proj.weight`、802,816 参数、427,328-byte artifact、相对该矩阵 FP32 为 7.514752×；output/logits relative-L2 `0.070002/0.085138` | 只覆盖全模型 0.1625%，运行时反量化 FP32；argmax `17→17` 不证明无损、显存或加速。 |
+| LoRA plumbing | `q_proj/v_proj`、270,336 trainable parameters、96 个 finite gradients、494,032,768 frozen-base fingerprint 不变、1,093,728-byte adapter reload exact | 单样本单步 loss `0.003864→0.584557`；不是 QLoRA/CUDA，也不证明收敛或质量。 |
+| RAG 发布门禁 | 两个 authored cases 原始 gate `0/2`；guarded runtime 为一次 post-generation reject 与零调用 pre-generation abstain | API method count 不是内部 forward、kernel 或 billing；不证明 entailment、总体质量或生产集成。 |
+| 固定行为评测 | 七例 raw/token/terminal identity；literal/normalized/F1 为 `4/7、5/7、6/7` | 非代表性且无统计功效；不能写成“Qwen 准确率 85.7%”。 |
+| Activation patching | Clean/corrupt/patched metric、source/site identity 与正负对照 | 不能写成已定位事实存储 circuit。 |
+| 发布身份 | 完整 byte manifest、版本化 parser/policy 与回滚 bundle | 无密钥 hash 不认证官方来源或不可篡改。 |
 
-### 长上下文
-
-`max_position_embeddings=32768` 只是一项 config observation。有效上下文评测至少覆盖：
-
-- start/middle/end needle；
-- multiple needles 与冲突证据；
-- 顺序、计数、聚合与跨段引用；
-- 长输入 + 长输出预算；
-- 中文、中英混合、代码与表格；
-- OOM、timeout、truncation、refusal 和 wrong answer 的完整分母。
-
-报告必须用目标 tokenizer token count，不用字符/UTF-8 bytes 冒充 token。单个 needle 命中也不能证明所有长上下文任务。
-
-### 系统指标
-
-至少区分：
-
-- offered、admitted、started、completed、successful 请求数；
-- client queue、server queue、TTFT、TPOT、terminal latency；
-- success-conditional 与 all-attempt latency；
-- input/output tokens、实际生成/接受/丢弃 tokens；
-- 峰值/稳态内存、OOM/retry/cancel/timeout；
-- cost per successful task。
-
-CPU 单请求 fixed control 和 post-completion SSE 都不能提供这些生产统计量。
-
-## 生产发布与回滚
-
-任何一个组件变化都要视为候选系统变化：
-
-```text
-weights / adapter / tokenizer / template
-generation defaults / parser / stop policy
-runtime / kernel / dtype / quantization
-RAG corpus / embedding / reranker / packing
-tool schema / authorization / publication policy
-```
-
-推荐流程：
-
-1. 构建完整 byte manifest 与受控 release identity；
-2. artifact-only verifier 检查内部自洽；
-3. 从原始输入 full-local recomputation；
-4. paired offline quality/safety regression；
-5. target hardware capacity/load test；
-6. shadow → canary → staged rollout；
-7. 按完整 bundle identity 回滚，而不是只改 model alias。
-
-Hash/fingerprint 能检测声明对象漂移，但无密钥 self-hash 不能认证来源；本地 report 也不能证明云 API、线上 traffic 或未来版本。
-
-## 多模态版本
-
-视觉/音频版本通常需要 `AutoProcessor` 或专用 processor，不是把图片路径塞进文本 tokenizer。输入要记录媒体 MIME、尺寸/时长、采样、压缩、tile/patch 设置和 processor revision。
-
-中文多模态评测至少覆盖 OCR 小字、表格/图表数值、空间关系、文档布局、视频时间定位、音频转写和文本线索遮蔽。图像中的文字是低信任输入，不能提升为 system 指令或工具授权。
-
-## 可运行实验
-
-先复跑仓库已固定的 Qwen2.5-0.5B-Instruct CPU control，确认本机报告与已录制契约的相同项和环境相关项；再选择另一个小尺寸 Qwen Instruct checkpoint 并固定 commit：
-
-1. 运行 `run_target_checkpoint.py --local-files-only`（或首次联网路径）并校验 manifest/report；
-2. 运行 `run_qwen_weight_quantization_control.py --local-files-only`，分账局部 artifact、dequantized forward 与尚缺的完整 runtime；
-3. 运行 `run_qwen_target_behavior_evaluation.py --verify ...`，逐例解释 literal/normalized/F1 冲突，再用新文件重跑真实权重；
-4. 运行 `inspect_checkpoint.py` 导出另一个目标的 config/template；
-5. 对中文、英文、数字、代码各 100 条统计 token 长度；
-6. 渲染普通对话、system、tools、tool result，保存 token fixture；
-7. 用 Transformers 跑 greedy 基线和结构化输出小集；
-8. 比较 BM25、dense、hybrid、reranker 的中文 RAG 指标；
-9. 在显存允许时做短序列 LoRA，并和 Prompt/RAG 基线配对评测。
-
-实验报告必须能回答“哪个 checkpoint、哪个模板、哪个 tokenizer、哪组数据、什么硬件与预算”。
-
-## 常见错误
-
-- 用“Qwen”一个词代替代际、尺寸、Base/Instruct、模态和 revision；
-- 用字符数估 token 预算；
-- 把云 API 行为当作本地 checkpoint 行为；
-- 从其他架构复制 LoRA target modules；
-- 只看 MoE 激活参数而忽略总权重与通信；
-- 手写工具模板或用字符串切 reasoning/tool 输出；
-- 中文总体分数上升，却不检查数字、实体、中英混合和权限切片。
-
-## Claim 复核问题
-
-1. L0–L5 证据中，config、weight inventory、forward 和任务评测为什么不能互借？
-2. 如何由 14 query heads、2 KV heads、hidden 896 推出 head dim 64、GQA group 7？
-3. 402,653,184-byte KV 公式包含什么、漏掉什么？
-4. 为什么 config 的 BF16 字段与本仓库 CPU FP32 execution 不矛盾？
-5. 中文 tokenizer 效率怎样影响成本、batch 和有效上下文？
-6. 原生 chat template 能生成输入，为什么 assistant-only SFT mask 仍可能全零？
-7. dense/MoE 的总参数、激活参数和实际显存怎样公平比较？
-8. tool template 变化为什么会破坏调用，即使 messages JSON 没变？
-9. 原始 RAG 0/2 与 guarded runtime 的 0 publish 分别证明什么？
-10. LoRA loss 上升、DPO 同 batch loss 下降各自为何都不能证明质量？
-11. Post-completion SSE 为什么不是 incremental decoding/cancellation 证据？
-12. 云 API 与本地 Qwen 如何做质量—延迟—成本对比？
-13. 思考/非思考模式怎样在同预算下评测？
-14. 多模态输入为何需要独立 processor 与安全边界？
-15. 单矩阵 artifact 为 7.5148× 且 argmax 不变，为何都不能推出整模型量化无损、显存下降或加速？
-16. 同一七例输出为什么会得到 literal exact 4/7、normalized exact 5/7 与 token F1 6/7？哪两个 case 暴露了归一化/分词口径的风险？
-
-## 作品集与简历证据边界
-
-### 可写的固定权重执行
-
-> 固定 Qwen2.5-0.5B-Instruct immutable revision 和 7-file/999,586,347-byte selected snapshot，加载前逐文件重哈希；在 CPU FP32 eager 路径执行 31-token prefill、真实 KV-cache 第二步、full recompute 与 greedy `GenerationMixin.generate()`，对账 `[17,151645]`、argmax 和 `3.7193e-05≤1e-4` cached/full 误差。
-
-必须紧邻披露：单 prompt、CPU、无性能/质量/32k/GPU/vLLM/许可/生产证明，verify→loader reopen TOCTOU 未消除。
-
-### 可写的 selected-weight INT4
-
-> 在同一固定 snapshot 上，对第一层 `[896,896]` `o_proj.weight` 的 802,816 个参数执行 row-group-128 packed INT4；strict artifact 427,328 bytes，相对该矩阵 FP32 为 7.514752×。捕获真实 activation 并重载执行后，selected output/last logits relative-L2 为 0.070002/0.085138，source weight 恢复 exact。
-
-必须紧邻披露：只覆盖全模型 0.1625%，运行时反量化 FP32，单提示 argmax 17→17 不证明质量；无完整 low-bit checkpoint/loader、fused kernel、GPU、内存或性能证据。
-
-### 可写的训练 plumbing
-
-> 在同一固定 checkpoint 上执行 `q_proj/v_proj` LoRA 单步 backward/export/reload：270,336 trainable parameters、96 个 finite gradient tensors、494,032,768 frozen-base parameter fingerprint 不变，1,093,728-byte adapter 在新基座重载后固定 logits exact。
-
-必须同时写：单样本单步 loss 从约 0.003864 升到 0.584557；不是 QLoRA/CUDA，也不证明收敛或质量提升。
-
-### 可写的发布门禁
-
-> 在两个 authored Qwen RAG cases 上忠实记录原始 citation/abstention gate 0/2；再由真实 guarded runtime 观察有证据时 framework generate API 进入 1 次后 missing-citation reject、空证据时 callback/framework 0 次并 pre-generation abstain，public projection 均不泄露 raw output。
-
-必须同时写：两条 case 不是总体质量集，API method count 不是内部 forward/kernel/provider billing，claim-evidence entailment 和生产集成均未证明。
-
-### 可写的固定行为评测
-
-> 在固定 Qwen2.5-0.5B-Instruct revision 上以 CPU FP32 greedy 真实生成 7 条 authored cases，保存 raw/token/terminal identity 并严格复算三种指标；literal exact、NFKC+casefold normalized exact、token F1 分别为 4/7、5/7、6/7，逐例保留英文算术 `112`、大小写复制 `llm-2026` 与 JSON 空格差异。
-
-必须同时写：suite 未外部预注册、未独立留出、非代表性且无统计功效；没有系统比较、judge、人评、延迟/性能或发布 gate，不能简写成“Qwen 准确率 85.7%”。
-
-### 禁止合成的表述
-
-- “完成 Qwen GPU/QLoRA 训练并提升质量”；
-- “部署 vLLM 高并发流式服务”；
-- “RAG 忠实度达到 100%”；
-- “activation patching 定位了事实存储 circuit”；
-- “32k 长上下文已经验证”；
-- “无密钥 hash 证明官方来源/不可篡改”。
+禁止把这些行拼成“完成 Qwen GPU/QLoRA 训练并提升质量”“部署 vLLM 高并发流式服务”“RAG 忠实度 100%”
+或“32k 长上下文已经验证”。
 
 ## 一手资料
 
