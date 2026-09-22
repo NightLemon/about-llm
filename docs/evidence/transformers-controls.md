@@ -3,31 +3,23 @@
 本页保存 byte BPE、attention、generation、固定 checkpoint、activation patching 与 MoE 实验的录制数字、命令和边界，
 供实验复核使用。第一次实践请从[Transformers Basics 主项目](../practice/projects/transformers-basics.md)开始。
 
-**读者入口**：[主项目](../practice/projects/transformers-basics.md) · [实验目录](../practice/labs.md) · [Transformer 原理](../core/transformer.md)
+**证据导航**：[主项目](../practice/projects/transformers-basics.md) · [运行手册](https://github.com/NightLemon/about-llm/tree/main/projects/transformers-basics) ·
+[Transformer 原理](../core/transformer.md) · [生成机制](../core/generation.md) · [实验 1–3](../practice/labs.md#lab-1)
 { .doc-nav }
 
-**项目导航**：[返回项目索引](../practice/project-index.md) · [Transformer 原理](../core/transformer.md) · [生成机制](../core/generation.md) · [实验 1–3](../practice/labs.md#lab-1)
-{ .doc-nav }
+每个数字要么来自当前命令的固定输入，要么来自标出日期和 runtime 的历史 `recorded-report`；后者不会因当前离线
+verifier 通过而变成一次新运行。第一次实践从主项目进入，本页按 claim 核对输入、结果与边界。
 
-这不是一页“运行几个脚本”的索引，而是一条从 tokenizer、attention 和生成协议走到真实 checkpoint、因果干预与
-MoE distributed 实验的可执行学习路径。每个数字要么来自当前命令的固定输入，要么来自标出日期和 runtime 的历史 `recorded-report`；
-后者不会因当前离线 verifier 通过而变成一次新运行。先判断证据层级，再解释结果。
+| 要核对什么 | 台账分区 | 主要边界 |
+|---|---|---|
+| Byte BPE、attention 与 tiny model 的机制 oracle | 1–3 | 固定 CPU 输入不等于目标 checkpoint 或 GPU kernel |
+| EOS、generation config 与停止路径 | 4 | 固定 Transformers control 不等于 provider/vLLM 默认 |
+| Config、release artifact 与固定 Qwen 权重 | 5–6 | 文件身份、成功加载和真实 forward 是三层证据 |
+| Activation patching | 7 | 局部干预不等于唯一自然 circuit |
+| MoE routing、capacity、all-to-all 与 backward | 8 | 六条隔离 control 不等于完整目标 EP stack |
+| 最短运行命令、失败定位与 claim 导出 | 9–11 | 运行入口、诊断和可发布结论分开使用 |
 
-## 学习目标与先修
-
-完成本项目后，你应该能：
-
-- 从 raw bytes 推导 byte-level BPE 的训练与编码过程；
-- 解释 causal self-attention、RMSNorm、RoPE、GQA、KV cache 与 online softmax 的核心不变量；
-- 区分“随机 tiny 模型跑通”“config 被检查”“发布 artifact 被固定”“目标权重真实执行”；
-- 审计 tokenizer / model config / generation config 的 special-token 与停止协议；
-- 解释 activation patching 的干预量、metric、正负对照和不可外推结论；
-- 从 top-k routing 逐步推到 capacity、expert ownership、all-to-all、反向传播和 optimizer step；
-- 把上述机制组织成可复查的求职作品，而不是堆砌框架名。
-
-建议先读 [Transformer](../core/transformer.md) 中的张量形状与残差结构，并准备 Python 3.12、NumPy、PyTorch 和 Transformers。双进程 MoE controls 需要当前 PyTorch build 提供 Gloo；本页所有已录制运行均为 CPU，不包含 CUDA/NCCL。
-
-## 先建立证据梯子
+## 证据等级
 
 本项目故意同时保留四种强度不同的证据：
 
@@ -49,9 +41,9 @@ CUDA、完整 expert parallel、模型质量或生产安全已经成立。
 
 对录制报告，先查看它的 `checked_at`、`runtime`、`source`、固定输入和 `scope`；再运行页面给出的 `--verify` 命令，只能确认这份历史 artifact 仍符合 verifier 的既定绑定。SHA-256 能在已审阅的期望 digest 存在时发现所选 bytes 的改变，不能认证 checkpoint 发布者或报告执行者，也不消除 verify 后按路径加载文件的 TOCTOU 窗口。
 
-## 1. 从零训练 byte-level BPE
+## 1. Byte-level BPE control
 
-### 1.1 为什么从 bytes 开始
+### 1.1 固定语义与 oracle
 
 Unicode 字符、UTF-8 bytes 和 model tokens 是三个不同层次。这个 reference 的基础词表固定为 256 个 raw byte IDs，因此任意 UTF-8 字符串都有可逆表示；训练只学习把高频相邻 token pair 合成新 token。
 
@@ -63,7 +55,7 @@ Unicode 字符、UTF-8 bytes 和 model tokens 是三个不同层次。这个 ref
 
 本实现只在单篇 document 内统计相邻 pair，不跨 document 边界；频次相同按 ID pair 字典序稳定打破平局。编码时必须按学习到的 merge rank 重放，而不是重新按当前最高频 pair 贪心训练。
 
-### 1.2 运行与读取输出
+### 1.2 运行记录
 
 ~~~powershell
 python projects/transformers-basics/train_byte_bpe.py --vocab-size 280
@@ -83,11 +75,11 @@ python projects/transformers-basics/train_byte_bpe.py `
 
 实际词表小于请求值不是失败：达到 `min_pair_frequency=2` 后没有更多合法 pair。每条 merge 同时输出 byte expansion 和 UTF-8 preview；preview 中的替换字符只说明单个 token bytes 未必独立构成完整 Unicode 字符，不影响 byte-level decode 的可逆性。
 
-### 1.3 这个 tokenizer 还缺什么
+### 1.3 未覆盖范围
 
 它没有 normalization、pre-tokenizer、special tokens、offset map、added-token policy、chat template 或 checkpoint compatibility。小型 authored corpus 的 token 数也不能推成中文压缩率、计费量或目标模型上下文长度。连接真实 checkpoint 时，必须加载该 revision 的 tokenizer 并保存实际 prompt token IDs。
 
-### 1.4 从 token 序列构造语言模型训练目标
+### 1.4 语言模型目标 control
 
 ~~~powershell
 python projects/transformers-basics/trace_language_model_sample.py
@@ -110,7 +102,7 @@ loss mask:   [true, true, true, false]
 或语言模型，也没有产生 logits、loss 和 perplexity。这里的特殊 token 与 ID 仅用于讲解；真实 checkpoint 仍须使用
 配套 tokenizer 和 special-token 配置。
 
-### 1.5 同一句中文进入固定 Qwen3 tokenizer
+### 1.5 固定 Qwen3 tokenizer 记录
 
 ~~~powershell
 python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
@@ -129,7 +121,7 @@ python projects/transformers-basics/trace_qwen3_tokenizer.py --local-files-only
 脚本没有加载模型权重、执行 forward、调用 nano-vLLM 或使用 GPU。若使用 `--model-snapshot` 指向复制后的本地目录，
 目录本身也不能证明来源 commit；报告会明确保留这一边界。
 
-## 2. Attention：先锁定数学，再谈 kernel
+## 2. Attention controls
 
 ### 2.1 Dense causal attention
 
@@ -203,7 +195,7 @@ python -m pytest tests/test_attention_numpy.py -q
 
 Demo 为比较而另外物化 dense reference，所以 `15 vs 35` 不是整个进程的峰值内存测量。Float64 NumPy recurrence 也不是 FlashAttention kernel；它没有测 HBM traffic、workspace、CUDA、吞吐或延迟。
 
-## 3. Tiny 模型：从逐位置目标到参数更新
+## 3. Tiny 模型 controls
 
 ### 3.1 同一个中文样本进入仓库 MiniGPT
 
@@ -246,7 +238,7 @@ python projects/transformers-basics/smoke_tiny.py
 
 它不回答语言能力、泛化、公开权重身份或显存峰值。纯参数 bytes 不含 gradients、optimizer state、activations、KV cache、allocator 与 workspace；tiny loss 下降也不等于目标模型训练已跑通。
 
-## 4. Generation 是三方协议，不只是 `generate()`
+## 4. Generation 协议 controls
 
 ### 4.1 静态 special-token 对账
 
@@ -281,7 +273,7 @@ python projects/transformers-basics/generation_runtime_control.py
 
 这证明当前安装版本的三条 API control flow，不证明自然 logits、真实 tokenizer/chat template、vLLM/provider precedence、stop-string tokenization、GPU 行为或生成质量。
 
-## 5. Config、KV 账本与发布证据
+## 5. Config、KV 与发布 artifact
 
 ### 5.1 Config-only 检查
 
@@ -340,7 +332,7 @@ python projects/transformers-basics/inspect_checkpoint.py `
 
 Resolved commit metadata 不是签名；base tokenizer 没有 chat template、仓库没有独立 generation config 都可能是合法状态。`unavailable_or_load_error` 也可能来自网络、认证或 cache，不能武断解释成文件不存在。
 
-## 6. 固定 Qwen 真实权重 control
+## 6. 固定 Qwen 权重 control
 
 Release verifier 没有加载权重；下面的入口才执行目标 checkpoint：
 
@@ -408,7 +400,7 @@ python projects/transformers-basics/run_qwen_weight_quantization_control.py `
 
 Argmax 相同只是一项单提示观察，不能抵消 logits 误差，更不等于质量无损。这个 artifact 只含一个 weight，不含其余 99.8375% 参数、config/tokenizer 或可执行低位 runtime；计算先反量化到 FP32。没有完整 low-bit Qwen checkpoint、fused kernel、NF4/GPTQ/AWQ/SmoothQuant、calibration、generation、GPU/CUDA/vLLM、resident/peak memory、速度或代表性质量证据。
 
-## 7. Activation patching：从 hook 到因果对照
+## 7. Activation patching controls
 
 ### 7.1 随机 MiniGPT 管线 control
 
@@ -444,7 +436,7 @@ Recorded clean/corrupt metric 为 `9.210311/-7.700302`；三层 source recovery 
 
 高恢复只说明这个 batch-1 pair 中，替换整个 896-d post-layer residual 对所定义 metric 的效果。它不定位 attention head、MLP 或 feature，不证明事实存储层、唯一自然 circuit、总体事实性或安全。Final-layer source recovery=0 符合该 hook 后不再跨 position 混合的结构，不能说“最后层没有作用”。
 
-## 8. MoE：按六级证据递进
+## 8. MoE controls
 
 ### 8.1 Top-k、capacity 与 combine
 
@@ -558,9 +550,9 @@ Rank 1 是 zero-assignment source rank，但 zero-size graph edge 仍参加 reve
 
 该 control 仍不执行 reroute/dropless、shared/fine-grained experts、DDP/FSDP/ZeRO、mixed precision、optimizer resume、CUDA/NCCL、多节点或目标 MoE checkpoint。一步 toy loss 下降不是收敛、专门化或质量提升。
 
-## 9. 推荐运行顺序 { #run }
+## 9. 命令索引 { #run }
 
-### 9.1 五分钟机制路径
+**五分钟机制路径**
 
 ~~~powershell
 python projects/transformers-basics/train_byte_bpe.py
@@ -571,87 +563,42 @@ python projects/transformers-basics/generation_runtime_control.py
 python projects/transformers-basics/activation_patching.py
 ~~~
 
-每个命令都应保存环境、seed、输入 identity 和完整 JSON 输出。不要只截一行 `passed`。
-
-### 9.2 离线 artifact 路径
+**离线 artifact 路径**
 
 ~~~powershell
 python projects/transformers-basics/verify_release_evidence.py
 python -m pytest tests/test_model_release_evidence.py -q
 ~~~
 
-这组回归只检查离线 manifest、快照投影和 verifier 负例，不重新运行约 1 GB 权重。需要新 runtime observation 时，才显式运行三个 target-Qwen scripts，并保存新环境、版本、报告和失败日志。
+每次保存环境、seed、输入 identity 和完整 JSON 输出。离线 verifier 只检查 manifest、快照投影和负例，
+不重新运行约 1 GB 权重。目标 Qwen 与 MoE 的命令分别以第 6 节和 8.4–8.7 节为准；不要跨实验合并证据。
 
-### 9.3 完整 MoE 路径
+## 10. 失败定位索引
 
-依次运行 8.4–8.7 的四个实验脚本；每次只比较该脚本输出与本节给出的预期，不把不同实验的证据合并。
+| 现象 | 先核对 | 仍不能推出 |
+|---|---|---|
+| Loss 不下降 | Seed、batch、train mode、label shift、ignore mask、zero-grad、backward、optimizer 参数和 LR | 换大模型不会修复 wiring。 |
+| Cached/full logits 不一致 | Position IDs、past mask、cache position、dtype、eval mode、dropout、max error 与 tolerance | Argmax 相同不代表 logits 对齐。 |
+| Generation 提前或不停止 | 三方 EOS 集合、call kwargs、stop tokenization、prompt EOS、长度与 beam/sampling 路径 | 客户端截断不能推出 provider finish reason。 |
+| MoE rank hang | Collective 顺序、split sizes、zero-length edge、metadata 往返及 router/expert reduce 语义 | 本 rank 没 assignment 不表示可以跳过 collective。 |
+| Recorded report 通过但新运行不同 | Artifact identity、runtime、tolerance 与行为 contract | 不要覆盖旧报告；新 observation 需要独立记录和解释。 |
 
-## 10. 故障定位
+## 11. Claim 导出清单
 
-### Loss 不下降
+| Claim 家族 | 必须随附的证据 | 必须同时写出的边界 |
+|---|---|---|
+| Byte BPE | Merge/round-trip artifact 与真实 tokenizer 对照 | Bytes 可逆不等于目标 tokenizer compatibility。 |
+| Attention | Dense/online/cache parity、mask 反例与 tolerance | CPU oracle 不等于 FlashAttention 或 GPU 性能。 |
+| Tiny model | Config、seed、loss trace、参数与梯度账本 | Tiny overfit 不等于目标模型质量。 |
+| Generation | 三方 config diff 与三条 forced-token trace | 当前停止控制流不等于 provider/vLLM 默认。 |
+| Release artifact | Immutable revision、selected file hashes 与 runtime versions | Config/weight hash、load 和 forward 分别证明不同事情。 |
+| Target Qwen | Prefill/cache/generate report 及 verifier | 必须注明 recorded、CPU FP32、单 prompt 范围。 |
+| Activation patching | Clean/corrupt/patched metric、site 规则与正负对照 | Recovery 为 0 或大于 1 都需按未裁剪 metric 解释，不能自动命名 circuit。 |
+| MoE | Pre/post counts、assignment/token drop 分母、split matrix、collective ledger 与 oracle parity | `416 logical tensor-payload bytes` 不是 wire 流量；六条 controls 不是目标 DeepSeek/Qwen EP。 |
+| 对外陈述 | 至少一个故意失败 case，以及 authored/recorded/live 标签 | 没有目标 GPU/workload 时，不写性能提升、CUDA/NCCL 或生产部署结论。 |
 
-先固定 seed 与 batch，确认 `model.train()`、labels shift、ignored labels、`zero_grad()`、`backward()`、optimizer 参数集合和 learning rate。Tiny overfit 是 wiring probe；不要先换大模型掩盖基础错误。
-
-### Cached/full logits 不一致
-
-逐项检查 position IDs、attention mask 的 past 长度、cache position、dtype、eval mode 和 dropout。Argmax 相同不代表完整 logits 对齐，应同时保存 max error 与 tolerance。
-
-### Generation 提前或不停止
-
-保存 tokenizer/model/generation config 的 EOS 集合以及实际 call kwargs；检查 stop string 的 tokenization、prompt 是否已含 EOS、`max_new_tokens` 与 beam/sampling 路径。Provider 的 finish reason 不能从客户端截断自动推得。
-
-### MoE rank hang
-
-先核对所有 rank 的 collective 顺序、split sizes 和 zero-length edge。一个 rank 没 assignment 也不能擅自跳过其他 rank 正在等待的 collective。再检查 metadata 是否随 payload 往返，以及 router/expert gradient 的 reduce 语义是否混淆。
-
-### Recorded report 通过但新运行不同
-
-先判断是 artifact identity、runtime version、数值 tolerance 还是行为 contract 变化。不要直接重写 expected JSON；保留旧报告，记录依赖和硬件差异，解释为何新 observation 仍满足或需要升级 schema。
-
-## 11. 求职与项目验收
-
-### 能讲清的核心问题
-
-1. 为什么 byte-level BPE 可逆，但不等于真实 tokenizer compatibility？
-2. Online softmax 的 running max 为什么变化时必须重标度旧 accumulator？
-3. GQA 减少的是哪部分 KV payload，为什么 MLA 不能套同一公式？
-4. Config hash、weight hash、model load 和一次 forward 分别证明什么？
-5. `generate()` 的停止语义由哪些配置层共同决定？
-6. Activation patching 的 recovery>1 或等于 0 应如何解释？
-7. MoE assignment drop 与 token drop 为什么必须用两个分母？
-8. Router gradient 与 owner expert gradient 为什么有不同 collective 语义？
-9. 为什么 `416 logical tensor-payload bytes` 不能写成网络流量？
-10. 为什么六条 MoE controls 不能宣称复现了 DeepSeek/Qwen MoE？
-
-### 作品集最小证据包
-
-- 一张证据梯子图，逐项标注 authored、recorded 与 live；
-- byte BPE merge/round-trip artifact；
-- attention dense/online/cache parity 报告与 tolerance；
-- tiny overfit 的 config、seed、loss trace 和参数账本；
-- generation protocol diff 与三条 forced-token trace；
-- immutable revision、selected file hash、runtime versions；
-- target Qwen prefill/cache/generate report及其 verifier；
-- activation patching clean/corrupt/patch metric、正负对照与 site 选择规则；
-- MoE pre/post counts、drop 分母、split matrix、collective ledger、oracle parity；
-- 至少一个故意失败 case，以及明确的证据边界。
-
-可以准确写：
-
-> 构建从 NumPy mechanism oracle、tiny Transformers control 到 immutable Qwen checkpoint 的分层验证链；对账 BPE round trip、dense/online/cache attention、generation EOS override、固定权重 prefill/cache/generate，并以两进程 Gloo fixtures 隔离 MoE global capacity、token-to-owner dispatch 与反向传播语义。
-
-同一句必须注明 CPU/Gloo/authored/单 prompt 或 recorded 范围。除非另有目标 GPU 与 workload artifact，不要写“复现 FlashAttention”“完成 DeepSeek expert parallel”“高并发部署”或“性能提升 X%”。
-
-### 完成定义
-
-- [ ] 能从公式手算一个 BPE merge、causal mask 和 online-softmax 更新；
-- [ ] 能区分参数存储、KV 理想 payload、进程峰值和 wire bytes；
-- [ ] 能解释 release evidence 为什么没有执行权重；
-- [ ] 能从 recorded report 追到 manifest、revision、file hashes 和 scope；
-- [ ] 能区分单矩阵 artifact ratio、完整 checkpoint bytes、resident memory 与 fused-kernel execution；
-- [ ] 能为 generation/patching/MoE 各设计一个负对照；
-- [ ] 能说明每条 distributed control 调用了什么 collective；
-- [ ] 能在简历中只写 artifact 支持的数字和分母。
+面试表达与作品集组织回到[面试题与回答方法](../career/interview-questions.md)和
+[Transformers Basics 主项目](../practice/projects/transformers-basics.md)；本页只给可核验的 claim 边界。
 
 ## 12. 总证据边界
 
