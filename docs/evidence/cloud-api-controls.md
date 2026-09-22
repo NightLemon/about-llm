@@ -7,22 +7,16 @@ claim 审计使用。第一次学习请先读[云 API 契约基础](../models/cl
 **读者入口**：[契约基础](../models/cloud-api-contracts.md) · [可靠性进阶](../models/cloud-api-reliability.md) · [可运行项目](../practice/projects/cloud-api-contracts.md)
 { .doc-nav }
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解云 API 契约与可靠性 | [契约基础](../models/cloud-api-contracts.md)和[可靠性进阶](../models/cloud-api-reliability.md) |
+| 核对 provider 对象与 adapter 投影 | 本页协议、canonical core 与 response 分区 |
+| 核对 stream、retry、deadline 和预算 | 本页失败、流式、reserve/reconcile 分区 |
+| 运行或判断外推边界 | 本页“可运行证据”“真实接入”和故障定位 |
 
-**学习导航**
+## 适用范围与证据边界
 
-- **适合读者**：多供应商 SDK、模型网关、Agent runtime、SRE 与费用治理工程师。
-- **先修**：HTTP、strict JSON、SSE、异步取消、重试、幂等与基本安全边界。
-- **首次阅读**：协议分层 → provider 对象图 → canonical core → 错误与重试 → 流式终止 → reserve/reconcile → 生产 adapter。
-- **完成信号**：能保留供应商差异，解释 outcome unknown，并为每次 attempt 建立独立预算与证据账本。
-- **卡住时**：先读[模型选型](../models/landscape.md)和[GPT Responses](../models/gpt.md)，再做[实验 0C](../practice/labs/lab-0c-cloud-budget.md)。
-
-</div>
-
-## 学习目标与证据边界
-
-读完本章，你应能：
+本台账按以下核对项组织：
 
 1. 区分 canonical business model、provider wire protocol 与 transport 三层；
 2. 解释为什么 OpenAI-compatible 不等于完整语义兼容；
@@ -575,7 +569,7 @@ Provider call id 不是业务幂等充分条件。查询业务 effect ledger，�
 
 ## 面试与作品集验收
 
-### 面试追问
+### Claim 复核问题
 
 1. 为什么 OpenAI-compatible 不能等价为 Responses/Anthropic/Gemini 全兼容？
 2. Canonical core 应统一什么，哪些字段必须作为 typed extension 保留？

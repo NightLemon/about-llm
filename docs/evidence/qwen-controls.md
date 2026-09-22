@@ -6,28 +6,22 @@
 **证据导航**：[Qwen 教材](../models/qwen.md) · [模型选型](../models/landscape.md) · [Transformers 项目](../practice/projects/transformers-basics.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md)
 { .doc-nav }
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解 Qwen 家族与请求主线 | [Qwen 教材](../models/qwen.md) |
+| 核对 checkpoint、config、tokenizer 与权重 | 本页 inventory、config 与固定权重分区 |
+| 核对 RAG、服务、LoRA 或 DPO 的目标运行 | 本页对应 control 分区及项目台账 |
+| 判断结果能否写进作品集或发布说明 | 本页证据轴、常见错误和作品集边界 |
 
-**学习导航**
+## 适用范围与证据边界
 
-- **适合读者**：中文、多语言、工具调用、模型训练和推理服务工程师。
-- **先修**：Transformer、tokenizer、MoE、RAG 与 LoRA 基础。
-- **首次阅读**：台账证据轴 → checkpoint inventory → 固定 config/weights → tokenizer/template → runtime → 训练/服务。
-- **完成信号**：能对账 checkpoint、chat template、真实运行报告和目标任务，同时拒绝跨实验拼接结论。
-- **卡住时**：回到[Tokenization](../core/tokenization.md)和[模型选型](../models/landscape.md)。
-
-</div>
-
-## 学习目标与证据边界
-
-读完本章应能为中文/中英混合任务选择并检查 Qwen checkpoint，解释 dense/MoE、Base/Instruct、文本/代码/多模态版本的边界，并能验证 tokenizer、chat template 与 tool calling 是否和部署 runtime 一致。
+本台账记录中文/中英混合任务的 Qwen checkpoint 核对项，并把 dense/MoE、Base/Instruct、文本/代码/多模态、tokenizer、chat template 与部署 runtime 的证据分开。
 
 **先修知识**：decoder-only Transformer、MoE、tokenization、RAG、LoRA/QLoRA、Transformers chat template。
 
 Qwen 家族覆盖多语言、代码、数学、视觉、音频、dense 与 MoE 等多条路线，不能用一个架构描述所有 Qwen checkpoint。本文讲稳定检查方法；具体层数、head、专家数、上下文、thinking/tool 模式和许可都以固定 revision 的 config、model card 与官方仓库为准。
 
-本章的主要可执行对象不是“整个 Qwen 家族”，而是固定的 `Qwen/Qwen2.5-0.5B-Instruct` revision `7ae557604adf67be50417f59c2c2f167def9a775`。其他代际、尺寸、Base/Instruct、MoE、多模态或云端产品只提供检查框架，不能继承这个 checkpoint 的实验结果。
+本台账的主要可执行对象不是“整个 Qwen 家族”，而是固定的 `Qwen/Qwen2.5-0.5B-Instruct` revision `7ae557604adf67be50417f59c2c2f167def9a775`。其他代际、尺寸、Base/Instruct、MoE、多模态或云端产品只提供检查框架，不能继承这个 checkpoint 的实验结果。
 
 ## 台账证据轴：L0 标签与 L1–L5 阶梯
 
@@ -824,7 +818,7 @@ Hash/fingerprint 能检测声明对象漂移，但无密钥 self-hash 不能认�
 - 手写工具模板或用字符串切 reasoning/tool 输出；
 - 中文总体分数上升，却不检查数字、实体、中英混合和权限切片。
 
-## 面试追问
+## Claim 复核问题
 
 1. L0–L5 证据中，config、weight inventory、forward 和任务评测为什么不能互借？
 2. 如何由 14 query heads、2 KV heads、hidden 896 推出 head dim 64、GQA group 7？

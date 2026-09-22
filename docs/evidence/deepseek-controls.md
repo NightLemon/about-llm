@@ -7,28 +7,22 @@
 **读者入口**：[DeepSeek 教材](../models/deepseek.md) · [Transformer](../core/transformer.md) · [前沿专题](../frontier/reasoning-long-context-moe.md)
 { .doc-nav }
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解 DeepSeek、MLA、MoE 与推理后训练 | [DeepSeek 教材](../models/deepseek.md) |
+| 核对固定 V3 config 与架构字段 | 本页“固定 DeepSeek-V3 config 证据” |
+| 核对 MLA、MoE、FP8、MTP 或 R1 的证据等级 | 本页对应专题分区 |
+| 运行实验或限定作品集 claim | 本页“可运行实验”“常见错误”和作品集边界 |
 
-**学习导航**
+## 适用范围与证据边界
 
-- **适合读者**：MoE/MLA、训练系统、长推理与推理部署研究者和工程师。
-- **先修**：GQA、KV Cache、MoE、强化学习和量化基础。
-- **首次阅读**：证据阶梯 → 固定 V3 config → MLA → DeepSeekMoE → FP8/MTP → R1 → 部署评测。
-- **完成信号**：能分开 config markers、论文机制、真实权重/runtime 和产品能力，不误套标准 KV 公式。
-- **卡住时**：回到[Transformer](../core/transformer.md)和[前沿专题](../frontier/reasoning-long-context-moe.md)。
-
-</div>
-
-## 学习目标与证据边界
-
-读完本章应能区分 DeepSeek 的 MoE 训练/服务问题、Multi-head Latent Attention（MLA）的 KV 压缩思路，以及推理模型的后训练与 test-time compute；还能判断一个蒸馏 checkpoint 是否真的使用 DeepSeek-V3 架构。
+本台账把 DeepSeek 的 MoE 训练/服务、Multi-head Latent Attention（MLA）与推理后训练分开记录，并给出判断蒸馏 checkpoint 是否采用 DeepSeek-V3 架构所需的证据。
 
 **先修知识**：MHA/GQA、KV Cache、MoE routing、SFT/偏好优化、强化学习、量化与服务基准。
 
 “DeepSeek”同时指研究路线、开放 checkpoint 和云产品。具体 checkpoint 是否包含 MLA、MoE、Multi-Token Prediction 或某种后训练机制，必须看其技术报告、config、代码与 model card，不能因品牌相同就默认。
 
-本章唯一固定的模型级 artifact 是 `deepseek-ai/DeepSeek-V3` revision `e815299b0bcbac849fa540c768ef21845365c9eb` 的 1,660-byte `config.json`。[SOURCE:deepseek-v3-config]
+本台账唯一固定的模型级 artifact 是 `deepseek-ai/DeepSeek-V3` revision `e815299b0bcbac849fa540c768ef21845365c9eb` 的 1,660-byte `config.json`。[SOURCE:deepseek-v3-config]
 仓库没有下载 DeepSeek 权重/tokenizer、没有执行声明的 remote code、forward、MLA cache、MoE routing、FP8 kernel、R1 推理或云 API；通用 NumPy/PyTorch/Gloo fixtures 也不能借给 DeepSeek checkpoint。
 
 ## L0 标签与 L1–L5 证据阶梯
@@ -787,7 +781,7 @@ Target report 必须明确 base architecture；如果是 Qwen/Llama distill，�
 - 认为可见 reasoning 文本天然真实、安全或可作为审计结论；
 - 把 OpenAI-compatible 当作云 API 与开放权重完全等价。
 
-## 面试追问
+## Claim 复核问题
 
 1. 当前仓库对 DeepSeek 到了 L2 还是 L4？证据是什么？
 2. 为什么 128 query/KV heads 仍不能按标准 MHA 估 cache？

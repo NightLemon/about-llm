@@ -6,28 +6,22 @@
 **读者入口**：[Claude 教材](../models/claude.md) · [云 API 契约](../models/cloud-api-contracts.md) · [Agent 总览](../applications/agents.md)
 { .doc-nav }
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解 Claude 与 Messages API | [Claude 教材](../models/claude.md) |
+| 核对对象、block、stream 与工具协议 | 本页 Messages、Block 和状态机分区 |
+| 核对 retry、budget、上下文或缓存 | 本页对应控制分区与“可运行实验” |
+| 判断一项供应商 claim 能否发布 | 本页证据阶梯、常见错误和一手资料 |
 
-**学习导航**
+## 适用范围与证据边界
 
-- **适合读者**：Anthropic API、流式解析、Agent、评测和平台工程师。
-- **先修**：HTTP/JSON、SSE、工具调用状态机和基本模型评测。
-- **首次阅读**：证据阶梯 → Messages object graph → block/event → 工具/预算状态机 → 评测迁移。
-- **完成信号**：能区分官方文档、离线 adapter、真实 provider run 与生产证据，并重放 block/stream 状态。
-- **卡住时**：先读[云 API 契约](../models/cloud-api-contracts.md)和[Agent 总览](../applications/agents.md)。
-
-</div>
-
-## 学习目标与证据边界
-
-读完本章应能区分 Anthropic 的公开研究、Claude 产品能力和 Messages API 契约；还能把 content blocks、工具调用、长上下文与 prompt caching 接入一个可观测、可回放、受权限约束的系统。
+本台账把 Anthropic 的公开研究、Claude 产品能力与 Messages API 契约分开记录，并为 content blocks、工具调用、长上下文和 prompt caching 指出对应的控制与边界。
 
 **先修知识**：decoder-only Transformer、SFT/偏好训练、HTTP/JSON、流式事件、Agent 工具执行与评测。
 
 Claude 是闭源模型产品。Constitutional AI、RLHF/RLAIF 等公开论文可以解释一条研究路线，却不能证明当前某个 Claude 版本采用论文中的完整训练配方。未公开的参数量、层数、训练数据、稀疏/稠密结构、路由和后训练细节应**保持未知**；不要从输出风格、旧论文或产品名称反推内部架构。
 
-本章接口事实按 Anthropic Messages 官方参考于 **2026-09-20** 由 LLM 复核。具体 model id、上下文、价格、区域、限额和 beta header 都是时间敏感产品事实，应在部署时固定检查日期和版本，不在稳定教材中维护“永久最新”表。
+本台账的接口事实按 Anthropic Messages 官方参考于 **2026-09-20** 由 LLM 复核。具体 model id、上下文、价格、区域、限额和 beta header 都是时间敏感产品事实，应在部署时固定检查日期和版本，不在稳定教材中维护“永久最新”表。
 
 本仓库没有访问 Anthropic 账号或真实付费 endpoint，也没有执行 Anthropic SDK、DNS/TLS、HTTP/2、真实 SSE、prompt caching、tool/thinking blocks 或计费。可执行证据只覆盖 authored request/response fixtures、text-only stream state machine、provider-neutral retry/HTTP/budget controls；这些不能外推当前 Claude 质量、产品能力或生产可靠性。
 
@@ -110,7 +104,7 @@ Message response
 └── usage                  # input/output 与版本相关扩展
 ```
 
-这不是完整 OpenAPI/JSON Schema，只提炼本章已审阅的稳定对象关系。Optional/beta/tool/cache/thinking/citation/media 字段必须按目标版本的官方 schema 单独建模。
+这不是完整 OpenAPI/JSON Schema，只提炼本台账已审阅的稳定对象关系。Optional/beta/tool/cache/thinking/citation/media 字段必须按目标版本的官方 schema 单独建模。
 
 ### Canonical business model 与 wire model 分开
 
@@ -741,7 +735,7 @@ AES fixture 与 allowlist gate 不模拟 Anthropic thinking/signature 协议；�
 - 把历史 reasoning replay 论文写成当前端点仍可攻击；
 - 只换 model id，不回归 parser、prompt、token 预算与拒答行为。
 
-## 面试追问
+## Claim 复核问题
 
 1. 闭源 API 的 L1–L5 证据和开放权重证据阶梯有何不同？
 2. Constitutional AI 的批评/修订与偏好训练怎样衔接？边界在哪里？

@@ -6,22 +6,16 @@
 **读者入口**：[Llama 教材](../models/llama.md) · [Transformer](../core/transformer.md) · [单卡微调](../training/peft-qlora-engineering.md)
 { .doc-nav }
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解 Llama 家族与使用路线 | [Llama 教材](../models/llama.md) |
+| 核对 checkpoint inventory、config、权重和模板 | 本页 inventory、结构和 Base/Instruct 分区 |
+| 核对 KV、内存、量化、LoRA 或 runtime | 本页对应工程分区与“可运行实验” |
+| 核对许可、供应链和可发布 claim | 本页许可、生产发布、常见错误与作品集边界 |
 
-**学习导航**
+## 适用范围与证据边界
 
-- **适合读者**：开放权重部署、量化、微调、模型评测和供应链工程师。
-- **先修**：decoder-only Transformer、KV Cache、tokenizer、LoRA/QLoRA 与基本 GPU 内存模型。
-- **首次阅读**：台账证据轴的 L0 标签与 L1–L5 阶梯 → checkpoint inventory → RMSNorm/RoPE/SwiGLU/GQA → 模板 → 内存 → 微调/部署 → 许可与发布。
-- **完成信号**：能从固定 revision 的真实文件推导结构和预算，并清楚标注 vendor claim、config deduction、weight execution 与 task evidence 的差别。
-- **卡住时**：回到[Transformer](../core/transformer.md)、[推理优化](../systems/inference-optimization.md)和[单卡微调](../training/peft-qlora-engineering.md)。
-
-</div>
-
-## 学习目标与证据边界
-
-读完本章，你应能：
+本台账按以下核对项组织：
 
 1. 不依赖“Llama”品牌名，从 checkpoint inventory 与 config 判断结构；
 2. 推导 RMSNorm、RoPE、SwiGLU、GQA 的计算与内存影响；
@@ -688,7 +682,7 @@ python projects/transformers-basics/inspect_config.py `
 
 ## 面试与作品集验收
 
-### 面试追问
+### Claim 复核问题
 
 1. 为什么 model card、config、weight、runtime 与 task evidence 不能互借？
 2. RMSNorm 与 LayerNorm 的数学和 checkpoint 兼容差异是什么？

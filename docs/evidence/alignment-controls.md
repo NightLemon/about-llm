@@ -7,18 +7,12 @@
 **读者入口**：[对齐入门](../training/alignment-basics.md) · [对齐进阶教材](../training/alignment.md) · [单卡微调项目](../practice/projects/single-gpu-finetuning.md)
 { .doc-nav }
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
-
-**学习导航**
-
-- **适合读者**：已完成[对齐入门](../training/alignment-basics.md)的偏好数据、DPO/PPO 和安全训练工程师。
-- **先修**：[微调总览](../training/finetuning.md)、概率优化、采样和基础策略学习。
-- **首次阅读**：对齐对象 → SFT 先验 → 偏好数据/RM → DPO；PPO 第二遍再读。
-- **完成信号**：能区分 SFT、RM、DPO、PPO 各自的数据和证据边界。
-- **卡住时**：先回到[机器学习与深度学习](../foundations/ml-dl.md)的目标与泛化。
-
-</div>
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解 SFT、RM、DPO 与 PPO | [对齐入门](../training/alignment-basics.md)和[对齐进阶](../training/alignment.md) |
+| 核对偏好数据、目标函数与固定 control | 本页第 1–15 节 |
+| 判断一项结果能否写成 claim | 本页“当前仓库证据边界”和“常见错误结论” |
+| 运行或复核脚本 | 本页末尾“复核任务与运行入口” |
 
 本页保留完整公式、实现与证据边界。第一次学习先读[对齐与偏好优化入门](../training/alignment-basics.md)，只在确定数据和训练路线后进入对应算法小节。
 
@@ -620,7 +614,7 @@ Agent 运行时的具体副作用协议见[运行时与副作用](../application
 - **“拒绝越多越安全”**：benign refusal 会破坏可用性并可能造成不公平。
 - **“模型对齐了，所以工具安全”**：权限和副作用必须由外部系统保证。
 
-## 自测与实践
+## 复核任务与运行入口
 
 1. 推导 Bradley–Terry equal reward 时 loss 为 \(\log2\)。
 2. 构造 policy raw margin 为正、但 reference-relative DPO margin 为负的例子。

@@ -6,18 +6,13 @@
 **读者入口**：[前沿总览](../frontier/reasoning-long-context-moe.md) · [推理系统](../frontier/reasoning-systems.md) · [长上下文](../frontier/long-context-systems.md) · [MoE 系统](../frontier/moe-systems.md)
 { .doc-nav }
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
-
-**学习导航**
-
-- **适合读者**：推理增强、长上下文和 MoE 研究与系统工程师。
-- **先修**：[生成](../core/generation.md)、评测、attention 和并行基础。
-- **首次阅读**：推理定义 → test-time compute → 长上下文三层含义 → MoE → 审计。
-- **完成信号**：能分开模型能力、搜索预算、上下文有效性和容量证据。
-- **卡住时**：先回到[Transformer](../core/transformer.md)与[评测](../quality/evaluation.md)。
-
-</div>
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解推理增强、长上下文或 MoE | [推理系统](../frontier/reasoning-systems.md)、[长上下文](../frontier/long-context-systems.md)、[MoE 系统](../frontier/moe-systems.md) |
+| 核对 self-consistency 与 best-of-N 数字 | 本页第 1–6 节 |
+| 核对上下文、KV 与任务有效长度 | 本页第 7–12 节 |
+| 核对 routing、capacity 与 collective | 本页第 13–18 节 |
+| 判断可外推范围或运行 control | 本页第 19–20 节和末尾运行入口 |
 
 这三类技术都在扩大模型可用计算或容量，但扩大的是不同维度：推理增强增加 test-time search/verification，长上下文增加一次调用可访问的信息，MoE 增加总参数而控制每 token 激活计算。它们都不保证质量单调提升。
 
@@ -471,7 +466,7 @@ Expert weights 分布在设备上时，token 按 routing 做 all-to-all dispatch
 - **“MoE active 参数就是权重内存”**：总 experts 仍需存储/分片。
 - **“专家激活主题就是专家的单一功能”**：相关 token 不构成因果解释。
 
-## 自测与实践
+## 复核任务与运行入口
 
 1. 分别报告 Best-of-16 的 oracle@16 与 verifier-selected@16，为什么二者不同？
 2. 为 128k 模型设计位置 × distractor × integration 的评测矩阵。

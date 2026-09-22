@@ -3,22 +3,16 @@
 第一次读图请直接打开[MiMo RL 十一篇看图专题](../models/mimo-rl-series.md)。
 本页供维护者使用，集中保存截图出处、历史快照目录、来源登记和采集任务的操作说明。
 
-<!-- learning-contract -->
-<div class="learning-contract" markdown="1">
-
-**学习导航**
-
-- **适合读者**：维护教材图片、历史数据与采集任务的贡献者。
-- **先修**：[MiMo RL 教材](../models/mimo-rl.md)与[证据边界](../reference/accuracy.md)。
-- **首次阅读**：公开与本地材料 → 采集窗口 → 覆盖核对 → 下载与命令 → 失败处理。
-- **完成信号**：能说明一份快照保存了什么、缺了什么，以及校验结果支持哪项结论。
-- **卡住时**：先只核对一个曲线点的运行、版本、步数和采集时间，再扩展到完整目录。
-
-</div>
-
 **证据导航**：[教学入口](../models/mimo-rl.md) · [快照入口](mimo-rl/index.md) ·
 [教材测试与证据策略](../reference/testing.md)
 { .doc-nav }
+
+| 查什么 | 去哪里 |
+|---|---|
+| 第一次理解曲线与训练阶段 | [MiMo RL 教材](../models/mimo-rl.md)和[十一篇看图专题](../models/mimo-rl-series.md) |
+| 核对截图、采集窗口和指标覆盖 | 本页单图、局部图组、覆盖与 verification 分区 |
+| 下载或离线复核 snapshot | 本页命令、历史快照目录和失败处理分区 |
+| 判断一个数字能否支持正文 claim | 本页“哪种证据支持哪句话”与[准确性方法](../reference/accuracy.md) |
 
 ## 来源、日期与当前范围
 
