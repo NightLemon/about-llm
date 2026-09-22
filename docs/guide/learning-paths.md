@@ -111,13 +111,8 @@ HTTP 和基本性能测量。
 - 分不清一致性、正确性和指标有效性：先读[评测测量学](../quality/evaluation-measurement.md)。
 - 看不懂显著性、功效和置信区间：读[评测测量学](../quality/evaluation-measurement.md)与[评测统计](../foundations/evaluation-statistics.md)，再回到[评测方法](../quality/evaluation-methodology.md)。
 
-## 每个阶段怎样验收
+## 通用方法与验收入口
 
-无论走哪条路线，最后都检查桌面上是否留下了四样东西：
-
-1. 一个能运行的最小基线；
-2. 一个主动制造的失败案例；
-3. 一组事先定义的评价标准；
-4. 一段用自己的话写出的结果解释。
-
-下一步：查看[知识地图](knowledge-map.md)确认先修，或直接从[项目索引](../practice/project-index.md)选择与路线匹配的成果。
+本页只负责选择路线，各阶段的完成信号已经写在对应路线末尾。怎样阅读、运行、制造反例和记录实验，统一见
+[如何使用](how-to-use.md)；页面与项目的职责边界见[仓库地图](repo-map.md)。选好方向后，可用
+[知识地图](knowledge-map.md)确认先修，或从[项目索引](../practice/project-index.md)选择匹配的交付物。

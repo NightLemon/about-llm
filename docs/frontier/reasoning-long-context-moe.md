@@ -87,162 +87,57 @@ selection:
 
 ## 它们在一次请求的哪里发生 { #combined-request }
 
-这份合同先作为长输入进入模型。模型每经过一个 MoE 层，当前 token 都要路由到专家；完成前向计算后，
-系统生成四条候选，最后再由 verifier 选择。它们在同一请求里相遇，却仍然需要三份独立证据。
+合同先作为长输入进入模型；每经过一个 MoE 层，当前 token 都会路由到专家；模型随后生成多条候选，
+最后由 verifier 选择。三种技术可以出现在同一请求中，但仍各自需要独立证据。
 
 ~~~mermaid
-flowchart TB
-    A["24k-token 合同"] --> B["Attention / 共享层"]
-    B --> C["每个 MoE 层的路由"]
-    C --> D["选中专家并合并结果"]
-    D --> E["四条候选答案"]
-    E --> F["Verifier 选出最终答案"]
+flowchart LR
+    A["长输入与证据位置"] --> B["Attention / MoE 路由"]
+    B --> C["候选生成与工具"]
+    C --> D["Verifier 选择"]
+    D --> E["业务终态"]
 ~~~
 
-排查时分别记录：
-
-- 长上下文：输入长度、答案所在位置、缓存、首 token 延迟和任务正确性；
-- MoE：每个专家收到与实际执行的 token 数、丢弃或改派数量、跨设备通信和负载；
-- 推理过程：每条候选、集合中是否存在正确答案、最终选择、工具调用、token 用量和任务结果。
-
-最后答案正确，不能反推每一层都正确；最终失败，也不能只凭输出判断是哪一层造成。
-
-## 看到什么证据，能下多强结论 { #evidence-strength }
-
-| 证据 | 例子 | 能回答什么 |
+| 路线 | 必须记录的主变量 | 最容易误判 |
 |---|---|---|
-| 论文/技术报告 | 方法与受控实验 | 作者在固定设置下主张什么 |
-| 模型配置与源码 | 专家数量、位置字段、生成选项 | 代码具备哪些实现入口 |
-| 可运行的机制样例 | 本仓库提供的路由、采样与缓存参考实现 | 局部公式和状态变化是否一致 |
-| 目标运行环境 | 真实缓存、路由和候选记录 | 指定版本实际走了哪条路径 |
-| 目标负载评测 | 任务、硬件、流量和成本 | 这套方案是否值得发布 |
+| Reasoning | 候选、oracle/selected、model/verifier/tool calls、输出 token、wall time、失败终态 | 输出更长或 proxy 更高不等于任务更成功。 |
+| Long context | Tokenized length、证据位置、distractors、integration、KV、TTFT、截断/OOM | 请求被接受不等于可靠使用全部输入。 |
+| MoE | Total/active parameters、tokens/expert、capacity、drop/reroute、collective、memory 与 tail latency | 激活参数少不等于加载更小或服务更快。 |
 
-不能把一篇论文、一个 config 字段和一个通用 toy 拼成目标模型已验证。
+## 共同证据要求 { #evidence-strength }
 
-## 共同的实验方法
+先固定 single-sample、short-context/RAG 或 dense 等基线；每次只改变候选数、context length、capacity、
+quantization 或 runtime 中的一个主变量。所有 timeout、OOM、truncation、invalid output、dropped token、
+tool error 与 verifier miss 都进入分母。
 
-三条路线都用同一实验纪律。
+| 证据 | 能回答 | 不能直接推出 |
+|---|---|---|
+| 论文 / 技术报告 | 作者在固定设置下主张什么 | 当前 checkpoint 或服务已经采用 |
+| Config / 源码 | 存在哪些结构和实现入口 | 权重匹配、实际执行或性能 |
+| 机制 control | 局部公式、状态与反例是否一致 | 目标模型、GPU 或生产表现 |
+| 目标 runtime | 指定版本实际经过哪些 cache/router/search 路径 | 代表性任务与 SLO |
+| 目标 workload | 在给定硬件、流量、预算下是否值得发布 | 其他分布、版本或组织环境 |
 
-### 1. 写资源预算
+精确复算值和 CPU/Gloo 边界查[前沿证据台账](../evidence/frontier-controls.md)。
 
-~~~text
-input tokens
-output / sampled tokens
-model and verifier calls
-tool calls
-wall-clock deadline
-GPU memory / parallelism
-cost
-offered / admitted / completed / failed requests
-~~~
+## 三个专题出口
 
-### 2. 固定 baseline
+| 当前问题 | 进入 | 离开该页时应得到 |
+|---|---|---|
+| 输出需要更多计算、候选或 verifier | [推理系统](reasoning-systems.md) | 一条固定总预算的 quality/cost 曲线，并分开 oracle 与 selected |
+| 答案依赖更多输入证据 | [长上下文系统](long-context-systems.md) | 一张 position × distractor × integration 评测矩阵 |
+| 想扩大总容量但不激活全部参数 | [MoE 系统](moe-systems.md) | 一份 routing/capacity/collective 账本 |
+| 约束来自设备、能耗、离线或数据不外发 | [端侧小模型与本地智能](on-device-small-models.md) | 本地 model/router/verifier 与升级边界 |
 
-- Reasoning：single sample/direct answer。
-- Long context：short context 或 RAG baseline。
-- MoE：dense 或不同 expert/capacity 配置。
+应用/Agent 工程优先 reasoning→long context；部署工程优先 long context→MoE；训练工程优先 MoE→reasoning；
+端侧工程先进入本地智能。这里的顺序只是入口，不把其他专题变成隐性前置。
 
-### 3. 每次只改变一个主变量
+## 判断是否选错方向
 
-候选数、context length、expert capacity、quantization 和 runtime 不要同时变化。
+- 正确条款没有进入输入：先修 RAG、ACL 或 context construction。
+- 证据已在输入但需要组合、搜索或执行验证：再增加 reasoning/test-time compute。
+- 模型容量是瓶颈且运行平台能承担权重与通信：再评估 MoE。
+- 需要更新事实、来源引用或租户隔离：长 context 不能替代 RAG。
+- 只看到长输出、标称窗口、active 参数或理论 Big-O：证据还不足以声称能力或性能提升。
 
-### 4. 保留完整分母
-
-请求超时、显存不足、输入截断、输出无效、token 被丢弃、工具报错和验证器选择失败都要进入分母。若系统有
-准入控制（admission control），也分别报告收到、接纳、完成的请求数与各失败终态，不能只在已完成请求中比较质量或成本。
-
-### 5. 解释边界
-
-三层实验回答三种问题：机制样例检查局部公式，目标模型运行检查一个具体配置，生产压测检查真实容量。
-后一级的结论都需要新的输入和环境，不能从前一级直接推出。
-
-## 三种常见错误归因
-
-### “输出更长，所以 reasoning 更强”
-
-长 rationale 可能包含重复、错误或事后解释。应比较固定 token/call budget 下的 verified task success。
-
-### “支持 1M tokens，所以能可靠使用 1M tokens”
-
-Protocol acceptance 只说明请求可能被接受。还要测 runtime completion 和不同位置/任务的 effective context。
-
-### “总参数巨大、激活参数小，所以服务更快”
-
-MoE 仍需存储/分片总权重，并承担 routing、expert imbalance、all-to-all 和 kernel overhead。
-
-## 一个三路线对照项目
-
-选择一个有可执行 verifier 的小任务集，例如受限数学或代码：
-
-1. **Reasoning 条件**：固定 context，比较 single sample 与 best-of-N。
-2. **Long-context 条件**：固定生成预算，改变 evidence 位置和 distractors。
-3. **MoE 条件**：只用本仓库提供的路由样例，改变 capacity 和 token distribution。
-
-三组结果分别回答下面的问题，因此分开报告：
-
-- 候选变多后，正确答案是否更常出现在候选集合中，verifier 又能否把它选出来？
-- 输入更长后，答案证据是否仍能被找到和整合？
-- Capacity 改变后，哪些 tokens 被接受、丢弃或 reroute？
-
-精确复算脚本和记录结果见[前沿证据台账](../evidence/frontier-controls.md)。
-
-## 学习顺序建议
-
-### 应用/Agent 工程师
-
-1. [推理系统](reasoning-systems.md)
-2. [长上下文](long-context-systems.md)
-3. MoE 只读 total/active 与部署边界
-
-### 推理部署工程师
-
-1. [长上下文](long-context-systems.md)
-2. [MoE 系统](moe-systems.md)
-3. 推理系统中的 offered budget 与多候选成本
-
-### 端侧/隐私工程师
-
-1. [端侧小模型与本地智能](on-device-small-models.md)
-2. [长上下文](long-context-systems.md)，核对本地 KV 与 prefill 预算
-3. [推理系统](reasoning-systems.md)，核对升级前后的候选与 verifier 预算
-
-### 训练/算法工程师
-
-1. [MoE 系统](moe-systems.md)
-2. [推理系统](reasoning-systems.md)
-3. [长上下文](long-context-systems.md)
-
-## 常见错误
-
-- 用“reasoning model”品牌名代替具体训练和 test-time protocol。
-- 用长输出、评审模型自信度或奖励分数代替已经核验的成功结果。
-- 把 context window、KV capacity 和 effective context 写成同一个数字。
-- 把 Long context 当作 RAG 的替代，不做权限和来源管理。
-- 把 total、active、resident parameters 混为一谈。
-- 用单进程 routing toy 声称 expert-parallel runtime 已验证。
-- 只报最好配置，不报告 tokens、calls、latency、OOM 和 dropped 分母。
-
-## 面试时怎样回答
-
-面对“介绍大模型前沿扩展”，先用一句话分开三条路线：
-
-- Reasoning 增加每题的 test-time computation。
-- Long context 增加一次调用可读取的信息范围。
-- MoE 增加总容量但每 token 只激活部分 experts。
-
-再为每条路线给出一个核心风险和一个验证方法。不要列模型名称代替机制。
-
-## 自测
-
-1. Self-consistency 增加的是模型参数、输入信息还是 test-time compute？
-2. 请求被 API 接受，为什么不等于有效 context 得到验证？
-3. MoE active parameters 少，为什么仍可能需要多 GPU？
-4. 三条路线组合在同一系统时，应分别记录哪些 trace？
-5. 哪种证据才能支持“这个改动值得在目标负载发布”？
-
-## 继续学习
-
-- [推理系统](reasoning-systems.md)：sampling、search、verifier 与 tools。
-- [长上下文系统](long-context-systems.md)：position、attention、KV、RAG 与评测。
-- [MoE 系统](moe-systems.md)：router、capacity、通信与部署。
-- [前沿证据台账](../evidence/frontier-controls.md)：数学小实验、collective 验证程序和适用范围。
+完成本页后，只选择一个专题继续，并写下 baseline、主变量、完整分母和最可能推翻结论的实验。
