@@ -39,7 +39,7 @@ Agent 重复发出业务操作时，谁负责状态机和恢复？
 本页不是周计划，也不承诺证书或项目数量能换来 offer。公司、团队和职级定义并不统一，
 最终判断仍以目标 JD、面试环节和团队实际交付物为准。
 
-**求职导航**：[面试题与回答方法](interview-questions.md) · [应用与治理题](applied-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md)
+**求职导航**：[14 天冲刺](agent-interview-sprint.md) · [面试题与回答方法](interview-questions.md) · [应用与治理题](applied-questions.md) · [编码轮](coding-round.md) · [系统设计](system-design.md) · [行为面试](behavioral.md)
 · [简历项目](resume-projects.md) · [学习路径](../guide/learning-paths.md)
 { .doc-nav }
 

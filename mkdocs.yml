@@ -214,6 +214,7 @@ nav:
           - Synthetic Data Audit: practice/projects/synthetic-data-audit.md
       - 生产检查表: practice/production-checklist.md
   - 求职:
+      - 14 天 Agent / LLM 面试冲刺: career/agent-interview-sprint.md
       - 岗位路线: career/roadmap.md
       - 面试题与回答方法: career/interview-questions.md
       - 应用、发布与治理面试题: career/applied-questions.md
